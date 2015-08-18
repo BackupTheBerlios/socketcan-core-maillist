@@ -1,0 +1,400 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 3/5] TJA1041 driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/5%5D%20TJA1041%20driver&In-Reply-To=%3C20091014153316.GE313%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003264.html">
+   <LINK REL="Next"  HREF="003266.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 3/5] TJA1041 driver</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/5%5D%20TJA1041%20driver&In-Reply-To=%3C20091014153316.GE313%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH 3/5] TJA1041 driver">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed Oct 14 17:34:25 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003264.html">[PATCH 2/5] PCA82C251 driver
+</A></li>
+        <LI>Next message: <A HREF="003266.html">[Patch 4/5] include/linux update
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3265">[ date ]</a>
+              <a href="thread.html#3265">[ thread ]</a>
+              <a href="subject.html#3265">[ subject ]</a>
+              <a href="author.html#3265">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This adds a (platform) driver for the tja1041 can transceiver.
+The 'en' &amp; '/err' gpio's are required, the '/stb' is optional, and it's
+functionality is _not_ tested by me yet (no actual device).
+I did test the /err input as proof of concept.
+Oliver, I assume you have such devices?
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+---
+Index: include/socketcan/can/platform/tja1041.h
+===================================================================
+--- include/socketcan/can/platform/tja1041.h	(revision 0)
++++ include/socketcan/can/platform/tja1041.h	(revision 0)
+@@ -0,0 +1,18 @@
++#ifndef CAN_TRANSCEIVER_TJA1041_H
++#define CAN_TRANSCEIVER_TJA1041_H
++
++/*
++ * TJA1041 interface
++ * only available as platform device (name 'tja1041')
++ */
++struct tja1041_platform_data {
++	/* gpio's */
++	int stb;
++	int en;
++	int err;
++
++	const char *match;
++};
++
++#endif /* CAN_TRANSCEIVER_TJA1041_H */
++
+Index: drivers/net/can/transceiver/tja1041.c
+===================================================================
+--- drivers/net/can/transceiver/tja1041.c	(revision 0)
++++ drivers/net/can/transceiver/tja1041.c	(revision 0)
+@@ -0,0 +1,303 @@
++/*
++ * NXP TJA1041 CAN transceiver
++ *
++ * Copyright (C) 2009 EIA Electronics
++ * Author: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++*/
++
++#include &lt;linux/module.h&gt;
++#include &lt;linux/errno.h&gt;
++#include &lt;linux/err.h&gt;
++#include &lt;linux/gpio.h&gt;
++#include &lt;linux/platform_device.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;socketcan/can/error.h&gt;
++#include &lt;socketcan/can/transceiver.h&gt;
++#include &lt;socketcan/can/platform/tja1041.h&gt;
++
++/*
++ * dynamic can_transceiver stuff
++ */
++struct tja1041 {
++	struct can_transceiver cantr;
++	int stb;
++	int en;
++	int err;
++	int err_irq;
++	int gpio_valid;
++	struct work_struct work;
++};
++#define to_tja1041(d)	container_of((d), struct tja1041, cantr)
++
++static int tja1041_validate_gpio(struct tja1041 *tja, int mask)
++{
++	int ret;
++
++	if ((tja-&gt;gpio_valid &amp; mask) == mask)
++		return 0;
++
++	if (!(mask &amp; 1))
++		goto no_stb;
++	if (tja-&gt;stb &lt; 0) {
++		/* mark as requested */
++		tja-&gt;gpio_valid |= 1;
++		goto no_stb;
++	}
++	if (tja-&gt;gpio_valid &amp; 1)
++		goto stb_done;
++	ret = gpio_request(tja-&gt;stb, dev_name(&amp;tja-&gt;cantr.dev));
++	if (ret &lt; 0)
++		return ret;
++	/* stb is active low */
++	gpio_direction_output(tja-&gt;stb, 1);
++	tja-&gt;gpio_valid |= 1;
++stb_done:
++no_stb:
++	if (!(mask &amp; 2))
++		goto no_en;
++	if (tja-&gt;gpio_valid &amp; 2)
++		goto no_en;
++	ret = gpio_request(tja-&gt;en, dev_name(&amp;tja-&gt;cantr.dev));
++	if (ret &lt; 0)
++		return ret;
++	gpio_direction_output(tja-&gt;en, 0);
++	tja-&gt;gpio_valid |= 2;
++no_en:
++	if (!(mask &amp; 4))
++		goto no_err;
++	if (tja-&gt;gpio_valid &amp; 4)
++		goto no_err;
++	ret = gpio_request(tja-&gt;err, dev_name(&amp;tja-&gt;cantr.dev));
++	if (ret &lt; 0)
++		return ret;
++	gpio_direction_input(tja-&gt;err);
++	tja-&gt;err_irq = gpio_to_irq(tja-&gt;err);
++	tja-&gt;gpio_valid |= 4;
++no_err:
++	return 0;
++}
++
++static irqreturn_t tja1041_irq(int irq, void *p)
++{
++	struct tja1041 *tja = p;
++
++	disable_irq_nosync(tja-&gt;err_irq);
++	schedule_work(&amp;tja-&gt;work);
++	return IRQ_HANDLED;
++}
++
++static void tja1041_free_irq(struct can_transceiver *cantr)
++{
++	struct tja1041 *tja = to_tja1041(cantr);
++
++	if (tja-&gt;err_irq &lt; 0)
++		return;
++	free_irq(tja-&gt;err_irq, tja);
++}
++
++static int tja1041_setup_irq(struct can_transceiver *cantr)
++{
++	struct tja1041 *tja = to_tja1041(cantr);
++	int ret;
++
++	ret = tja1041_validate_gpio(tja, 4);
++	if (ret &lt; 0)
++		return ret;
++	if (tja-&gt;err_irq &lt; 0)
++		return 0;
++	/* set a low-level interrupt */
++	ret = request_irq(tja-&gt;err_irq, tja1041_irq,
++			IRQF_TRIGGER_LOW | IRQF_DISABLED | IRQF_SAMPLE_RANDOM,
++			dev_name(&amp;tja-&gt;cantr.dev), tja);
++	if (ret &lt; 0)
++		dev_err(&amp;tja-&gt;cantr.dev,
++			&quot;request_irq(%i) failed\n&quot;, tja-&gt;err_irq);
++	return ret;
++}
++
++/* WorkQueue to allow calling can_transceiver_alert() */
++static void tja1041_work(struct work_struct *work)
++{
++	struct tja1041 *tja = container_of(work, struct tja1041, work);
++
++	can_transceiver_alert(&amp;tja-&gt;cantr, CAN_ERR_TRX_UNKNOWN_ERROR);
++	/*
++	 * we know the irq is disabled, but support that
++	 * can_transceiver_alert() will eventually call set_mode(OFF)
++	 * until this is true, it's a lot easier to
++	 * call free_irq from there.
++	 */
++}
++
++static int tja1041_get_max_bitrate(struct can_transceiver *cantr)
++{
++	return 1000000;
++}
++
++static int tja1041_get_state(struct can_transceiver *cantr)
++{
++	struct tja1041 *tja = to_tja1041(cantr);
++	int ret;
++
++	/* validate err input */
++	ret = tja1041_validate_gpio(tja, 4);
++	if (ret &lt; 0)
++		return ret;
++	if (gpio_get_value(tja-&gt;err))
++		/* no error */
++		return 0;
++	return CAN_ERR_TRX_UNKNOWN_ERROR;
++}
++
++static int tja1041_set_mode(struct can_transceiver *cantr, int mode)
++{
++	struct tja1041 *tja = to_tja1041(cantr);
++	int ret;
++
++	ret = tja1041_get_state(cantr);
++	if (ret &lt; 0)
++		return ret;
++	if ((ret &gt; 0) &amp;&amp; (mode != CANTR_MODE_OFF))
++		/* in error condition, cancel netdev_open() */
++		return -ECANCELED;
++
++	/* validate stb &amp; en */
++	ret = tja1041_validate_gpio(tja, 3);
++	if (ret &lt; 0)
++		return ret;
++
++	switch (mode) {
++	case CANTR_MODE_ON:
++		if (tja-&gt;stb &gt;= 0)
++			/* to to pwon mode */
++			gpio_set_value(tja-&gt;stb, 1);
++		/* goto normal mode */
++		gpio_set_value(tja-&gt;en, 1);
++		ret = tja1041_setup_irq(&amp;tja-&gt;cantr);
++		if (ret &lt; 0)
++			goto fail_irq;
++		break;
++	case CANTR_MODE_OFF:
++		tja1041_free_irq(&amp;tja-&gt;cantr);
++fail_irq:
++		/* goto pwon mode */
++		gpio_set_value(tja-&gt;en, 0);
++		if (tja-&gt;stb &gt;= 0)
++			/* to to standby mode */
++			gpio_set_value(tja-&gt;stb, 0);
++		break;
++	default:
++		return -ENOTSUPP;
++	}
++	return ret;
++}
++
++static int tja1041_probe(struct platform_device *pdev)
++{
++	struct tja1041 *tja;
++	const struct tja1041_platform_data *pdata = pdev-&gt;dev.platform_data;
++	int ret;
++
++	tja = kzalloc(sizeof(*tja), GFP_KERNEL);
++	if (!tja) {
++		ret = -ENOMEM;
++		goto fail_mem;
++	}
++	tja-&gt;cantr.dev.parent = &amp;pdev-&gt;dev;
++	tja-&gt;cantr.set_mode = tja1041_set_mode;
++	tja-&gt;cantr.get_state = tja1041_get_state;
++	tja-&gt;cantr.get_max_bitrate = tja1041_get_max_bitrate;
++
++	tja-&gt;stb = pdata-&gt;stb;
++	tja-&gt;en = pdata-&gt;en;
++	tja-&gt;err = pdata-&gt;err;
++	tja-&gt;err_irq = -1;
++	tja-&gt;gpio_valid = 0;
++
++	ret = can_transceiver_register(&amp;tja-&gt;cantr);
++	if (ret &lt; 0)
++		goto fail_register;
++	/*
++	 * initial request for gpio
++	 * don't fail when it does not succeed, because the gpio may
++	 * come from future probed gpio_chips.
++	 */
++	tja1041_validate_gpio(tja, ~0);
++	platform_set_drvdata(pdev, &amp;tja-&gt;cantr);
++
++	INIT_WORK(&amp;tja-&gt;work, tja1041_work);
++
++	if (pdata-&gt;match)
++		can_transceiver_set_match_name(&amp;tja-&gt;cantr, pdata-&gt;match);
++	return 0;
++fail_register:
++	kfree(tja);
++fail_mem:
++	return ret;
++}
++
++static int tja1041_remove(struct platform_device *pdev)
++{
++	struct can_transceiver *cantr = platform_get_drvdata(pdev);
++	struct tja1041 *tja = to_tja1041(cantr);
++
++	cancel_work_sync(&amp;tja-&gt;work);
++	platform_set_drvdata(pdev, 0);
++	if (!cantr)
++		return 0;
++
++	can_transceiver_unregister(&amp;tja-&gt;cantr);
++	if (tja-&gt;stb &gt;= 0) {
++		gpio_direction_input(tja-&gt;stb);
++		gpio_free(tja-&gt;stb);
++	}
++	gpio_direction_input(tja-&gt;en);
++	gpio_free(tja-&gt;en);
++	gpio_direction_input(tja-&gt;err);
++	gpio_free(tja-&gt;err);
++
++	kfree(tja);
++	return 0;
++}
++
++static void tja1041_shutdown(struct platform_device *pdev)
++{
++	struct can_transceiver *cantr = platform_get_drvdata(pdev);
++	struct tja1041 *tja = to_tja1041(cantr);
++
++	/* when still active, enter sleep mode */
++	if (tja-&gt;stb &gt;= 0)
++		/* goto sleep mode */
++		gpio_set_value(tja-&gt;stb, 0);
++}
++
++
++static struct platform_driver tja1041_driver = {
++	.driver.name = &quot;tja1041&quot;,
++	.probe = tja1041_probe,
++	.remove = tja1041_remove,
++	.shutdown = tja1041_shutdown,
++};
++MODULE_ALIAS(&quot;platform:tja1041&quot;);
++
++static int __init tja1041_start_mod(void)
++{
++	return platform_driver_register(&amp;tja1041_driver);
++}
++
++static void __exit tja1041_stop_mod(void)
++{
++	platform_driver_unregister(&amp;tja1041_driver);
++}
++
++module_init(tja1041_start_mod);
++module_exit(tja1041_stop_mod);
++
++MODULE_AUTHOR(&quot;Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;&quot;);
++MODULE_DESCRIPTION(&quot;TJA1041 CAN transceiver support&quot;);
++MODULE_LICENSE(&quot;GPL&quot;);
++
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003264.html">[PATCH 2/5] PCA82C251 driver
+</A></li>
+	<LI>Next message: <A HREF="003266.html">[Patch 4/5] include/linux update
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3265">[ date ]</a>
+              <a href="thread.html#3265">[ thread ]</a>
+              <a href="subject.html#3265">[ subject ]</a>
+              <a href="author.html#3265">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

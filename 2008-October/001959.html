@@ -1,0 +1,250 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] [CAN] remove obsolete pcm027 driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20%5BCAN%5D%20remove%20obsolete%20pcm027%20driver&In-Reply-To=%3C1223979121-2686-4-git-send-email-mkl%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001958.html">
+   <LINK REL="Next"  HREF="001964.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] [CAN] remove obsolete pcm027 driver</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20%5BCAN%5D%20remove%20obsolete%20pcm027%20driver&In-Reply-To=%3C1223979121-2686-4-git-send-email-mkl%40pengutronix.de%3E"
+       TITLE="[PATCH] [CAN] remove obsolete pcm027 driver">mkl at pengutronix.de
+       </A><BR>
+    <I>Tue Oct 14 12:12:01 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001958.html">[PATCH] [CAN] remove pcm027 and activate platform driver
+</A></li>
+        <LI>Next message: <A HREF="001964.html">[RFC] fixup some sparse problems
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1959">[ date ]</a>
+              <a href="thread.html#1959">[ thread ]</a>
+              <a href="subject.html#1959">[ subject ]</a>
+              <a href="author.html#1959">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch removes the obsolete pcm027 driver.
+
+Signed-off-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+---
+ drivers/net/can/sja1000/pcm027.c |  172 --------------------------------------
+ 1 files changed, 0 insertions(+), 172 deletions(-)
+ delete mode 100644 drivers/net/can/sja1000/pcm027.c
+
+diff --git a/drivers/net/can/sja1000/pcm027.c b/drivers/net/can/sja1000/pcm027.c
+deleted file mode 100644
+index 21008fe..0000000
+--- a/drivers/net/can/sja1000/pcm027.c
++++ /dev/null
+@@ -1,172 +0,0 @@
+-/*
+- * Copyright (C) 2007 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+- *
+- * Copyright (C) 2005 Sascha Hauer, Pengutronix
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the version 2 of the GNU General Public License
+- * as published by the Free Software Foundation
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- */
+-
+-#include &lt;linux/kernel.h&gt;
+-#include &lt;linux/module.h&gt;
+-#include &lt;linux/interrupt.h&gt;
+-#include &lt;linux/netdevice.h&gt;
+-#include &lt;linux/delay.h&gt;
+-#include &lt;linux/pci.h&gt;
+-#include &lt;linux/platform_device.h&gt;
+-#include &lt;linux/can.h&gt;
+-#include &lt;linux/can/dev.h&gt;
+-#include &lt;linux/io.h&gt;
+-
+-#include &quot;sja1000.h&quot;
+-
+-#define DRV_NAME &quot;can-pcm027&quot;
+-
+-MODULE_AUTHOR(&quot;Sascha Hauer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;&quot;);
+-MODULE_DESCRIPTION(&quot;Socket-CAN driver for Phytec PCM027 board&quot;);
+-MODULE_SUPPORTED_DEVICE(&quot;Phytec PCM027 board&quot;);
+-MODULE_LICENSE(&quot;GPL v2&quot;);
+-
+-#define PCM027_CAN_CLOCK  (16000000 / 2)
+-
+-#define PCM027_OCR	  (OCR_TX1_PULLDOWN | OCR_TX0_PUSHPULL)
+-#define PCM027_CDR	  CDR_CBP
+-
+-static u8 pcm027_read_reg(struct net_device *dev, int reg)
+-{
+-	return ioread8(dev-&gt;base_addr + reg);
+-}
+-
+-static void pcm027_write_reg(struct net_device *dev, int reg, u8 val)
+-{
+-	iowrite8(val, dev-&gt;base_addr + reg);
+-}
+-
+-static int pcm027_probe(struct platform_device *pdev)
+-{
+-	int err, irq;
+-	void __iomem *addr = 0;
+-	struct net_device *dev;
+-	struct sja1000_priv *priv;
+-	struct resource *res;
+-
+-	err = -ENODEV;
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+-	irq = platform_get_irq(pdev, 0);
+-	if (!res || !irq)
+-		goto exit;
+-
+-	err = -EBUSY;
+-	if (!request_mem_region(res-&gt;start, res-&gt;end - res-&gt;start + 1,
+-				DRV_NAME)) {
+-		goto exit;
+-	}
+-
+-	err = -ENOMEM;
+-	addr = ioremap_nocache(res-&gt;start, res-&gt;end - res-&gt;start + 1);
+-	if (!addr)
+-		goto exit_release;
+-
+-	dev = alloc_sja1000dev(0);
+-	if (!dev)
+-		goto exit_iounmap;
+-
+-	priv = netdev_priv(dev);
+-
+-	priv-&gt;read_reg = pcm027_read_reg;
+-	priv-&gt;write_reg = pcm027_write_reg;
+-	priv-&gt;can.bittiming.clock = PCM027_CAN_CLOCK;
+-	priv-&gt;ocr = PCM027_OCR;
+-	priv-&gt;cdr = PCM027_CDR;
+-
+-	dev-&gt;irq = irq;
+-	dev-&gt;base_addr = (unsigned long)addr;
+-
+-	dev_set_drvdata(&amp;pdev-&gt;dev, dev);
+-
+-	err = register_sja1000dev(dev);
+-	if (err) {
+-		dev_err(&amp;pdev-&gt;dev, &quot;registering %s failed (err=%d)\n&quot;,
+-			DRV_NAME, err);
+-		goto exit_free;
+-	}
+-
+-	dev_info(&amp;pdev-&gt;dev, &quot;%s device registered (base_addr=%#lx, irq=%d)\n&quot;,
+-		 DRV_NAME, dev-&gt;base_addr, dev-&gt;irq);
+-	return 0;
+-
+-exit_free:
+-	free_sja1000dev(dev);
+-exit_iounmap:
+-	iounmap(addr);
+-exit_release:
+-	release_mem_region(res-&gt;start, res-&gt;end - res-&gt;start + 1);
+-exit:
+-	return err;
+-}
+-
+-static int pcm027_remove(struct platform_device *pdev)
+-{
+-	struct net_device *dev = dev_get_drvdata(&amp;pdev-&gt;dev);
+-	struct resource *res;
+-
+-	dev_set_drvdata(&amp;pdev-&gt;dev, NULL);
+-	unregister_sja1000dev(dev);
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+-	release_mem_region(res-&gt;start, res-&gt;end - res-&gt;start + 1);
+-
+-	if (dev-&gt;base_addr)
+-		iounmap((void *)dev-&gt;base_addr);
+-
+-	free_sja1000dev(dev);
+-
+-	return 0;
+-}
+-
+-static int pcm027_suspend(struct platform_device *pdev,
+-				   pm_message_t state)
+-{
+-	dev_err(&amp;pdev-&gt;dev, &quot;suspend not implented\n&quot;);
+-	return 0;
+-}
+-
+-
+-static int pcm027_resume(struct platform_device *pdev)
+-{
+-	dev_err(&amp;pdev-&gt;dev, &quot;resume not implemented\n&quot;);
+-	return 0;
+-}
+-
+-static struct platform_driver pcm027_driver = {
+-	.probe = pcm027_probe,
+-	.remove = pcm027_remove,
+-	.suspend = pcm027_suspend,
+-	.resume = pcm027_resume,
+-	.driver = {
+-		.name = &quot;pcm027can&quot;,
+-		.owner = THIS_MODULE,
+-	},
+-};
+-
+-static int __init pcm027_init(void)
+-{
+-	return platform_driver_register(&amp;pcm027_driver);
+-}
+-
+-static void __exit pcm027_exit(void)
+-{
+-	platform_driver_unregister(&amp;pcm027_driver);
+-}
+-
+-module_init(pcm027_init);
+-module_exit(pcm027_exit);
+-- 
+1.5.6.5
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001958.html">[PATCH] [CAN] remove pcm027 and activate platform driver
+</A></li>
+	<LI>Next message: <A HREF="001964.html">[RFC] fixup some sparse problems
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1959">[ date ]</a>
+              <a href="thread.html#1959">[ thread ]</a>
+              <a href="subject.html#1959">[ subject ]</a>
+              <a href="author.html#1959">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

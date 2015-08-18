@@ -1,0 +1,179 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> problem with SLCAN
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20problem%20with%20SLCAN&In-Reply-To=%3C46D016D8.4060101%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000628.html">
+   <LINK REL="Next"  HREF="000633.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>problem with SLCAN</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20problem%20with%20SLCAN&In-Reply-To=%3C46D016D8.4060101%40hartkopp.net%3E"
+       TITLE="problem with SLCAN">socketcan at hartkopp.net
+       </A><BR>
+    <I>Sat Aug 25 13:47:36 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000628.html">problem with SLCAN
+</A></li>
+        <LI>Next message: <A HREF="000633.html">Please Confirm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#662">[ date ]</a>
+              <a href="thread.html#662">[ thread ]</a>
+              <a href="subject.html#662">[ subject ]</a>
+              <a href="author.html#662">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Marc Kleine-Budde wrote:
+&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> Yesterday I tried to get the SLCAN running on a stock 2.6.22.1, my step
+</I>&gt;<i> were:
+</I>&gt;<i>
+</I>&gt;<i> 1) plug the CAN dongle into USB socket
+</I>&gt;<i> 2) the kernel discovered the USB&lt;-&gt;Serial adapter and the port shows up
+</I>&gt;<i>    as /dev/ttyUSB0.
+</I>&gt;<i> 3) load slcan.ko
+</I>&gt;<i> 4) use slcan_attach (can-utils/slcan_attach.c revision 456):
+</I>&gt;<i>    ./slcan_attach /dev/ttyUSB0 as root
+</I>&gt;<i> 5) ifconfig slc0 shows an interface
+</I>&gt;<i> 6) ifconfig slc0 up fails with -ENODEV.
+</I>&gt;<i>
+</I>&gt;<i> I tracked down the probem to slcan_close() which sets sl-&gt;tty = NULL;
+</I>&gt;<i>
+</I>&gt;<i> In detail:
+</I>&gt;<i>
+</I>&gt;<i> In step 4) the userspace util opens /dev/ttyUSB0 an switches the line
+</I>&gt;<i> disc with an ioctl. I think this goes into slcan_open() in the kernel.
+</I>&gt;<i>
+</I>&gt;<i> There a netdev is allocated and registered and sl-&gt;tty is set to the tty
+</I>&gt;<i> context we're serving. Then the ioctl return with success to userspace
+</I>&gt;<i> and the userspace util exists happily :).
+</I>&gt;<i>
+</I>&gt;<i> The problem is that the filedescriptor refering to /dev/ttyUSB0 is also
+</I>&gt;<i> closed (in the util with an explicid close). This close is handled down
+</I>&gt;<i> to slcan_close() in the kernel. In this function sl-&gt;tty is set to NULL.
+</I>&gt;<i> But the netdev is still registered, see step 5, ifconfig is still happy.
+</I>&gt;<i>
+</I>&gt;<i> Now I want to bring up the interface. In slc_open() we see a
+</I>&gt;<i>         if (sl-&gt;tty==NULL)
+</I>&gt;<i>                 return -ENODEV;
+</I>&gt;<i> which is fatal in my situation, because sl-&gt;tty is NULL.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Have I missed something, is the common usecase different. Is there a
+</I>&gt;<i> different userspace programm somewhere.
+</I>&gt;<i>   
+</I>
+Hi Marc,
+
+the slcan driver is just an adaption of the slip.c driver and hold's all
+the insufficiencies that come with the slip.c driver :-/
+
+The slcan driver can only handle the encapsulation and decapsulation of
+the 'ASCII-CAN-frames' and is not able to e.g. set the baudrate.
+Therefore i always use the slcan driver like this:
+
+1) plug the CAN dongle into USB socket
+2) the kernel discovered the USB&lt;-&gt;Serial adapter and the port shows up
+   as /dev/ttyUSB0.
+3) load slcan.ko
+
+3a) start your favourite serial terminal programm (e.g. minicom) on /dev/ttyUSB0
+3b) check the proper communication the serial CAN adaptor
+3c) set the baudrate (e.g. with &quot;S6&quot; and start the communication with the &quot;O&quot; open command)
+
+At this point you can see the received CAN data frames in your terminal programm.
+
+4) use slcan_attach (can-utils/slcan_attach.c revision 456):
+   ./slcan_attach /dev/ttyUSB0 as root
+
+Now the ASCII stream is redirected to the slcan driver.
+The terminal programm just remains open (which is surely the solution of your remarked issue). 
+
+5) ifconfig slc0 shows an interface
+6) ifconfig slc0 up works fine :)
+
+After detaching the slc0 with ./slcan_attach -d ... the ASCII stream is enabled on the terminal programm again.
+
+Finally the slcan driver is a working proof of concept based on the slip driver but the settings of baudrates and all these things done by the pppd (e.g. to hold the /dev/ttyUSB0 open) are currently missing.
+
+See some comments in my SVN commit (that should better have gone into some README.slcan :-)
+
+<A HREF="https://lists.berlios.de/pipermail/socketcan-commit/2007-February/000140.html">https://lists.berlios.de/pipermail/socketcan-commit/2007-February/000140.html</A>
+
+
+&gt;<i> P.S.: Which USB CAN devices are compatible with this driver?
+</I>
+See the supported devices in my collected protocol comparison under
+
+<A HREF="http://developer.berlios.de/project/showfiles.php?group_id=6475&amp;release_id=13040">http://developer.berlios.de/project/showfiles.php?group_id=6475&amp;release_id=13040</A>
+
+As you can see here the dark green marked lines are directly handled by
+the slcan driver.
+This CAN/ASCII protocol is commonly known under &quot;Lawicel Protocol&quot;
+(www.can232.com, www.canusb.com) as these guys introduced this kind of
+ASCII encapsulation of CAN-data and CAN-controll. The slcan driver
+supports only the really common commands for sending and receiving
+CAN-frames at CAN-frame ASCII stream level for this CAN adapter class.
+
+&gt;<i> What about
+</I>&gt;<i> other non compatibel CAN devices, the slcan driver should be made
+</I>&gt;<i> modular in some way.
+</I>&gt;<i>   
+</I>
+In what way? As stated above the slcan driver is no magic thing and only
+supports the CAN _data_ ASCII encapsulation and not even the settings of
+baudrate (which analogue to SLIP should not be made on this layer). I
+appreciate the current slcan driver to be that simple as it also covers
+a bunch of existing CAN 'serial' adaptors. Btw. i remember there was a
+discussion about some kind of binary protocol over a USB/serial adaptor
+... so IMHO would see two approaches:
+
+1. Implement a new (non ASCII) protocol into the slcan driver, which may
+support some more error handling in the data stream handling than the
+current slcan adapters do. But it should not break with the baudrate
+setting outside the 'attached' mode.
+
+2. Move the new adaptor to support the Lawicel protocol and extend the
+protocol for the missing functionalities that are needed.
+
+Best regards,
+Oliver
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000628.html">problem with SLCAN
+</A></li>
+	<LI>Next message: <A HREF="000633.html">Please Confirm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#662">[ date ]</a>
+              <a href="thread.html#662">[ thread ]</a>
+              <a href="subject.html#662">[ subject ]</a>
+              <a href="author.html#662">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

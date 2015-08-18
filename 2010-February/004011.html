@@ -1,0 +1,252 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC] can: netlink support for bus-error reporting and counters
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20can%3A%20netlink%20support%20for%20bus-error%20reporting%20and%20counters&In-Reply-To=%3C4B731A2B.1010804%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004014.html">
+   <LINK REL="Next"  HREF="004015.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC] can: netlink support for bus-error reporting and counters</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20can%3A%20netlink%20support%20for%20bus-error%20reporting%20and%20counters&In-Reply-To=%3C4B731A2B.1010804%40grandegger.com%3E"
+       TITLE="[RFC] can: netlink support for bus-error reporting and counters">wg at grandegger.com
+       </A><BR>
+    <I>Wed Feb 10 21:42:19 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004014.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+        <LI>Next message: <A HREF="004015.html">[RFC] can: netlink support for bus-error reporting and counters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4011">[ date ]</a>
+              <a href="thread.html#4011">[ thread ]</a>
+              <a href="subject.html#4011">[ subject ]</a>
+              <a href="author.html#4011">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This RFC patch makes the bus-error reporting configurable and allows to
+retrieve the CAN TX and RX bus error counters via netlink interface.
+I have addded support for the SJA1000. The TX and RX bus error counters
+are also copied to data[6..7] of error messages when state changes are
+reported. Here is the output from my test session:
+
+# ./ip link set can0 up type can bitrate 500000 berr-reporting on
+
+# ./ip -d -s link show can0
+2: can0: &lt;NOARP,UP,LOWER_UP,ECHO&gt; mtu 16 qdisc pfifo_fast state UNKNOWN qlen 10
+    link/can
+    can &lt;BERR-REPORTING&gt; state ERROR-PASSIVE (berr-counter tx 128 rx 0) restart-ms 0
+    bitrate 500000 sample-point 0.875
+    tq 125 prop-seg 6 phase-seg1 7 phase-seg2 2 sjw 1
+    sja1000: tseg1 1..16 tseg2 1..8 sjw 1..4 brp 1..64 brp-inc 1
+    clock 8000000
+    re-started bus-errors arbit-lost error-warn error-pass bus-off
+    0          54101      0          1          1          0
+    RX: bytes  packets  errors  dropped overrun mcast
+    432808     54101    54101   0       0       0
+    TX: bytes  packets  errors  dropped carrier collsns
+    0          0        0       0       0       0
+
+# ifconfig can0 down
+# ./ip link set can0 up type can berr-reporting off
+# ./candump -t d any,0:0,#FFFFFFFF
+ (0.000000)  can0  20000004  [8] 00 08 00 00 00 00 60 00   ERRORFRAME
+ (0.000474)  can0  20000004  [8] 00 20 00 00 00 00 80 00   ERRORFRAME
+                                                   ^^ ^^
+						    \  \___ rxerr
+						     \_____ txerr
+
+The patch for iproute2 will follow.
+
+Please comment?
+
+Wolfgang.
+
+---
+
+diff --git a/drivers/net/can/dev.c b/drivers/net/can/dev.c
+index f08f120..20ae32e 100644
+--- a/drivers/net/can/dev.c
++++ b/drivers/net/can/dev.c
+@@ -574,6 +574,7 @@ static const struct nla_policy can_policy[IFLA_CAN_MAX + 1] = {
+ 	[IFLA_CAN_BITTIMING_CONST]
+ 				= { .len = sizeof(struct can_bittiming_const) },
+ 	[IFLA_CAN_CLOCK]	= { .len = sizeof(struct can_clock) },
++	[IFLA_CAN_BERR_COUNTER]	= { .len = sizeof(struct can_berr_counter) },
+ };
+ 
+ static int can_changelink(struct net_device *dev,
+@@ -649,6 +650,8 @@ static size_t can_get_size(const struct net_device *dev)
+ 	size += nla_total_size(sizeof(u32));  /* IFLA_CAN_RESTART_MS */
+ 	size += sizeof(struct can_bittiming); /* IFLA_CAN_BITTIMING */
+ 	size += sizeof(struct can_clock);     /* IFLA_CAN_CLOCK */
++	if (priv-&gt;do_get_berr_counter)        /* IFLA_CAN_GET_BERR_COUNTER */
++		size += sizeof(struct can_berr_counter);
+ 	if (priv-&gt;bittiming_const)	      /* IFLA_CAN_BITTIMING_CONST */
+ 		size += sizeof(struct can_bittiming_const);
+ 
+@@ -659,6 +662,7 @@ static int can_fill_info(struct sk_buff *skb, const struct net_device *dev)
+ {
+ 	struct can_priv *priv = netdev_priv(dev);
+ 	struct can_ctrlmode cm = {.flags = priv-&gt;ctrlmode};
++	struct can_berr_counter bc;
+ 	enum can_state state = priv-&gt;state;
+ 
+ 	if (priv-&gt;do_get_state)
+@@ -669,6 +673,8 @@ static int can_fill_info(struct sk_buff *skb, const struct net_device *dev)
+ 	NLA_PUT(skb, IFLA_CAN_BITTIMING,
+ 		sizeof(priv-&gt;bittiming), &amp;priv-&gt;bittiming);
+ 	NLA_PUT(skb, IFLA_CAN_CLOCK, sizeof(cm), &amp;priv-&gt;clock);
++	if (priv-&gt;do_get_berr_counter &amp;&amp; !priv-&gt;do_get_berr_counter(dev, &amp;bc))
++		NLA_PUT(skb, IFLA_CAN_BERR_COUNTER, sizeof(bc), &amp;bc);
+ 	if (priv-&gt;bittiming_const)
+ 		NLA_PUT(skb, IFLA_CAN_BITTIMING_CONST,
+ 			sizeof(*priv-&gt;bittiming_const), priv-&gt;bittiming_const);
+diff --git a/drivers/net/can/sja1000/sja1000.c b/drivers/net/can/sja1000/sja1000.c
+index ace103a..145b1a7 100644
+--- a/drivers/net/can/sja1000/sja1000.c
++++ b/drivers/net/can/sja1000/sja1000.c
+@@ -130,8 +130,12 @@ static void set_normal_mode(struct net_device *dev)
+ 		/* check reset bit */
+ 		if ((status &amp; MOD_RM) == 0) {
+ 			priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
+-			/* enable all interrupts */
+-			priv-&gt;write_reg(priv, REG_IER, IRQ_ALL);
++			/* enable interrupts */
++			if (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_BERR_REPORTING)
++				priv-&gt;write_reg(priv, REG_IER, IRQ_ALL);
++			else
++				priv-&gt;write_reg(priv, REG_IER,
++						IRQ_ALL &amp; ~IRQ_BEI);
+ 			return;
+ 		}
+ 
+@@ -203,6 +207,17 @@ static int sja1000_set_bittiming(struct net_device *dev)
+ 	return 0;
+ }
+ 
++static int sja1000_get_berr_counter(const struct net_device *dev,
++				    struct can_berr_counter *bec)
++{
++	struct sja1000_priv *priv = netdev_priv(dev);
++
++	bec-&gt;txerr = priv-&gt;read_reg(priv, REG_TXERR);
++	bec-&gt;rxerr = priv-&gt;read_reg(priv, REG_RXERR);
++
++	return 0;
++}
++
+ /*
+  * initialize SJA1000 chip:
+  *   - reset chip
+@@ -437,6 +452,8 @@ static int sja1000_err(struct net_device *dev, uint8_t isrc, uint8_t status)
+ 				CAN_ERR_CRTL_TX_PASSIVE :
+ 				CAN_ERR_CRTL_RX_PASSIVE;
+ 		}
++		cf-&gt;data[6] = txerr;
++		cf-&gt;data[7] = rxerr;
+ 	}
+ 
+ 	priv-&gt;can.state = state;
+@@ -567,7 +584,9 @@ struct net_device *alloc_sja1000dev(int sizeof_priv)
+ 	priv-&gt;can.bittiming_const = &amp;sja1000_bittiming_const;
+ 	priv-&gt;can.do_set_bittiming = sja1000_set_bittiming;
+ 	priv-&gt;can.do_set_mode = sja1000_set_mode;
+-	priv-&gt;can.ctrlmode_supported = CAN_CTRLMODE_3_SAMPLES;
++	priv-&gt;can.do_get_berr_counter = sja1000_get_berr_counter;
++	priv-&gt;can.ctrlmode_supported = CAN_CTRLMODE_3_SAMPLES |
++		CAN_CTRLMODE_BERR_REPORTING;
+ 
+ 	if (sizeof_priv)
+ 		priv-&gt;priv = (void *)priv + sizeof(struct sja1000_priv);
+diff --git a/include/linux/can/dev.h b/include/linux/can/dev.h
+index c8c660a..6e5a7f0 100644
+--- a/include/linux/can/dev.h
++++ b/include/linux/can/dev.h
+@@ -47,6 +47,8 @@ struct can_priv {
+ 	int (*do_set_mode)(struct net_device *dev, enum can_mode mode);
+ 	int (*do_get_state)(const struct net_device *dev,
+ 			    enum can_state *state);
++	int (*do_get_berr_counter)(const struct net_device *dev,
++				   struct can_berr_counter *bec);
+ 
+ 	unsigned int echo_skb_max;
+ 	struct sk_buff **echo_skb;
+diff --git a/include/linux/can/netlink.h b/include/linux/can/netlink.h
+index c818335..3250de9 100644
+--- a/include/linux/can/netlink.h
++++ b/include/linux/can/netlink.h
+@@ -70,6 +70,14 @@ enum can_state {
+ };
+ 
+ /*
++ * CAN bus error counters
++ */
++struct can_berr_counter {
++	__u16 txerr;
++	__u16 rxerr;
++};
++
++/*
+  * CAN controller mode
+  */
+ struct can_ctrlmode {
+@@ -77,10 +85,11 @@ struct can_ctrlmode {
+ 	__u32 flags;
+ };
+ 
+-#define CAN_CTRLMODE_LOOPBACK	0x1	/* Loopback mode */
+-#define CAN_CTRLMODE_LISTENONLY	0x2 	/* Listen-only mode */
+-#define CAN_CTRLMODE_3_SAMPLES	0x4	/* Triple sampling mode */
+-#define CAN_CTRLMODE_ONE_SHOT	0x8	/* One-Shot mode */
++#define CAN_CTRLMODE_LOOPBACK		0x01	/* Loopback mode */
++#define CAN_CTRLMODE_LISTENONLY		0x02 	/* Listen-only mode */
++#define CAN_CTRLMODE_3_SAMPLES		0x04	/* Triple sampling mode */
++#define CAN_CTRLMODE_ONE_SHOT		0x08	/* One-Shot mode */
++#define CAN_CTRLMODE_BERR_REPORTING	0x10	/* Bus-error reporting */
+ 
+ /*
+  * CAN device statistics
+@@ -106,6 +115,7 @@ enum {
+ 	IFLA_CAN_CTRLMODE,
+ 	IFLA_CAN_RESTART_MS,
+ 	IFLA_CAN_RESTART,
++	IFLA_CAN_BERR_COUNTER,
+ 	__IFLA_CAN_MAX
+ };
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004014.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+	<LI>Next message: <A HREF="004015.html">[RFC] can: netlink support for bus-error reporting and counters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4011">[ date ]</a>
+              <a href="thread.html#4011">[ thread ]</a>
+              <a href="subject.html#4011">[ subject ]</a>
+              <a href="author.html#4011">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

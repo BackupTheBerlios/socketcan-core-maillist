@@ -1,0 +1,502 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] SJA1000 driver for the Kvaser PCI Card
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-March/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20SJA1000%20driver%20for%20the%20Kvaser%20PCI%20Card&In-Reply-To=%3C47E96F3C.5080707%40cnw.se%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001114.html">
+   <LINK REL="Next"  HREF="001116.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] SJA1000 driver for the Kvaser PCI Card</H1>
+    <B>Per Dal&#233;n</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20SJA1000%20driver%20for%20the%20Kvaser%20PCI%20Card&In-Reply-To=%3C47E96F3C.5080707%40cnw.se%3E"
+       TITLE="[PATCH] SJA1000 driver for the Kvaser PCI Card">per.dalen at cnw.se
+       </A><BR>
+    <I>Tue Mar 25 22:31:40 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001114.html">sja1000-iomem questions
+</A></li>
+        <LI>Next message: <A HREF="001116.html">[PATCH] SJA1000 driver for the Kvaser PCI Card
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1115">[ date ]</a>
+              <a href="thread.html#1115">[ thread ]</a>
+              <a href="subject.html#1115">[ subject ]</a>
+              <a href="author.html#1115">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch adds the SJA1000 driver for the PCI cards: PCIcan and PCIcanx 
+(1, 2 or 4 channel) from Kvaser (<A HREF="http://www.kvaser.com">http://www.kvaser.com</A>).
+It should also support the PCIEcan card (PCI Express), but I do not own 
+any card (yet;).
+
+
+Signed-off-by: Per Dal&#233;n &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">per.dalen at cnw.se</A>&gt;
+
+Index: drivers/net/can/sja1000/Makefile
+===================================================================
+--- cannetdriver26.orig/drivers/net/can/sja1000/Makefile
++++ cannetdriver26/drivers/net/can/sja1000/Makefile
+@@ -60,5 +60,6 @@
+obj-$(CONFIG_CAN_IXXAT_PCI) += ixxat_pci.o
+obj-$(CONFIG_CAN_PEAK_PCI) += peak_pci.o
+obj-$(CONFIG_CAN_PCM027) += pcm027.o
++obj-$(CONFIG_CAN_KVASER_PCI) += kvaser_pci.o
+
+endif
+Index: drivers/net/can/sja1000/kvaser_pci.c
+===================================================================
+--- /dev/null
++++ cannetdriver26/drivers/net/can/sja1000/kvaser_pci.c
+@@ -0,0 +1,393 @@
++/*
++ * Copyright (C) 2008 Per Dalen &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">per.dalen at cnw.se</A>&gt;
++ *
++ * Parts of this software are based on (derived) the following:
++ *
++ * - Kvaser linux driver, version 4.72 BETA
++ *   Copyright (C) 2002-2007 KVASER AB
++ *
++ * - Lincan driver, version 0.3.3, OCERA project
++ *   Copyright (C) 2004 Pavel Pisa
++ *   Copyright (C) 2001 Arnaud Westenberg
++ *
++ * - Socketcan SJA1000 drivers
++ *   Copyright (C) 2007 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
++ *   Copyright (c) 2002-2007 Volkswagen Group Electronic Research
++ *   Copyright (c) 2003 Matthias Brukner, Trajet Gmbh, Rebenring 33,
++ *   38106 Braunschweig, GERMANY
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software Foundation,
++ * Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
++ */
++
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/delay.h&gt;
++#include &lt;linux/pci.h&gt;
++#include &lt;linux/can.h&gt;
++#include &lt;linux/can/dev.h&gt;
++#include &lt;asm/io.h&gt;
++
++#include &quot;sja1000.h&quot;
++
++#define DRV_NAME  &quot;can-kvaser-pci&quot;
++
++MODULE_AUTHOR(&quot;Per Dalen &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">per.dalen at cnw.se</A>&gt;&quot;);
++MODULE_DESCRIPTION(&quot;Socket-CAN driver for KVASER PCAN PCI cards&quot;);
++MODULE_SUPPORTED_DEVICE(&quot;KVASER PCAN PCI CAN card&quot;);
++MODULE_LICENSE(&quot;GPL v2&quot;);
++
++#define MAX_NO_OF_CHANNELS        4 /* max no of channels on
++                                       a single card */
++
++struct kvaser_pci {
++       int channel;
++       struct pci_dev *pci_dev;
++       struct net_device *slave_dev[MAX_NO_OF_CHANNELS-1];
++       volatile void __iomem *conf_addr;
++       volatile void __iomem *res_addr;
++        u8 no_channels;
++        u8 xilinx_ver;
++};
++
++#define KVASER_PCI_MASTER         1 /* single or multi channel
++                                       master device */
++#define KVASER_PCI_CAN_CLOCK      (16000000 / 2)
++
++/*
++ * The board configuration is probably following:
++ * RX1 is connected to ground.
++ * TX1 is not connected.
++ * CLKO is not connected.
++ * Setting the OCR register to 0xDA is a good idea.
++ * This means  normal output mode , push-pull and the correct polarity.
++ */
++#define KVASER_PCI_OCR                   (OCR_TX0_PUSHPULL | 
+OCR_TX1_PUSHPULL)
++
++/*
++ * In the CDR register, you should set CBP to 1.
++ * You will probably also want to set the clock divider value to 0
++ * (meaning divide-by-2), the Pelican bit, and the clock-off bit
++ * (you will have no need for CLKOUT anyway).
++ */
++#define KVASER_PCI_CDR            (CDR_CBP | CDR_CLKOUT_MASK)
++
++/*
++ * These register values are valid for revision 14 of the Xilinx logic.
++ */
++#define XILINX_VERINT             7   /* Lower nibble simulate interrupts,
++                                         high nibble version number. */
++
++#define XILINX_PRESUMED_VERSION   14
++
++/*
++ * Important S5920 registers
++ */
++#define S5920_INTCSR              0x38
++#define S5920_PTCR                0x60
++#define INTCSR_ADDON_INTENABLE_M  0x2000
++
++
++#define KVASER_PCI_PORT_BYTES     0x20
++
++#define PCI_CONFIG_PORT_SIZE      0x80      /* size of the config 
+io-memory */
++#define PCI_PORT_SIZE             0x80      /* size of a channel 
+io-memory */
++#define PCI_PORT_XILINX_SIZE      0x08      /* size of a xilinx 
+io-memory */
++
++#define KVASER_PCI_VENDOR_ID_1    0x10e8    /* the PCI device and 
+vendor IDs */
++#define KVASER_PCI_DEVICE_ID_1    0x8406
++
++#define KVASER_PCI_VENDOR_ID_2    0x1a07    /* the PCI device and 
+vendor IDs */
++#define KVASER_PCI_DEVICE_ID_2    0x0008
++
++static struct pci_device_id kvaser_pci_tbl[] = {
++       {KVASER_PCI_VENDOR_ID_1, KVASER_PCI_DEVICE_ID_1, PCI_ANY_ID, 
+PCI_ANY_ID,},
++       {KVASER_PCI_VENDOR_ID_2, KVASER_PCI_DEVICE_ID_2, PCI_ANY_ID, 
+PCI_ANY_ID,},
++        { 0,}
++};
++
++MODULE_DEVICE_TABLE(pci, kvaser_pci_tbl);
++
++static u8 kvaser_pci_read_reg(struct net_device *dev, int port)
++{
++        return ioread8((void __iomem *)
++                    (dev-&gt;base_addr + port));
++}
++
++static void kvaser_pci_write_reg(struct net_device *dev, int port, u8 val)
++{
++       iowrite8(val, (void __iomem *)
++              (dev-&gt;base_addr + port));
++}
++
++static void kvaser_pci_disable_irq(struct net_device *dev)
++{
++       struct sja1000_priv *priv = netdev_priv(dev);
++       struct kvaser_pci *board = priv-&gt;priv;
++       u32 tmp;
++
++       /* Disable interrupts from card */
++       tmp = ioread32((void __iomem *)(board-&gt;conf_addr + S5920_INTCSR));
++       tmp &amp;= ~INTCSR_ADDON_INTENABLE_M;
++       iowrite32(tmp, (void __iomem *)(board-&gt;conf_addr + S5920_INTCSR));
++}
++
++static void kvaser_pci_enable_irq(struct net_device *dev)
++{
++       struct sja1000_priv *priv = netdev_priv(dev);
++       struct kvaser_pci *board = priv-&gt;priv;
++       u32 tmp;
++
++       /* Enable interrupts from card */
++       tmp = ioread32((void __iomem *)(board-&gt;conf_addr + S5920_INTCSR));
++       tmp |= INTCSR_ADDON_INTENABLE_M;
++       iowrite32(tmp, (void __iomem *)(board-&gt;conf_addr + S5920_INTCSR));
++}
++
++static int number_of_sja1000_chip(void __iomem * base_addr)
++{
++       u8 status;
++       int i;
++
++       for (i = 0; i &lt; MAX_NO_OF_CHANNELS; i++) {
++               /* reset chip */
++               iowrite8(MOD_RM, (void __iomem *)(base_addr + (i * 
+KVASER_PCI_PORT_BYTES) + REG_MOD));
++               status = ioread8((void __iomem *)(base_addr + (i * 
+KVASER_PCI_PORT_BYTES) + REG_MOD));
++               udelay(10);
++               /* check reset bit */
++               if (!(status &amp; MOD_RM)) {
++                       break;                               
++               }
++       }
++
++       return i;
++}
++
++static void kvaser_pci_del_chan(struct net_device *dev, int init_step)
++{
++       struct sja1000_priv *priv = netdev_priv(dev);
++       struct kvaser_pci *board;
++
++       if (!dev || !(priv = netdev_priv(dev)) || !(board = priv-&gt;priv))
++               return;
++
++       switch (init_step) {
++       case 0:
++               /* Full cleanup */
++               printk(&quot;Removing %s device %s\n&quot;, DRV_NAME, dev-&gt;name);
++               unregister_sja1000dev(dev);
++       case 4:
++               kvaser_pci_disable_irq(dev);
++       case 3:
++               pci_iounmap(board-&gt;pci_dev, (void __iomem 
+*)dev-&gt;base_addr);
++       case 2:
++               if (board-&gt;channel == KVASER_PCI_MASTER) {
++                       pci_iounmap(board-&gt;pci_dev, (void __iomem 
+*)board-&gt;conf_addr);
++                       pci_iounmap(board-&gt;pci_dev, (void __iomem 
+*)board-&gt;res_addr);
++               }
++       case 1:
++               free_sja1000dev(dev);
++               break;
++       }
++}
++
++static int kvaser_pci_add_chan(struct pci_dev *pdev, int channel,
++                            struct net_device **master_dev)
++{
++       struct net_device *dev;
++       struct sja1000_priv *priv;
++       struct kvaser_pci *board;
++       int err, init_step;
++
++       dev = alloc_sja1000dev(sizeof(struct kvaser_pci));
++       if (dev == NULL)
++               return -ENOMEM;
++       init_step = 1;
++
++       priv = netdev_priv(dev);
++       board = priv-&gt;priv;
++
++       board-&gt;pci_dev = pdev;
++       board-&gt;channel = channel;
++
++       if (channel == KVASER_PCI_MASTER) {
++
++               /*S5920*/
++               board-&gt;conf_addr = pci_iomap(pdev, 0, 
+PCI_CONFIG_PORT_SIZE);
++
++               if (board-&gt;conf_addr == 0) {
++                       err = -ENODEV;
++                       goto failure;
++               }
++
++               /*XILINX board wide address*/
++               board-&gt;res_addr = pci_iomap(pdev, 2, PCI_PORT_XILINX_SIZE);
++
++               if (board-&gt;res_addr == 0) {
++                       err = -ENOMEM;
++                       goto failure;
++               }
++
++               board-&gt;xilinx_ver = ioread8((void __iomem 
+*)(board-&gt;res_addr + XILINX_VERINT)) &gt;&gt; 4;
++               init_step = 2;
++
++               /* Assert PTADR# - we're in passive mode so the other 
+bits are not important */
++               iowrite32(0x80808080UL, (void __iomem 
+*)(board-&gt;conf_addr + S5920_PTCR));
++
++               /* Disable interrupts from card */
++               kvaser_pci_disable_irq(dev);
++               /* Enable interrupts from card */
++               kvaser_pci_enable_irq(dev);
++
++       } else {
++               struct sja1000_priv *master_priv = 
+netdev_priv(*master_dev);
++               struct kvaser_pci *master_board = master_priv-&gt;priv;
++               master_board-&gt;slave_dev[channel - KVASER_PCI_MASTER -1] 
+= dev;
++                board-&gt;conf_addr = master_board-&gt;conf_addr;
++                board-&gt;res_addr = master_board-&gt;res_addr;
++       }
++
++
++       dev-&gt;base_addr = (u32)pci_iomap(pdev, 1, PCI_PORT_SIZE);
++       if (dev-&gt;base_addr == 0) {
++               err = -ENOMEM;
++               goto failure;
++       }
++
++       if (channel != KVASER_PCI_MASTER) {
++               dev-&gt;base_addr += (channel - KVASER_PCI_MASTER) * 
+KVASER_PCI_PORT_BYTES;
++       }
++       init_step = 3;
++
++       priv-&gt;read_reg = kvaser_pci_read_reg;
++       priv-&gt;write_reg = kvaser_pci_write_reg;
++
++       priv-&gt;can.can_sys_clock = KVASER_PCI_CAN_CLOCK;
++
++       priv-&gt;ocr = KVASER_PCI_OCR;
++       priv-&gt;cdr = KVASER_PCI_CDR;
++
++       /* Register and setup interrupt handling */
++       dev-&gt;irq = pdev-&gt;irq;
++       init_step = 4;
++
++       printk(&quot;%s: base_addr=%#lx conf_addr=%p irq=%d\n&quot;, DRV_NAME,
++              dev-&gt;base_addr, board-&gt;conf_addr, dev-&gt;irq);
++
++       SET_NETDEV_DEV(dev, &amp;pdev-&gt;dev);
++
++       /* Register SJA1000 device */
++       err = register_sja1000dev(dev);
++       if (err) {
++               printk(KERN_ERR &quot;Registering %s device failed (err=%d)\n&quot;,
++                      DRV_NAME, err);
++               goto failure;
++       }
++
++       if (channel == KVASER_PCI_MASTER)
++               *master_dev = dev;
++
++       return 0;
++
++failure:
++       kvaser_pci_del_chan(dev, init_step);
++       return err;
++}
++
++static int __devinit kvaser_pci_init_one(struct pci_dev *pdev,
++                                      const struct pci_device_id *ent)
++{
++       int err;
++       struct net_device *master_dev = NULL;
++       struct sja1000_priv *priv;
++       struct kvaser_pci *board;
++       int i;
++
++       printk(&quot;%s: initializing device %04x:%04x\n&quot;,
++              DRV_NAME, pdev-&gt;vendor, pdev-&gt;device);
++
++       if ((err = pci_enable_device(pdev)))
++               goto failure;
++
++       if ((err = pci_request_regions(pdev, DRV_NAME)))
++               goto failure;
++
++       if ((err = kvaser_pci_add_chan(pdev, KVASER_PCI_MASTER, 
+&amp;master_dev)))
++               goto failure_cleanup;
++
++       priv = netdev_priv(master_dev);
++       board = priv-&gt;priv;
++
++        board-&gt;no_channels = number_of_sja1000_chip((void __iomem 
+*)master_dev-&gt;base_addr);
++
++       for (i = KVASER_PCI_MASTER + 1; i &lt; KVASER_PCI_MASTER + 
+board-&gt;no_channels; i++) {
++       if ((err = kvaser_pci_add_chan(pdev, i, &amp;master_dev)))
++               goto failure_cleanup;
++       }
++
++       printk(&quot;%s: xilinx version=%d number of channels=%d\n&quot;, DRV_NAME,
++              board-&gt;xilinx_ver, board-&gt;no_channels);
++
++       pci_set_drvdata(pdev, master_dev);
++       return 0;
++
++failure_cleanup:
++       if (master_dev)
++               kvaser_pci_del_chan(master_dev, 0);
++
++       pci_release_regions(pdev);
++
++failure:
++       return err;
++
++}
++
++static void __devexit kvaser_pci_remove_one(struct pci_dev *pdev)
++{
++       struct net_device *dev = pci_get_drvdata(pdev);
++       struct sja1000_priv *priv = netdev_priv(dev);
++       struct kvaser_pci *board = priv-&gt;priv;
++       int i;
++
++       for (i = 0; i &lt; board-&gt;no_channels - 1; i++) {
++               if (board-&gt;slave_dev[i])
++                       kvaser_pci_del_chan(board-&gt;slave_dev[i], 0);
++       }
++       kvaser_pci_del_chan(dev, 0);
++
++       pci_release_regions(pdev);
++       pci_disable_device(pdev);
++       pci_set_drvdata(pdev, NULL);
++}
++
++static struct pci_driver kvaser_pci_driver = {
++       .name = DRV_NAME,
++       .id_table = kvaser_pci_tbl,
++       .probe = kvaser_pci_init_one,
++       .remove = __devexit_p(kvaser_pci_remove_one),
++};
++
++static int __init kvaser_pci_init(void)
++{
++       return pci_register_driver(&amp;kvaser_pci_driver);
++}
++
++static void __exit kvaser_pci_exit(void)
++{
++       pci_unregister_driver(&amp;kvaser_pci_driver);
++}
++
++module_init(kvaser_pci_init);
++module_exit(kvaser_pci_exit);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001114.html">sja1000-iomem questions
+</A></li>
+	<LI>Next message: <A HREF="001116.html">[PATCH] SJA1000 driver for the Kvaser PCI Card
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1115">[ date ]</a>
+              <a href="thread.html#1115">[ thread ]</a>
+              <a href="subject.html#1115">[ subject ]</a>
+              <a href="author.html#1115">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

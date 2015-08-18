@@ -1,0 +1,133 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Self-reception
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Self-reception&In-Reply-To=%3C20101012065153.GA382%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004719.html">
+   <LINK REL="Next"  HREF="004721.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Self-reception</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Self-reception&In-Reply-To=%3C20101012065153.GA382%40e-circ.dyndns.org%3E"
+       TITLE="Self-reception">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Tue Oct 12 08:51:54 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004719.html">Self-reception
+</A></li>
+        <LI>Next message: <A HREF="004721.html">Self-reception
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4720">[ date ]</a>
+              <a href="thread.html#4720">[ thread ]</a>
+              <a href="subject.html#4720">[ subject ]</a>
+              <a href="author.html#4720">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+On Mon, Oct 11, 2010 at 05:14:20PM +0200, <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A> wrote:
+&gt;<i> Hello Kurt,
+</I>&gt;<i> 
+</I>&gt;<i> &gt; IMO, a CAN frame from another socket should be treated as coming from 
+</I>&gt;<i> &gt; another bus node.
+</I>&gt;<i> &gt; I know (J1939 is still in the queue) that some protocols may benefit from
+</I>&gt;<i> &gt; several sockets cooperating, but should that be exported to userspace?
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> I fully agree on that. Two different sockets shall behave as two 
+</I>&gt;<i> different CAN nodes on the same CAN bus even if they are opened
+</I>&gt;<i> on the same hardware. Taking that in to account vcan shall be actually
+</I>&gt;<i> called &quot;virtual CAN bus&quot; and not &quot;virtual CAN interface&quot;...
+</I>&gt;<i> 
+</I>&gt;<i> My understanding of &quot;self-reception&quot; per-socket option is that the
+</I>&gt;<i> messages send over the specific socket are not only received by
+</I>&gt;<i> other sockets on the same HW, but also by the original socket (so
+</I>&gt;<i> &quot;echo&quot; may be even better name for that). And the reason why I
+</I>&gt;<i> want to receive (some of) my own Tx messages is because I want
+</I>&gt;<i> to know *exactly* when whose messages where physically send over
+</I>&gt;<i> CAN bus. And that I am getting by reading the timestamp of my
+</I>&gt;<i> self-received message. And the per-message self-receive flag helps
+</I>&gt;<i> me to distinguish between Rx messages (coming from other CAN nodes
+</I>&gt;<i> or other sockets on the same CAN node) and my own Tx messages.
+</I>
+Thanks for the update. Seems like my understanding was right.
+
+&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Vladislav
+</I>
+Oliver, I assembled a patch showing my idea of what need to be done.
+never tested, never even compiled, it just shows my thinking.
+
+---
+ net/can/raw.c |    9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+
+Index: linux/net/can/raw.c
+===================================================================
+--- linux.orig/net/can/raw.c	2010-10-12 08:46:33.711192001 +0200
++++ linux/net/can/raw.c	2010-10-12 08:49:17.191192001 +0200
+@@ -94,20 +94,23 @@
+ 	return (struct raw_sock *)sk;
+ }
+ 
+-static void raw_rcv(struct sk_buff *skb, void *data)
++static void raw_rcv(struct sk_buff *oskb, void *data)
+ {
+ 	struct sock *sk = (struct sock *)data;
+ 	struct raw_sock *ro = raw_sk(sk);
+ 	struct sockaddr_can *addr;
++	struct sk_buff *skb; /* new */
+ 
+ 	/* check the received tx sock reference */
+-	if (!ro-&gt;recv_own_msgs &amp;&amp; skb-&gt;sk == sk)
++	if (!ro-&gt;recv_own_msgs &amp;&amp; oskb-&gt;sk == sk)
+ 		return;
+ 
+ 	/* clone the given skb to be able to enqueue it into the rcv queue */
+-	skb = skb_clone(skb, GFP_ATOMIC);
++	skb = skb_clone(oskb, GFP_ATOMIC);
+ 	if (!skb)
+ 		return;
++	if (oskb-&gt;sk == sk)
++		skb-&gt;msg_flags |= MSG_DONTROUTE;
+ 
+ 	/*
+ 	 *  Put the datagram to the queue so that raw_recvmsg() can
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004719.html">Self-reception
+</A></li>
+	<LI>Next message: <A HREF="004721.html">Self-reception
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4720">[ date ]</a>
+              <a href="thread.html#4720">[ thread ]</a>
+              <a href="subject.html#4720">[ subject ]</a>
+              <a href="author.html#4720">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

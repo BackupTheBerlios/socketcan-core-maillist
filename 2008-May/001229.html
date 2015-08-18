@@ -1,0 +1,142 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: Hardware independent bit timing
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20Hardware%20independent%20bit%20timing&In-Reply-To=%3C20080527190258.GM2212%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001228.html">
+   <LINK REL="Next"  HREF="001230.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: Hardware independent bit timing</H1>
+    <B>Robert Schwebel</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20Hardware%20independent%20bit%20timing&In-Reply-To=%3C20080527190258.GM2212%40pengutronix.de%3E"
+       TITLE="RFC: Hardware independent bit timing">r.schwebel at pengutronix.de
+       </A><BR>
+    <I>Tue May 27 21:02:58 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001228.html">RFC: Hardware independent bit timing
+</A></li>
+        <LI>Next message: <A HREF="001230.html">RFC: Hardware independent bit timing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1229">[ date ]</a>
+              <a href="thread.html#1229">[ thread ]</a>
+              <a href="subject.html#1229">[ subject ]</a>
+              <a href="author.html#1229">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tue, May 27, 2008 at 01:11:01PM +0200, Wolfgang Grandegger wrote:
+&gt;<i> As already pointed out, our current implementation has some problems and
+</I>&gt;<i> limitations. Here is a list of them and possible solutions:
+</I>&gt;<i> 
+</I>&gt;<i> o The standard bit timing is hardware dependent. The baud rate prescaler
+</I>&gt;<i>   field &quot;brp&quot; in &quot;struct can_bittime_std&quot; should be replaced with the
+</I>&gt;<i>   hardware independent time quantum tq as suggested by Vladislav:
+</I>&gt;<i> 
+</I>&gt;<i>   <A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-September/000682.html">https://lists.berlios.de/pipermail/socketcan-core/2007-September/000682.html</A>
+</I>&gt;<i>   <A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-September/000686.html">https://lists.berlios.de/pipermail/socketcan-core/2007-September/000686.html</A>
+</I>
+right
+
+&gt;<i> o The current can_calc_bittime() fails to calculate reasonable bit timing
+</I>&gt;<i>   parameters, e.g. for the MSCAN. We need a more robust and even simpler
+</I>&gt;<i>   calculation. Note that the function should just determine *reasonable* 
+</I>&gt;<i>   bit timing parameters. It should be small and simple because it lives in
+</I>&gt;<i>   the kernel. For optimized parameters, we should have another interface. 
+</I>&gt;<i>   I see two solutions:
+</I>&gt;<i> 
+</I>&gt;<i>   - Take the calculation from the RT-Socket-CAN project:
+</I>&gt;<i> 
+</I>&gt;<i>     <A HREF="http://www.rts.uni-hannover.de/xenomai/lxr/source/ksrc/drivers/can/rtcan_raw_dev.c#034">http://www.rts.uni-hannover.de/xenomai/lxr/source/ksrc/drivers/can/rtcan_raw_dev.c#034</A>
+</I>&gt;<i> 
+</I>&gt;<i>   - Take the calculation from the LinCAN project with some additional
+</I>&gt;<i>     heuristics as suggest by Pavel:
+</I>&gt;<i> 
+</I>&gt;<i>     <A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-October/000734.html">https://lists.berlios.de/pipermail/socketcan-core/2007-October/000734.html</A>
+</I>&gt;<i> 
+</I>&gt;<i>   The first one is simpler and the second works already on many CAN 
+</I>&gt;<i>   controllers.
+</I>
+Do you have numbers for the MSCAN, does it give saner timings?
+
+&gt;<i> o It is not possible to provide custom bit timimg parameters for a
+</I>&gt;<i>   defined bit-rate by-passing the default calculation. J&#252;rgen already
+</I>&gt;<i>   posted the following patch using an IOCTL request: 
+</I>&gt;<i> 
+</I>&gt;<i>   <A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-October/000715.html">https://lists.berlios.de/pipermail/socketcan-core/2007-October/000715.html</A>
+</I>&gt;<i> 
+</I>&gt;<i>   For SYSFS, I propose a slightly different solution allowing to set/get
+</I>&gt;<i>   the complete table with one call:
+</I>&gt;<i> 
+</I>&gt;<i>     $ cat &gt; can_custombittimes &lt;&lt;EOF
+</I>&gt;<i>     125000 std 0x18 0x8 0x6 0x7 0x4 0x1
+</I>&gt;<i>     250000 std 0x10 0x8 0x6 0x7 0x4 0x1
+</I>&gt;<i>     500000 std 0x04 0x8 0x6 0x7 0x4 0x1
+</I>&gt;<i>     ...
+</I>&gt;<i>     EOF
+</I>&gt;<i> 
+</I>&gt;<i>   I would also skip the bit error check and print a warning. In general,
+</I>&gt;<i>   we could add a bit_error field to &quot;struct can_bittime_std&quot; and list it
+</I>&gt;<i>   with &quot;cat can_custombittime&quot;.
+</I>
+Hmm, although the idea looks right, I assume it violates the sysfs &quot;one
+VALue per file&quot; concept. On the other hand, for example David Brownell's
+gpio userspace adapter (<A HREF="http://lwn.net/Articles/280187/">http://lwn.net/Articles/280187/</A>) does also use
+things like
+
+	echo &quot;export 23&quot; &gt; /sys/class/gpio/control
+
+David, how's the current state of that interface, would it be acceptable
+to mainline? If yes, I assume Wolfgang's proposal should be also ok.
+
+&gt;<i> o Finally, setting a default bitrate when configuring the device is 
+</I>&gt;<i>   convenient but error prune, as pointed out by Uwe in a private
+</I>&gt;<i>   discussion. I agree, the user *must* set a bitrate before executing 
+</I>&gt;<i>   &quot;ifconfig canx up&quot;.
+</I>
+Right. One would usually write it for example into
+/etc/network/interfaces, so a simple line there does also the right
+thing when you 'ifup can0'.
+
+Robert
+-- 
+ Dipl.-Ing. Robert Schwebel | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>
+ Pengutronix - Linux Solutions for Science and Industry
+   Handelsregister:  Amtsgericht Hildesheim, HRA 2686
+     Hannoversche Str. 2, 31134 Hildesheim, Germany
+   Phone: +49-5121-206917-0 |  Fax: +49-5121-206917-9
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001228.html">RFC: Hardware independent bit timing
+</A></li>
+	<LI>Next message: <A HREF="001230.html">RFC: Hardware independent bit timing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1229">[ date ]</a>
+              <a href="thread.html#1229">[ thread ]</a>
+              <a href="subject.html#1229">[ subject ]</a>
+              <a href="author.html#1229">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,354 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Patches for CAN200 adapter against Peak Driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Patches%20for%20CAN200%20adapter%20against%20Peak%20Driver&In-Reply-To=%3C17948.56551.695827.1526%40hertz.ikp.physik.tu-darmstadt.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000474.html">
+   <LINK REL="Next"  HREF="000479.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Patches for CAN200 adapter against Peak Driver</H1>
+    <B>Uwe Bonnes</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Patches%20for%20CAN200%20adapter%20against%20Peak%20Driver&In-Reply-To=%3C17948.56551.695827.1526%40hertz.ikp.physik.tu-darmstadt.de%3E"
+       TITLE="Patches for CAN200 adapter against Peak Driver">bon at elektron.ikp.physik.tu-darmstadt.de
+       </A><BR>
+    <I>Wed Apr 11 15:04:39 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000474.html">SocketCAN with MSCAN on BOA MPC5200 based card
+</A></li>
+        <LI>Next message: <A HREF="000479.html">Patches for CAN200 adapter against Peak Driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#478">[ date ]</a>
+              <a href="thread.html#478">[ thread ]</a>
+              <a href="subject.html#478">[ subject ]</a>
+              <a href="author.html#478">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>(my first mail to socketcan-drivers was rejected:
+... while talking to lists.berlios.de.:
+&gt;&gt;&gt;<i> DATA
+</I>&lt;&lt;&lt; 550 &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-drivers at lists.berlios.de</A>&gt;: Recipient address rejected: User unknown in local recipient table
+550 5.1.1 &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-drivers at lists.berlios.de</A>&gt;... User unknown
+&lt;&lt;&lt; 554 Error: no valid recipients
+)
+
+Hello,
+
+appended patches allow me to use a slightly modified CAN200 adapter
+(<A HREF="http://private.addcom.de/horo/can200/">http://private.addcom.de/horo/can200/</A> ) with the peak PCAN driver. The
+modification concerns the quarz, which has to be 16 MHZ, while the original
+design uses a 8 MHz quarz. Additional I used Schmitt Triggers with Filter
+on the write and reset lines. I can supply Eagle files on request and have also
+some spare boards which I can sent out against a paid enveloppe. The spare
+boards don't contain the resistors for the filter and need to be modified.
+
+After applying the patch, compile like
+make PCC=NO_PCCARD_SUPPORT NET=NETDEV_SUPPORT PAR=PARPORT_SUBSYSTEM
+to get socketcan support for CAN200 adapter on the parallel port using
+parport.
+
+Insert the module like
+/sbin/insmod ./pcan.ko  type=c22 io=0x378 irq=7
+
+Be sure to have IRQ7 enabled for the parallel port.
+
+All driver source files are under GNU license, so the patch seems no breech
+of any license.
+
+Bye
+
+-- 
+Uwe Bonnes                <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">bon at elektron.ikp.physik.tu-darmstadt.de</A>
+
+Institut fuer Kernphysik  Schlossgartenstrasse 9  64289 Darmstadt
+--------- Tel. 06151 162516 -------- Fax. 06151 164321 ----------
+diff -uwr peak-linux-driver-6.0.orig/driver/pcan.h peak-linux-driver-6.0/driver/pcan.h
+--- peak-linux-driver-6.0.orig/driver/pcan.h	2007-02-09 00:07:13.000000000 +0100
++++ peak-linux-driver-6.0/driver/pcan.h	2007-03-14 15:23:58.000000000 +0100
+@@ -68,6 +68,7 @@
+ #define HW_PCI            10 // PCI carries always SJA1000 chips
+ #define HW_USB            11 // don't know if this is common over peak products
+ #define HW_PCCARD         12 // not aligned to other OS
++#define HW_DONGLE_CAN200  13 // <A HREF="http://private.addcom.de/horo/can200/">http://private.addcom.de/horo/can200/</A>
+ 
+ //****************************************************************************
+ // mask for standard and extended CAN identifiers
+diff -uwr peak-linux-driver-6.0.orig/driver/src/pcan_dongle.c peak-linux-driver-6.0/driver/src/pcan_dongle.c
+--- peak-linux-driver-6.0.orig/driver/src/pcan_dongle.c	2007-02-09 00:07:13.000000000 +0100
++++ peak-linux-driver-6.0/driver/src/pcan_dongle.c	2007-04-11 11:46:20.000000000 +0200
+@@ -60,6 +60,7 @@
+ // DEFINES
+ #define PCAN_DNG_SP_MINOR_BASE  16  // starting point of minors for SP devices
+ #define PCAN_DNG_EPP_MINOR_BASE 24  // starting point of minors for EPP devices
++#define PCAN_DNG_CAN200_MINOR_BASE 40  // starting point of minors for EPP devices
+ #define DNG_PORT_SIZE            4  // the address range of the dongle-port
+ #define ECR_PORT_SIZE            1  // size of the associated ECR register
+ #define DNG_DEFAULT_COUNT        4  // count of defaults for init
+@@ -76,6 +77,7 @@
+ static u8  dng_irqs[]  = {7, 5, 7, 5};
+ static u16 dng_devices = 0;        // the number of accepted dng_devices
+ static u16 epp_devices = 0;        // ... epp_devices
++static u16 can200_devices = 0;        // ... epp_devices
+ static u16 sp_devices  = 0;        // ... sp_devices
+ 
+ static unsigned char nibble_decode[32] =
+@@ -207,6 +209,83 @@
+   return wert;
+ }
+ 
++#define WRITEP   0x01 /* inverted at port  */
++#define DATASTB  0x02 /* inverted at port and at device*/
++#define ADDRSTB  0x08 /* inverted at port and at device*/
++#define PORTREAD 0x20
++
++/* Functions for the CAN200 parallel port dongle */
++static void pcan_dongle_can200_writereg(struct pcandev *dev, u8 port, u8 data) // write a register
++{
++  u16 _PA_ = (u16)dev-&gt;port.dng.dwPort;
++  u16 _PC_ = _PA_ + 2;
++  u8  irqstatus = (inb(_PC_)&amp; 0x10)| 0x04; 
++  #ifndef XENOMAI
++  unsigned long flags;
++
++  #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,4,18)
++  save_flags(flags);
++  cli();
++  #else
++  spin_lock_irqsave(&amp;pcan_lock, flags);
++  #endif
++  #endif
++  outb(irqstatus | ADDRSTB, _PC_);
++  outb(port &amp; 0x1F,            _PA_);
++  outb(irqstatus  , _PC_);
++  outb(irqstatus | WRITEP, _PC_);
++  outb(irqstatus | DATASTB | WRITEP, _PC_);
++  outb(data,                   _PA_);
++  outb(irqstatus , _PC_);
++  #ifndef XENOMAI
++  #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,4,18)
++  restore_flags(flags);
++  #else
++  spin_unlock_irqrestore(&amp;pcan_lock, flags);
++  #endif
++  #endif
++}
++
++static u8 pcan_dongle_can200_readreg(struct pcandev *dev, u8 port) // read a register
++{
++  u16 _PA_ = (u16)dev-&gt;port.dng.dwPort;
++  u16 _PC_ = _PA_ + 2;
++  u8  wert;
++  u8  irqstatus = (inb(_PC_)&amp;0x10 )| 0x04; 
++  #ifndef XENOMAI
++  unsigned long flags;
++
++  #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,4,18)
++  save_flags(flags);
++  cli();
++  #else
++  spin_lock_irqsave(&amp;pcan_lock, flags);
++  #endif
++  #endif
++
++  outb(irqstatus | ADDRSTB, _PC_);
++  outb((port &amp; 0x1F) | 0x80,   _PA_);
++  outb(irqstatus , _PC_);
++  outb(irqstatus | PORTREAD , _PC_);
++  outb(irqstatus | DATASTB |PORTREAD , _PC_);
++  wert = inb(_PA_);
++  outb(irqstatus , _PC_);
++
++  #ifndef XENOMAI
++  #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,4,18)
++  restore_flags(flags);
++  #else
++  spin_unlock_irqrestore(&amp;pcan_lock, flags);
++  #endif
++  #endif
++
++  return wert;
++}
++
++/* Functions for the CAN200 parallel port dongle */
++
++
++
+ #ifdef XENOMAI
+ static int pcan_dongle_req_irq(struct rtdm_dev_context *context)
+ {
+@@ -264,12 +343,14 @@
+     case 4: pcan_dongle_free_irq(dev);
+     case 3: if (dev-&gt;wType == HW_DONGLE_SJA)
+                sp_devices--;
+-             else
++             else if (dev-&gt;wType == HW_DONGLE_SJA_EPP)
+                epp_devices--;
+-             dng_devices = sp_devices + epp_devices;
++             else 
++               can200_devices--;
++             dng_devices = sp_devices + epp_devices + can200_devices;
+     case 2:
+            #ifndef PARPORT_SUBSYSTEM
+-             if (dev-&gt;wType == HW_DONGLE_SJA_EPP)
++             if ((dev-&gt;wType == HW_DONGLE_SJA_EPP) || (dev-&gt;wType == HW_DONGLE_CAN200))
+              release_region(dev-&gt;port.dng.wEcr, ECR_PORT_SIZE);
+            #endif
+     case 1:
+@@ -355,7 +436,7 @@
+   {  
+     dev-&gt;wInitStep = 1;
+ 
+-    if (dev-&gt;wType == HW_DONGLE_SJA_EPP)
++    if ((dev-&gt;wType == HW_DONGLE_SJA_EPP) || (dev-&gt;wType == HW_DONGLE_CAN200))
+     {
+       result = ___request_region(dev-&gt;port.dng.wEcr, ECR_PORT_SIZE, DEVICE_NAME);    
+       if (!result)
+@@ -402,7 +483,7 @@
+     dev-&gt;port.dng.ucOldControlContent  = inb(wPort + 2);
+     
+     // switch to epp mode if possible
+-    if (dev-&gt;wType == HW_DONGLE_SJA_EPP)
++    if ((dev-&gt;wType == HW_DONGLE_SJA_EPP) || (dev-&gt;wType == HW_DONGLE_CAN200))
+       setECR(dev); 
+   
+     // enable irqs
+@@ -429,7 +510,7 @@
+   _parport_disable_irq(dev);
+   #endif
+ 
+-  if (dev-&gt;wType == HW_DONGLE_SJA_EPP)
++  if ((dev-&gt;wType == HW_DONGLE_SJA_EPP) || (dev-&gt;wType == HW_DONGLE_CAN200))
+     restoreECR(dev);
+     
+   // restore port state
+@@ -493,13 +574,20 @@
+     dev-&gt;writereg      = pcan_dongle_writereg;
+     dev-&gt;port.dng.wEcr = 0; // set to anything
+   }
+-  else
++  else if (dev-&gt;wType == HW_DONGLE_SJA_EPP)
+   {
+     dev-&gt;nMinor        = PCAN_DNG_EPP_MINOR_BASE + epp_devices;  
+     dev-&gt;readreg       = pcan_dongle_epp_readreg;
+     dev-&gt;writereg      = pcan_dongle_writereg;
+     dev-&gt;port.dng.wEcr = (u16)dev-&gt;port.dng.dwPort + 0x402;
+   }
++  else 
++  {
++    dev-&gt;nMinor        = PCAN_DNG_CAN200_MINOR_BASE + can200_devices;  
++    dev-&gt;readreg       = pcan_dongle_can200_readreg;
++    dev-&gt;writereg      = pcan_dongle_can200_writereg;
++    dev-&gt;port.dng.wEcr = (u16)dev-&gt;port.dng.dwPort + 0x402;
++  }
+     
+   // is the device really available?    
+   if ((err = pcan_dongle_probe(dev)) &lt; 0)
+@@ -509,10 +597,12 @@
+ 
+   if (dev-&gt;wType == HW_DONGLE_SJA)
+     sp_devices++;
+-  else
++  else if (dev-&gt;wType == HW_DONGLE_SJA_EPP)
+     epp_devices++;
++  else 
++    can200_devices++;
+     
+-  dng_devices = sp_devices + epp_devices;
++  dng_devices = sp_devices + epp_devices + can200_devices;
+   
+   dev-&gt;wInitStep = 3;
+ 
+@@ -532,7 +622,8 @@
+   if ((dev = (struct pcandev *)kmalloc(sizeof(struct pcandev), GFP_KERNEL)) == NULL)
+     goto fail;
+ 
+-  pcan_soft_init(dev, type, (!strncmp(type, &quot;sp&quot;, 4)) ? HW_DONGLE_SJA : HW_DONGLE_SJA_EPP);
++  pcan_soft_init(dev, type, (!strncmp(type, &quot;sp&quot;, 4)) ? HW_DONGLE_SJA : 
++		 (!strncmp(type, &quot;epp&quot;, 4)) ?HW_DONGLE_SJA_EPP : HW_DONGLE_CAN200);
+   
+   dev-&gt;device_open    = sja1000_open;
+   dev-&gt;device_write   = sja1000_write;
+diff -uwr peak-linux-driver-6.0.orig/driver/src/pcan_fops.c peak-linux-driver-6.0/driver/src/pcan_fops.c
+--- peak-linux-driver-6.0.orig/driver/src/pcan_fops.c	2007-02-23 22:41:18.000000000 +0100
++++ peak-linux-driver-6.0/driver/src/pcan_fops.c	2007-03-14 15:23:48.000000000 +0100
+@@ -222,7 +222,7 @@
+     }
+ 
+     // special handling: probe here only for dongle devices, connect after init is possible
+-    if ((dev-&gt;wType == HW_DONGLE_SJA) || (dev-&gt;wType == HW_DONGLE_SJA_EPP))
++    if ((dev-&gt;wType == HW_DONGLE_SJA) || (dev-&gt;wType == HW_DONGLE_SJA_EPP) || (dev-&gt;wType == HW_DONGLE_CAN200))
+     {
+       err = sja1000_probe(dev); // no usb here, generic sja1000 call for dongle
+       if (err)
+@@ -344,7 +344,7 @@
+     ctx-&gt;irq = dev-&gt;port.pci.wIrq;
+   if (dev-&gt;wType == HW_ISA_SJA)
+     ctx-&gt;irq = dev-&gt;port.isa.wIrq;
+-  if (dev-&gt;wType == HW_DONGLE_SJA || dev-&gt;wType == HW_DONGLE_SJA_EPP)
++  if (dev-&gt;wType == HW_DONGLE_SJA || dev-&gt;wType == HW_DONGLE_SJA_EPP || dev-&gt;wType == HW_DONGLE_CAN200)
+     ctx-&gt;irq = dev-&gt;port.dng.wIrq;
+ 
+   err = pcan_open_path_rt(context);
+@@ -813,6 +813,7 @@
+       break;
+     case HW_DONGLE_SJA:
+     case HW_DONGLE_SJA_EPP:
++    case HW_DONGLE_CAN200:
+       local.dwBase      = dev-&gt;port.dng.dwPort;
+       local.wIrqLevel   = dev-&gt;port.dng.wIrq;
+       break;
+diff -uwr peak-linux-driver-6.0.orig/driver/src/pcan_main.c peak-linux-driver-6.0/driver/src/pcan_main.c
+--- peak-linux-driver-6.0.orig/driver/src/pcan_main.c	2007-02-22 00:06:52.000000000 +0100
++++ peak-linux-driver-6.0/driver/src/pcan_main.c	2007-03-14 15:34:51.000000000 +0100
+@@ -373,6 +373,7 @@
+         break;
+       case HW_DONGLE_SJA:
+       case HW_DONGLE_SJA_EPP:
++      case HW_DONGLE_CAN200:
+         dwPort = dev-&gt;port.dng.dwPort;
+         wIrq   = dev-&gt;port.dng.wIrq;
+         break;
+@@ -572,7 +573,7 @@
+     #endif
+     
+     #ifdef DONGLE_SUPPORT
+-    if (!strncmp(type[i], &quot;sp&quot;, 4) || !strncmp(type[i], &quot;epp&quot;, 4))
++    if (!strncmp(type[i], &quot;sp&quot;, 4) || !strncmp(type[i], &quot;epp&quot;, 4) || !strncmp(type[i], &quot;c22&quot;, 4))
+       result = pcan_create_dongle_devices(type[i], io[i], irq[i]);
+     #endif
+         
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000474.html">SocketCAN with MSCAN on BOA MPC5200 based card
+</A></li>
+	<LI>Next message: <A HREF="000479.html">Patches for CAN200 adapter against Peak Driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#478">[ date ]</a>
+              <a href="thread.html#478">[ thread ]</a>
+              <a href="subject.html#478">[ subject ]</a>
+              <a href="author.html#478">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,106 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v6 04/20] can: EG20T PCH: Add Tx Flow Control
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v6%2004/20%5D%20can%3A%20EG20T%20PCH%3A%20Add%20Tx%20Flow%20Control&In-Reply-To=%3C20101202.131236.28815617.davem%40davemloft.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005139.html">
+   <LINK REL="Next"  HREF="005144.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v6 04/20] can: EG20T PCH: Add Tx Flow Control</H1>
+    <B>David Miller</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v6%2004/20%5D%20can%3A%20EG20T%20PCH%3A%20Add%20Tx%20Flow%20Control&In-Reply-To=%3C20101202.131236.28815617.davem%40davemloft.net%3E"
+       TITLE="[PATCH net-next-2.6 v6 04/20] can: EG20T PCH: Add Tx Flow Control">davem at davemloft.net
+       </A><BR>
+    <I>Thu Dec  2 22:12:36 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005139.html">[PATCH net-next-2.6 v6 03/20] can: EG20T PCH: Enumerate LEC macros
+</A></li>
+        <LI>Next message: <A HREF="005144.html">[PATCH net-next-2.6 v6 04/20] can: EG20T PCH: Add Tx Flow Control
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5140">[ date ]</a>
+              <a href="thread.html#5140">[ thread ]</a>
+              <a href="subject.html#5140">[ subject ]</a>
+              <a href="author.html#5140">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>From: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+Date: Tue, 30 Nov 2010 13:18:52 +0900
+
+&gt;<i> Currently, there is no flow control processing.
+</I>&gt;<i> Thus, Add flow control processing as
+</I>&gt;<i> when there is no empty of tx buffer,
+</I>&gt;<i> netif_stop_queue is called.
+</I>&gt;<i> When there is empty buffer, netif_wake_queue is called.
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+</I>
+When implementing functionality like this it is better to use other
+existing well tested network drivers as a guide rather then trying
+to be unique and clever, as you are doing here.
+
+First of all, your netif_wake_queue() call is racy.  Because another
+thread can be queueing up packets, fill the queue, and execute a
+stop queue right when you have made the decision to invoke
+netif_wake_queue().
+
+Second of all, checking the state of the device to determine if a
+stop queue should be performed has two problems:
+
+1) The test uses a magic constant mask, which is undocumented.
+
+2) It causes the race you have on the wake queue side
+
+Use pure software state to guide your actions, and let the hardware
+interrupt trigger the wake queue.
+
+Also, you don't implement this as a true ring buffer, you only
+consider to stop the queue when you hit the last TX object entry.  But
+all the previous slots could be available.
+
+Your head and tail pointer need to be maintained by advancing the
+head pointer only during pch_xmit(), and advancing the tail pointer
+only in the NAPI code as you get indications from the hardware.
+
+Then, after the NAPI TX code advances the tail pointer, you see if
+1) the queue is stopped and 2) TX space is now available.  If both
+are true you wake the queue.
+
+Use a well tested and mature driver like drivers/net/tg3.c as a
+guide.  Search for netif_tx_{stop,wake}_queue().
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005139.html">[PATCH net-next-2.6 v6 03/20] can: EG20T PCH: Enumerate LEC macros
+</A></li>
+	<LI>Next message: <A HREF="005144.html">[PATCH net-next-2.6 v6 04/20] can: EG20T PCH: Add Tx Flow Control
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5140">[ date ]</a>
+              <a href="thread.html#5140">[ thread ]</a>
+              <a href="subject.html#5140">[ subject ]</a>
+              <a href="author.html#5140">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

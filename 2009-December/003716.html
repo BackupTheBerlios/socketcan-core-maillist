@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Driver for some PLX PCI bridge + sja1000 CAN controllers
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Driver%20for%20some%20PLX%20PCI%20bridge%20%2B%20sja1000%20CAN%20controllers&In-Reply-To=%3C4B3B2F7D.5020601%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003715.html">
+   <LINK REL="Next"  HREF="003713.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Driver for some PLX PCI bridge + sja1000 CAN controllers</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Driver%20for%20some%20PLX%20PCI%20bridge%20%2B%20sja1000%20CAN%20controllers&In-Reply-To=%3C4B3B2F7D.5020601%40grandegger.com%3E"
+       TITLE="Driver for some PLX PCI bridge + sja1000 CAN controllers">wg at grandegger.com
+       </A><BR>
+    <I>Wed Dec 30 11:46:21 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003715.html">Driver for some PLX PCI bridge + sja1000 CAN controllers
+</A></li>
+        <LI>Next message: <A HREF="003713.html">Driver for some PLX PCI bridge + sja1000 CAN controllers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3716">[ date ]</a>
+              <a href="thread.html#3716">[ thread ]</a>
+              <a href="subject.html#3716">[ subject ]</a>
+              <a href="author.html#3716">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>P.B.Cheblakov wrote:
+&gt;<i> Hello Wolfgang
+</I>&gt;&gt;&gt;<i> I'm not sure that plx_pci is a right name for this driver. But I think
+</I>&gt;&gt;&gt;<i> this driver have certain potentialities to support any other similar
+</I>&gt;&gt;&gt;<i> cards (based on PLX bridges).
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i> The name sounds reasonable. In principle, also the ixxat_pci cards could
+</I>&gt;&gt;<i> be supported by this driver. IIRC, there was just some trick with
+</I>&gt;&gt;<i> probing the number of CAN channels. You may want to check/compare? In
+</I>&gt;&gt;<i> general it's *good* to share code.
+</I>&gt;&gt;<i>   
+</I>&gt;<i> I'm not fully satisfied with such name. plx_pci is too general name and 
+</I>&gt;<i> it may interfere with other (non-CAN) plx-based devices. Currently, as I 
+</I>&gt;<i> understand it, all drivers named by the following scheme: [vendor of 
+</I>&gt;<i> card]_interface. But PLX is not a vendor of some card. Maybe is it 
+</I>&gt;<i> better to name it as plx_can_pci or like this?
+</I>
+I see, as we use &quot;driver name&quot; == &quot;file name&quot;. This is more or less also
+true for the other drivers, e.g. there could be a cc770 based PCI card
+driver named &quot;&lt;vendor&gt;_pci&quot; as well. For the time being, I suggest to
+keep the file name and use:
+
+#define DRV_NAME  &quot;sja1000_plx_pci&quot;
+
+It might make sense to adapt the other PCI drivers as well.
+
+[snip]
+&gt;&gt;&gt;<i> +	{ 	/* TEWS TECHNOLOGIES TPMC810 card */
+</I>&gt;&gt;&gt;<i> +		TEWS_PCI_VENDOR_ID, TEWS_PCI_DEVICE_ID_TMPC810,
+</I>&gt;&gt;&gt;<i> +		PCI_ANY_ID, PCI_ANY_ID,
+</I>&gt;&gt;&gt;<i> +		0, 0,
+</I>&gt;&gt;&gt;<i> +		TEWS_TPMC810
+</I>&gt;&gt;&gt;<i> +	},
+</I>&gt;&gt;&gt;<i> +	{ 0,}
+</I>&gt;&gt;&gt;<i> +};
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i> Please remove empty line above.
+</I>&gt;&gt;<i>   
+</I>&gt;<i> removed
+</I>&gt;<i> Why this empty line should be removed?
+</I>
+Please ignore, it seems just to be my personal preference.
+
+&gt;&gt;&gt;<i> +MODULE_DEVICE_TABLE(pci, plx_pci_tbl);
+</I>&gt;&gt;&gt;<i> +
+</I>[snip]
+&gt;&gt;&gt;<i> +/*
+</I>&gt;&gt;&gt;<i> + * Check if a CAN controller is present at the specified location
+</I>&gt;&gt;&gt;<i> + * by trying to set 'em into the PeliCAN mode
+</I>&gt;&gt;&gt;<i> + */
+</I>&gt;&gt;&gt;<i> +static inline int plx_pci_check_sja1000(const struct sja1000_priv *priv)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	u8 res;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* Make sure SJA1000 is in reset mode */
+</I>&gt;&gt;&gt;<i> +	priv-&gt;write_reg(priv, REG_MOD, 1);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	priv-&gt;write_reg(priv, REG_CDR, CDR_PELICAN);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* read reset-values */
+</I>&gt;&gt;&gt;<i> +	res = priv-&gt;read_reg(priv, REG_CDR);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (res == CDR_PELICAN)
+</I>&gt;&gt;&gt;<i> +		return 1;
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i> The ixxat pci driver uses a more sophisticated probing mechanism, which
+</I>&gt;&gt;<i> might fit here as well.
+</I>&gt;&gt;<i>   
+</I>&gt;<i> I'll review ixxat driver once again. But I don't understand why 
+</I>&gt;<i> sophisticated probing mechanism is be better?
+</I>
+The method above will work with any normal memory location. The method
+from the IXXAT driver will check if the device did come out of the reset
+properly (by taking into account the reset values of the SJA1000). It's
+the more reliable probing method, I believe.
+
+&gt;&gt;&gt;<i> +	/* Allocate card structures to hold addresses, ... */
+</I>&gt;&gt;&gt;<i> +	card = kzalloc(sizeof(struct plx_pci_card), GFP_KERNEL);
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i> Please use
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	card = kzalloc(*card, ...
+</I>&gt;&gt;<i>   
+</I>&gt;<i> Maybe
+</I>&gt;<i> 
+</I>&gt;<i> 	card = kzalloc(sizeof(*card), ... ? :)  
+</I>
+It's just less error prune, but a minor issue, of course.
+
+&gt;&gt;&gt;<i> +	if (card-&gt;conf_addr == NULL) {
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i> Hm, this test is wrong if &quot;ci-&gt;ch_map_tbl[0].offset != 0&quot;, right?
+</I>&gt;&gt;<i>   
+</I>&gt;<i> Yeah, it's my mistake! I've corrected it.
+</I>&gt;<i> Thanks
+</I>&gt;&gt;&gt;<i> +		/* Check if channel is present */
+</I>&gt;&gt;&gt;<i> +		if (plx_pci_check_sja1000(priv)) {
+</I>&gt;&gt;&gt;<i> +			priv-&gt;can.clock.freq = ci-&gt;can_clock;
+</I>&gt;&gt;&gt;<i> +			priv-&gt;ocr = PLX_PCI_OCR;
+</I>&gt;&gt;&gt;<i> +			priv-&gt;cdr = PLX_PCI_CDR;
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i> BTW: do all cards work with the same OCR/CDR settings?
+</I>&gt;&gt;<i>   
+</I>&gt;<i> I'm not sure at all, but all cards work well. Where can I find an exact 
+</I>&gt;<i> values of these registers? As I understand these registers doesn't play 
+</I>&gt;<i> a role if can transceiver is used. Is it right?
+</I>
+Right, some cards need other OCR/CDR settings, sometimes also depending
+on the channel. The bits are documented in the SJA1000 data sheet.
+
+&gt;<i> If it's necessary I can introduce an additional fields in 
+</I>&gt;<i> plx_card_info_tbl[] array for these registers.
+</I>
+Yes, like you have already done for the clock (which is also the same
+for all cards). Fine for now.
+
+&gt;&gt;&gt;<i> +			dev_info(&amp;pdev-&gt;dev, &quot;Channel #%d at 0x%x, irq %d &quot;
+</I>&gt;&gt;&gt;<i> +				 &quot;registered as %s\n&quot;,
+</I>&gt;&gt;&gt;<i> +				 i + 1, (u32)dev-&gt;base_addr,
+</I>&gt;&gt;&gt;<i> +				 dev-&gt;irq, dev-&gt;name);
+</I>&gt;&gt;<i>   
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Use &quot;0x%p&quot; to avoid the cast.
+</I>&gt;&gt;<i>   
+</I>&gt;<i> dev-&gt;base_addr has long unsigned int type. I've used &quot;0x%lx&quot;.
+</I>
+OK, missed that.
+
+&gt;<i> I have considered all other minor remarks.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> Do you intend to push the driver to mainlain as well? That would be nice.
+</I>&gt;&gt;<i>   
+</I>&gt;<i> Yes, I do. What should I do to do it? :)
+</I>
+OK, more infos on that later...
+
+&gt;<i> Happy New Year! :)
+</I>
+Same to you.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003715.html">Driver for some PLX PCI bridge + sja1000 CAN controllers
+</A></li>
+	<LI>Next message: <A HREF="003713.html">Driver for some PLX PCI bridge + sja1000 CAN controllers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3716">[ date ]</a>
+              <a href="thread.html#3716">[ thread ]</a>
+              <a href="subject.html#3716">[ subject ]</a>
+              <a href="author.html#3716">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

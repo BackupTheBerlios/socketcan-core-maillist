@@ -1,0 +1,210 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 0/5] CAN transceiver subsystem
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/5%5D%20CAN%20transceiver%20subsystem&In-Reply-To=%3C20091016092214.GA330%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003277.html">
+   <LINK REL="Next"  HREF="003287.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 0/5] CAN transceiver subsystem</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/5%5D%20CAN%20transceiver%20subsystem&In-Reply-To=%3C20091016092214.GA330%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH 0/5] CAN transceiver subsystem">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Fri Oct 16 11:22:14 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003277.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+        <LI>Next message: <A HREF="003287.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3286">[ date ]</a>
+              <a href="thread.html#3286">[ thread ]</a>
+              <a href="subject.html#3286">[ subject ]</a>
+              <a href="author.html#3286">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, Oct 15, 2009 at 06:25:35PM +0200, Oliver Hartkopp wrote:
+&gt;<i> &gt; On Wed, Oct 14, 2009 at 05:10:41PM +0200, Kurt Van Dijck wrote:
+</I>[...]
+&gt;<i> I'm currently on holiday and i'm back on work end of next week.
+</I>highest priority, no doubt.
+just read this when you're back
+&gt;<i> 
+</I>&gt;<i> Maybe i can play with it on my mpc5200 platform then where a SJA1041 and
+</I>&gt;<i> SJA1054 are attached ...
+</I>TJA1041 &amp; TJA1054?
+I had forgotten about the tja1054.
+just to exercise the concept, I prepared a patch you can apply after
+all others, so you have a seperate tja1054 driver as well 
+(slightly modified tja1041 driver).
+&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Oliver
+</I>&gt;<i> 
+</I>
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at skynet.be</A>&gt;
+---
+ kernel/2.6/drivers/net/can/Kconfig               |    2 
+ kernel/2.6/drivers/net/can/transceiver/tja1041.c |   54 +++++++++++++++++++++--
+ 2 files changed, 52 insertions(+), 4 deletions(-)
+
+Index: trunk/kernel/2.6/drivers/net/can/Kconfig
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/Kconfig	2009-10-16 10:42:21.000000000 +0200
++++ trunk/kernel/2.6/drivers/net/can/Kconfig	2009-10-16 10:43:08.000000000 +0200
+@@ -53,7 +53,7 @@
+ 	  a platform device
+ 
+ config CANTR_TJA1041
+-	tristate &quot;NXP TJA1041&quot;
++	tristate &quot;NXP TJA1041/TJA1054&quot;
+ 	depends on CANTR_CORE
+ 	default Y
+ 	---help---
+Index: trunk/kernel/2.6/drivers/net/can/transceiver/tja1041.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/transceiver/tja1041.c	2009-10-16 10:42:31.000000000 +0200
++++ trunk/kernel/2.6/drivers/net/can/transceiver/tja1041.c	2009-10-16 11:04:44.000000000 +0200
+@@ -19,11 +19,15 @@
+ #include &lt;socketcan/can/transceiver.h&gt;
+ #include &lt;socketcan/can/platform/tja1041.h&gt;
+ 
++struct tja_data {
++	unsigned long max_bitrate;
++};
+ /*
+  * dynamic can_transceiver stuff
+  */
+ struct tja1041 {
+ 	struct can_transceiver cantr;
++	const struct tja_data *ddata;
+ 	int stb;
+ 	int en;
+ 	int err;
+@@ -135,7 +139,9 @@
+ 
+ static int tja1041_get_max_bitrate(struct can_transceiver *cantr)
+ {
+-	return 1000000;
++	struct tja1041 *tja = to_tja1041(cantr);
++
++	return tja-&gt;ddata-&gt;max_bitrate;
+ }
+ 
+ static int tja1041_get_state(struct can_transceiver *cantr)
+@@ -196,7 +202,8 @@
+ 	return ret;
+ }
+ 
+-static int tja1041_probe(struct platform_device *pdev)
++static int tja_probe(struct platform_device *pdev,
++		const struct tja_data *ddata)
+ {
+ 	struct tja1041 *tja;
+ 	const struct tja1041_platform_data *pdata = pdev-&gt;dev.platform_data;
+@@ -217,6 +224,7 @@
+ 	tja-&gt;err = pdata-&gt;err;
+ 	tja-&gt;err_irq = -1;
+ 	tja-&gt;gpio_valid = 0;
++	tja-&gt;ddata = ddata;
+ 
+ 	ret = can_transceiver_register(&amp;tja-&gt;cantr);
+ 	if (ret &lt; 0)
+@@ -276,6 +284,14 @@
+ }
+ 
+ 
++static const struct tja_data tja1041_ddata = {
++	.max_bitrate = 1000000,
++};
++static int tja1041_probe(struct platform_device *pdev)
++{
++	return tja_probe(pdev, &amp;tja1041_ddata);
++}
++
+ static struct platform_driver tja1041_driver = {
+ 	.driver.name = &quot;tja1041&quot;,
+ 	.probe = tja1041_probe,
+@@ -284,13 +300,45 @@
+ };
+ MODULE_ALIAS(&quot;platform:tja1041&quot;);
+ 
++/*
++ * TJA1054 support
++ */
++static const struct tja_data tja1054_ddata = {
++	.max_bitrate = 125000,
++};
++static int tja1054_probe(struct platform_device *pdev)
++{
++	return tja_probe(pdev, &amp;tja1054_ddata);
++}
++static struct platform_driver tja1054_driver = {
++	.driver.name = &quot;tja1054&quot;,
++	.probe = tja1054_probe,
++	.remove = tja1041_remove,
++	.shutdown = tja1041_shutdown,
++};
++MODULE_ALIAS(&quot;platform:tja1054&quot;);
++
+ static int __init tja1041_start_mod(void)
+ {
+-	return platform_driver_register(&amp;tja1041_driver);
++	int ret;
++	ret = platform_driver_register(&amp;tja1041_driver);
++	if (ret)
++		goto fail_tja1041;
++	ret = platform_driver_register(&amp;tja1054_driver);
++	if (ret)
++		goto fail_tja1054;
++	return 0;
++
++	platform_driver_unregister(&amp;tja1054_driver);
++fail_tja1054:
++	platform_driver_unregister(&amp;tja1041_driver);
++fail_tja1041:
++	return ret;
+ }
+ 
+ static void __exit tja1041_stop_mod(void)
+ {
++	platform_driver_unregister(&amp;tja1054_driver);
+ 	platform_driver_unregister(&amp;tja1041_driver);
+ }
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003277.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+	<LI>Next message: <A HREF="003287.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3286">[ date ]</a>
+              <a href="thread.html#3286">[ thread ]</a>
+              <a href="subject.html#3286">[ subject ]</a>
+              <a href="author.html#3286">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,122 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Interrupt flooding with bus errors
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Interrupt%20flooding%20with%20bus%20errors&In-Reply-To=%3C44AA49C9.9000709%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000257.html">
+   <LINK REL="Next"  HREF="000260.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Interrupt flooding with bus errors</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Interrupt%20flooding%20with%20bus%20errors&In-Reply-To=%3C44AA49C9.9000709%40grandegger.com%3E"
+       TITLE="Interrupt flooding with bus errors">wg at grandegger.com
+       </A><BR>
+    <I>Tue Jul  4 12:58:17 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000257.html">Interrupt flooding with bus errors
+</A></li>
+        <LI>Next message: <A HREF="000260.html">Interrupt flooding with bus errors
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#258">[ date ]</a>
+              <a href="thread.html#258">[ thread ]</a>
+              <a href="subject.html#258">[ subject ]</a>
+              <a href="author.html#258">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Jan Kiszka wrote:
+&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> Sebastian Smolorz wrote:
+</I>&gt;&gt;&gt;<i> Am Dienstag 04. Juli 2006 11:19 schrieb Wolfgang Grandegger:
+</I>&gt;&gt;&gt;&gt;<i> Sebastian Smolorz wrote:
+</I>&gt;&gt;&gt;&gt;&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> Well, the problem is just around bus error reporting (on SJA1000).
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> Another approach could be to disable the bus error interrupt (BEI)
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> after
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> some (2 or 5?) successive bus error events within the ISR and reenable
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> it when the next (non BEI) interrupt occurs. An appropriate error
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> message could be send to the socket, e.g. CAN_ERR_CTRL_BUS_ERR_OFF.
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> What do you think?
+</I>&gt;&gt;&gt;&gt;&gt;<i> I wonder if it is really neccessary to disable BEI in case of startup
+</I>&gt;&gt;&gt;&gt;&gt;<i> situations. While testing my rt_sja1000 CAN driver last year I did not
+</I>&gt;&gt;&gt;&gt;&gt;<i> discover looping inside the IRQ handler in case no cable was connected.
+</I>&gt;&gt;&gt;&gt;&gt;<i> But an appropriate error message is a really good idea in this case.
+</I>&gt;&gt;&gt;&gt;<i> It's mainly your code I'm using here. You have to send a message to
+</I>&gt;&gt;&gt;&gt;<i> provoke the ISR flooding without cable connected.
+</I>&gt;&gt;&gt;<i> Yes, of course I meant that I did not discover a hanging system in
+</I>&gt;&gt;&gt;<i> case the cable was disconnected *and* one message was sent. Of course
+</I>&gt;&gt;&gt;<i> there was interrupt flooding but the system was usable and I could set
+</I>&gt;&gt;&gt;<i> the driver into STOP mode.
+</I>&gt;&gt;<i> OK, you are right. I removed my debug output and then the system gets
+</I>&gt;&gt;<i> plenty of interrupts but it's still usable:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Name___________ _Baudrate State___ TX_Counter RX_Counter Errors
+</I>&gt;&gt;<i> rtcan0             125000 active            0          0      0
+</I>&gt;&gt;<i> rtcan1             125000 active            0          0      0
+</I>&gt;&gt;<i> rtcan2             125000 passive           1          0 120288
+</I>&gt;&gt;<i> rtcan3          undefined stopped           0          0      0
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Nevertheless, be aware that now a CAN error message is formated or each
+</I>&gt;&gt;<i> error and sent upstream.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Of course, this does not mean that other systems have to behave the
+</I>&gt;&gt;&gt;<i> same way. :-) So disabling the BEI may be the way to go. But on the
+</I>&gt;&gt;&gt;<i> other hand, detailed error statistics are not possible any more.
+</I>&gt;&gt;<i> Let's wait and see if this is a real problem for real-time.
+</I>&gt;<i> 
+</I>&gt;<i> I would really prefer to see some mechanism for controlling the IRQ load
+</I>&gt;<i> as far as possible even under error conditions. If you end up having to
+</I>&gt;<i> design your system around that error load, you wast too much resources.
+</I>
+Under normal conditions, there should be little load from error 
+interrupts. We could make the error handling configurable at compile or 
+load time, e.g. disable BEI interrupts.
+
+&gt;<i> E.g., if no one cares for error frames, we should not generate error
+</I>&gt;<i> IRQs but rather detect problems at transmission time (or via polling by
+</I>&gt;<i> the application). Or is this already the case? At least not in the
+</I>&gt;<i> current rt_sja1000...
+</I>
+You can always use the ioctl SIOGCANSTATE to get the current state. 
+rt_sja1000 always checks the status register before sending the message.
+Or what do you exactly think about?
+
+Wolfgang.
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000257.html">Interrupt flooding with bus errors
+</A></li>
+	<LI>Next message: <A HREF="000260.html">Interrupt flooding with bus errors
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#258">[ date ]</a>
+              <a href="thread.html#258">[ thread ]</a>
+              <a href="subject.html#258">[ subject ]</a>
+              <a href="author.html#258">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

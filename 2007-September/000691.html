@@ -1,0 +1,217 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Setting CAN bit rate in HW-independent way
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Setting%20CAN%20bit%20rate%20in%20HW-independent%20way&In-Reply-To=%3C1190979312.3619.17.camel%40pc-mob-grv-deb%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000690.html">
+   <LINK REL="Next"  HREF="000692.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Setting CAN bit rate in HW-independent way</H1>
+    <B>Vladislav Gribov</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Setting%20CAN%20bit%20rate%20in%20HW-independent%20way&In-Reply-To=%3C1190979312.3619.17.camel%40pc-mob-grv-deb%3E"
+       TITLE="Setting CAN bit rate in HW-independent way">gribov at ixxat.de
+       </A><BR>
+    <I>Fri Sep 28 13:35:10 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000690.html">[RFC] setting baudrate
+</A></li>
+        <LI>Next message: <A HREF="000692.html">Setting CAN bit rate in HW-independent way
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#691">[ date ]</a>
+              <a href="thread.html#691">[ thread ]</a>
+              <a href="subject.html#691">[ subject ]</a>
+              <a href="author.html#691">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Andrey,
+
+thanks for you comments.
+
+&gt;<i> &gt;  
+</I>&gt;<i> &gt; I am on porting the IXXAT CANopen RT Stack to work with Socket CAN, 
+</I>&gt;<i> &gt; we want to use the stack both with our PCI cards (SJA1000 CAN 
+</I>&gt;<i> &gt; controller) and on MPC5200, which has MSCAN. 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; The problem I have now is how to switch CAN bit rate in the HW 
+</I>&gt;<i> &gt; independent way. 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; The definition of the CAN bit rate in the almost HW independent way 
+</I>&gt;<i> &gt; is actually done over the 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; struct can_bittime_std { 
+</I>&gt;<i> &gt; __u32 brp;        /* baud rate prescaler */  
+</I>&gt;<i> &gt; __u8  prop_seg;   /* from 1 to 8 */  
+</I>&gt;<i> &gt; __u8  phase_seg1; /* from 1 to 8 */ 
+</I>&gt;<i> &gt; __u8  phase_seg2; /* from 1 to 8 */ 
+</I>&gt;<i> &gt; __u8  sjw:7;      /* from 1 to 4 */ 
+</I>&gt;<i> &gt; __u8  sam:1;      /* 1 - enable triple sampling */ 
+</I>&gt;<i> &gt; }; 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; The only problem with the structure is baud rate prescaler (well, 
+</I>&gt;<i> &gt; triple sampling is also SJA1000 specific). Such a structure
+</I>&gt;<i> describes 
+</I>&gt;<i> &gt; CAN bit rate only if supplied with CAN controller clock frequency 
+</I>&gt;<i> &gt; (can_priv.can_sys_clock), which is target(HW) specific. That means 
+</I>&gt;<i> &gt; that configuration 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; brp=2, prop_seg=11, phase_seg1=2, phase_seg2=2, sjw=1, sam=0 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; selects 125kbit/s for SJA1000 CAN controller clocked with 8MHz and 
+</I>&gt;<i> &gt; 250kbit/s  for SJA1000 CAN controller clocked with 16MHz (you have
+</I>&gt;<i> to 
+</I>&gt;<i> &gt; consider additional fix prescaler by 2 for SJA1000 CAN controllers
+</I>&gt;<i> in 
+</I>&gt;<i> &gt; this example) 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; The definition of CAN bit rate is described in ISO 11989-1 document 
+</I>&gt;<i> &gt; (is also available in adapted form from eg 
+</I>&gt;<i> &gt; &quot;<A HREF="http://www.can-cia.org/downloads/?269">http://www.can-cia.org/downloads/?269</A>&quot; ) 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; According to that spec following definition seems to be really HW 
+</I>&gt;<i> &gt; independent: 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; struct can_bittime_std { 
+</I>&gt;<i> &gt; u32 TQ;         /* time quanta in ns */ 
+</I>&gt;<i> &gt; u8  Sync_Seg;   /* shall be always 1 */ 
+</I>&gt;<i> &gt; u8 Prop_Seg;   /* propagation time, at least 1..8 */ 
+</I>&gt;<i>                                          ^^^^^^^^^^ in most cases ;) 
+</I>&gt;<i> &gt; u8  Phase_Seg1; /*  at least 1..8 */ 
+</I>&gt;<i>                        ^^^^^^^^^^^^^^^ Ditto
+</I>&gt;<i> 
+</I>&gt;<i> &gt; u8  Phase_Seg2; /* max(Phase_Seg1,2) */ 
+</I>&gt;<i> Btw., phase_seg2 always must be greater then phase_seg1.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; u8  SJW;        /* from 1 to min (4,Phase_Seg1)    */ 
+</I>&gt;<i> And sjw must be &lt; then phase_seg2. And have not any relation to
+</I>&gt;<i> phase_seg1.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; }; 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> In general, nice shot Vlad, it was my omission with brp, 
+</I>&gt;<i> TQ looks better for me.
+</I>
+
+The requirements on segment length as in comments to can_bittime_std
+have been taken from the ISO 11989-1, from 2002-04-9, Chapter 12.4.1.2.
+I have verified it to the older revision of standard (october 1999). It
+is still the same. Unfortunately I cannot quote the spec here because of
+copyrights.
+
+I agree that the real CAN controllers have often their own limitations
+to the bit timings, which not necessary correlate with what the spec
+expects.
+
+
+&gt;<i> 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; The definition of 500 kbit/s looks like TQ=125, Sync_Seg=1, 
+</I>&gt;<i> &gt; Prop_Seg=11, Phase_Seg1=2, Phase_Seg2=2, SJW=1 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; The bit time is 125ns*(1+11+2+2) = 2 us, sampling point 100%
+</I>&gt;<i> *(14/16) 
+</I>&gt;<i> &gt; = 87,5% . 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; The following definition TQ=100, Sync_Seg=1, Prop_Seg=13, 
+</I>&gt;<i> &gt; Phase_Seg1=4, Phase_Seg2=2, SJW=1 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; is also 500 kbit/s : 100ns*(1+13+4+2) = 2 us, sampling point 
+</I>&gt;<i> &gt; 100%*(18/20) = 90%. 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; Such a bit rate however cannot be supported by SJA1000 clocked with 
+</I>&gt;<i> &gt; 16Mhz. The smallest supported TQ in this case is 125 ns. 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; That is why the idea of providing the bit rate additionally to 
+</I>&gt;<i> &gt; desired bit timings is a good idea (additionally to the reasons 
+</I>&gt;<i> &gt; provided by Marc in his RFC setting baudrate). 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; struct can_bitrate { 
+</I>&gt;<i> &gt;   u32 bitrate; /* bit rate in bit per second */ 
+</I>&gt;<i> &gt;   enum CAN_BITTIMINGS_TYPE bittime_type; 
+</I>&gt;<i> &gt;   union { 
+</I>&gt;<i> &gt;     struct can_bittime_std std; 
+</I>&gt;<i> &gt;     u8 hw[12]; 
+</I>&gt;<i> &gt;   } btr; 
+</I>&gt;<i> &gt; }; 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; enum CAN_BITTIMINGS_TYPE { 
+</I>&gt;<i> &gt;   CAN_BITRATE_STD, /* use */ 
+</I>&gt;<i> &gt;   CAN_BITRATE_HW 
+</I>&gt;<i> &gt; }; 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; The driver will at first try to configure desired bit timings and
+</I>&gt;<i> in 
+</I>&gt;<i> &gt; case it is not possible, own bit timings may be calculated from the 
+</I>&gt;<i> &gt; bitrate. 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; bittime_type allows also providing of bittiming in some HW specific 
+</I>&gt;<i> &gt; way, 12 bytes seems for me to be enougth for any type of HW. 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; I am looking forward for your comments, 
+</I>
+&gt;<i> 
+</I>&gt;<i> P.S. Vlad, please, configure yours Outlook, especially disable to
+</I>&gt;<i> send 
+</I>&gt;<i> paragraphs without line breaks (i.e. as one long line).
+</I>&gt;<i> 
+</I>
+Sorry about it.
+
+-- 
+Mit freundlichen Gr&#252;&#223;en / Kind regards,
+Dipl.-Ing. Vladislav Gribov MSc
+Development
+--------------------------------------------
+IXXAT Automation GmbH
+Leibnizstr. 15, 88250 Weingarten, Germany
+Phone  +49-751-56146-0
+Direct +49-751-56146-162
+Fax    +49-751-56146-29
+mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A>
+<A HREF="http://www.ixxat.de">http://www.ixxat.de</A>
+--------------------------------------------
+PRIVILEGED AND CONFIDENTIAL.
+Any unauthorized use or disclosure
+is strictly prohibited.
+--------------------------------------------
+Sitz der Gesellschaft: Weingarten
+Handelsregister Ulm HRB 551905
+Gesch&#228;ftsf&#252;hrer:
+Christian Schlegel, Sieglinde Etschberger
+--------------------------------------------
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000690.html">[RFC] setting baudrate
+</A></li>
+	<LI>Next message: <A HREF="000692.html">Setting CAN bit rate in HW-independent way
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#691">[ date ]</a>
+              <a href="thread.html#691">[ thread ]</a>
+              <a href="subject.html#691">[ subject ]</a>
+              <a href="author.html#691">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

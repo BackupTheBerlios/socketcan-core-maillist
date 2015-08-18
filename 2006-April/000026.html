@@ -1,0 +1,147 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> AW: [Socketcan-core] Timestamps
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20AW%3A%20%5BSocketcan-core%5D%20Timestamps&In-Reply-To=%3C444CF76B.70807%40web.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000023.html">
+   <LINK REL="Next"  HREF="000024.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>AW: [Socketcan-core] Timestamps</H1>
+    <B>Jan Kiszka</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20AW%3A%20%5BSocketcan-core%5D%20Timestamps&In-Reply-To=%3C444CF76B.70807%40web.de%3E"
+       TITLE="AW: [Socketcan-core] Timestamps">jan.kiszka at web.de
+       </A><BR>
+    <I>Mon Apr 24 18:06:03 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000023.html">[Socketcan-core] Re: Timestamps
+</A></li>
+        <LI>Next message: <A HREF="000024.html">[Socketcan-core] LLCF-2.0-pre2 in socketcan/trunk
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26">[ date ]</a>
+              <a href="thread.html#26">[ thread ]</a>
+              <a href="subject.html#26">[ subject ]</a>
+              <a href="author.html#26">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hartkopp, Oliver (K-GEFE/E) wrote:
+&gt;<i> Hi Jan,
+</I>&gt;<i> 
+</I>&gt;<i> i used the weekend to think on the current remarks on timestamps and
+</I>&gt;<i> error-handling (which will i comment in the Error Handling thread).
+</I>&gt;<i> 
+</I>&gt;<i> 1. resolution / timestamp-conversion-hell / low-performance-architectures
+</I>&gt;<i> 
+</I>&gt;<i> Let's start with CAN-basics: 
+</I>&gt;<i> If you have a 1 MBit CAN each bit lasts about 1 usec. The shortest CAN-Frame
+</I>&gt;<i> (11 bit ID, DLC=0) is 47 bits which is 47 usecs (+ frame intersection).
+</I>&gt;<i> Additionally the CAN-bus is CSMA/CA with no real-time capabilities, so it's
+</I>&gt;<i> really hard for me to understand, why anyone would need nano seconds?!?
+</I>&gt;<i> Maybe the hero-engineer from Motorola used the nanosec resolution to debug
+</I>&gt;<i> his chip-design but this timestamp resolution is definitely obsolete for CAN
+</I>&gt;<i> users.
+</I>&gt;<i> 
+</I>&gt;<i> If you would like to use the timestamps from the mscan-controller, it would
+</I>&gt;<i> be the correct way to devide the nanosecs by 1000 and add a (on-time
+</I>&gt;<i> calculated) offset to the system clock and put his value directly into the
+</I>&gt;<i> skb. That's really fast.
+</I>
+The upcoming clocksource infrastructure of the kernel uses nanoseconds
+as base, advanced POSIX time interfaces are timespec-based (this has
+nothing to do with the clock source precision). I just want to remind of
+this fact when designing *new* interfaces.
+
+&gt;<i> 
+</I>&gt;<i> 2. &quot;Two syscalls instead of one *pre-frame*&quot;
+</I>&gt;<i> 
+</I>&gt;<i> As i wrote before there is no need to have two systemcalls, e.g. when you
+</I>&gt;<i> use recvmsg() to get the frames:
+</I>&gt;<i> 
+</I>&gt;<i> (..)
+</I>&gt;<i>     on = 1;
+</I>&gt;<i>     setsockopt(s, SOL_SOCKET, SO_TIMESTAMP, &amp;on, sizeof(on));
+</I>&gt;<i> (..)
+</I>&gt;<i>     iov.iov_base = &frame;
+</I>&gt;<i>     iov.iov_len  = sizeof(struct can_frame);
+</I>&gt;<i> (..)
+</I>&gt;<i>     nbytes = recvmsg(s, &amp;msg, 0); /* error checking left out */
+</I>&gt;<i>     cmsg = CMSG_FIRSTHDR(&amp;msg); /* enabled only one ctrl-msg */
+</I>&gt;<i>     stamp = *(struct timeval*)CMSG_DATA(cmsg);
+</I>&gt;<i> 
+</I>&gt;<i>     if (stamp.tv_sec)
+</I>&gt;<i>       printf(&quot;%d.%06d &quot;, stamp.tv_sec, stamp.tv_usec);
+</I>&gt;<i>     if (frame.can_id &amp; CAN_EFF_FLAG)
+</I>&gt;<i>       printf(&quot;%8X  &quot;, frame.can_id &amp; CAN_EFF_MASK);
+</I>&gt;<i>     else
+</I>&gt;<i>       printf(&quot;%3X  &quot;, frame.can_id &amp; CAN_SFF_MASK);
+</I>&gt;<i> (..)
+</I>&gt;<i> 
+</I>&gt;<i> So if you only enable one control-message, it's easy like this. It does
+</I>&gt;<i> everything you want and has only ONE syscall receiving a can_frame.
+</I>
+Sorry, I obviously overread this important detail when you were giving
+the two-syscalls example and then talking about recvfrom. The
+control-channel via recvmsg is perfect: no need to overload the frame
+struct, but still avoiding redundant syscalls.
+
+Fine, then we do already agree! I would just suggest thinking about
+additional control options for the clock source (including on-can-chip
+timers) and the timestamp format (timeval/timespec/u64). Not all options
+have to be mandatory for each and every implementation, but by defining
+*optional* extensions we can avoid special workarounds when they are
+needed. What about this argument to SO_TIMESTAMP:
+
+struct can_timestamp_ctrl {
+	clockid_t clk_id;
+	int format;
+};
+
+clockid_t is POSIX + CLOCK_NONE (to disable it) +
+CLOCK_WHAT_EVER_YOU_LIKE. Format could be TS_FORMAT_TIMEVAL,
+TS_FORMAT_TIMESPEC, TS_FORMAT_NS64 (64 bit nanoseconds), making timeval
+mandatory (if you like this most). [Actually, this generic way could be
+something also for other driver interfaces.]
+
+Jan
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 250 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20060424/29839aa1/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20060424/29839aa1/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000023.html">[Socketcan-core] Re: Timestamps
+</A></li>
+	<LI>Next message: <A HREF="000024.html">[Socketcan-core] LLCF-2.0-pre2 in socketcan/trunk
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26">[ date ]</a>
+              <a href="thread.html#26">[ thread ]</a>
+              <a href="subject.html#26">[ subject ]</a>
+              <a href="author.html#26">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

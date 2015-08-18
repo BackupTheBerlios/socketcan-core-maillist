@@ -1,0 +1,172 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: CAN state management
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20CAN%20state%20management&In-Reply-To=%3C4755133A.3040204%40volkswagen.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000911.html">
+   <LINK REL="Next"  HREF="000923.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: CAN state management</H1>
+    <B>Hartkopp, Oliver (K-GEFE/E)</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20CAN%20state%20management&In-Reply-To=%3C4755133A.3040204%40volkswagen.de%3E"
+       TITLE="RFC: CAN state management">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Tue Dec  4 09:43:38 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000911.html">RFC: CAN state management
+</A></li>
+        <LI>Next message: <A HREF="000923.html">RFC: CAN state management
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#913">[ date ]</a>
+              <a href="thread.html#913">[ thread ]</a>
+              <a href="subject.html#913">[ subject ]</a>
+              <a href="author.html#913">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Sam Ravnborg wrote:
+&gt;<i> On Mon, Dec 03, 2007 at 12:42:11PM +0100, Wolfgang Grandegger wrote:
+</I>&gt;<i>   
+</I>&gt;&gt;<i> Hello,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> here is the next, rather easy to agree on issue, of
+</I>&gt;&gt;<i> <A HREF="http://svn.berlios.de/svnroot/repos/socketcan/trunk/TODO.">http://svn.berlios.de/svnroot/repos/socketcan/trunk/TODO.</A>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> o CAN state management:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   How should the CAN state be managed? We have the common &quot;state&quot;
+</I>&gt;&gt;<i>   variable of the CAN device interface and the do_get_state() method.
+</I>&gt;&gt;<i>   I see two methods:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   - the common &quot;state&quot; variable is updated in the ISR and it always
+</I>&gt;&gt;<i>     hold the proper state. There's no need for do_get_state().
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   - if do_get_state(), it should return the proper state.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   Part of it could be handled in common code.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> We have currently the following CAN states defined:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   #define CAN_STATE_ACTIVE                0
+</I>&gt;&gt;<i>   #define CAN_STATE_BUS_WARNING           1
+</I>&gt;&gt;<i>   #define CAN_STATE_BUS_PASSIVE           2
+</I>&gt;&gt;<i>   #define CAN_STATE_BUS_OFF               3
+</I>&gt;&gt;<i>   #define CAN_STATE_SCANNING_BAUDRATE     4
+</I>&gt;&gt;<i>   #define CAN_STATE_STOPPED               5
+</I>&gt;&gt;<i>   #define CAN_STATE_SLEEPING              6
+</I>&gt;&gt;<i>     
+</I>&gt;<i>
+</I>&gt;<i> At least use an anonymous enum for this.
+</I>&gt;<i> It wil ease debugging at least.
+</I>&gt;<i>
+</I>&gt;<i> See dccp.h for one example of using anon enum (see MIB related definitions).
+</I>&gt;<i>   
+</I>Hi all,
+
+i just looked into the Kernel source to check the already defined 
+interface states. There is a interface &quot;operational state&quot; defined 
+following RFC2863:
+
+//lxr.linux.no/linux+v2.6.23.9/include/linux/if.h#L91
+
+Regarding these definitions i would tend to define
+
+/* RFC 2863 operational status */
+enum {
+        IF_OPER_UNKNOWN,
+        IF_OPER_NOTPRESENT,
+        IF_OPER_DOWN, /* CAN_STATE_STOPPED */
+        IF_OPER_LOWERLAYERDOWN, /* CAN_STATE_BUS_OFF */
+        IF_OPER_TESTING, /* CAN_STATE_SCANNING_BIT(!)RATE */
+        IF_OPER_DORMANT, /* CAN_STATE_SLEEPING */
+        IF_OPER_UP, /* CAN_STATE_ACTIVE */
+};
+
+IMO the RFC 2863 defines the interface status quite nice. Especially 
+because of the current state CAN_STATE_BUS_WARNING  and 
+CAN_STATE_BUS_PASSIVE does not really tell the user about the 
+'operational' state of the interface as it is still possible to send and 
+receive CAN frames. This is what also Vladislav pointed out.
+
+My suggestion would be to use the RFC 2863 states for the interface 
+state in general (e.g. in sysfs) and to change the error frame 
+definition in error.h like this:
+
+===================================================================
+--- include/linux/can/error.h    (revision 572)
++++ include/linux/can/error.h    (working copy)
+@@ -25,7 +25,7 @@
+ #define CAN_ERR_PROT         0x00000008U /* protocol violations / 
+data[2..3] */
+ #define CAN_ERR_TRX          0x00000010U /* transceiver status  / 
+data[4]    */
+ #define CAN_ERR_ACK          0x00000020U /* received no ACK on 
+transmission */
+-#define CAN_ERR_BUSOFF       0x00000040U /* bus off */
++#define CAN_ERR_STATECHANGE  0x00000040U /* interface state changes / 
+data[5] */
+ #define CAN_ERR_BUSERROR     0x00000080U /* bus error (may flood!) */
+ #define CAN_ERR_RESTARTED    0x00000100U /* controller restarted */
+ 
+@@ -90,6 +90,10 @@
+ #define CAN_ERR_TRX_CANL_SHORT_TO_GND  0x70 /* 0111 0000 */
+ #define CAN_ERR_TRX_CANL_SHORT_TO_CANH 0x80 /* 1000 0000 */
+ 
+-/* controller specific additional information / data[5..7] */
+ 
++/* interface state changes / data[5] - see RFC2863 definitions in 
+linux/if.h */
++
++
++/* controller specific additional information / data[6..7] */
++
+ #endif /* CAN_ERROR_H */
+
+This would bring a clean separation from the well defined operating 
+state in RFC2863 (for sysfs) and the CAN controller specific things that 
+are transported via the error frame.
+
+Additionally the error frame becomes capable to announce changing 
+RFC2863 operating states, when this is requested by setting 
+CAN_ERR_STATECHANGE in the error frame mask. The definitions for 
+OVERFLOW, WARNING and PASSIVE are define in the error frame anyway.
+
+Comments?
+
+Oliver.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000911.html">RFC: CAN state management
+</A></li>
+	<LI>Next message: <A HREF="000923.html">RFC: CAN state management
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#913">[ date ]</a>
+              <a href="thread.html#913">[ thread ]</a>
+              <a href="subject.html#913">[ subject ]</a>
+              <a href="author.html#913">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

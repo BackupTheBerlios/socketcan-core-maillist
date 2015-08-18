@@ -1,0 +1,112 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 8/8] can: janz-ican3: don't copy data to rx'ed RTR frames
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%208/8%5D%20can%3A%20janz-ican3%3A%20don%27t%20copy%20data%20to%20rx%27ed%20RTR%20frames&In-Reply-To=%3C1287736730-2010-9-git-send-email-mkl%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004863.html">
+   <LINK REL="Next"  HREF="004879.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 8/8] can: janz-ican3: don't copy data to rx'ed RTR frames</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%208/8%5D%20can%3A%20janz-ican3%3A%20don%27t%20copy%20data%20to%20rx%27ed%20RTR%20frames&In-Reply-To=%3C1287736730-2010-9-git-send-email-mkl%40pengutronix.de%3E"
+       TITLE="[PATCH 8/8] can: janz-ican3: don't copy data to rx'ed RTR frames">mkl at pengutronix.de
+       </A><BR>
+    <I>Fri Oct 22 10:38:50 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004863.html">[PATCH V2 7/8] can: janz-ican3: cleanup of ican3_to_can_frame and	can_frame_to_ican3
+</A></li>
+        <LI>Next message: <A HREF="004879.html">[PATCH net-next-2.6 v2] can: Topcliff: Update PCH_CAN driver	to 2.6.36
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4865">[ date ]</a>
+              <a href="thread.html#4865">[ thread ]</a>
+              <a href="subject.html#4865">[ subject ]</a>
+              <a href="author.html#4865">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Signed-off-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+Acked-by: Ira W. Snyder &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">iws at ovro.caltech.edu</A>&gt;
+Acked-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+ drivers/net/can/janz-ican3.c |   19 ++++++++++---------
+ 1 files changed, 10 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/net/can/janz-ican3.c b/drivers/net/can/janz-ican3.c
+index e9691c4..d59df41 100644
+--- a/drivers/net/can/janz-ican3.c
++++ b/drivers/net/can/janz-ican3.c
+@@ -807,18 +807,15 @@ static void ican3_to_can_frame(struct ican3_dev *mod,
+ 			       struct can_frame *cf)
+ {
+ 	if ((desc-&gt;command &amp; ICAN3_CAN_TYPE_MASK) == ICAN3_CAN_TYPE_SFF) {
+-		if (desc-&gt;data[1] &amp; ICAN3_SFF_RTR)
+-			cf-&gt;can_id |= CAN_RTR_FLAG;
+-
+ 		cf-&gt;can_id |= desc-&gt;data[0] &lt;&lt; 3;
+ 		cf-&gt;can_id |= (desc-&gt;data[1] &amp; 0xe0) &gt;&gt; 5;
++
+ 		cf-&gt;can_dlc = get_can_dlc(desc-&gt;data[1] &amp; ICAN3_CAN_DLC_MASK);
+-		memcpy(cf-&gt;data, &amp;desc-&gt;data[2], cf-&gt;can_dlc);
+-	} else {
+-		cf-&gt;can_dlc = get_can_dlc(desc-&gt;data[0] &amp; ICAN3_CAN_DLC_MASK);
+-		if (desc-&gt;data[0] &amp; ICAN3_EFF_RTR)
++		if (desc-&gt;data[1] &amp; ICAN3_SFF_RTR)
+ 			cf-&gt;can_id |= CAN_RTR_FLAG;
+-
++		else
++			memcpy(cf-&gt;data, &amp;desc-&gt;data[2], cf-&gt;can_dlc);
++	} else {
+ 		if (desc-&gt;data[0] &amp; ICAN3_EFF) {
+ 			cf-&gt;can_id |= CAN_EFF_FLAG;
+ 			cf-&gt;can_id |= desc-&gt;data[2] &lt;&lt; 21; /* 28-21 */
+@@ -830,7 +827,11 @@ static void ican3_to_can_frame(struct ican3_dev *mod,
+ 			cf-&gt;can_id |= desc-&gt;data[3] &gt;&gt; 5;  /* 2-0   */
+ 		}
+ 
+-		memcpy(cf-&gt;data, &amp;desc-&gt;data[6], cf-&gt;can_dlc);
++		cf-&gt;can_dlc = get_can_dlc(desc-&gt;data[0] &amp; ICAN3_CAN_DLC_MASK);
++		if (desc-&gt;data[0] &amp; ICAN3_EFF_RTR)
++			cf-&gt;can_id |= CAN_RTR_FLAG;
++		else
++			memcpy(cf-&gt;data, &amp;desc-&gt;data[6], cf-&gt;can_dlc);
+ 	}
+ }
+ 
+-- 
+1.7.2.3
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004863.html">[PATCH V2 7/8] can: janz-ican3: cleanup of ican3_to_can_frame and	can_frame_to_ican3
+</A></li>
+	<LI>Next message: <A HREF="004879.html">[PATCH net-next-2.6 v2] can: Topcliff: Update PCH_CAN driver	to 2.6.36
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4865">[ date ]</a>
+              <a href="thread.html#4865">[ thread ]</a>
+              <a href="subject.html#4865">[ subject ]</a>
+              <a href="author.html#4865">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

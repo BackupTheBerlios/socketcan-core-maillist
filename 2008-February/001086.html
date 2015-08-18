@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> AT91 device driver woes?
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20AT91%20device%20driver%20woes%3F&In-Reply-To=%3C20080229211411.GA7571%40uranus.ravnborg.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001085.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>AT91 device driver woes?</H1>
+    <B>Sam Ravnborg</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20AT91%20device%20driver%20woes%3F&In-Reply-To=%3C20080229211411.GA7571%40uranus.ravnborg.org%3E"
+       TITLE="AT91 device driver woes?">sam at ravnborg.org
+       </A><BR>
+    <I>Fri Feb 29 22:14:11 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001085.html">AT91 device driver woes?
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1086">[ date ]</a>
+              <a href="thread.html#1086">[ thread ]</a>
+              <a href="subject.html#1086">[ subject ]</a>
+              <a href="author.html#1086">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, Feb 28, 2008 at 04:13:13PM +0100, Hans-J&#252;rgen Koch wrote:
+&gt;<i> Am Thu, 28 Feb 2008 15:48:49 +0100
+</I>&gt;<i> schrieb Sam Ravnborg &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">sam at ravnborg.org</A>&gt;:
+</I>&gt;<i> 
+</I>&gt;<i> &gt; On Wed, Feb 27, 2008 at 09:24:59AM +0100, Sam Ravnborg wrote:
+</I>&gt;<i> &gt; &gt; Hi Hans.
+</I>&gt;<i> 
+</I>&gt;<i> Hi Sam,
+</I>&gt;<i> sorry for not answering earlier, I was on a trade fair for two days.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; We are started to use your nice AT91 driver but
+</I>&gt;<i> &gt; &gt; are facing a small issue with respect to filtering.
+</I>&gt;<i> &gt; &gt; I tracked it down to following code snippet that looks wrong:
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; static void read_mailbox(struct net_device *dev, int mb, struct
+</I>&gt;<i> &gt; &gt; can_frame *cf) {
+</I>&gt;<i> &gt; &gt;         u32 can_msr, can_mid, can_mdl, can_mdh;
+</I>&gt;<i> &gt; &gt;         int i;
+</I>&gt;<i> &gt; &gt;         struct can_priv *priv = netdev_priv(dev);
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt;         spin_lock(&amp;priv-&gt;lock);
+</I>&gt;<i> &gt; &gt;         can_mid = at91_can_read(dev, CAN_MID(mb));
+</I>&gt;<i> &gt; &gt;         if (can_mid &amp; CAN_MID_MIDE)
+</I>&gt;<i> &gt; &gt;                 cf-&gt;can_id = can_mid | CAN_EFF_FLAG;
+</I>&gt;<i> &gt; &gt;         else
+</I>&gt;<i> &gt; &gt;                 cf-&gt;can_id = ((can_mid &amp; 0x1FFC0000) &gt;&gt; 18);
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; The assignment to can_id in extended mode does not mask
+</I>&gt;<i> &gt; &gt; out the upper bits.
+</I>&gt;<i> &gt; &gt; So I went ahead and did:
+</I>&gt;<i> &gt; &gt; 	cf-&gt;can_id = (can_mid &amp; CAN_EFF_MASK) | CAN_EFF_FLAG;
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; But a bit searching revealed that I was using an older version
+</I>&gt;<i> &gt; &gt; of your device driver. In the latest version you posted this
+</I>&gt;<i> &gt; &gt; code was fixed like this:
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; +	can_mid = at91_can_read(dev, CAN_MID(mb));
+</I>&gt;<i> &gt; &gt; +	if (can_mid &amp; CAN_MID_MIDE)
+</I>&gt;<i> &gt; &gt; +		cf-&gt;can_id = (can_mid &amp; 0x0003FFFF) | CAN_EFF_FLAG;
+</I>&gt;<i> &gt; &gt; +	else
+</I>&gt;<i> &gt; &gt; +		cf-&gt;can_id = ((can_mid &amp; 0x1FFC0000) &gt;&gt; 18);
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Here only the lower 18 bits are used in the extended addressign
+</I>&gt;<i> &gt; &gt; mode. And in normal addressign mode you mask out the upper 18 bits.
+</I>&gt;<i> &gt; &gt; Both assignments looks wrong to me.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Just a heads up.
+</I>&gt;<i> &gt; Using the below simple patch made the filtering work as expected.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; --- linux-2.6.23/drivers/net/can/at91_can.c     2008-02-27
+</I>&gt;<i> &gt; 12:59:16.000000000 +0100 +++
+</I>&gt;<i> &gt; linux-2.6.23.new/drivers/net/can/at91_can.c 2008-02-27
+</I>&gt;<i> &gt; 13:05:21.000000000 +0100 @@ -483,7 +483,7 @@ spin_lock(&amp;priv-&gt;lock);
+</I>&gt;<i> &gt;         can_mid = at91_can_read(dev, CAN_MID(mb));
+</I>&gt;<i> &gt;         if (can_mid &amp; CAN_MID_MIDE)
+</I>&gt;<i> &gt; -               cf-&gt;can_id = can_mid | CAN_EFF_FLAG;
+</I>&gt;<i> &gt; +               cf-&gt;can_id = (can_mid &amp; CAN_EFF_MASK) | CAN_EFF_FLAG;
+</I>&gt;<i> &gt;         else
+</I>&gt;<i> &gt;                 cf-&gt;can_id = ((can_mid &amp; 0x1FFC0000) &gt;&gt; 18);
+</I>&gt;<i> &gt; 
+</I>&gt;<i> 
+</I>&gt;<i> Quite right. I came to the same conclusion. If your CAN_EFF_MASK is
+</I>&gt;<i> 0x0003FFFF, then we've got the same code. We should replace that ugly
+</I>&gt;<i> 0x1FFC0000 by some #define as well. 
+</I>
+In extended addressing mode the CAN ID is 11 + 18 bits,
+so 29 bits in total.
+Reading 37.8.14 CAN Message ID Register in the at91 manual I have handy
+tells me that:
+0:17 equals MIDvB
+18:28 equals MIDvA
+29 equals MIDE
+
+Where MIDvB is o if MIDE equals '0' (non extended mode)
+
+So the latter assignment to cf-&gt;can_id is correct.
+But the first assignment needs to look like:
+cf-&gt;can_id = can_mid &amp; 0x1FFFFFFF; to get the full
+29 bit extended address.
+
+If I read the definition of CAN_MID correct you actually
+access the first 32 bit in the mailbox - which
+should be OK.
+But it is my understanding that the format of the first 32 bits
+are the same as the CAN_MIDx register.
+
+So I beleive I have found a bug in the driver that will surface
+when you start to use ID's in extended mode bigger than
+0x3FFFF.
+
+That may not happen every day.
+
+I you drop me a copy of the last source I would be happy to try
+to go through it all and test it here.
+
+	Sam
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001085.html">AT91 device driver woes?
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1086">[ date ]</a>
+              <a href="thread.html#1086">[ thread ]</a>
+              <a href="subject.html#1086">[ subject ]</a>
+              <a href="author.html#1086">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,138 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Softing Driver with new bittime interface
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Softing%20Driver%20with%20new%20bittime%20interface&In-Reply-To=%3C48EA1735.2020107%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001905.html">
+   <LINK REL="Next"  HREF="001907.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Softing Driver with new bittime interface</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Softing%20Driver%20with%20new%20bittime%20interface&In-Reply-To=%3C48EA1735.2020107%40grandegger.com%3E"
+       TITLE="Softing Driver with new bittime interface">wg at grandegger.com
+       </A><BR>
+    <I>Mon Oct  6 15:48:37 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001905.html">Softing Driver with new bittime interface
+</A></li>
+        <LI>Next message: <A HREF="001907.html">Softing Driver with new bittime interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1906">[ date ]</a>
+              <a href="thread.html#1906">[ thread ]</a>
+              <a href="subject.html#1906">[ subject ]</a>
+              <a href="author.html#1906">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver Hartkopp wrote:
+&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Maybe we should put this check just around the execution of
+</I>&gt;&gt;&gt;<i> priv-&gt;do_set_bittiming();
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The softing driver is an exotic but valid use case and I have another
+</I>&gt;&gt;<i> one in mind. There might be CAN controllers with
+</I>&gt;&gt;<i> priv-&gt;bittiming_const==NULL still requiring to call
+</I>&gt;&gt;<i> priv-&gt;do_set_bittiming(). I'm thinking about intelligent CAN controllers
+</I>&gt;&gt;<i> where the bit-timing is fixed by firmware and you just select one.
+</I>&gt;&gt;<i> Here is the patch:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Index: kernel/2.6/drivers/net/can/dev.c
+</I>&gt;&gt;<i> ===================================================================
+</I>&gt;&gt;<i> --- kernel/2.6/drivers/net/can/dev.c    (revision 829)
+</I>&gt;&gt;<i> +++ kernel/2.6/drivers/net/can/dev.c    (working copy)
+</I>&gt;&gt;<i> @@ -70,9 +70,6 @@
+</I>&gt;&gt;<i>      int spt_error = 1000, spt = 0, sampl_pt;
+</I>&gt;&gt;<i>      uint64_t v64;
+</I>&gt;&gt;<i>  
+</I>&gt;&gt;<i> -    if (!priv-&gt;bittiming_const)
+</I>&gt;&gt;<i> -        return -ENOTSUPP;
+</I>&gt;&gt;<i> -
+</I>&gt;&gt;<i>   
+</I>&gt;<i> 
+</I>&gt;<i> I won't remove this, as there might some interested user outside dev.c
+</I>&gt;<i> (when exported ... )
+</I>&gt;<i> 
+</I>&gt;&gt;<i>      /* Use CIA recommended sample points */
+</I>&gt;&gt;<i>      if (bt-&gt;sample_point) {
+</I>&gt;&gt;<i>          sampl_pt = bt-&gt;sample_point;
+</I>&gt;&gt;<i> @@ -157,9 +154,6 @@
+</I>&gt;&gt;<i>      u32 bitrate;
+</I>&gt;&gt;<i>      u64 brp64;
+</I>&gt;&gt;<i>  
+</I>&gt;&gt;<i> -    if (!priv-&gt;bittiming_const)
+</I>&gt;&gt;<i> -        return -ENOTSUPP;
+</I>&gt;&gt;<i> -
+</I>&gt;&gt;<i>   
+</I>&gt;<i> 
+</I>&gt;<i> dito.
+</I>
+Well, these functions are not exported by purpose.
+
+&gt;&gt;<i>      tseg1 = bt-&gt;prop_seg + bt-&gt;phase_seg1;
+</I>&gt;&gt;<i>      if (bt-&gt;sjw &gt; btc-&gt;sjw_max ||
+</I>&gt;&gt;<i>          tseg1 &lt; btc-&gt;tseg1_min || tseg1 &gt; btc-&gt;tseg1_max ||
+</I>&gt;&gt;<i> @@ -190,17 +184,17 @@
+</I>&gt;&gt;<i>      struct can_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i>      int err;
+</I>&gt;&gt;<i>  
+</I>&gt;&gt;<i> +    /* Check if bit-timing parameters have been pre-defined */
+</I>&gt;&gt;<i> +    if (!priv-&gt;bittiming.tq &amp;&amp; !priv-&gt;bittiming.bitrate)
+</I>&gt;&gt;<i> +        return -EINVAL;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i>      /* Check if the CAN device needs bit-timing parameters */
+</I>&gt;&gt;<i>   
+</I>&gt;<i> 
+</I>&gt;<i> /* Check if the CAN device has bit-timing parameters */
+</I>&gt;<i> ??
+</I>
+Right.
+
+&gt;<i> 
+</I>&gt;<i> The rest looks good to me.
+</I>&gt;<i> 
+</I>&gt;<i> Would you like to apply it on your own?
+</I>
+Go ahead please. I'm busy very with other projects :-(.
+
+Thanks,
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001905.html">Softing Driver with new bittime interface
+</A></li>
+	<LI>Next message: <A HREF="001907.html">Softing Driver with new bittime interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1906">[ date ]</a>
+              <a href="thread.html#1906">[ thread ]</a>
+              <a href="subject.html#1906">[ subject ]</a>
+              <a href="author.html#1906">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

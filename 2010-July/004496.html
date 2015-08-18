@@ -1,0 +1,1363 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC - PATCH] MCP251x driver using Async SPI Interface
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20-%20PATCH%5D%20MCP251x%20driver%20using%20Async%20SPI%20Interface&In-Reply-To=%3CAANLkTikuby%3DsYWNYOQJVtxHRFOVUn9B%2BTKyZyWrVnAJX%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004490.html">
+   <LINK REL="Next"  HREF="004498.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC - PATCH] MCP251x driver using Async SPI Interface</H1>
+    <B>Fawad Lateef</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20-%20PATCH%5D%20MCP251x%20driver%20using%20Async%20SPI%20Interface&In-Reply-To=%3CAANLkTikuby%3DsYWNYOQJVtxHRFOVUn9B%2BTKyZyWrVnAJX%40mail.gmail.com%3E"
+       TITLE="[RFC - PATCH] MCP251x driver using Async SPI Interface">fawadlateef at gmail.com
+       </A><BR>
+    <I>Mon Jul 26 16:45:57 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004490.html">[RFC PATCH] can: improved CAN error state handling
+</A></li>
+        <LI>Next message: <A HREF="004498.html">[RFC - PATCH] MCP251x driver using Async SPI Interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4496">[ date ]</a>
+              <a href="thread.html#4496">[ thread ]</a>
+              <a href="subject.html#4496">[ subject ]</a>
+              <a href="author.html#4496">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+I am attaching patch for MCP251x driver which is using Async SPI
+Interface. The patch is generated against latest socketcan-svn
+revision 1190 _and_ for linux-2.6.28 (means #ifdef for supporting all
+other kernel versions will be removed after applying this patch). This
+patch needs cleanup and you might find some part redundant (which will
+be done some time later if needed); posting this now for testing
+purposes.
+
+All changes are added under &quot;#ifdef MCP2515_HIDG_MOD&quot; so just
+commenting &quot;#define MCP2515_HIDG_MOD&quot; will make it behave like normal
+sync driver. The Async interface uses SPI chaining support for
+generating 2 commands in a single SPI async call. So if SPI interface
+don't support command chaining then this will not work.
+
+Tested this driver with MCP2515 connected to AT91SAM9260 (based on
+ARM926EJ-S core) micro-controller. Also this driver is tested as
+built-in kernel driver hence not sure about its module support.
+
+Hoping to get feedback and test results soon.
+
+-- Fawad Lateef
+
+P.S. This is the first time I am sending a patch to any mailing-list,
+so please let me know if its not in correct format.
+
+
+--- ./drivers/net/can/mcp251x.c.orig	2010-07-26 08:02:41.000000000 -0600
++++ ./drivers/net/can/mcp251x.c	2010-07-26 08:12:51.000000000 -0600
+@@ -1,6 +1,11 @@
+ /*
+  * CAN bus driver for Microchip 251x CAN Controller with SPI Interface
+  *
++ * Copyright 2010 HID Global Corporation
++ * Modified and rewritten tx/rx fast path by:
++ *  Andrei Rylin &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">port777 at gmail.com</A>&gt; and
++ *  Fawad Lateef &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">fawadlateef at gmail.com</A>&gt;
++ *
+  * MCP2510 support and bug fixes by Christian Pellegrin
+  * &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">chripell at evolware.org</A>&gt;
+  *
+@@ -62,6 +67,7 @@
+ #include &lt;linux/delay.h&gt;
+ #include &lt;linux/device.h&gt;
+ #include &lt;linux/dma-mapping.h&gt;
++#include &lt;linux/dmapool.h&gt;
+ #include &lt;linux/freezer.h&gt;
+ #include &lt;linux/interrupt.h&gt;
+ #include &lt;linux/io.h&gt;
+@@ -71,14 +77,13 @@
+ #include &lt;linux/platform_device.h&gt;
+ #include &lt;linux/spi/spi.h&gt;
+ #include &lt;linux/uaccess.h&gt;
+-#include &lt;socketcan/can.h&gt;
+-#include &lt;socketcan/can/core.h&gt;
+-#include &lt;socketcan/can/dev.h&gt;
+-#include &lt;socketcan/can/platform/mcp251x.h&gt;
++#include &lt;linux/can.h&gt;
++#include &lt;linux/can/core.h&gt;
++#include &lt;linux/can/dev.h&gt;
++#include &lt;linux/can/platform/mcp251x.h&gt;
+
+-#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,22)
+-#error This driver does not support Kernel versions &lt; 2.6.22
+-#endif
++/* Defining this to include HID Global changes related to
+asynchronous for MCP2515 (connected with AT91SAM9260 MCU) */
++#define MCP2515_HIDG_MOD 1
+
+ /* SPI interface instruction set */
+ #define INSTRUCTION_WRITE	0x02
+@@ -88,6 +93,99 @@
+ #define INSTRUCTION_READ_RXB(n)	(((n) == 0) ? 0x90 : 0x94)
+ #define INSTRUCTION_RESET	0xC0
+
++
++#ifdef MCP2515_HIDG_MOD
++
++#ifndef BIT
++#define BIT(n) (1&lt;&lt;(n))
++#endif
++
++// macros to handle bit fields defined as msb:lsb pair
+(most/least-significant bits)
++#define FLD_LSB(f)      (0?f)
++#define FLD_MSB(f)      (1?f)
++#define FLD_SHIFT(f)    FLD_LSB(f)
++#define FLD_SIZE(f)     (FLD_MSB(f)-FLD_LSB(f)+1)
++#define FLD_MASK(f)     (0xFF&gt;&gt;(8-FLD_SIZE(f)))
++#define FLD_BITMASK(f)  (FLD_MASK(f) &lt;&lt; FLD_SHIFT(f))
++
++#define FLD_GET(f,v)    (((v)&gt;&gt;FLD_SHIFT(f))&amp;FLD_MASK(f))
++#define FLD_SET(f,v)    (((v)&amp;FLD_MASK(f))&lt;&lt;FLD_SHIFT(f))
++#define FLD_DEF(f,c)    ((f##_##c)&lt;&lt;FLD_SHIFT(f))
++
++#define MCP2515_SPI_READ        0x03
++#define MCP2515_SPI_BIT_MODIFY  0x05
++#define MCP2515_SPI_LOAD_TXB(n) (0x40 | ((n)&lt;&lt;1))
++#define MCP2515_SPI_RTS(n)      (0x80 | (n))
++#define MCP2515_SPI_READ_RXB(n) (0x90 | ((n)&lt;&lt;2))
++
++#define CANCTRL         0x0f    /* xF */
++#define REQOP           7:5
++#define ABAT            BIT(4)  /* abort all pending transmissions */
++#define OSM             BIT(3)  /* one shot mode */
++#define CLKEN           BIT(2)  /* CLKOUT pin enable */
++#define CLKPRE          1:0     /* CLKOUT pin prescaler */
++
++#define REQOP_NORMAL    0
++#define REQOP_SLEEP     1
++#define REQOP_LOOPBACK  2
++#define REQOP_LISTEN    3
++#define REQOP_CONFIG    4       /* at power-up and reset */
++
++#define CLKPRE_SC_DIV_1 0
++#define CLKPRE_SC_DIV_2 1
++#define CLKPRE_SC_DIV_4 2
++#define CLKPRE_SC_DIV_8 3
++
++#define TEC             0x1c    /* transmit error counter */
++#define REC             0x1d    /* receive  error counter */
++
++#define CANINTE         0x2b
++#define MERRE           BIT(7)  /* interrupt on error during message
+reception or transmission */
++#define WAKIE           BIT(6)  /* interrupt on CAN bus activity */
++#define ERRIE           BIT(5)  /* interrupt on EFLG error condition change */
++#define TX2IE           BIT(4)  /* interrupt on TXB2 becoming empty */
++#define TX1IE           BIT(3)
++#define TX0IE           BIT(2)
++#define RX1IE           BIT(1)  /* interrupt when message is received
+in RXB1 */
++#define RX0IE           BIT(0)
++
++#define CANINTF         0x2c
++#define MERRF           BIT(7)
++#define WAKIF           BIT(6)
++#define ERRIF           BIT(5)
++#define TX2IF           BIT(4)
++#define TX1IF           BIT(3)
++#define TX0IF           BIT(2)
++#define RX1IF           BIT(1)
++#define RX0IF           BIT(0)
++
++#define EFLG            0x2d
++#define RX1OVR          BIT(7)  /* valid message is received for RXB1
+and CANINTF.RX1IF=1 */
++#define RX0OVR          BIT(6)
++#define TXBO            BIT(5)  /* bus-off, set when TEC reaches 255,
+reset by bus recovery sequence */
++#define TXEP            BIT(4)  /* transmit error-passive, TEC&gt;=128 */
++#define RXEP            BIT(3)  /* receive  error-passive, REC&gt;=128 */
++#define TXWAR           BIT(2)  /* transmit error warning, TEC&gt;=96 */
++#define RXWAR           BIT(1)  /* receive  error warning, REC&gt;=96 */
++#define EWARN           BIT(0)  /* error warning, set on (TXWAR ||
+RXWAR), reset on (!TXWAR &amp;&amp; !RXWAR) */
++
++#define TXBnCTRL(n)     (0x30+0x10*(n))
++#define ABTF            BIT(6)  /* message aborted, read-only */
++#define MLOA            BIT(5)  /* message lost arbitration, read-only */
++#define TXERR           BIT(4)  /* bus error while message was being
+transmitted, read-only */
++#define TXREQ           BIT(3)  /* message transmit request */
++#define TXP             1:0     /* transmit buffer priority, 0 - lowest */
++
++#define TXB0CTRL        TXBnCTRL(0)
++#define TXB1CTRL        TXBnCTRL(1)
++#define TXB2CTRL        TXBnCTRL(2)
++
++#define RXBnCTRL(n)     (0x60+0x10*(n))
++#define RXB0CTRL        RXBnCTRL(0)
++#define RXB1CTRL        RXBnCTRL(1)
++
++#endif /* #ifdef MCP2515_HIDG_MOD */
++
+ /* MPC251x registers */
+ #define CANSTAT	      0x0e
+ #define CANCTRL	      0x0f
+@@ -200,11 +298,41 @@
+
+ #define TX_ECHO_SKB_MAX	1
+
++#ifdef MCP2515_HIDG_MOD
++
++/*/ HW triple-buffering on output. N_TX_BUF equals the number. */
++#define N_TX_BUF          1     /* decreased to 1 tx buffer since
+send order is crucial */
++#define N_RX_BUF          3
++
++/* 2 buf (1 xfer) status + 2 bit_modify */
++#define N_DMA_BUFS        (2 * N_TX_BUF + N_RX_BUF + 4)
++
++/*
++ * We don't send more that BUF_SIZE bytes in one SPI transfer,
++ * and need about 20 buffers of that size (2*N_TX_BUF+N_RX_BUF+5).
++ * Even cacheline-aligned, all fit well into one page.
++ */
++#define BUF_SIZE          16
++
++struct mcp2515_msg
++{
++    struct mcp251x_priv *priv;
++    struct spi_message msg;
++    struct spi_transfer xfer[2];
++};
++
++#define FALLBACK_TO_SYNC_MAX_COUNT  0 /*16*/ /* Max count of error in
+single attempt before switching to sync mode */
++#define SYNC_LOOP_MAX_COUNT  4 /*8*/ /* Max count of error in single
+attempt before switching to sync mode */
++
++#endif /* #ifdef MCP2515_HIDG_MOD */
++
+ #define DEVICE_NAME &quot;mcp251x&quot;
+
++#ifndef MCP2515_HIDG_MOD
+ static int mcp251x_enable_dma; /* Enable SPI DMA. Default: 0 (Off) */
+ module_param(mcp251x_enable_dma, int, S_IRUGO);
+ MODULE_PARM_DESC(mcp251x_enable_dma, &quot;Enable SPI DMA. Default: 0 (Off)&quot;);
++#endif /* #ifndef MCP2515_HIDG_MOD */
+
+ static struct can_bittiming_const mcp251x_bittiming_const = {
+ 	.name = DEVICE_NAME,
+@@ -223,11 +351,35 @@
+ 	struct net_device *net;
+ 	struct spi_device *spi;
+
+-	struct mutex spi_lock; /* SPI buffer lock */
++#ifdef MCP2515_HIDG_MOD
++    spinlock_t lock;
++    int flags;
++#define FLAG_STATUS_BUSY BIT(0)
++#define FLAG_INT_PENDING BIT(1)
++
++    struct mcp2515_msg rx_msg[N_RX_BUF];
++    struct mcp2515_msg tx_msg[N_TX_BUF];
++    struct list_head free_rx;
++    struct list_head free_tx;
++
++    struct mcp2515_msg status_msg;      /* to request CANINTF and EFLG */
++    struct mcp2515_msg bit_modify_msg[2];       /* to reset CANINTF and EFLG */
++    struct list_head free_bit_modify_msg;
++
++    struct dma_pool *dma_pool;
++
++    int fallback_to_sync; /* Use to keep count of errors in single
+attempt before switching to sync mode */
++#endif /* #ifdef MCP2515_HIDG_MOD */
++
++	struct mutex spi_lock; /* SPI buffer lock for single register read/write */
++
+ 	u8 *spi_tx_buf;
+ 	u8 *spi_rx_buf;
++
++#ifndef MCP2515_HIDG_MOD
+ 	dma_addr_t spi_tx_dma;
+ 	dma_addr_t spi_rx_dma;
++#endif /* #ifndef MCP2515_HIDG_MOD */
+
+ 	struct sk_buff *tx_skb;
+ 	int tx_len;
+@@ -244,10 +396,528 @@
+ 	int restart_tx;
+ };
+
++
++#ifdef MCP2515_HIDG_MOD
++static void rx_msg_complete (void *context);
++static void tx_msg_complete (void *context);
++static void status_msg_complete (void *context);
++static void bit_modify_msg_complete (void *context);
++#endif /* #ifdef MCP2515_HIDG_MOD */
++
++
++#ifdef MCP2515_HIDG_MOD
++
++#define _dma_map_xfer(priv, xfer) (-1)
++#define _dma_unmap_xfer(priv, xfer)
++#define _dma_sync(dev, dma, len, direction)
++
++#define DMA_BUF_ALLOC(priv, t, x)                                        \
++    do {                                                                 \
++    	t-&gt;x##_buf = dma_pool_alloc(priv-&gt;dma_pool, GFP_DMA, &amp;t-&gt;x##_dma); \
++        if (!t-&gt;x##_buf) {                                               \
++            dev_err(&amp;priv-&gt;spi-&gt;dev, &quot;no DMA buf\n&quot;);                    \
++            return;                                              \
++        }                                                                \
++    } while(0)
++
++
++static void bit_modify_msg_init (struct mcp2515_msg *msg,
++                                 struct mcp251x_priv *priv, int *buf_num)
++{
++    struct spi_transfer *t;
++
++    msg-&gt;priv = priv;
++
++    spi_message_init (&amp;msg-&gt;msg);
++    msg-&gt;msg.complete = bit_modify_msg_complete;
++    msg-&gt;msg.context = msg;
++
++    t = msg-&gt;xfer;
++    t-&gt;len = 4;
++
++    DMA_BUF_ALLOC (priv, t, tx);
++    (*buf_num)++;
++    *(char *) t-&gt;tx_buf = MCP2515_SPI_BIT_MODIFY;
++    msg-&gt;msg.is_dma_mapped = 1;
++
++    spi_message_add_tail (t, &amp;msg-&gt;msg);
++
++    list_add_tail (&amp;msg-&gt;msg.queue, &amp;priv-&gt;free_bit_modify_msg);
++}
++
++static void rx_msg_init (struct mcp2515_msg *msg,
++                         struct mcp251x_priv *priv, int *buf_num)
++{
++    struct spi_transfer *t;
++
++    msg-&gt;priv = priv;
++
++    spi_message_init (&amp;msg-&gt;msg);
++    msg-&gt;msg.complete = rx_msg_complete;
++    msg-&gt;msg.context = msg;
++
++    t = msg-&gt;xfer;
++    t-&gt;len = 1 + 5 + CAN_FRAME_MAX_DATA_LEN;
++
++    DMA_BUF_ALLOC (priv, t, tx);
++    (*buf_num)++;
++    t-&gt;rx_buf = (void *) t-&gt;tx_buf;
++    t-&gt;rx_dma = t-&gt;tx_dma;
++    msg-&gt;msg.is_dma_mapped = 1;
++
++    spi_message_add_tail (t, &amp;msg-&gt;msg);
++
++    list_add_tail (&amp;msg-&gt;msg.queue, &amp;priv-&gt;free_rx);
++}
++
++static void tx_msg_init (struct mcp2515_msg *msg,
++                         struct mcp251x_priv *priv, int hw_buf_number,
++                         int *buf_num)
++{
++    struct spi_transfer *t;
++
++    msg-&gt;priv = priv;
++
++    spi_message_init (&amp;msg-&gt;msg);
++    msg-&gt;msg.complete = tx_msg_complete;
++    msg-&gt;msg.context = msg;
++    msg-&gt;msg.is_dma_mapped = 1;
++
++    /* first SPI xfer is to fill buffer */
++    t = msg-&gt;xfer;
++    t-&gt;cs_change = 1;
++
++    DMA_BUF_ALLOC (priv, t, tx);
++    (*buf_num)++;
++    *(char *) t-&gt;tx_buf = MCP2515_SPI_LOAD_TXB (hw_buf_number);
++
++    spi_message_add_tail (t, &amp;msg-&gt;msg);
++
++    /* second SPI xfer is to request CAN transmission from that buffer */
++    t++;
++    t-&gt;len = 1;
++
++    DMA_BUF_ALLOC (priv, t, tx);
++    (*buf_num)++;
++    *(char *) t-&gt;tx_buf = MCP2515_SPI_RTS (BIT (hw_buf_number));
++
++    spi_message_add_tail (t, &amp;msg-&gt;msg);
++
++    list_add_tail (&amp;msg-&gt;msg.queue, &amp;priv-&gt;free_tx);
++}
++
++static void status_msg_init (struct mcp2515_msg *msg,
++                             struct mcp251x_priv *priv, int *buf_num)
++{
++    struct spi_transfer *t = msg-&gt;xfer;
++
++    msg-&gt;priv = priv;
++
++    spi_message_init (&amp;msg-&gt;msg);
++    msg-&gt;msg.complete = status_msg_complete;
++    msg-&gt;msg.context = msg;
++
++    t-&gt;len = 4;
++
++    DMA_BUF_ALLOC (priv, t, tx);
++    (*buf_num)++;
++    DMA_BUF_ALLOC (priv, t, rx);
++    (*buf_num)++;
++    {
++        char *p = (char *) t-&gt;tx_buf;
++
++        p[0] = MCP2515_SPI_READ;
++        p[1] = CANINTF;
++    }
++    msg-&gt;msg.is_dma_mapped = 1;
++
++    spi_message_add_tail (t, &amp;msg-&gt;msg);
++}
++
++/* asynchronously modify bits in single register */
++static int mcp2515_bit_modify_async (struct mcp251x_priv *priv,
++                                     unsigned char addr,
++                                     unsigned char mask, unsigned char val)
++{
++    struct mcp2515_msg *msg;
++    struct spi_transfer *t;
++    unsigned long flags;
++    char *tx;
++
++    spin_lock_irqsave (&amp;priv-&gt;lock, flags);
++    BUG_ON (list_empty (&amp;priv-&gt;free_bit_modify_msg));
++    msg = list_entry (priv-&gt;free_bit_modify_msg.next,
++                      struct mcp2515_msg, msg.queue);
++    list_del_init (&amp;msg-&gt;msg.queue);
++    spin_unlock_irqrestore (&amp;priv-&gt;lock, flags);
++
++    t = msg-&gt;xfer;
++    tx = (char *) t-&gt;tx_buf;
++    tx[1] = addr;
++    tx[2] = mask;
++    tx[3] = val;
++    _dma_sync (&amp;priv-&gt;spi-&gt;dev, t-&gt;tx_dma, 4, DMA_TO_DEVICE);
++    return spi_async (priv-&gt;spi, &amp;msg-&gt;msg);
++}
++
++static void bit_modify_msg_complete (void *context)
++{
++    struct mcp2515_msg *msg = context;
++    struct mcp251x_priv *priv = msg-&gt;priv;
++    unsigned long flags;
++
++    if (unlikely (msg-&gt;msg.status))
++        dev_err (&amp;priv-&gt;spi-&gt;dev, &quot;bit_modify status %d\n&quot;,
++                 msg-&gt;msg.status);
++
++    spin_lock_irqsave (priv-&gt;lock, flags);
++    list_add_tail (&amp;msg-&gt;msg.queue, &amp;priv-&gt;free_bit_modify_msg);
++    spin_unlock_irqrestore (priv-&gt;lock, flags);
++}
++
++static void rx_msg_complete (void *context)
++{
++    struct mcp2515_msg *msg = context;
++    struct mcp251x_priv *priv = msg-&gt;priv;
++    struct spi_device *spi = priv-&gt;spi;
++    struct net_device *net = priv-&gt;net;
++    struct net_device_stats *stats = net-&gt;get_stats (net);
++    struct spi_transfer *t = msg-&gt;xfer;
++    struct sk_buff *skb;
++    struct can_frame *frame;
++    unsigned char *rx_buf = t-&gt;rx_buf;
++
++    unsigned long flags;
++
++    //dev_dbg (&amp;spi-&gt;dev, &quot;%s\n&quot;, __func__);
++
++    if (unlikely (msg-&gt;msg.status))
++    {
++        dev_err (&amp;priv-&gt;spi-&gt;dev, &quot;rx status %d\n&quot;, msg-&gt;msg.status);
++        priv-&gt;net-&gt;stats.rx_errors++;
++        goto return_buffer;
++    }
++
++    skb = dev_alloc_skb (sizeof (struct can_frame));
++    if (!skb)
++    {
++        dev_dbg (&amp;spi-&gt;dev, &quot;%s: out of memory for Rx'd frame\n&quot;,
++                 __func__);
++        priv-&gt;net-&gt;stats.rx_dropped++;
++        goto return_buffer;
++    }
++    skb-&gt;dev = priv-&gt;net;
++    frame = (struct can_frame *) skb_put (skb, sizeof (struct can_frame));
++
++
++    _dma_sync (&amp;spi-&gt;dev, t-&gt;rx_dma, t-&gt;len, DMA_FROM_DEVICE);
++
++    if ((rx_buf[2] &gt;&gt; 3) &amp; 0x1)
++    {
++        /* Extended ID format */
++        frame-&gt;can_id = CAN_EFF_FLAG;
++        frame-&gt;can_id |= ((rx_buf[2] &amp; 3) &lt;&lt; 16) |
++            (rx_buf[3] &lt;&lt; 8) | rx_buf[4] |
++            (((rx_buf[1] &lt;&lt; 3) | (rx_buf[2] &gt;&gt; 5)) &lt;&lt; 18);
++    }
++    else
++    {
++        /* Standard ID format */
++        frame-&gt;can_id = (rx_buf[1] &lt;&lt; 3) | (rx_buf[2] &gt;&gt; 5);
++    }
++
++    if ((rx_buf[5] &gt;&gt; 6) &amp; 0x1)
++    {
++        /* Remote transmission request */
++        frame-&gt;can_id |= CAN_RTR_FLAG;
++    }
++
++    /* Data length */
++    frame-&gt;can_dlc = rx_buf[5] &amp; 0x0f;
++    if (frame-&gt;can_dlc &gt; 8)
++    {
++        dev_warn (&amp;spi-&gt;dev, &quot;invalid frame recevied\n&quot;);
++        priv-&gt;net-&gt;stats.rx_errors++;
++        dev_kfree_skb (skb);
++        goto return_buffer;
++    }
++
++    memcpy (frame-&gt;data, rx_buf + 6, CAN_FRAME_MAX_DATA_LEN);
++
++    stats-&gt;rx_packets++;
++    stats-&gt;rx_bytes += frame-&gt;can_dlc;
++
++    skb-&gt;protocol = __constant_htons (ETH_P_CAN);
++    skb-&gt;pkt_type = PACKET_BROADCAST;
++    skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
++    netif_rx (skb);
++    net-&gt;last_rx = jiffies;
++
++  return_buffer:
++    spin_lock_irqsave (priv-&gt;lock, flags);
++    list_add_tail (&amp;msg-&gt;msg.queue, &amp;priv-&gt;free_rx);
++    spin_unlock_irqrestore (priv-&gt;lock, flags);
++}
++
++static int rx_msg_send (struct mcp251x_priv *priv, int buf_number)
++{
++    struct mcp2515_msg *msg;
++    struct spi_transfer *t;
++    unsigned long flags;
++
++    spin_lock_irqsave (priv-&gt;lock, flags);
++    if (list_empty (&amp;priv-&gt;free_rx))
++    {
++        priv-&gt;net-&gt;stats.rx_dropped++;
++        msg = NULL;
++    }
++    else
++    {
++        msg =
++            list_entry (priv-&gt;free_rx.next, struct mcp2515_msg, msg.queue);
++    }
++    BUG_ON (msg == NULL);
++    list_del_init (&amp;msg-&gt;msg.queue);
++    spin_unlock_irqrestore (priv-&gt;lock, flags);
++
++    t = msg-&gt;xfer;
++    /* clears CANINTF.RXnIF */
++    *(char *) t-&gt;tx_buf = MCP2515_SPI_READ_RXB (buf_number);
++    _dma_sync (&amp;priv-&gt;spi-&gt;dev, t-&gt;tx_dma, t-&gt;len, DMA_TO_DEVICE);
++    return spi_async (priv-&gt;spi, &amp;msg-&gt;msg);
++}
++
++
++static void tx_msg_complete (void *context)
++{
++    struct mcp2515_msg *msg = context;
++
++    msg-&gt;priv-&gt;tx_len = msg-&gt;msg.actual_length - 7;
++
++    return;
++}
++
++static void status_msg_complete (void *context)
++{
++    struct mcp2515_msg *msg = context;
++    struct mcp251x_priv *priv = msg-&gt;priv;
++    struct net_device *net = priv-&gt;net;
++    struct net_device_stats *stats = net-&gt;get_stats (net);
++    struct spi_transfer *t = msg-&gt;xfer;
++
++    unsigned char *p;
++    unsigned long flags;
++    char intf, eflg;
++
++    if (unlikely (msg-&gt;msg.status))
++    {
++        dev_err (&amp;priv-&gt;spi-&gt;dev, &quot;status %d\n&quot;, msg-&gt;msg.status);
++        return;
++    }
++
++    _dma_sync (&amp;priv-&gt;spi-&gt;dev, t-&gt;rx_dma, t-&gt;len, DMA_FROM_DEVICE);
++    p = (unsigned char *) t-&gt;rx_buf;
++
++    intf = p[2];
++    eflg = p[3];
++
++    spin_lock_irqsave (&amp;priv-&gt;lock, flags);
++    /* dev-&gt;stats.rx_status++; */
++    if (priv-&gt;flags &amp; FLAG_INT_PENDING) {
++        priv-&gt;flags &amp;= ~FLAG_INT_PENDING;
++    }
++    /* FIXME: Do we have to check 'eflg == 0' here ? */
++    else if (intf == 0/* &amp;&amp; eflg == 0*/) {
++        priv-&gt;flags &amp;= ~FLAG_STATUS_BUSY;
++        priv-&gt;fallback_to_sync = 0;
++        spin_unlock_irqrestore (&amp;priv-&gt;lock, flags);
++        return;
++    }
++
++    /*  interrupt on error during message reception or transmission */
++    if ((intf &amp; MERRF) /* || (eflg &amp; TXEP) */ /* || (eflg &amp; TXWAR)*/)
++    {
++        if (intf &amp; MERRF) {
++            /* Only increment tx_errors count when MERR occurred */
++            stats-&gt;tx_errors++;
++        }
++
++        priv-&gt;fallback_to_sync++;
++
++        if (priv-&gt;fallback_to_sync &gt; FALLBACK_TO_SYNC_MAX_COUNT) {
++
++            if (!work_pending(&amp;priv-&gt;irq_work)) {
++                queue_work(priv-&gt;wq, &amp;priv-&gt;irq_work);
++            }
++            priv-&gt;fallback_to_sync = 0;
++
++            /* Returning from here as work is already sched and will
+come back in this function when work exits after error condition is
+cleared */
++            priv-&gt;flags &amp;= ~FLAG_STATUS_BUSY;
++            spin_unlock_irqrestore (&amp;priv-&gt;lock, flags);
++
++            return;
++        }
++        else if (work_pending(&amp;priv-&gt;irq_work)) {
++            priv-&gt;fallback_to_sync = 0;
++
++            /* Returning from here as work is already sched and will
+come back in this function when work exits after error condition is
+cleared */
++            priv-&gt;flags &amp;= ~FLAG_STATUS_BUSY;
++            spin_unlock_irqrestore (&amp;priv-&gt;lock, flags);
++
++            return;
++        }
++    }
++
++    spin_unlock_irqrestore (&amp;priv-&gt;lock, flags);
++
++    if (intf &amp; ERRIF)
++    {
++        /* interrupt on EFLG error condition change */
++        if (eflg)
++        {
++            struct sk_buff *skb = NULL;
++            struct can_frame *frame = NULL;
++
++            /* Create error frame */
++            skb = dev_alloc_skb (sizeof (struct can_frame));
++            if (skb)
++            {
++                frame = (struct can_frame *)
++                    skb_put (skb, sizeof (struct can_frame));
++                *(unsigned long long *) &amp;frame-&gt;data = 0ULL;
++                frame-&gt;can_id = CAN_ERR_FLAG;
++                frame-&gt;can_dlc = CAN_ERR_DLC;
++
++                skb-&gt;dev = net;
++                skb-&gt;protocol = __constant_htons (ETH_P_CAN);
++                skb-&gt;pkt_type = PACKET_BROADCAST;
++                skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
++
++                /* Set error frame flags based on bus state */
++                if (eflg &amp; TXBO)
++                {
++                    frame-&gt;can_id |= CAN_ERR_BUSOFF;
++                }
++                else if (eflg &amp; TXEP)
++                {
++                    frame-&gt;can_id |= CAN_ERR_CRTL;
++                    frame-&gt;data[1] |= CAN_ERR_CRTL_TX_PASSIVE;
++                }
++                else if (eflg &amp; RXEP)
++                {
++                    frame-&gt;can_id |= CAN_ERR_CRTL;
++                    frame-&gt;data[1] |= CAN_ERR_CRTL_RX_PASSIVE;
++                }
++                else if (eflg &amp; TXWAR)
++                {
++                    frame-&gt;can_id |= CAN_ERR_CRTL;
++                    frame-&gt;data[1] |= CAN_ERR_CRTL_TX_WARNING;
++                }
++                else if (eflg &amp; RXWAR)
++                {
++                    frame-&gt;can_id |= CAN_ERR_CRTL;
++                    frame-&gt;data[1] |= CAN_ERR_CRTL_RX_WARNING;
++                }
++
++                netif_rx (skb);
++                net-&gt;last_rx = jiffies;
++                stats-&gt;rx_packets++;
++                stats-&gt;rx_bytes += frame-&gt;can_dlc;
++            }
++
++            if (eflg &amp; (RX0OVR | RX1OVR))
++            {
++                if (eflg &amp; RX0OVR)
++                {
++                    dev_err (&amp;priv-&gt;spi-&gt;dev, &quot;RX0OVR\n&quot;);
++                    stats-&gt;rx_over_errors++;
++
++                }
++                if (eflg &amp; RX1OVR)
++                {
++                    dev_err (&amp;priv-&gt;spi-&gt;dev, &quot;RX1OVR\n&quot;);
++                    stats-&gt;rx_over_errors++;
++                }
++                if (frame)
++                {
++                    frame-&gt;can_id |= CAN_ERR_CRTL;
++                    frame-&gt;data[1] = CAN_ERR_CRTL_RX_OVERFLOW;
++                }
++            }
++
++            /* reset error flags */
++            mcp2515_bit_modify_async (priv, EFLG, eflg, 0);
++        }
++    }
++
++    if (intf &amp; (TX2IF | TX1IF | TX0IF)) /* interrupt on TXBn becoming empty */
++    {
++        spin_lock_irqsave (&amp;priv-&gt;lock, flags);
++        if (intf &amp; TX0IF)
++        {
++            list_add_tail (&amp;priv-&gt;tx_msg[0].msg.queue, &amp;priv-&gt;free_tx);
++            stats-&gt;tx_packets++;
++        }
++        /* FIXME: Do we need them ? N_TX_BUFS is 1 */
++#if 0
++        if (intf &amp; TX1IF)
++        {
++            list_add_tail (&amp;priv-&gt;tx_msg[1].msg.queue, &amp;priv-&gt;free_tx);
++            stats-&gt;tx_packets++;
++        }
++        if (intf &amp; TX2IF)
++        {
++            list_add_tail (&amp;priv-&gt;tx_msg[2].msg.queue, &amp;priv-&gt;free_tx);
++            stats-&gt;tx_packets++;
++        }
++#endif
++        spin_unlock_irqrestore (&amp;priv-&gt;lock, flags);
++
++        can_get_echo_skb (net, 0);
++        netif_wake_queue (net);
++    }
++
++    if (intf &amp; RX0IF)
++    {
++        /* interrupt when message is received in RXB0 */
++        /* RXnIF bit will be cleared by MCP2515_SPI_READ_RXB command */
++        intf &amp;= ~RX0IF;
++        rx_msg_send (priv, 0);
++    }
++
++    if (intf &amp; RX1IF)           /* interrupt when message is received
+in RXB1 */
++    {
++        /* RXnIF bit will be cleared by MCP2515_SPI_READ_RXB command */
++        intf &amp;= ~RX1IF;
++        rx_msg_send (priv, 1);
++    }
++
++    if (intf)
++        mcp2515_bit_modify_async (priv, CANINTF, intf, 0);
++
++    /* don't need to dma_sync() as the TX content never changes */
++    spi_async (priv-&gt;spi, &amp;msg-&gt;msg);
++}
++
++#endif /* #ifdef MCP2515_HIDG_MOD */
++
+ static void mcp251x_clean(struct net_device *net)
+ {
+ 	struct mcp251x_priv *priv = netdev_priv(net);
+
++#ifdef MCP2515_HIDG_MOD
++    unsigned long flags = 0;
++
++    /* Freeing tx buf forcefully */
++    {
++        spin_lock_irqsave(&amp;priv-&gt;lock, flags);
++        if (list_empty(&amp;priv-&gt;free_tx)) {
++            list_add_tail(&amp;priv-&gt;tx_msg[0].msg.queue, &amp;priv-&gt;free_tx);
++        }
++        spin_unlock_irqrestore(&amp;priv-&gt;lock, flags);
++    }
++#endif /* #ifdef MCP2515_HIDG_MOD */
++
+ 	net-&gt;stats.tx_errors++;
+ 	if (priv-&gt;tx_skb)
+ 		dev_kfree_skb(priv-&gt;tx_skb);
+@@ -284,11 +954,13 @@
+
+ 	spi_message_init(&amp;m);
+
++#ifndef MCP2515_HIDG_MOD
+ 	if (mcp251x_enable_dma) {
+ 		t.tx_dma = priv-&gt;spi_tx_dma;
+ 		t.rx_dma = priv-&gt;spi_rx_dma;
+ 		m.is_dma_mapped = 1;
+ 	}
++#endif /* #ifndef MCP2515_HIDG_MOD */
+
+ 	spi_message_add_tail(&amp;t, &amp;m);
+
+@@ -469,16 +1141,18 @@
+
+ static void mcp251x_hw_sleep(struct spi_device *spi)
+ {
++#ifndef MCP2515_HIDG_MOD
+ 	mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_SLEEP);
++#else /* #ifndef MCP2515_HIDG_MOD */
++    /* FIXME: Do we need CLKEN, NORMAL rather than SLEEP, CLKPRE etc .. ? */
++    mcp251x_write_reg (spi, CANCTRL,
++            FLD_DEF (REQOP, NORMAL) | CLKEN | FLD_DEF (CLKPRE, SC_DIV_2));
++#endif /* #ifndef MCP2515_HIDG_MOD */
+ }
+
+-#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,32)
+ static int mcp251x_hard_start_xmit(struct sk_buff *skb, struct net_device *net)
+-#else
+-static netdev_tx_t mcp251x_hard_start_xmit(struct sk_buff *skb,
+-					   struct net_device *net)
+-#endif
+ {
++#ifndef MCP2515_HIDG_MOD
+ 	struct mcp251x_priv *priv = netdev_priv(net);
+ 	struct spi_device *spi = priv-&gt;spi;
+
+@@ -497,6 +1171,77 @@
+ 	queue_work(priv-&gt;wq, &amp;priv-&gt;tx_work);
+
+ 	return NETDEV_TX_OK;
++#else /* #ifndef MCP2515_HIDG_MOD */
++    struct mcp251x_priv *priv = netdev_priv (net);
++    struct spi_device *spi = priv-&gt;spi;
++    struct net_device_stats *stats = net-&gt;get_stats (net);
++    struct can_frame *frame;
++    struct mcp2515_msg *msg;
++    struct spi_transfer *t;
++    unsigned char *p;
++
++    unsigned long flags;
++    u32 sid, eid, exide, rtr;
++
++    //dev_dbg (&amp;spi-&gt;dev, &quot;%s\n&quot;, __func__);
++
++    if (can_dropped_invalid_skb(net, skb))
++		return NETDEV_TX_OK;
++
++    frame = (struct can_frame *) skb-&gt;data;
++    if (frame-&gt;can_dlc &gt; CAN_FRAME_MAX_DATA_LEN)
++        frame-&gt;can_dlc = CAN_FRAME_MAX_DATA_LEN;
++
++    spin_lock_irqsave (&amp;priv-&gt;lock, flags);
++    if (list_empty (&amp;priv-&gt;free_tx)) {
++        spin_unlock_irqrestore (&amp;priv-&gt;lock, flags);
++        dev_warn(&amp;spi-&gt;dev, &quot;Device is busy\n&quot;);
++        return NETDEV_TX_BUSY;
++    }
++
++    msg = list_entry (priv-&gt;free_tx.next, struct mcp2515_msg, msg.queue);
++    list_del_init (&amp;msg-&gt;msg.queue);
++    spin_unlock_irqrestore (&amp;priv-&gt;lock, flags);
++
++    if (list_empty (&amp;priv-&gt;free_tx)) {
++        netif_stop_queue (net);
++    }
++	
++    priv-&gt;tx_skb = skb;
++
++	net-&gt;trans_start = jiffies;
++
++    t = msg-&gt;xfer;
++    p = (unsigned char *) t-&gt;tx_buf;
++
++    exide = (frame-&gt;can_id &amp; CAN_EFF_FLAG) ? 1 : 0;     /* Extended
+ID Enable */
++    if (exide)
++        sid = (frame-&gt;can_id &amp; CAN_EFF_MASK) &gt;&gt; 18;
++    else
++        sid = frame-&gt;can_id &amp; CAN_SFF_MASK;     /* Standard ID */
++    eid = frame-&gt;can_id &amp; CAN_EFF_MASK; /* Extended ID */
++    rtr = (frame-&gt;can_id &amp; CAN_RTR_FLAG) ? 1 : 0;       /* Remote
+transmission */
++
++    p[1] = sid &gt;&gt; 3;
++    p[2] = ((sid &amp; 7) &lt;&lt; 5) | (exide &lt;&lt; 3) | ((eid &gt;&gt; 16) &amp; 3);
++    p[3] = (eid &gt;&gt; 8) &amp; 0xff;
++    p[4] = eid &amp; 0xff;
++    p[5] = (rtr &lt;&lt; 6) | frame-&gt;can_dlc;
++
++    memcpy (p + 6, frame-&gt;data, frame-&gt;can_dlc);
++
++    t-&gt;len = 6 + frame-&gt;can_dlc;
++    _dma_sync (&amp;priv-&gt;spi-&gt;dev, t-&gt;tx_dma, t-&gt;len, DMA_TO_DEVICE);
++
++    stats-&gt;tx_bytes += frame-&gt;can_dlc;
++    net-&gt;trans_start = jiffies;
++    can_put_echo_skb (skb, net, 0);
++    priv-&gt;tx_skb = NULL;
++
++    spi_async (priv-&gt;spi, &amp;msg-&gt;msg);
++
++    return NETDEV_TX_OK;
++#endif /* #ifndef MCP2515_HIDG_MOD */
+ }
+
+ static int mcp251x_do_set_mode(struct net_device *net, enum can_mode mode)
+@@ -521,7 +1266,9 @@
+
+ static void mcp251x_set_normal_mode(struct spi_device *spi)
+ {
++#ifndef MCP2515_HIDG_MOD
+ 	struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
++#endif /* #ifndef MCP2515_HIDG_MOD */
+ 	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
+ 	unsigned long timeout;
+
+@@ -538,11 +1285,16 @@
+ 		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_LISTEN_ONLY);
+  	} else {
+ 		/* Put device into normal mode */
++#ifndef MCP2515_HIDG_MOD
+ 		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_NORMAL |
+ 				  ((pdata-&gt;model == CAN_MCP251X_MCP2515 &amp;&amp;
+ 				    priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_ONE_SHOT) ?
+ 				   CANCTRL_OSM : 0));
+-
++#else /* #ifndef MCP2515_HIDG_MOD */
++        /* FIXME: Do we need CLKEN, NORMAL rather than SLEEP, CLKPRE
+etc .. ? */
++        mcp251x_write_reg (spi, CANCTRL,
++            FLD_DEF (REQOP, NORMAL) | CLKEN | FLD_DEF (CLKPRE, SC_DIV_2));
++#endif /* #ifndef MCP2515_HIDG_MOD */
+ 		/* Wait for the device to enter normal mode */
+ 		timeout = jiffies + HZ;
+ 		while (mcp251x_read_reg(spi, CANSTAT) &amp; CANCTRL_REQOP_MASK) {
+@@ -649,11 +1401,37 @@
+ 	struct net_device *net = (struct net_device *)dev_id;
+ 	struct mcp251x_priv *priv = netdev_priv(net);
+
++#ifndef MCP2515_HIDG_MOD
+ 	/* Schedule bottom half */
+ 	if (!work_pending(&amp;priv-&gt;irq_work))
+ 		queue_work(priv-&gt;wq, &amp;priv-&gt;irq_work);
+
+ 	return IRQ_HANDLED;
++#else /* #ifndef MCP2515_HIDG_MOD */
++    unsigned long flags;
++
++    /* If slow-path (with normal sync stuff) is working then
++     * just return from IRQ else do normal fast-path (async)
++     * processing
++     */
++	if (work_pending(&amp;priv-&gt;irq_work)) {
++        return IRQ_HANDLED;
++    }
++
++    spin_lock_irqsave (&amp;priv-&gt;lock, flags);
++    if (priv-&gt;flags &amp; FLAG_STATUS_BUSY)
++    {
++        priv-&gt;flags |= FLAG_INT_PENDING;
++        spin_unlock_irqrestore (&amp;priv-&gt;lock, flags);
++        return IRQ_HANDLED;
++    }
++    priv-&gt;flags |= FLAG_STATUS_BUSY;
++    spin_unlock_irqrestore (&amp;priv-&gt;lock, flags);
++
++    /* don't need to dma_sync() as the TX content never changes */
++    spi_async (priv-&gt;spi, &amp;priv-&gt;status_msg.msg);
++    return IRQ_HANDLED;
++#endif /* #ifndef MCP2515_HIDG_MOD */
+ }
+
+ static int mcp251x_open(struct net_device *net)
+@@ -765,8 +1543,15 @@
+ 	struct net_device *net = priv-&gt;net;
+ 	u8 intf;
+ 	enum can_state new_state;
++#ifdef MCP2515_HIDG_MOD
++    unsigned long flags = 0;
++    int sync_loop_count = 0;
++#endif /* #ifdef MCP2515_HIDG_MOD */
+
+ 	if (priv-&gt;after_suspend) {
++#ifdef MCP2515_HIDG_MOD
++        printk(KERN_EMERG &quot;%s: %d ... after_suspend NOT HANDLED YET
+... \n&quot;, __FUNCTION__, __LINE__);
++#endif /* #ifdef MCP2515_HIDG_MOD */
+ 		mdelay(10);
+ 		mcp251x_hw_reset(spi);
+ 		mcp251x_setup(net, priv, spi);
+@@ -786,8 +1571,9 @@
+ 		priv-&gt;after_suspend = 0;
+ 	}
+
+-	if (priv-&gt;can.restart_ms == 0 &amp;&amp; priv-&gt;can.state == CAN_STATE_BUS_OFF)
++	if (priv-&gt;can.restart_ms == 0 &amp;&amp; priv-&gt;can.state == CAN_STATE_BUS_OFF) {
+ 		return;
++    }
+
+ 	while (!priv-&gt;force_quit &amp;&amp; !freezing(current)) {
+ 		u8 eflag;
+@@ -808,10 +1594,11 @@
+ 			mcp251x_hw_rx(spi, 0);
+ 			/* Free one buffer ASAP */
+ 			mcp251x_write_bits(spi, CANINTF, intf &amp; CANINTF_RX0IF, 0x00);
+-                }
++        }
+
+-		if (intf &amp; CANINTF_RX1IF)
++		if (intf &amp; CANINTF_RX1IF) {
+ 			mcp251x_hw_rx(spi, 1);
++        }
+
+ 		mcp251x_write_bits(spi, CANINTF, intf, 0x00);
+
+@@ -859,14 +1646,14 @@
+ 		priv-&gt;can.state = new_state;
+
+ 		if ((intf &amp; CANINTF_ERRIF) || (can_id &amp; CAN_ERR_RESTARTED)) {
+-			struct sk_buff *skb;
++			struct sk_buff *skb = NULL;
+ 			struct can_frame *frame;
+
+ 			/* Create error frame */
+ 			skb = alloc_can_err_skb(net, &amp;frame);
+ 			if (skb) {
+ 				/* Set error frame flags based on bus state */
+-				frame-&gt;can_id = can_id;
++				frame-&gt;can_id |= can_id;
+ 				frame-&gt;data[1] = data1;
+
+ 				/* Update net stats for overflows */
+@@ -888,42 +1675,75 @@
+ 		}
+
+ 		if (priv-&gt;can.state == CAN_STATE_BUS_OFF) {
++            dev_warn(&amp;spi-&gt;dev, &quot;bus off \n&quot;);
++#ifndef MCP2515_HIDG_MOD
+ 			if (priv-&gt;can.restart_ms == 0) {
++#endif /* #ifndef MCP2515_HIDG_MOD */
+ 				can_bus_off(net);
+ 				mcp251x_hw_sleep(spi);
+ 				return;
++#ifndef MCP2515_HIDG_MOD
+ 			}
++#endif /* #ifndef MCP2515_HIDG_MOD */
+ 		}
+
+-		if (intf == 0)
++		if (intf == 0) {
+ 			break;
++        }
+
+ 		if (intf &amp; (CANINTF_TX2IF | CANINTF_TX1IF | CANINTF_TX0IF)) {
+ 			net-&gt;stats.tx_packets++;
++#ifndef MCP2515_HIDG_MOD
+ 			net-&gt;stats.tx_bytes += priv-&gt;tx_len - 1;
+ 			if (priv-&gt;tx_len) {
+ 				can_get_echo_skb(net, 0);
+ 				priv-&gt;tx_len = 0;
+ 			}
++#else /* #ifndef MCP2515_HIDG_MOD */
++			net-&gt;stats.tx_bytes += priv-&gt;tx_len;
++
++            spin_lock_irqsave (&amp;priv-&gt;lock, flags);
++            if (intf &amp; TX0IF) {
++                list_add_tail (&amp;priv-&gt;tx_msg[0].msg.queue, &amp;priv-&gt;free_tx);
++            }
++            /* FIXME: Do we need them ? N_TX_BUFS is 1 */
++#if 0
++            if (intf &amp; TX1IF) {
++                list_add_tail (&amp;priv-&gt;tx_msg[1].msg.queue, &amp;priv-&gt;free_tx);
++            }
++            if (intf &amp; TX2IF) {
++                list_add_tail (&amp;priv-&gt;tx_msg[2].msg.queue, &amp;priv-&gt;free_tx);
++            }
++#endif
++            spin_unlock_irqrestore (&amp;priv-&gt;lock, flags);
++
++            can_get_echo_skb (net, 0);
++            priv-&gt;tx_len = 0;
++#endif /* #ifndef MCP2515_HIDG_MOD */
+ 			netif_wake_queue(net);
+ 		}
++
++#ifdef MCP2515_HIDG_MOD
++		if (sync_loop_count &gt;= SYNC_LOOP_MAX_COUNT) {
++			break;
++        }
++
++        sync_loop_count++;
++#endif /* #ifdef MCP2515_HIDG_MOD */
+ 	}
+ }
+
+-#if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
+-static const struct net_device_ops mcp251x_netdev_ops = {
+-	.ndo_open = mcp251x_open,
+-	.ndo_stop = mcp251x_stop,
+-	.ndo_start_xmit = mcp251x_hard_start_xmit,
+-};
+-#endif
+-
+ static int __devinit mcp251x_can_probe(struct spi_device *spi)
+ {
+ 	struct net_device *net;
+ 	struct mcp251x_priv *priv;
+ 	struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
+ 	int ret = -ENODEV;
++
++#ifdef MCP2515_HIDG_MOD
++    int i = 0;
++    int n = 0;
++#endif /* #ifdef MCP2515_HIDG_MOD */
+
+ 	if (!pdata)
+ 		/* Platform data is required for osc freq */
+@@ -936,13 +1756,9 @@
+ 		goto error_alloc;
+ 	}
+
+-#if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
+-	net-&gt;netdev_ops = &amp;mcp251x_netdev_ops;
+-#else
+ 	net-&gt;open = mcp251x_open;
+ 	net-&gt;stop = mcp251x_stop;
+ 	net-&gt;hard_start_xmit = mcp251x_hard_start_xmit;
+-#endif
+ 	net-&gt;flags |= IFF_ECHO;
+
+ 	priv = netdev_priv(net);
+@@ -959,6 +1775,7 @@
+ 	priv-&gt;spi = spi;
+ 	mutex_init(&amp;priv-&gt;spi_lock);
+
++#ifndef MCP2515_HIDG_MOD
+ 	/* If requested, allocate DMA buffers */
+ 	if (mcp251x_enable_dma) {
+ 		spi-&gt;dev.coherent_dma_mask = ~0;
+@@ -982,9 +1799,13 @@
+ 			mcp251x_enable_dma = 0;
+ 		}
+ 	}
++#endif /* #ifndef MCP2515_HIDG_MOD */
+
+ 	/* Allocate non-DMA buffers */
+-	if (!mcp251x_enable_dma) {
++#ifndef MCP2515_HIDG_MOD
++	if (!mcp251x_enable_dma)
++#endif /* #ifndef MCP2515_HIDG_MOD */
++    {
+ 		priv-&gt;spi_tx_buf = kmalloc(SPI_TRANSFER_BUF_LEN, GFP_KERNEL);
+ 		if (!priv-&gt;spi_tx_buf) {
+ 			ret = -ENOMEM;
+@@ -997,7 +1818,58 @@
+ 		}
+ 	}
+
+-	if (pdata-&gt;power_enable)
++#ifdef MCP2515_HIDG_MOD
++    spi-&gt;dev.coherent_dma_mask = spi-&gt;master-&gt;dev.parent-&gt;coherent_dma_mask;
++
++    /* allocating coherent memory and worrying about cacheline alignment ? */
++    priv-&gt;dma_pool = dma_pool_create (DEVICE_NAME, &amp;spi-&gt;dev, BUF_SIZE,
++            dma_get_cache_alignment (), 0);
++    if (!priv-&gt;dma_pool)
++    {
++        dev_info (&amp;spi-&gt;dev, &quot;dma_pool_create returned ERROR\n&quot;);
++        ret = -ENOMEM;
++        goto error_rx_buf;
++    }
++
++    dev_info (&amp;spi-&gt;dev, &quot;dma_pool_create returned OK\n&quot;);
++
++    n = 0;                      /* DMA buffer number */
++
++    spin_lock_init (&amp;priv-&gt;lock);
++    priv-&gt;fallback_to_sync = 0;
++	
++    /* FIXME: Is this forcing restart_ms to some value is fine ? */
++    priv-&gt;can.restart_ms = 20;
++
++    INIT_LIST_HEAD (&amp;priv-&gt;free_tx);
++    for (i = 0; i &lt; N_TX_BUF; i++)
++        tx_msg_init (&amp;priv-&gt;tx_msg[i], priv, i, &amp;n);
++
++    dev_info (&amp;spi-&gt;dev, &quot;tx: %d dma buffers\n&quot;, n);
++
++    status_msg_init (&amp;priv-&gt;status_msg, priv, &amp;n);
++
++    dev_info (&amp;spi-&gt;dev, &quot;status: %d dma buffers\n&quot;, n);
++
++    INIT_LIST_HEAD (&amp;priv-&gt;free_rx);
++    for (i = 0; i &lt; N_RX_BUF; i++)
++        rx_msg_init (&amp;priv-&gt;rx_msg[i], priv, &amp;n);
++
++    dev_info (&amp;spi-&gt;dev, &quot;rx: %d dma buffers\n&quot;, n);
++
++    INIT_LIST_HEAD (&amp;priv-&gt;free_bit_modify_msg);
++    for (i = 0; i &lt; ARRAY_SIZE (priv-&gt;bit_modify_msg); i++)
++        bit_modify_msg_init (&amp;priv-&gt;bit_modify_msg[i], priv, &amp;n);
++
++    dev_info(&amp;spi-&gt;dev, &quot;bit_mod: %d dma buffers\n&quot;, n);
++
++    dev_info/*dbg*/(&amp;spi-&gt;dev, &quot;total: %d dma buffers, expected %d\n&quot;, n,
++             N_DMA_BUFS);
++#endif /* #ifdef MCP2515_HIDG_MOD */
++
++    priv-&gt;can.restart_ms = 10;
++	
++    if (pdata-&gt;power_enable)
+ 		pdata-&gt;power_enable(1);
+
+ 	/* Call out to platform specific setup */
+@@ -1031,16 +1903,22 @@
+ 		return ret;
+ 	}
+ error_probe:
++#ifndef MCP2515_HIDG_MOD
+ 	if (!mcp251x_enable_dma)
++#endif /* #ifndef MCP2515_HIDG_MOD */
+ 		kfree(priv-&gt;spi_rx_buf);
+ error_rx_buf:
++#ifndef MCP2515_HIDG_MOD
+ 	if (!mcp251x_enable_dma)
++#endif /* #ifndef MCP2515_HIDG_MOD */
+ 		kfree(priv-&gt;spi_tx_buf);
+ error_tx_buf:
+ 	free_candev(net);
++#ifndef MCP2515_HIDG_MOD
+ 	if (mcp251x_enable_dma)
+ 		dma_free_coherent(&amp;spi-&gt;dev, PAGE_SIZE,
+ 				  priv-&gt;spi_tx_buf, priv-&gt;spi_tx_dma);
++#endif /* #ifndef MCP2515_HIDG_MOD */
+ error_alloc:
+ 	if (pdata-&gt;power_enable)
+ 		pdata-&gt;power_enable(0);
+@@ -1062,10 +1940,17 @@
+ 	flush_workqueue(priv-&gt;wq);
+ 	destroy_workqueue(priv-&gt;wq);
+
++#ifdef MCP2515_HIDG_MOD
++    dma_pool_destroy (priv-&gt;dma_pool);
++#endif /* #ifdef MCP2515_HIDG_MOD */
++
++#ifndef MCP2515_HIDG_MOD
+ 	if (mcp251x_enable_dma) {
+ 		dma_free_coherent(&amp;spi-&gt;dev, PAGE_SIZE,
+ 				  priv-&gt;spi_tx_buf, priv-&gt;spi_tx_dma);
+-	} else {
++	} else
++#endif /* #ifndef MCP2515_HIDG_MOD */
++    {
+ 		kfree(priv-&gt;spi_tx_buf);
+ 		kfree(priv-&gt;spi_rx_buf);
+ 	}
+@@ -1107,13 +1992,18 @@
+ 	struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
+ 	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
+
+-	if (priv-&gt;after_suspend &amp; AFTER_SUSPEND_POWER) {
++#ifdef MCP2515_HIDG_MOD
++    printk(KERN_EMERG &quot;%s: %d ... THIS IS NOT HANDLED ....... \n&quot;,
+__FUNCTION__, __LINE__);
++#endif /* #ifdef MCP2515_HIDG_MOD */
++	
++    if (priv-&gt;after_suspend &amp; AFTER_SUSPEND_POWER) {
+ 		pdata-&gt;power_enable(1);
+ 		queue_work(priv-&gt;wq, &amp;priv-&gt;irq_work);
+ 	} else {
+ 		if (priv-&gt;after_suspend &amp; AFTER_SUSPEND_UP) {
+ 			if (pdata-&gt;transceiver_enable)
+ 				pdata-&gt;transceiver_enable(1);
++            /* TODO: Check if this is ok ? */
+ 			queue_work(priv-&gt;wq, &amp;priv-&gt;irq_work);
+ 		} else {
+ 			priv-&gt;after_suspend = 0;
+@@ -1153,6 +2043,9 @@
+ module_exit(mcp251x_can_exit);
+
+ MODULE_AUTHOR(&quot;Chris Elston &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">celston at katalix.com</A>&gt;, &quot;
+-	      &quot;Christian Pellegrin &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">chripell at evolware.org</A>&gt;&quot;);
++	      &quot;Christian Pellegrin &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">chripell at evolware.org</A>&gt;,&quot;
++	      &quot;Fawad Lateef &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">fawadlateef at gmail.com</A>&gt;,&quot;
++          &quot;Andrei Rylin &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">port777 at gmail.com</A>&gt;&quot;);
+ MODULE_DESCRIPTION(&quot;Microchip 251x CAN driver&quot;);
+ MODULE_LICENSE(&quot;GPL v2&quot;);
++
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: mcp251x_async_rewrite-20100723.patch
+Type: text/x-patch
+Size: 37784 bytes
+Desc: not available
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20100726/85ace9bb/attachment.bin">https://lists.berlios.de/pipermail/socketcan-core/attachments/20100726/85ace9bb/attachment.bin</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004490.html">[RFC PATCH] can: improved CAN error state handling
+</A></li>
+	<LI>Next message: <A HREF="004498.html">[RFC - PATCH] MCP251x driver using Async SPI Interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4496">[ date ]</a>
+              <a href="thread.html#4496">[ thread ]</a>
+              <a href="subject.html#4496">[ subject ]</a>
+              <a href="author.html#4496">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

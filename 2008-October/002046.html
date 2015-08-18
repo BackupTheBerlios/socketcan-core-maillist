@@ -1,0 +1,165 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC : CAN driver default tx_queue_len
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%20%3A%20CAN%20driver%20default%20tx_queue_len&In-Reply-To=%3Ccabda6420810230730g46450e93rc7825097fd7be132%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002035.html">
+   <LINK REL="Next"  HREF="002049.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC : CAN driver default tx_queue_len</H1>
+    <B>chri</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%20%3A%20CAN%20driver%20default%20tx_queue_len&In-Reply-To=%3Ccabda6420810230730g46450e93rc7825097fd7be132%40mail.gmail.com%3E"
+       TITLE="RFC : CAN driver default tx_queue_len">chripell at gmail.com
+       </A><BR>
+    <I>Thu Oct 23 16:30:11 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002035.html">RFC : CAN driver default tx_queue_len
+</A></li>
+        <LI>Next message: <A HREF="002049.html">RFC : CAN driver default tx_queue_len
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2046">[ date ]</a>
+              <a href="thread.html#2046">[ thread ]</a>
+              <a href="subject.html#2046">[ subject ]</a>
+              <a href="author.html#2046">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, Oct 23, 2008 at 9:58 AM, Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt; wrote:
+&gt;<i>
+</I>&gt;<i> Do we still have this problem? I think it was fixed already some time
+</I>&gt;<i> ago but I can't find the SVN log for it. Likely I have missed something.
+</I>&gt;<i>
+</I>
+It works for me, I don't see the mentioned bug. I tried with this
+quick &amp; dirty (very dirty) test program (I see both &quot;.&quot; and &quot;:&quot; ):
+
+/*
+  arm-linux-gcc -I /mnt/fat/git/linux-abt40/include/ -Wall -o pollo pollo.c
+ */
+
+/* silly hack: never include from Linux include! */
+#include &lt;/usr/local/arm/oe/arm-linux/include/linux/errno.h&gt;
+
+#include &lt;assert.h&gt;
+#include &lt;arpa/inet.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;net/if.h&gt;
+#include &lt;poll.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;sys/ioctl.h&gt;
+#include &lt;sys/socket.h&gt;
+#include &lt;sys/stat.h&gt;
+#include &lt;sys/time.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/uio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;string.h&gt;
+#include &lt;errno.h&gt;
+
+#include &lt;linux/can.h&gt;
+#include &lt;linux/can/raw.h&gt;
+#define AF_CAN          29
+#define PF_CAN          AF_CAN
+
+int main(void) {
+  int can_fd;
+  struct can_frame can_frame;
+  struct sockaddr_can addr;
+  struct ifreq ifr;
+  int loopback = 0;
+
+  if ((can_fd = socket(PF_CAN, SOCK_RAW, CAN_RAW)) &lt; 0) {
+    perror(&quot;socket&quot;);
+    exit(1);
+  }
+
+  addr.can_family = AF_CAN;
+
+  strcpy(ifr.ifr_name, &quot;can0&quot;);
+  if (ioctl(can_fd, SIOCGIFINDEX, &amp;ifr) &lt; 0) {
+    perror(&quot;SIOCGIFINDEX&quot;);
+    exit(1);
+  }
+  addr.can_ifindex = ifr.ifr_ifindex;
+
+  setsockopt(can_fd, SOL_CAN_RAW, CAN_RAW_LOOPBACK, &amp;loopback,
+sizeof(loopback));
+
+  if (bind(can_fd, (struct sockaddr *)&amp;addr, sizeof(addr)) &lt; 0) {
+    perror(&quot;bind&quot;);
+    exit(1);
+  }
+
+  memset(&amp;can_frame, 0, sizeof(can_frame));
+  can_frame.can_id = 111;
+  can_frame.can_dlc = 1;
+  can_frame.data[0] = 11;
+
+  for (;;) {
+    int ret = write(can_fd, &amp;can_frame, sizeof(can_frame));
+    if (ret &lt; 0) {
+      if (ENOBUFS == errno) {
+        struct pollfd pollfd = {
+	  .fd = can_fd,
+	  .events = POLLOUT,
+        };
+	fprintf(stderr, &quot;:&quot;);
+        ret = poll(&amp;pollfd, 1, -1);
+        if (ret &gt; 0) {
+	  fprintf(stderr, &quot;.&quot;);
+	  continue;
+	}
+	else
+	  perror(&quot;poll&quot;);
+      }
+      else
+	perror(&quot;write&quot;);
+    }
+  }
+  return 0;
+}
+
+
+-- 
+Christian Pellegrin, see <A HREF="http://www.evolware.org/chri/">http://www.evolware.org/chri/</A>
+&quot;Real Programmers don't play tennis, or any other sport which requires
+you to change clothes. Mountain climbing is OK, and Real Programmers
+wear their climbing boots to work in case a mountain should suddenly
+spring up in the middle of the computer room.&quot;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002035.html">RFC : CAN driver default tx_queue_len
+</A></li>
+	<LI>Next message: <A HREF="002049.html">RFC : CAN driver default tx_queue_len
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2046">[ date ]</a>
+              <a href="thread.html#2046">[ thread ]</a>
+              <a href="subject.html#2046">[ subject ]</a>
+              <a href="author.html#2046">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

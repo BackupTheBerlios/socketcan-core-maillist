@@ -1,0 +1,138 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Writing a driver for Janz cPCI CAN card
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Writing%20a%20driver%20for%20Janz%20cPCI%20CAN%20card&In-Reply-To=%3C20100203001023.GB2804%40ovro.caltech.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003962.html">
+   <LINK REL="Next"  HREF="003964.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Writing a driver for Janz cPCI CAN card</H1>
+    <B>Ira W. Snyder</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Writing%20a%20driver%20for%20Janz%20cPCI%20CAN%20card&In-Reply-To=%3C20100203001023.GB2804%40ovro.caltech.edu%3E"
+       TITLE="Writing a driver for Janz cPCI CAN card">iws at ovro.caltech.edu
+       </A><BR>
+    <I>Wed Feb  3 01:10:23 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003962.html">Writing a driver for Janz cPCI CAN card
+</A></li>
+        <LI>Next message: <A HREF="003964.html">How to close the CAN driver itself in a CAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3963">[ date ]</a>
+              <a href="thread.html#3963">[ thread ]</a>
+              <a href="subject.html#3963">[ subject ]</a>
+              <a href="author.html#3963">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tue, Feb 02, 2010 at 08:57:58PM +0100, Oliver Hartkopp wrote:
+&gt;<i> Ira W. Snyder wrote:
+</I>&gt;<i> &gt; Hello all,
+</I>&gt;<i> 
+</I>&gt;<i> Hello Ira,
+</I>&gt;<i> 
+</I>&gt;<i> i'll try to answer some general points ...
+</I>&gt;<i> 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I have a few cPCI CAN cards from Janz. They consist of a non-intelligent
+</I>&gt;<i> &gt; cPCI MODULbus card into which plugs up to 4 MODULbus modules. Our boards
+</I>&gt;<i> &gt; have two intelligent CAN modules and a TTL module.  Each CAN module has
+</I>&gt;<i> &gt; a MC68332 CPU and RAM onboard, along with an SJA1000 chip. The TTL
+</I>&gt;<i> &gt; module is basically used for GPIO.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Currently, I use a character device driver provided by Janz, but I'd
+</I>&gt;<i> &gt; like to use the new in-kernel CAN interface layer instead. Mostly to
+</I>&gt;<i> &gt; make transitioning to newer kernels more painless, as well as to use the
+</I>&gt;<i> &gt; improved sockets-based API.
+</I>&gt;<i> 
+</I>&gt;<i> :-)
+</I>&gt;<i> 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I've written a few kernel drivers before, but I'm not very familiar with
+</I>&gt;<i> &gt; CAN at all. Can someone explain why I would want to use the intelligence
+</I>&gt;<i> &gt; on the CAN modules? To reduce interrupt load on the host system?
+</I>&gt;<i> 
+</I>&gt;<i> The so called &quot;active&quot; or as you say &quot;intelligent&quot; CAN hardware gets its
+</I>&gt;<i> justification from several points:
+</I>&gt;<i> 
+</I>&gt;<i> 1. It reduces the interrupt latency requirements of the host system
+</I>&gt;<i> 2. It can perform (complex) filtering inside the embedded hardware
+</I>&gt;<i> 3. It can perform (time critical) CAN specific communication protocols (e.g.
+</I>&gt;<i> ISO 16765-2) inside the embedded hardware
+</I>&gt;<i> 
+</I>&gt;<i> These topics are mainly relevant for Windoze boxes ;-)
+</I>&gt;<i> 
+</I>&gt;<i> With SocketCAN e.g. the integration of ISO 15765-2 inside the networklayer
+</I>&gt;<i> easily allows to meet the timing requirements also with &quot;passive&quot; CAN
+</I>&gt;<i> hardware. The integration of CAN communication protocols &amp; filtering inside
+</I>&gt;<i> the Linux networklayer therefore aims to make specialized &quot;active&quot; CAN
+</I>&gt;<i> hardware unnecessary.
+</I>&gt;<i> 
+</I>&gt;<i> The CAN netdevice driver model reduces the CAN interface to a common (simple)
+</I>&gt;<i> driver interface as you know it from ethernet drivers. Their major
+</I>&gt;<i> functionality is to simply send &amp; receive ethernet frames ...
+</I>&gt;<i> 
+</I>&gt;<i> &quot;Active&quot; CAN hardware is usually connected to the host system via dual-ported
+</I>&gt;<i> RAM to allow the host CPU to retrieve the CAN frames or CAN protocol PDUs
+</I>&gt;<i> en-bloc (see point 1. above).
+</I>&gt;<i> 
+</I>
+Thanks for this information. Now that I know what to look for, I've
+found the programming manual for the firmware running on the
+microcontroller. It is available here, if you're interested:
+<A HREF="http://www.janz.de/as/en/download-document/12-ican-software-reference-manual.html">http://www.janz.de/as/en/download-document/12-ican-software-reference-manual.html</A>
+
+It'll take me a few days or more to get through it.
+
+&gt;<i> There are currently two active drivers both with dual-ported RAM access in the
+</I>&gt;<i> SocketCAN SVN:
+</I>&gt;<i> 
+</I>&gt;<i> - ESD PCI 331
+</I>&gt;<i> - Softing (PCMCIA)
+</I>&gt;<i> 
+</I>&gt;<i> As Wolfgang already suggested the ESD PCI 331 driver seems to be a good
+</I>&gt;<i> starting point for your development.
+</I>&gt;<i> 
+</I>
+Now that I have a manual, these will be good examples. I've just
+finished an initial look through the ESD PCI 331 driver. I can already
+see similarities to the Janz board.
+
+I'm sure I'll be back with questions soon. :)
+
+Thanks for the help,
+Ira
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003962.html">Writing a driver for Janz cPCI CAN card
+</A></li>
+	<LI>Next message: <A HREF="003964.html">How to close the CAN driver itself in a CAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3963">[ date ]</a>
+              <a href="thread.html#3963">[ thread ]</a>
+              <a href="subject.html#3963">[ subject ]</a>
+              <a href="author.html#3963">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

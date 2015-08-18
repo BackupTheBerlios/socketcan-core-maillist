@@ -1,0 +1,141 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> mcp251x: endless irq when MERRF while receiving
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%3A%20endless%20irq%20when%20MERRF%20while%20receiving&In-Reply-To=%3C4C4AAE2B.8050701%40ahsoftware.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004484.html">
+   <LINK REL="Next"  HREF="004471.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>mcp251x: endless irq when MERRF while receiving</H1>
+    <B>Alexander Holler</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%3A%20endless%20irq%20when%20MERRF%20while%20receiving&In-Reply-To=%3C4C4AAE2B.8050701%40ahsoftware.de%3E"
+       TITLE="mcp251x: endless irq when MERRF while receiving">holler at ahsoftware.de
+       </A><BR>
+    <I>Sat Jul 24 11:11:07 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004484.html">[PATCH] CAN: Add Flexcan CAN controller driver
+</A></li>
+        <LI>Next message: <A HREF="004471.html">mcp251x: endless irq when MERRF while receiving
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4470">[ date ]</a>
+              <a href="thread.html#4470">[ thread ]</a>
+              <a href="subject.html#4470">[ subject ]</a>
+              <a href="author.html#4470">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+I'm currently testing a MCP2515 connected to an AT91-board.
+
+Besides some small changes to use an gpio-irq, I've come across about a 
+problem in the driver which leads to an endless IRQ. For the test I've 
+used two nodes, a PEAK USB controller and said MCP2515, both configured 
+to use a bitrate of 500k. When I'm now sending a simple message from the 
+peak, the mcp251x-driver will end in an endless irq and the MCP2515 will 
+endless send error-messages.
+
+Here is an debug output which should describe the problem:
+
+---------------------------------------------
+peak:
+cansend can0 &quot;5A1#11.2233.44556677.01 / 123#DEADBEEF / 5AA# /&quot;
+
+at91:
+[   93.730000] mcp251x_can_ist entered
+[   93.770000] mcp251x_can_ist intf: 0xa0
+[   93.890000] mcp251x_can_ist eflag: 0xb
+  forever:
+[   93.930000] mcp251x_can_ist intf: 0x80
+[   94.060000] mcp251x_can_ist eflag: 0xb
+[   94.100000] mcp251x_can_ist intf: 0x80
+[   94.220000] mcp251x_can_ist eflag: 0xb
+...
+
+peak:
+candump any,0:0,#ffffffff
+  forever:
+   can0  20000004  [8] 00 04 00 00 00 00 00 00   ERRORFRAME
+---------------------------------------------
+
+Using the at91_can-driver (and can-hw) instead of the mcp251x on the 
+AT91 box I can't reproduce this, so it seems not to be a problem of the 
+cabling or the sender (peak) side.
+
+Anyway, currently I don't care for the reason of the fault on the bus, 
+but I think at least that endless loop is something which should be 
+adressed because this renders the AT91 system almost useless (and could 
+be triggered from remote).
+
+My first simple solution for this is currently the following patch:
+
+--------------------------------
+diff --git a/drivers/net/can/mcp251x.c b/drivers/net/can/mcp251x.c
+index b11a0cb..e1a3745 100644
+--- a/drivers/net/can/mcp251x.c
++++ b/drivers/net/can/mcp251x.c
+@@ -835,7 +835,7 @@ static irqreturn_t mcp251x_can_ist(int irq, void 
+*dev_id)
+                         }
+                 }
+
+-               if (intf == 0)
++               if ((intf &amp; ~CANINTF_MERRF) == 0)
+                         break;
+
+                 if (intf &amp; (CANINTF_TX2IF | CANINTF_TX1IF | 
+CANINTF_TX0IF)) {
+--------------------------------
+
+With that patch the IRQ will be released even if the MERRF is set in the 
+CANINTF-register. This will not fix the problem, but at least the system 
+is still usable in such a case.
+
+I'm no CAN expert, but I think a correct solution would be to restart 
+the MCP2515 after a MERRF was received and didn't go away (restart-ms).
+
+The datasheet for the MCP2515 doesn't talk much about MERRF while 
+receiving (just a sentence in section 7.4 Message Error Interrupt), and 
+the chart for message reception shows why the Error Frames are generated 
+endless.
+
+Any pointers/suggestions?
+
+Regards,
+
+Alexander
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004484.html">[PATCH] CAN: Add Flexcan CAN controller driver
+</A></li>
+	<LI>Next message: <A HREF="004471.html">mcp251x: endless irq when MERRF while receiving
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4470">[ date ]</a>
+              <a href="thread.html#4470">[ thread ]</a>
+              <a href="subject.html#4470">[ subject ]</a>
+              <a href="author.html#4470">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

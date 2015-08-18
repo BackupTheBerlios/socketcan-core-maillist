@@ -1,0 +1,133 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 0/2] CAN transceiver control
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/2%5D%20CAN%20transceiver%20control&In-Reply-To=%3C20091007102108.GA273%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003223.html">
+   <LINK REL="Next"  HREF="003234.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 0/2] CAN transceiver control</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/2%5D%20CAN%20transceiver%20control&In-Reply-To=%3C20091007102108.GA273%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH 0/2] CAN transceiver control">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed Oct  7 12:21:08 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003223.html">[PATCH 0/2] CAN transceiver control
+</A></li>
+        <LI>Next message: <A HREF="003234.html">[PATCH 0/2] CAN transceiver control
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3233">[ date ]</a>
+              <a href="thread.html#3233">[ thread ]</a>
+              <a href="subject.html#3233">[ subject ]</a>
+              <a href="author.html#3233">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tue, Oct 06, 2009 at 06:59:24PM +0200, Oliver Hartkopp wrote:
+&gt;<i> Marc Kleine-Budde wrote:
+</I>&gt;<i> &gt; Kurt Van Dijck wrote:
+</I>&gt;<i> 
+</I>&gt;<i> &gt;&gt; I planned to do just a 'proof of concept'. Like, the PCA82c251 has a slope
+</I>&gt;<i> &gt;&gt; control resistor, that I don't know the exact formula is, but that resistor
+</I>&gt;<i> &gt;&gt; controls the maximum baudrate. I was just making space to implement the
+</I>&gt;<i> &gt;&gt; formula.
+</I>&gt;<i> &gt;&gt; To extend the concept, I'm working on a tja1041 too, altough I never
+</I>&gt;<i> &gt;&gt; used this one before.
+</I>&gt;<i> &gt;&gt; What I want to know from this tja1041 or similar is: What pins are usually
+</I>&gt;<i> &gt;&gt; connected to the cpu, what pins are usually not, and what pins are
+</I>&gt;<i> &gt;&gt; sometimes connected. This allows me to provide a 'minimum required' set
+</I>&gt;<i> &gt;&gt; of gpio the transceiver driver needs.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; I _assume_ the wake pin is mostly not connected to the cpu, but direct
+</I>&gt;<i> &gt;&gt; into the power circuitry. What can a linux driver do with the wake pin?
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; it can generate an interrupt that wakes up the whole linux system from
+</I>&gt;<i> &gt; suspend to ram. Imagine a fast booting concept in the automotive
+</I>&gt;<i> &gt; environment.
+</I>&gt;<i> 
+</I>&gt;<i> Yep. The 'wake' pin is some kind of additional input to wake the system not
+</I>&gt;<i> only by detecting CAN traffic. E.g. you could attach a RTC or something else
+</I>&gt;<i> here ...
+</I>You mean the 'wake' pin from power circuit here?
+I (and Marc too, I guess) meant the 'wake' output from the TJA1041
+&gt;<i> 
+</I>&gt;<i> Please check the schematic on page &quot;15 of 26&quot; from
+</I>&gt;<i> 
+</I>&gt;<i>   <A HREF="http://www.nxp.com/acrobat/datasheets/TJA1041_6.pdf">http://www.nxp.com/acrobat/datasheets/TJA1041_6.pdf</A>
+</I>&gt;<i> 
+</I>&gt;<i> This is the common application for fault tolerant transceivers that support
+</I>&gt;<i> the sleep modes.
+</I>&gt;<i> 
+</I>&gt;<i> You need to set EN and /STB in order to set the transceiver into the sleep
+</I>&gt;<i> mode - see table 4 in chapter 7.1.
+</I>&gt;<i> 
+</I>&gt;<i> Usually EN and /STB are both set to 1 (or open collector) and when you want to
+</I>&gt;<i> go to sleep, you need to perform the steps
+</I>&gt;<i> 
+</I>&gt;<i> 1. Set /STB and EN to 1 (default)
+</I>&gt;<i> 2. Set /STB to 0 and EN to 1
+</I>&gt;<i> 3. Set /STB and EN to 0
+</I>&gt;<i> 
+</I>&gt;<i> And then the INH line switches to off and kills your power supply :-)
+</I>&gt;<i> 
+</I>&gt;<i> Our system makes a usleep(500000) (to wait for power loss) and then executes a
+</I>&gt;<i> system reset, e.g. when CAN traffic just re-appeared and the INH line did no
+</I>&gt;<i> do it's job.
+</I>&gt;<i> 
+</I>&gt;<i> So for the TJA1041 we would need:
+</I>&gt;<i> 
+</I>&gt;<i> EN, /STB and /ERR to be connected to the CPU via GPIO.
+</I>all 3. ok.
+&gt;<i> 
+</I>&gt;<i> A real goodie would be to connect /ERR to an interrupt line that also detects
+</I>&gt;<i> state changes - but this is not really needed.
+</I>I figured that an interrupt would come handy.
+&gt;<i> 
+</I>&gt;<i> I'll take a look on other 'intelligent' transceivers, if there are any
+</I>&gt;<i> requirements that exceed the described TJA1041 / TJA1054 needs.
+</I>My proof of concept is basically a new device class, can_transceiver,
+which should enable people to develop drivers for other chips. When new
+functionality arises, the class should be extended then. And it should
+not be too hard.
+Those are the goals.
+&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>&gt;<i> 
+</I>Kurt
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003223.html">[PATCH 0/2] CAN transceiver control
+</A></li>
+	<LI>Next message: <A HREF="003234.html">[PATCH 0/2] CAN transceiver control
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3233">[ date ]</a>
+              <a href="thread.html#3233">[ thread ]</a>
+              <a href="subject.html#3233">[ subject ]</a>
+              <a href="author.html#3233">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

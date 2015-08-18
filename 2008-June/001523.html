@@ -1,0 +1,169 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> More on bit time setting and calculation...
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20More%20on%20bit%20time%20setting%20and%20calculation...&In-Reply-To=%3C4852326E.9070108%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001352.html">
+   <LINK REL="Next"  HREF="001345.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>More on bit time setting and calculation...</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20More%20on%20bit%20time%20setting%20and%20calculation...&In-Reply-To=%3C4852326E.9070108%40grandegger.com%3E"
+       TITLE="More on bit time setting and calculation...">wg at grandegger.com
+       </A><BR>
+    <I>Fri Jun 13 10:40:14 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001352.html">More on bit time setting and calculation...
+</A></li>
+        <LI>Next message: <A HREF="001345.html">More on bit time setting and calculation...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1523">[ date ]</a>
+              <a href="thread.html#1523">[ thread ]</a>
+              <a href="subject.html#1523">[ subject ]</a>
+              <a href="author.html#1523">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Vladislav,
+
+I have now an optimized tregs calculations program.
+
+Vladislav Gribov wrote:
+[...deletions...]
+&gt;<i> 
+</I>&gt;<i> Hello,
+</I>&gt;<i> here is my vision of the situation.
+</I>&gt;<i> 
+</I>&gt;<i> I still think the most proper way to set CAN bit rate is the way CAN
+</I>&gt;<i> spec expect us to do this. That means using time quanta, sync segment,
+</I>&gt;<i> phase seg 1, phase seg 2, SJW.
+</I>&gt;<i> (<A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-September/000682.html">https://lists.berlios.de/pipermail/socketcan-core/2007-September/000682.html</A>)
+</I>&gt;<i> 
+</I>&gt;<i> The most application deals only with a set of fixed bitrates (like CiA
+</I>&gt;<i> table). So a kind of abstraction for the application is possible, the
+</I>&gt;<i> application deals only with predefined bit rates.
+</I>&gt;<i> I like the implementation of the dynamic bit rate table over the
+</I>&gt;<i> ifconfig. This works quite fine with MSCAN on MPC52000 (thanks to
+</I>&gt;<i> pengutronix people for implementing). The current implementation is
+</I>&gt;<i> however not 100% perfect for me.
+</I>&gt;<i> 
+</I>&gt;<i> Example of what I expect:
+</I>&gt;<i> 
+</I>&gt;<i> $CAN_CONFIG_PROG $IFACE setentry bitrate 500000 tq 125 err 0 sync_seg 1
+</I>&gt;<i> prop_seg 11 phase_seg1 2 phase_seg2 2 sjw 1
+</I>
+Why do you need to specify sync_seg? Is it not always 1?
+
+&gt;<i> This is not quite the same we have now. I have added sync_seg and
+</I>&gt;<i> removed sam. sam parameter is HW specific.
+</I>&gt;<i> 
+</I>&gt;<i> To meet the needs of the rest we need HW specific solution - writing
+</I>&gt;<i> direct to bit timing register.
+</I>&gt;<i> 
+</I>&gt;<i> $CAN_CONFIG_PROG $IFACE setentry bitrate 500000 btr 0x0000001C
+</I>&gt;<i> 
+</I>&gt;<i> This is an example of setting 500 kbit CiA bit rate for SJA1000
+</I>&gt;<i> (registers BT0 &amp; BT1). For the over CAN controllers the &quot;btr&quot; value is
+</I>&gt;<i> different. 4 bytes must be enough for all CAN controllers. If we have
+</I>&gt;<i> some CAN card with build in CAN bit timing table, &quot;btr&quot; refers the
+</I>&gt;<i> corresponding index.
+</I>&gt;<i> Using &quot;btr&quot; setting the HW specific features like sam for SJA1000 may be
+</I>&gt;<i> configured.
+</I>
+OK, you prefer CIA recommended values like most others. The new btregs
+calculations program reproduces them:
+
+Clock: 8000000 Hz
+Bit timing parameters for SJA1000
+Bitrate TQ[ns] PrS1 PhS1 PhS2 SJW SAM BRP SampP Error BTR0 BTR1
+1000000    125    0    5    2   1   0   1 75.0%  0.0% 0x00 0x14
+ 800000    125    0    7    2   1   0   1 80.0%  0.0% 0x00 0x16
+ 500000    125    0   13    2   1   0   1 87.5%  0.0% 0x00 0x1c
+ 250000    250    0   13    2   1   0   2 87.5%  0.0% 0x01 0x1c
+ 125000    500    0   13    2   1   0   4 87.5%  0.0% 0x03 0x1c
+ 100000    625    0   13    2   1   0   5 87.5%  0.0% 0x04 0x1c
+  50000   1250    0   13    2   1   0  10 87.5%  0.0% 0x09 0x1c
+  20000   3125    0   13    2   1   0  25 87.5%  0.0% 0x18 0x1c
+  10000   6250    0   13    2   1   0  50 87.5%  0.0% 0x31 0x1c
+
+&gt;<i> If the requested bit timing entry is not possible (e.g. low CAN bitrate
+</I>&gt;<i> requested on the CAN controller with fast clock) the ifconfig shall
+</I>&gt;<i> return error and no entry is added.
+</I>&gt;<i> 
+</I>&gt;<i> For the MSCAN with 132 Mhz clock the following will not work:
+</I>&gt;<i> 
+</I>&gt;<i> $CAN_CONFIG_PROG $IFACE setentry bitrate 500000 tq 125 err 0 sync_seg 1
+</I>&gt;<i> prop_seg 11 phase_seg1 2 phase_seg2 2 sjw 1
+</I>&gt;<i> 
+</I>&gt;<i> But
+</I>&gt;<i> 
+</I>&gt;<i> $CAN_CONFIG_PROG $IFACE setentry bitrate 500000 tq 105 err 3000 sync_seg
+</I>&gt;<i> 1 prop_seg 7 phase_seg1 8 phase_seg2 3 sjw 2
+</I>
+My optimized btregs calculations program lists:
+
+Clock: 132000000 Hz
+Bit timing parameters for SJA1000
+Bitrate TQ[ns] PrS1 PhS1 PhS2 SJW SAM BRP SampP Error BTR0 BTR1
+1000000     83    0    8    3   1   0  11 75.0%  0.0% 0x0a 0x27
+ 800000     83    0   11    3   1   0  11 80.0%  0.0% 0x0a 0x2a
+ 500000    250    0    6    1   1   0  33 87.5%  0.0% 0x20 0x05
+ 250000    250    0   13    2   1   0  33 87.5%  0.0% 0x20 0x1c
+ 125000    363    0   16    5   1   0  48 77.2%  0.0% 0x2f 0x4f
+ 100000    454    0   16    5   1   0  60 77.2%  0.0% 0x3b 0x4f
+  50000 *NOT POSSIBLE*
+  20000 *NOT POSSIBLE*
+  10000 *NOT POSSIBLE*
+
+I'm curious if
+
+$CAN_CONFIG_PROG $IFACE setentry bitrate 500000 tq 250 err 0 sync_seg
+1 prop_seg 0 phase_seg1 6 phase_seg2 1 sjw 1
+
+works on your hardware? The sample point would be at the CIA recommended
+value without bit-rate error. I parameters for 125000 bps seem not that
+good though.
+
+Thanks,
+
+Wolfgang.
+
+
+
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001352.html">More on bit time setting and calculation...
+</A></li>
+	<LI>Next message: <A HREF="001345.html">More on bit time setting and calculation...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1523">[ date ]</a>
+              <a href="thread.html#1523">[ thread ]</a>
+              <a href="subject.html#1523">[ subject ]</a>
+              <a href="author.html#1523">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

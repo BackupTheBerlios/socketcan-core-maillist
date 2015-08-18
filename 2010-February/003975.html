@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> How to close the CAN driver itself in a CAN driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20How%20to%20close%20the%20CAN%20driver%20itself%20in%20a%20CAN%20driver&In-Reply-To=%3C20100203134419.GC326%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003974.html">
+   <LINK REL="Next"  HREF="003983.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>How to close the CAN driver itself in a CAN driver</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20How%20to%20close%20the%20CAN%20driver%20itself%20in%20a%20CAN%20driver&In-Reply-To=%3C20100203134419.GC326%40e-circ.dyndns.org%3E"
+       TITLE="How to close the CAN driver itself in a CAN driver">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed Feb  3 14:44:19 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003974.html">How to close the CAN driver itself in a CAN driver
+</A></li>
+        <LI>Next message: <A HREF="003983.html">[PATCH 1/1] Update the address of the FSF
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3975">[ date ]</a>
+              <a href="thread.html#3975">[ thread ]</a>
+              <a href="subject.html#3975">[ subject ]</a>
+              <a href="author.html#3975">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Wed, Feb 03, 2010 at 03:11:35AM +0100, Marc Kleine-Budde wrote:
+&gt;<i> -----BEGIN PGP SIGNED MESSAGE-----
+</I>&gt;<i> Hash: SHA1
+</I>&gt;<i> 
+</I>&gt;<i> Hello
+</I>&gt;<i> 
+</I>&gt;<i> wendy liang wrote:
+</I>&gt;<i> &gt; I am writing a CAN driver using the socketCAN framework.
+</I>&gt;<i> &gt; When there is an ACK error, the CAN hardware keeps resending the packet and
+</I>&gt;<i> &gt; keeps raising interrupts, which introduce too much overhead to the
+</I>&gt;<i> &gt; processor.
+</I>&gt;<i> 
+</I>&gt;<i> This is a...IMHO...&quot;weak&quot; point of our current driver design. We don't
+</I>&gt;<i> disable error interrupts even if they are coming at an incredible high
+</I>&gt;<i> rate. Maybe it's time to discuss the problem again.
+</I>If I understand well, the ACK error comes 'once per message'. The
+controller can only generate an ACK error when the complete message was
+on the bus.
+&gt;<i> 
+</I>&gt;<i> If your driver uses NAPI the system would stay more responsive compared
+</I>&gt;<i> to a standard interrupt handler. Have a look at e.g. the at91_can.c
+</I>&gt;<i> which is already mainline.
+</I>&gt;<i> 
+</I>&gt;<i> For a discussion:
+</I>&gt;<i> A possible solution might be to switch of the error interrupt and poll
+</I>&gt;<i> it e.g. with delayed work.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; And thus, I want the driver to close itself when the interrupt handler
+</I>&gt;<i> &gt; detects there are too many error interrupts.
+</I>&gt;<i> 
+</I>&gt;<i> That should be done from userspace....See below:
+</I>&gt;<i> 
+</I>&gt;<i> &gt; Is there anyway to ask the upper layer to close the driver from the driver
+</I>&gt;<i> &gt; itself such that the upper layer knows the driver is closed?
+</I>&gt;<i> 
+</I>&gt;<i> We usually generate error frames and send them to the upper layes, i.e.
+</I>&gt;<i> userspace. It's up to the application to react in an appropriate way.
+</I>&gt;<i> Which depends on the design of your system.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; Is it enough to just call the &quot;.ndo_stop() &quot; function from the driver
+</I>&gt;<i> &gt; itself?
+</I>&gt;<i> 
+</I>&gt;<i> I think this function is called if the user requests the interface to go
+</I>&gt;<i> down. You don't want to call it from the driver itself.
+</I>Ack. don't!
+include/linux/netdevice.h  exports interesting things for those.
+but you will have to call such functions from process context (or
+      workqueue), so if the IRQ is coming too fast, disabling the
+interrupt is the only option that I see. Any process would be postponed
+until no interrupts come.
+Kurt
+&gt;<i> 
+</I>&gt;<i> Marc
+</I>&gt;<i> 
+</I>&gt;<i> - --
+</I>&gt;<i> Pengutronix e.K.                  | Marc Kleine-Budde           |
+</I>&gt;<i> Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+</I>&gt;<i> Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+</I>&gt;<i> Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+</I>&gt;<i> -----BEGIN PGP SIGNATURE-----
+</I>&gt;<i> Version: GnuPG v1.4.9 (GNU/Linux)
+</I>&gt;<i> Comment: Using GnuPG with Mozilla - <A HREF="http://enigmail.mozdev.org">http://enigmail.mozdev.org</A>
+</I>&gt;<i> 
+</I>&gt;<i> iEYEARECAAYFAkto21cACgkQjTAFq1RaXHMXSgCeJAirvJF0nR8APW5N3USAXPZl
+</I>&gt;<i> 8gMAn3Aks5zefpPSPdq1HRSZVL8fLqPv
+</I>&gt;<i> =JN9M
+</I>&gt;<i> -----END PGP SIGNATURE-----
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> Socketcan-core mailing list
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003974.html">How to close the CAN driver itself in a CAN driver
+</A></li>
+	<LI>Next message: <A HREF="003983.html">[PATCH 1/1] Update the address of the FSF
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3975">[ date ]</a>
+              <a href="thread.html#3975">[ thread ]</a>
+              <a href="subject.html#3975">[ subject ]</a>
+              <a href="author.html#3975">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

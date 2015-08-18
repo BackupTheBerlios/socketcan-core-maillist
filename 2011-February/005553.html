@@ -1,0 +1,118 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: cleaning up CAN_ERR_ACK issue
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20cleaning%20up%20CAN_ERR_ACK%20issue&In-Reply-To=%3C4D5A4891.4060502%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005548.html">
+   <LINK REL="Next"  HREF="005554.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: cleaning up CAN_ERR_ACK issue</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20cleaning%20up%20CAN_ERR_ACK%20issue&In-Reply-To=%3C4D5A4891.4060502%40grandegger.com%3E"
+       TITLE="RFC: cleaning up CAN_ERR_ACK issue">wg at grandegger.com
+       </A><BR>
+    <I>Tue Feb 15 10:34:09 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005548.html">[PATCH v2 09/13] can: pruss CAN driver.
+</A></li>
+        <LI>Next message: <A HREF="005554.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5553">[ date ]</a>
+              <a href="thread.html#5553">[ thread ]</a>
+              <a href="subject.html#5553">[ subject ]</a>
+              <a href="author.html#5553">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+I now want to fix the CAN_ERR_ACK issue. As you might have realized, the
+so called &quot;no-ack-on-tx&quot; or &quot;ack slot&quot; bus error is not handled
+consistently. That's the error we get when no cable is connected.
+The inconstancy is that some drivers just set:
+
+	cf-&gt;can_id |= CAN_ERR_ACK;
+
+while the SJA1000 sets:
+
+	cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
+	cf-&gt;data[3] |= CAN_ERR_PROT_LOC_ACK;
+
+Unfortunately, CAN_ERR_ACK defines it's own error class like
+CAN_ERR_BUSERROR even if it's just another bus error. Therefore
+it belongs to the protocol violation types in data[2]:
+
+  /* error in CAN protocol (type) / data[2] */
+  #define CAN_ERR_PROT_UNSPEC      0x00 /* unspecified */
+  #define CAN_ERR_PROT_BIT         0x01 /* single bit error */
+  #define CAN_ERR_PROT_FORM        0x02 /* frame format error */
+  #define CAN_ERR_PROT_STUFF       0x04 /* bit stuffing error */
+  #define CAN_ERR_PROT_BIT0        0x08 /* unable to send dominant bit */
+  #define CAN_ERR_PROT_BIT1        0x10 /* unable to send recessive bit */
+  #define CAN_ERR_PROT_OVERLOAD    0x20 /* bus overload */
+  #define CAN_ERR_PROT_ACTIVE      0x40 /* active error announcement */
+  #define CAN_ERR_PROT_TX          0x80 /* error occured on transmission */
+
+All bits are already used, but CAN_ERR_PROT_ACTIVE is misplaced
+here as well :-(. It belongs to the controller problems in data[1].
+So, for a correct solution I would add here:
+
+  #define CAN_ERR_PROT_ACK         0x40 /* received no ACK on transmission */
+
+and move CAN_ERR_PROT_ACTIVE to
+ 
+  /* error status of CAN-controller / data[1] */
+  #define CAN_ERR_CRTL_ACTIVE      0x40 /* back to error active */
+
+Then the error message for the &quot;no-ack-on-tx&quot; error would be
+composed the following way:
+
+	cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
+	cf-&gt;data[2] = CAN_ERR_PROT_ACK;
+
+And CAN controllers providing more information like the SJA1000
+would additionally set:
+
+	cf-&gt;data[3] |= CAN_ERR_PROT_LOC_ACK;
+
+Unfortunately, the *correct* solution could rise some portability
+issues as some users might already use CAN_ERR_PROT_ACK and especially
+CAN_ERR_PROT_ACTIVE. What that be acceptible? What do you think?
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005548.html">[PATCH v2 09/13] can: pruss CAN driver.
+</A></li>
+	<LI>Next message: <A HREF="005554.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5553">[ date ]</a>
+              <a href="thread.html#5553">[ thread ]</a>
+              <a href="subject.html#5553">[ subject ]</a>
+              <a href="author.html#5553">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

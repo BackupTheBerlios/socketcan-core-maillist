@@ -1,0 +1,378 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 2/2] ems_usb: Added support for EMS CPC-USB/ARM7 CAN/USB	interface
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/2%5D%20ems_usb%3A%20Added%20support%20for%20EMS%20CPC-USB/ARM7%20CAN/USB%0A%09interface&In-Reply-To=%3C4AAF7D47.1070005%40ems-wuensche.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003082.html">
+   <LINK REL="Next"  HREF="003085.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 2/2] ems_usb: Added support for EMS CPC-USB/ARM7 CAN/USB	interface</H1>
+    <B>Sebastian Haas</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/2%5D%20ems_usb%3A%20Added%20support%20for%20EMS%20CPC-USB/ARM7%20CAN/USB%0A%09interface&In-Reply-To=%3C4AAF7D47.1070005%40ems-wuensche.com%3E"
+       TITLE="[PATCH 2/2] ems_usb: Added support for EMS CPC-USB/ARM7 CAN/USB	interface">haas at ems-wuensche.com
+       </A><BR>
+    <I>Tue Sep 15 13:40:55 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003082.html">[PATCH 2/2] ems_usb: Added support for EMS CPC-USB/ARM7 CAN/USB	interface
+</A></li>
+        <LI>Next message: <A HREF="003085.html">[PATCH 2/2] ems_usb: Added support for EMS CPC-USB/ARM7 CAN/USB	interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3084">[ date ]</a>
+              <a href="thread.html#3084">[ thread ]</a>
+              <a href="subject.html#3084">[ subject ]</a>
+              <a href="author.html#3084">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+Wolfgang Grandegger schrieb:
+&gt;<i> Hi Sebastian,
+</I>&gt;<i> 
+</I>&gt;<i> Sebastian Haas wrote:
+</I>&gt;&gt;<i> This patch adds support for one channel CAN/USB interace CPC-USB/ARM7 from
+</I>&gt;&gt;<i> EMS Dr. Thomas Wuensche (<A HREF="http://www.ems-wuensche.com">http://www.ems-wuensche.com</A>).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Signed-off-by: Sebastian Haas &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">haas at ems-wuensche.com</A>&gt;
+</I>&gt;<i> 
+</I>&gt;<i> The driver is almost OK from the Socket-CAN point of view. Just some
+</I>&gt;<i> *final* nitpicking:
+</I>&gt;<i> 
+</I>&gt;<i> [snip]
+</I>&gt;&gt;<i> +static void ems_usb_read_interrupt_callback(struct urb *urb)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +	struct ems_usb *dev = urb-&gt;context;
+</I>&gt;&gt;<i> +	struct net_device *netdev;
+</I>&gt;&gt;<i> +	int err;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	netdev = dev-&gt;netdev;
+</I>&gt;<i> 
+</I>&gt;<i> Could be done in the declaration part above.
+</I>Fixed.
+
+&gt;&gt;<i> +	if (!netif_device_present(netdev))
+</I>&gt;&gt;<i> +		return;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	switch (urb-&gt;status) {
+</I>&gt;&gt;<i> +	case 0:
+</I>&gt;&gt;<i> +		dev-&gt;free_slots = dev-&gt;intr_in_buffer[1];
+</I>&gt;&gt;<i> +		break;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	case -ECONNRESET: /* unlink */
+</I>&gt;&gt;<i> +	case -ENOENT:
+</I>&gt;&gt;<i> +	case -ESHUTDOWN:
+</I>&gt;&gt;<i> +		return;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	default:
+</I>&gt;&gt;<i> +		dev_info(netdev-&gt;dev.parent, &quot;Rx interrupt aborted %d\n&quot;,
+</I>&gt;&gt;<i> +			 urb-&gt;status);
+</I>&gt;&gt;<i> +		break;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	err = usb_submit_urb(urb, GFP_ATOMIC);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	if (err == -ENODEV)
+</I>&gt;&gt;<i> +		netif_device_detach(netdev);
+</I>&gt;&gt;<i> +	else if (err)
+</I>&gt;&gt;<i> +		dev_err(netdev-&gt;dev.parent,
+</I>&gt;&gt;<i> +			&quot;failed resubmitting intr urb: %d\n&quot;, err);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	return;
+</I>&gt;&gt;<i> +}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +static void ems_usb_rx_can_msg(struct ems_usb *dev, struct ems_cpc_msg *msg)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +	struct can_frame *cf;
+</I>&gt;&gt;<i> +	struct sk_buff *skb;
+</I>&gt;&gt;<i> +	int i;
+</I>&gt;&gt;<i> +	struct net_device_stats *stats = &amp;dev-&gt;netdev-&gt;stats;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	skb = dev_alloc_skb(sizeof(struct can_frame));
+</I>&gt;<i> 
+</I>&gt;<i> Please use netdev_alloc_skb() ...
+</I>Fixed.
+
+&gt;&gt;<i> +	if (skb == NULL)
+</I>&gt;&gt;<i> +		return;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	skb-&gt;dev = dev-&gt;netdev;
+</I>&gt;<i> 
+</I>&gt;<i> ... making the line above obsolete.
+</I>Fixed.
+
+&gt;&gt;<i> +	skb-&gt;protocol = htons(ETH_P_CAN);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	cf-&gt;can_id = msg-&gt;msg.can_msg.id;
+</I>&gt;&gt;<i> +	cf-&gt;can_dlc = min_t(u8, msg-&gt;msg.can_msg.length, 8);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	if (msg-&gt;type == CPC_MSG_TYPE_EXT_CAN_FRAME
+</I>&gt;&gt;<i> +	    || msg-&gt;type == CPC_MSG_TYPE_EXT_RTR_FRAME)
+</I>&gt;&gt;<i> +		cf-&gt;can_id |= CAN_EFF_FLAG;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	if (msg-&gt;type == CPC_MSG_TYPE_RTR_FRAME
+</I>&gt;&gt;<i> +	    || msg-&gt;type == CPC_MSG_TYPE_EXT_RTR_FRAME) {
+</I>&gt;&gt;<i> +		cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;&gt;<i> +	} else {
+</I>&gt;&gt;<i> +		for (i = 0; i &lt; cf-&gt;can_dlc; i++)
+</I>&gt;&gt;<i> +			cf-&gt;data[i] = msg-&gt;msg.can_msg.msg[i];
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	netif_rx(skb);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	dev-&gt;netdev-&gt;last_rx = jiffies;
+</I>&gt;&gt;<i> +	stats-&gt;rx_packets++;
+</I>&gt;&gt;<i> +	stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;&gt;<i> +}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +static void ems_usb_rx_err(struct ems_usb *dev, struct ems_cpc_msg *msg)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +	struct can_frame *cf;
+</I>&gt;&gt;<i> +	struct sk_buff *skb;
+</I>&gt;&gt;<i> +	struct net_device_stats *stats = &amp;dev-&gt;netdev-&gt;stats;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	skb = dev_alloc_skb(sizeof(struct can_frame));
+</I>&gt;&gt;<i> +	if (skb == NULL)
+</I>&gt;&gt;<i> +		return;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	skb-&gt;dev = dev-&gt;netdev;
+</I>&gt;<i> 
+</I>&gt;<i> Ditto.
+</I>&gt;<i> 
+</I>&gt;<i> [snip]
+</I>&gt;&gt;<i> +static int ems_usb_start_xmit(struct sk_buff *skb, struct net_device *netdev)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +	struct ems_usb *dev = netdev_priv(netdev);
+</I>&gt;&gt;<i> +	struct ems_tx_urb_context *context = NULL;
+</I>&gt;&gt;<i> +	struct net_device_stats *stats = &amp;netdev-&gt;stats;
+</I>&gt;&gt;<i> +	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;&gt;<i> +	struct ems_cpc_msg *msg;
+</I>&gt;&gt;<i> +	struct urb *urb;
+</I>&gt;&gt;<i> +	u8 *buf;
+</I>&gt;&gt;<i> +	int i, err;
+</I>&gt;&gt;<i> +	size_t size = CPC_HEADER_SIZE + CPC_MSG_HEADER_LEN
+</I>&gt;&gt;<i> +			+ sizeof(struct cpc_can_msg);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	/* create a URB, and a buffer for it, and copy the data to the URB */
+</I>&gt;&gt;<i> +	urb = usb_alloc_urb(0, GFP_ATOMIC);
+</I>&gt;&gt;<i> +	if (!urb) {
+</I>&gt;&gt;<i> +		dev_err(netdev-&gt;dev.parent, &quot;No memory left for URBs\n&quot;);
+</I>&gt;&gt;<i> +		goto nomem;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	buf = usb_buffer_alloc(dev-&gt;udev, size, GFP_ATOMIC, &amp;urb-&gt;transfer_dma);
+</I>&gt;&gt;<i> +	if (!buf) {
+</I>&gt;&gt;<i> +		dev_err(netdev-&gt;dev.parent, &quot;No memory left for USB buffer\n&quot;);
+</I>&gt;&gt;<i> +		usb_free_urb(urb);
+</I>&gt;&gt;<i> +		goto nomem;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	msg = (struct ems_cpc_msg *)&amp;buf[CPC_HEADER_SIZE];
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	msg-&gt;msg.can_msg.id = cf-&gt;can_id &amp; 0x1FFFFFFFU;
+</I>&gt;<i> 
+</I>&gt;<i> Please use CAN_ERR_MASK instead (even if the name is somehow
+</I>&gt;<i> misleading). See <A HREF="http://lxr.linux.no/#linux+v2.6.31/include/linux/can.h#L31.">http://lxr.linux.no/#linux+v2.6.31/include/linux/can.h#L31.</A>
+</I>Fixed.
+
+&gt;<i> [snip]
+</I>&gt;&gt;<i> +}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +
+</I>&gt;<i> 
+</I>&gt;<i> Remove one empty line, please.
+</I>Fixed.
+
+&gt;&gt;<i> +static void init_params_sja1000(struct ems_cpc_msg *msg)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +	struct cpc_sja1000_params *sja1000 =
+</I>&gt;&gt;<i> +		&amp;msg-&gt;msg.can_params.cc_params.sja1000;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	msg-&gt;type = CPC_CMD_TYPE_CAN_PARAMS;
+</I>&gt;&gt;<i> +	msg-&gt;length = sizeof(struct cpc_can_params);
+</I>&gt;&gt;<i> +	msg-&gt;msgid = 0;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	msg-&gt;msg.can_params.cc_type = CPC_CC_TYPE_SJA1000;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	/* Acceptance filter open */
+</I>&gt;&gt;<i> +	sja1000-&gt;acc_code0 = 0x00;
+</I>&gt;&gt;<i> +	sja1000-&gt;acc_code1 = 0x00;
+</I>&gt;&gt;<i> +	sja1000-&gt;acc_code2 = 0x00;
+</I>&gt;&gt;<i> +	sja1000-&gt;acc_code3 = 0x00;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	/* Acceptance filter open */
+</I>&gt;&gt;<i> +	sja1000-&gt;acc_mask0 = 0xFF;
+</I>&gt;&gt;<i> +	sja1000-&gt;acc_mask1 = 0xFF;
+</I>&gt;&gt;<i> +	sja1000-&gt;acc_mask2 = 0xFF;
+</I>&gt;&gt;<i> +	sja1000-&gt;acc_mask3 = 0xFF;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	sja1000-&gt;btr0 = 0;
+</I>&gt;&gt;<i> +	sja1000-&gt;btr1 = 0;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	sja1000-&gt;outp_contr = SJA1000_DEFAULT_OUTPUT_CONTROL;
+</I>&gt;&gt;<i> +	sja1000-&gt;mode = SJA1000_MOD_RM;
+</I>&gt;&gt;<i> +}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +/*
+</I>&gt;&gt;<i> + * probe function for new CPC-USB devices
+</I>&gt;&gt;<i> + */
+</I>&gt;&gt;<i> +static int ems_usb_probe(struct usb_interface *intf,
+</I>&gt;&gt;<i> +			 const struct usb_device_id *id)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +	struct net_device *netdev;
+</I>&gt;&gt;<i> +	struct ems_usb *dev;
+</I>&gt;&gt;<i> +	int i, err;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	netdev = alloc_candev(sizeof(struct ems_usb));
+</I>&gt;&gt;<i> +	if (!netdev) {
+</I>&gt;&gt;<i> +		dev_err(netdev-&gt;dev.parent, &quot;Couldn't alloc candev\n&quot;);
+</I>&gt;&gt;<i> +		return -ENOMEM;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	dev = netdev_priv(netdev);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	dev-&gt;udev = interface_to_usbdev(intf);
+</I>&gt;&gt;<i> +	dev-&gt;netdev = netdev;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	dev-&gt;can.state = CAN_STATE_STOPPED;
+</I>&gt;&gt;<i> +	dev-&gt;can.bittiming_const = &amp;ems_usb_bittiming_const;
+</I>&gt;&gt;<i> +	dev-&gt;can.do_set_bittiming = ems_usb_set_bittiming;
+</I>&gt;&gt;<i> +	dev-&gt;can.do_set_mode = ems_usb_set_mode;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	netdev-&gt;flags |= IFF_ECHO; /* we support local echo */
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	/*
+</I>&gt;&gt;<i> +	 * The device actually uses a 16MHz clock to generate the CAN clock
+</I>&gt;&gt;<i> +	 * but it expects SJA1000 bit settings based on 8MHz (is internally
+</I>&gt;&gt;<i> +	 * converted).
+</I>&gt;&gt;<i> +	 */
+</I>&gt;<i> 
+</I>&gt;<i> Should go up to the macro definition.
+</I>Fixed.
+
+&gt;&gt;<i> +	dev-&gt;can.clock.freq = EMS_USB_ARM7_CLOCK;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	netdev-&gt;netdev_ops = &amp;ems_usb_netdev_ops;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	netdev-&gt;flags |= IFF_ECHO; /* we support local echo */
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	init_usb_anchor(&amp;dev-&gt;rx_submitted);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	init_usb_anchor(&amp;dev-&gt;tx_submitted);
+</I>&gt;&gt;<i> +	atomic_set(&amp;dev-&gt;active_tx_urbs, 0);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	for (i = 0; i &lt; MAX_TX_URBS; i++)
+</I>&gt;&gt;<i> +		dev-&gt;tx_contexts[i].echo_index = MAX_TX_URBS;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	dev-&gt;intr_urb = usb_alloc_urb(0, GFP_KERNEL);
+</I>&gt;&gt;<i> +	if (!dev-&gt;intr_urb) {
+</I>&gt;&gt;<i> +		dev_err(netdev-&gt;dev.parent, &quot;Couldn't alloc intr URB\n&quot;);
+</I>&gt;&gt;<i> +		free_candev(netdev);
+</I>&gt;<i> 
+</I>&gt;<i> Please use goto's for cleanup to avoid code duplication.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> +		return -ENOMEM;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	dev-&gt;intr_in_buffer = kzalloc(INTR_IN_BUFFER_SIZE, GFP_KERNEL);
+</I>&gt;&gt;<i> +	if (!dev-&gt;intr_in_buffer) {
+</I>&gt;&gt;<i> +		dev_err(netdev-&gt;dev.parent, &quot;Couldn't alloc Intr buffer\n&quot;);
+</I>&gt;&gt;<i> +		free_candev(netdev);
+</I>&gt;&gt;<i> +		usb_free_urb(dev-&gt;intr_urb);
+</I>&gt;&gt;<i> +		return -ENOMEM;
+</I>&gt;<i> 
+</I>&gt;<i> Ditto.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	dev-&gt;tx_msg_buffer = kzalloc(CPC_HEADER_SIZE +
+</I>&gt;&gt;<i> +				     sizeof(struct ems_cpc_msg), GFP_KERNEL);
+</I>&gt;&gt;<i> +	if (!dev-&gt;tx_msg_buffer) {
+</I>&gt;&gt;<i> +		dev_err(netdev-&gt;dev.parent, &quot;Couldn't alloc Tx buffer\n&quot;);
+</I>&gt;&gt;<i> +		free_candev(netdev);
+</I>&gt;&gt;<i> +		usb_free_urb(dev-&gt;intr_urb);
+</I>&gt;&gt;<i> +		kfree(dev-&gt;intr_in_buffer);
+</I>&gt;&gt;<i> +		return -ENOMEM;
+</I>&gt;<i> 
+</I>&gt;<i> Ditto.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	usb_set_intfdata(intf, dev);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	SET_NETDEV_DEV(netdev, &amp;intf-&gt;dev);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	init_params_sja1000(&amp;dev-&gt;active_params);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	err = ems_usb_command_msg(dev, &amp;dev-&gt;active_params);
+</I>&gt;&gt;<i> +	if (err) {
+</I>&gt;&gt;<i> +		dev_err(netdev-&gt;dev.parent,
+</I>&gt;&gt;<i> +			&quot;couldn't initialize controller: %d\n&quot;, err);
+</I>&gt;&gt;<i> +		free_candev(netdev);
+</I>&gt;&gt;<i> +		usb_free_urb(dev-&gt;intr_urb);
+</I>&gt;&gt;<i> +		return err;
+</I>&gt;<i> 
+</I>&gt;<i> Ditto. Also kfree(dev-&gt;intr_in_buffer) seems to be missing.
+</I>Fixed.
+
+&gt;<i> Please add a version number to the next patch, e.g. [PATCH v3 ...].
+</I>Okay, have to figure out how to do with stgit ;-)
+
+&gt;<i> It would also be nice, if some USB guru's could have a look as well.
+</I>Oliver Neukum already did a quick review. I've fixed serveral
+GFP_ATOMIC/KERNEL issues and a problem with DMA coherency on his feedback.
+
+Cheers, Sebastian
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.9 (GNU/Linux)
+Comment: Using GnuPG with Mozilla - <A HREF="http://enigmail.mozdev.org">http://enigmail.mozdev.org</A>
+
+iEYEARECAAYFAkqvfUAACgkQpqRB8PJG7Xxw/ACfT8FUQ5DlmrcDnxotWceIcyNn
+fOIAoI/w8NHJg0qGxpF2PvU6Qd5BXaBg
+=DV5x
+-----END PGP SIGNATURE-----
+-- 
+EMS Dr. Thomas Wuensche e.K.
+Sonnenhang 3
+85304 Ilmmuenster
+HRA Neuburg a.d. Donau, HR-Nr. 70.106
+Phone: +49-8441-490260
+Fax  : +49-8441-81860
+<A HREF="http://www.ems-wuensche.com">http://www.ems-wuensche.com</A>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003082.html">[PATCH 2/2] ems_usb: Added support for EMS CPC-USB/ARM7 CAN/USB	interface
+</A></li>
+	<LI>Next message: <A HREF="003085.html">[PATCH 2/2] ems_usb: Added support for EMS CPC-USB/ARM7 CAN/USB	interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3084">[ date ]</a>
+              <a href="thread.html#3084">[ thread ]</a>
+              <a href="subject.html#3084">[ subject ]</a>
+              <a href="author.html#3084">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

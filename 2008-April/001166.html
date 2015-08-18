@@ -1,0 +1,135 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH][CAN]: Fix copy_from_user() results interpretation.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%5BCAN%5D%3A%20Fix%20copy_from_user%28%29%20results%20interpretation.&In-Reply-To=%3C4811E915.80303%40volkswagen.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001165.html">
+   <LINK REL="Next"  HREF="001167.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH][CAN]: Fix copy_from_user() results interpretation.</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%5BCAN%5D%3A%20Fix%20copy_from_user%28%29%20results%20interpretation.&In-Reply-To=%3C4811E915.80303%40volkswagen.de%3E"
+       TITLE="[PATCH][CAN]: Fix copy_from_user() results interpretation.">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Fri Apr 25 16:22:13 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001165.html">mscan stuck after bus problems
+</A></li>
+        <LI>Next message: <A HREF="001167.html">[PATCH][CAN]: Fix copy_from_user() results interpretation.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1166">[ date ]</a>
+              <a href="thread.html#1166">[ thread ]</a>
+              <a href="subject.html#1166">[ subject ]</a>
+              <a href="author.html#1166">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Pavel Emelyanov wrote:
+&gt;<i>
+</I>&gt;<i> Sorry for the noise, I had to check this right after facing this problem
+</I>&gt;<i> with the copy_to_user()...
+</I>&gt;<i>
+</I>&gt;<i> Both copy_to_ and _from_user return the number of bytes, that failed to
+</I>&gt;<i> reach their destination, not the 0/-EXXX values.
+</I>&gt;<i>
+</I>&gt;<i> Other net/ code handles this correctly.
+</I>&gt;<i>
+</I>&gt;<i> Signed-off-by: Pavel Emelyanov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">xemul at openvz.org</A>&gt;
+</I>&gt;<i>
+</I>
+Thanks very much for catching this, Pavel!
+
+Acked-by: Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">oliver.hartkopp at volkswagen.de</A>&gt;
+
+&gt;<i> ---
+</I>&gt;<i>
+</I>&gt;<i> diff --git a/net/can/raw.c b/net/can/raw.c
+</I>&gt;<i> index ead50c7..2be8c6e 100644
+</I>&gt;<i> --- a/net/can/raw.c
+</I>&gt;<i> +++ b/net/can/raw.c
+</I>&gt;<i> @@ -438,12 +438,12 @@ static int raw_setsockopt(struct socket *sock, 
+</I>&gt;<i> int level, int optname,
+</I>&gt;<i>                         err = copy_from_user(filter, optval, optlen);
+</I>&gt;<i>                         if (err) {
+</I>&gt;<i>                                 kfree(filter);
+</I>&gt;<i> -                               return err;
+</I>&gt;<i> +                               return -EFAULT;
+</I>&gt;<i>                         }
+</I>&gt;<i>                 } else if (count == 1) {
+</I>&gt;<i>                         err = copy_from_user(&amp;sfilter, optval, optlen);
+</I>&gt;<i>                         if (err)
+</I>&gt;<i> -                               return err;
+</I>&gt;<i> +                               return -EFAULT;
+</I>&gt;<i>                 }
+</I>&gt;<i>  
+</I>&gt;<i>                 lock_sock(sk);
+</I>&gt;<i> @@ -495,7 +495,7 @@ static int raw_setsockopt(struct socket *sock, int 
+</I>&gt;<i> level, int optname,
+</I>&gt;<i>  
+</I>&gt;<i>                 err = copy_from_user(&amp;err_mask, optval, optlen);
+</I>&gt;<i>                 if (err)
+</I>&gt;<i> -                       return err;
+</I>&gt;<i> +                       return -EFAULT;
+</I>&gt;<i>  
+</I>&gt;<i>                 err_mask &amp;= CAN_ERR_MASK;
+</I>&gt;<i>  
+</I>&gt;<i> @@ -531,7 +531,8 @@ static int raw_setsockopt(struct socket *sock, int 
+</I>&gt;<i> level, int optname,
+</I>&gt;<i>                 if (optlen != sizeof(ro-&gt;loopback))
+</I>&gt;<i>                         return -EINVAL;
+</I>&gt;<i>  
+</I>&gt;<i> -               err = copy_from_user(&amp;ro-&gt;loopback, optval, optlen);
+</I>&gt;<i> +               err = copy_from_user(&amp;ro-&gt;loopback, optval, optlen) ?
+</I>&gt;<i> +                       -EFAULT : 0;
+</I>&gt;<i>  
+</I>&gt;<i>                 break;
+</I>&gt;<i>  
+</I>&gt;<i> @@ -539,7 +540,8 @@ static int raw_setsockopt(struct socket *sock, int 
+</I>&gt;<i> level, int optname,
+</I>&gt;<i>                 if (optlen != sizeof(ro-&gt;recv_own_msgs))
+</I>&gt;<i>                         return -EINVAL;
+</I>&gt;<i>  
+</I>&gt;<i> -               err = copy_from_user(&amp;ro-&gt;recv_own_msgs, optval, optlen);
+</I>&gt;<i> +               err = copy_from_user(&amp;ro-&gt;recv_own_msgs, optval, 
+</I>&gt;<i> optlen) ?
+</I>&gt;<i> +                       -EFAULT : 0;
+</I>&gt;<i>  
+</I>&gt;<i>                 break;
+</I>&gt;<i>  
+</I>&gt;<i>
+</I>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001165.html">mscan stuck after bus problems
+</A></li>
+	<LI>Next message: <A HREF="001167.html">[PATCH][CAN]: Fix copy_from_user() results interpretation.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1166">[ date ]</a>
+              <a href="thread.html#1166">[ thread ]</a>
+              <a href="subject.html#1166">[ subject ]</a>
+              <a href="author.html#1166">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,126 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> About bittiming calculation result
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20About%20bittiming%20calculation%20result&In-Reply-To=%3C4D4FDEF9.2030305%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005467.html">
+   <LINK REL="Next"  HREF="005479.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>About bittiming calculation result</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20About%20bittiming%20calculation%20result&In-Reply-To=%3C4D4FDEF9.2030305%40grandegger.com%3E"
+       TITLE="About bittiming calculation result">wg at grandegger.com
+       </A><BR>
+    <I>Mon Feb  7 13:00:57 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005467.html">[PATCH 13/20] net: can: janz-ican3: world-writable sysfs	termination file
+</A></li>
+        <LI>Next message: <A HREF="005479.html">About bittiming calculation result
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5477">[ date ]</a>
+              <a href="thread.html#5477">[ thread ]</a>
+              <a href="subject.html#5477">[ subject ]</a>
+              <a href="author.html#5477">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Tomoya,
+
+On 02/07/2011 12:38 PM, Tomoya MORINAGA wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> I have a question for bittiming-value calculated by Can-core.
+</I>&gt;<i> 
+</I>&gt;<i> In case setting like below,
+</I>&gt;<i>  - ip link set can0 type can bitrate 800000
+</I>&gt;<i>  - clock=50MHz
+</I>&gt;<i>  - Use pch_can
+</I>&gt;<i> 
+</I>&gt;<i> Can-core calculates like below
+</I>&gt;<i> brp=21
+</I>&gt;<i> seg1=1
+</I>&gt;<i> seg2=1
+</I>&gt;<i> sjw=1
+</I>&gt;<i> prop_seg=0
+</I>&gt;<i> 
+</I>&gt;<i> Is &quot;prop_seg=0&quot; true ?
+</I>
+Well, only prop_seg+phase_seg=tseg1 is relevant and the pch_can driver
+sets the allowed minimum &quot;tseg1_min1&quot; currently to 1:
+
+static struct can_bittiming_const pch_can_bittiming_const = {
+        .name = KBUILD_MODNAME,
+        .tseg1_min = 1,
+        .tseg1_max = 16,
+        .tseg2_min = 1,
+        .tseg2_max = 8,
+        .sjw_max = 4,
+        .brp_min = 1,
+        .brp_max = 1024, /* 6bit + extended 4bit */
+        .brp_inc = 1,
+};
+
+&gt;<i> seg1/seg2/sjw/prop_seg must be more than 1 ?
+</I>
+Then &quot;tseg1_min&quot; should be set to *2*.
+
+&gt;<i> Also I can see the following kernel error log.
+</I>&gt;<i> bitrate error 0.7%
+</I>
+A clock frequency of 50 MHz is sub-optimal for CAN and some
+bit-rates cannot be reproduced properly. Here is the output of
+the can-utils program &quot;can-calc-bit-timing&quot; (with an entry for
+the pch-can added):
+
+$ ./can-calc-bit-timing pch-can
+Bit timing parameters for pch-can with 50.000000 MHz ref clock
+nominal                                 real Bitrt   nom  real SampP
+Bitrate TQ[ns] PrS PhS1 PhS2 SJW BRP Bitrate Error SampP SampP Error CNF1 CNF2 CNF3
+1000000    100   3    3    3   1   5 1000000  0.0% 75.0% 70.0%  6.7% 0x05 0x92 0x02
+ 800000    420   0    1    1   1  21  793650  0.8% 80.0% 66.6% 16.8% 0x15 0xff 0x00
+ 500000    100   8    8    3   1   5  500000  0.0% 87.5% 85.0%  2.9% 0x05 0xbf 0x02
+ 250000    500   3    3    1   1  25  250000  0.0% 87.5% 87.5%  0.0% 0x19 0x92 0x00
+ 125000    500   6    7    2   1  25  125000  0.0% 87.5% 87.5%  0.0% 0x19 0xb5 0x01
+ 100000    500   8    8    3   1  25  100000  0.0% 87.5% 85.0%  2.9% 0x19 0xbf 0x02
+  50000   2500   3    3    1   1 125   50000  0.0% 87.5% 87.5%  0.0% 0x7d 0x92 0x00
+  20000   2500   8    8    3   1 125   20000  0.0% 87.5% 85.0%  2.9% 0x7d 0xbf 0x02
+  10000  12500   3    3    1   1 625   10000  0.0% 87.5% 87.5%  0.0% 0x71 0x92 0x00
+
+As you can see, especially 800000 gives rather bad results.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005467.html">[PATCH 13/20] net: can: janz-ican3: world-writable sysfs	termination file
+</A></li>
+	<LI>Next message: <A HREF="005479.html">About bittiming calculation result
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5477">[ date ]</a>
+              <a href="thread.html#5477">[ thread ]</a>
+              <a href="subject.html#5477">[ subject ]</a>
+              <a href="author.html#5477">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

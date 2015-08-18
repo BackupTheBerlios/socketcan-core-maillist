@@ -1,0 +1,607 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 1/4] dev: new interface for setting bit-timing parameters
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%201/4%5D%20dev%3A%20new%20interface%20for%20setting%20bit-timing%20parameters&In-Reply-To=%3C489194A1.40705%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001772.html">
+   <LINK REL="Next"  HREF="001765.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 1/4] dev: new interface for setting bit-timing parameters</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%201/4%5D%20dev%3A%20new%20interface%20for%20setting%20bit-timing%20parameters&In-Reply-To=%3C489194A1.40705%40grandegger.com%3E"
+       TITLE="[PATCH 1/4] dev: new interface for setting bit-timing parameters">wg at grandegger.com
+       </A><BR>
+    <I>Thu Jul 31 12:32:01 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001772.html">[PATCH 5/4] new interface for setting bit-timing parameters
+</A></li>
+        <LI>Next message: <A HREF="001765.html">[PATCH 2/4] sysfs: new interface for setting bit-timing parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1764">[ date ]</a>
+              <a href="thread.html#1764">[ thread ]</a>
+              <a href="subject.html#1764">[ subject ]</a>
+              <a href="author.html#1764">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch implements the *direct* setting of the bit-timing parameters
+using a hardware *independent* format. For the non-expert mode, CIA
+recommended values are detemined by a built-in algorithm.
+
+Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+ kernel/2.6/drivers/net/can/dev.c   |  320 +++++++++++++++++++------------------
+ kernel/2.6/include/linux/can/dev.h |  109 ++++--------
+ 2 files changed, 208 insertions(+), 221 deletions(-)
+
+Index: trunk/kernel/2.6/drivers/net/can/dev.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/dev.c
++++ trunk/kernel/2.6/drivers/net/can/dev.c
+@@ -3,6 +3,7 @@
+  *
+  * Copyright (C) 2005 Marc Kleine-Budde, Pengutronix
+  * Copyright (C) 2006 Andrey Volkov, Varma Electronics
++ * Copyright (C) 2008 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the version 2 of the GNU General Public License
+@@ -31,169 +32,193 @@
+ 
+ MODULE_DESCRIPTION(MOD_DESC);
+ MODULE_LICENSE(&quot;GPL v2&quot;);
+-MODULE_AUTHOR(&quot;Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;, &quot;
+-	      &quot;Andrey Volkov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">avolkov at varma-el.com</A>&gt;&quot;);
++MODULE_AUTHOR(&quot;Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;&quot;);
+ 
+-static int restart_ms;
++/*
++ * Bit-timing calculation derived from:
++ *
++ * Code based on LinCAN sources and H8S2638 project
++ * Copyright 2004-2006 Pavel Pisa - DCE FELK CVUT cz
++ * Copyright 2005      Stanislav Marek
++ * email: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">pisa at cmp.felk.cvut.cz</A>
++ */
++static int can_update_spt(const struct can_bittiming_const *btc,
++			  int sampl_pt, int tseg, int *tseg1, int *tseg2)
++{
++	*tseg2 = tseg + 1 - (sampl_pt * (tseg + 1)) / 1000;
++	if (*tseg2 &lt; btc-&gt;tseg2_min)
++		*tseg2 = btc-&gt;tseg2_min;
++	if (*tseg2 &gt; btc-&gt;tseg2_max)
++		*tseg2 = btc-&gt;tseg2_max;
++	*tseg1 = tseg - *tseg2;
++	if (*tseg1 &gt; btc-&gt;tseg1_max) {
++		*tseg1 = btc-&gt;tseg1_max;
++		*tseg2 = tseg - *tseg1;
++	}
++	return 1000 * (tseg + 1 - *tseg2) / (tseg + 1);
++}
+ 
+-module_param(restart_ms, int, S_IRUGO | S_IWUSR);
++static int can_calc_bittiming(struct net_device *dev)
++{
++	struct can_priv *priv = netdev_priv(dev);
++	struct can_bittiming *bt = &amp;priv-&gt;bittiming;
++	const struct can_bittiming_const *btc = priv-&gt;bittiming_const;
++	long rate, best_rate = 0;
++	long best_error = 1000000000, error = 0;
++	int best_tseg = 0, best_brp = 0, brp = 0;
++	int tsegall, tseg = 0, tseg1 = 0, tseg2 = 0;
++	int spt_error = 1000, spt = 0, sampl_pt;
++	uint64_t v64;
++
++	if (!priv-&gt;bittiming_const)
++		return -ENOTSUPP;
++
++	/* Use CIA recommended sample points */
++	if (bt-&gt;sample_point) {
++		sampl_pt = bt-&gt;sample_point;
++	} else {
++		if (bt-&gt;bitrate &gt; 800000)
++			sampl_pt = 750;
++		else if (bt-&gt;bitrate &gt; 500000)
++			sampl_pt = 800;
++		else
++			sampl_pt = 875;
++	}
+ 
+-MODULE_PARM_DESC(restart_ms, &quot;Restart time after bus-off in ms (default 0)&quot;);
++	/* tseg even = round down, odd = round up */
++	for (tseg = (btc-&gt;tseg1_max + btc-&gt;tseg2_max) * 2 + 1;
++	     tseg &gt;= (btc-&gt;tseg1_min + btc-&gt;tseg2_min) * 2; tseg--) {
++		tsegall = 1 + tseg / 2;
++		/* Compute all possible tseg choices (tseg=tseg1+tseg2) */
++		brp = btc-&gt;clock / (tsegall * bt-&gt;bitrate) + tseg % 2;
++		/* chose brp step which is possible in system */
++		brp = (brp / btc-&gt;brp_inc) * btc-&gt;brp_inc;
++		if ((brp &lt; btc-&gt;brp_min) || (brp &gt; btc-&gt;brp_max))
++			continue;
++		rate = btc-&gt;clock / (brp * tsegall);
++		error = bt-&gt;bitrate - rate;
++		/* tseg brp biterror */
++		if (error &lt; 0)
++			error = -error;
++		if (error &gt; best_error)
++			continue;
++		best_error = error;
++		if (error == 0) {
++			spt = can_update_spt(btc, sampl_pt, tseg / 2,
++					     &amp;tseg1, &amp;tseg2);
++			error = sampl_pt - spt;
++			if (error &lt; 0)
++				error = -error;
++			if (error &gt; spt_error)
++				continue;
++			spt_error = error;
++		}
++		best_tseg = tseg / 2;
++		best_brp = brp;
++		best_rate = rate;
++		if (error == 0)
++			break;
++	}
+ 
++	if (!spt)
++		spt = can_update_spt(btc, sampl_pt, best_tseg, &amp;tseg1, &amp;tseg2);
+ 
+-/*
+- * Abstract:
+- *   Bit rate calculated with next formula:
+- *   bitrate = frq/(brp*(1 + prop_seg+ phase_seg1 + phase_seg2))
+- *
+- *   This calc function based on work of Florian Hartwich and Armin Bassemi
+- *   &quot;The Configuration of the CAN Bit Timing&quot;
+- *   (<A HREF="http://www.semiconductors.bosch.de/pdf/CiA99Paper.pdf">http://www.semiconductors.bosch.de/pdf/CiA99Paper.pdf</A>)
+- *
+- *  Parameters:
+- *  [in]
+- *    bittime_nsec - expected bit time in nanosecs
+- *
+- *  [out]
+- *    bittime      - calculated time segments, for meaning of
+- * 		     each field read CAN standard.
+- */
++	v64 = (u64)best_brp * 1000000000UL;
++	do_div(v64, btc-&gt;clock);
++	bt-&gt;tq = (u32)v64;
++	bt-&gt;prop_seg = 0;
++	bt-&gt;phase_seg1 = tseg1;
++	bt-&gt;phase_seg2 = tseg2;
++	bt-&gt;sjw = 1;
++	bt-&gt;brp = best_brp;
++
++	if (best_error) {
++		error = best_error * 1000;
++		error /= bt-&gt;bitrate;
++		dev_warn(ND2D(dev), &quot;bitrate error %ld.%ld%%\n&quot;,
++			 error / 10, error % 10);
++	}
+ 
+-#define DEFAULT_MAX_BRP	64U
+-#define DEFAULT_MAX_SJW	4U
++	return 0;
++}
+ 
+-/* All below values in tq units */
+-#define MAX_BITTIME	25U
+-#define MIN_BITTIME	8U
+-#define MAX_PROP_SEG	8U
+-#define MAX_PHASE_SEG1	8U
+-#define MAX_PHASE_SEG2	8U
+-
+-int can_calc_bittime(struct can_priv *can, u32 bitrate,
+-		     struct can_bittime_std *bittime)
+-{
+-	int best_error = -1;	/* Ariphmetic error */
+-	int df, best_df = -1;	/* oscillator's tolerance range,
+-				   greater is better */
+-	u32 quanta;		/* in tq units */
+-	u32 brp, phase_seg1, phase_seg2, sjw, prop_seg;
+-	u32 brp_min, brp_max, brp_expected;
+-	u64 tmp;
++int can_sample_point(struct can_bittiming *bt)
++{
++	return ((bt-&gt;prop_seg + bt-&gt;phase_seg1 + 1) * 1000) /
++		(bt-&gt;prop_seg + bt-&gt;phase_seg1 + bt-&gt;phase_seg2 + 1);
++}
+ 
+-	/* bitrate range [1baud,1MiB/s] */
+-	if (bitrate == 0 || bitrate &gt; 1000000UL)
++int can_fixup_bittiming(struct net_device *dev)
++{
++	struct can_priv *priv = netdev_priv(dev);
++	struct can_bittiming *bt = &amp;priv-&gt;bittiming;
++	const struct can_bittiming_const *btc = priv-&gt;bittiming_const;
++	int tseg1, alltseg;
++	u32 bitrate;
++	u64 brp64;
++
++	if (!priv-&gt;bittiming_const)
++		return -ENOTSUPP;
++
++	tseg1 = bt-&gt;prop_seg + bt-&gt;phase_seg1;
++	if (bt-&gt;sjw &gt; btc-&gt;sjw_max ||
++	    tseg1 &lt; btc-&gt;tseg1_min || tseg1 &gt; btc-&gt;tseg1_max ||
++	    bt-&gt;phase_seg2 &lt; btc-&gt;tseg2_min || bt-&gt;phase_seg2 &gt; btc-&gt;tseg1_max)
+ 		return -EINVAL;
+ 
+-	tmp = (u64) can-&gt;can_sys_clock * 1000;
+-	do_div(tmp, bitrate);
+-	brp_expected = (u32) tmp;
+-
+-	brp_min = brp_expected / (1000 * MAX_BITTIME);
+-	if (brp_min == 0)
+-		brp_min = 1;
+-	if (brp_min &gt; can-&gt;max_brp)
+-		return -ERANGE;
+-
+-	brp_max = (brp_expected + 500 * MIN_BITTIME) / (1000 * MIN_BITTIME);
+-	if (brp_max == 0)
+-		brp_max = 1;
+-	if (brp_max &gt; can-&gt;max_brp)
+-		brp_max = can-&gt;max_brp;
+-
+-	for (brp = brp_min; brp &lt;= brp_max; brp++) {
+-		quanta = brp_expected / (brp * 1000);
+-		if (quanta &lt; MAX_BITTIME
+-		    &amp;&amp; quanta * brp * 1000 != brp_expected)
+-			quanta++;
+-		if (quanta &lt; MIN_BITTIME || quanta &gt; MAX_BITTIME)
+-			continue;
++	brp64 = (u64)btc-&gt;clock * (u64)bt-&gt;tq;
++	if (btc-&gt;brp_inc &gt; 1)
++		do_div(brp64, btc-&gt;brp_inc);
++	brp64 += 500000000UL - 1;
++	do_div(brp64, 1000000000UL); /* the practicable BRP */
++	if (btc-&gt;brp_inc &gt; 1)
++		brp64 *= btc-&gt;brp_inc;
++	bt-&gt;brp = (u32)brp64;
+ 
+-		phase_seg2 = min((quanta - 3) / 2, MAX_PHASE_SEG2);
+-		for (sjw = can-&gt;max_sjw; sjw &gt; 0; sjw--) {
+-			for (; phase_seg2 &gt; sjw; phase_seg2--) {
+-				u32 err1, err2;
+-				phase_seg1 =
+-				    phase_seg2 % 2 ? phase_seg2 -
+-				    1 : phase_seg2;
+-				prop_seg = quanta - 1 - phase_seg2 - phase_seg1;
+-				/*
+-				 * FIXME: support of longer lines (i.e. bigger
+-				 * prop_seg) is more prefered than support of
+-				 * cheap oscillators (i.e. bigger
+-				 * df/phase_seg1/phase_seg2)
+-				 */
+-				if (prop_seg &lt; phase_seg1)
+-					continue;
+-				if (prop_seg &gt; MAX_PROP_SEG)
+-					goto next_brp;
+-
+-				err1 = phase_seg1 * brp * 500 * 1000 /
+-				    (13 * brp_expected -
+-				     phase_seg2 * brp * 1000);
+-				err2 = sjw * brp * 50 * 1000 / brp_expected;
+-
+-				df = min(err1, err2);
+-				if (df &gt;= best_df) {
+-					unsigned error =
+-						abs(brp_expected * 10 /
+-						    (brp * (1 + prop_seg +
+-							    phase_seg1 +
+-							    phase_seg2)) -
+-						    10000);
+-
+-					if (error &gt; 10 || error &gt; best_error)
+-						continue;
+-
+-					if (error == best_error
+-					    &amp;&amp; prop_seg &lt; bittime-&gt;prop_seg)
+-						continue;
+-
+-					best_error = error;
+-					best_df = df;
+-					bittime-&gt;brp = brp;
+-					bittime-&gt;prop_seg = prop_seg;
+-					bittime-&gt;phase_seg1 = phase_seg1;
+-					bittime-&gt;phase_seg2 = phase_seg2;
+-					bittime-&gt;sjw = sjw;
+-					bittime-&gt;sam =
+-						(bittime-&gt;phase_seg1 &gt; 3);
+-				}
+-			}
+-		}
+-next_brp:;
+-	}
++	if (bt-&gt;brp &lt; btc-&gt;brp_min || bt-&gt;brp &gt; btc-&gt;brp_max)
++		return -EINVAL;
++
++	alltseg = bt-&gt;prop_seg + bt-&gt;phase_seg1 + bt-&gt;phase_seg2 + 1;
++	bitrate = btc-&gt;clock / (bt-&gt;brp * alltseg);
++	bt-&gt;bitrate = bitrate;
+ 
+-	if (best_error &lt; 0)
+-		return -EDOM;
+ 	return 0;
+ }
+ 
+-int can_set_bitrate(struct net_device *dev, u32 bitrate)
++int can_set_bittiming(struct net_device *dev)
+ {
+ 	struct can_priv *priv = netdev_priv(dev);
+-	int err = -ENOTSUPP;
++	int err;
+ 
+-	if (priv-&gt;state != CAN_STATE_STOPPED)
+-		return -EBUSY;
++	/* Check if the CAN device needs bit-timing parameters */
++	if (priv-&gt;do_set_bittiming) {
+ 
+-	if (priv-&gt;do_set_bittime) {
+-		if (priv-&gt;do_set_bittime) {
+-			struct can_bittime bittime;
+-			err = can_calc_bittime(priv, bitrate, &amp;bittime.std);
+-			if (err)
+-				goto out;
+-			bittime.type = CAN_BITTIME_STD;
+-			err = priv-&gt;do_set_bittime(dev, &amp;bittime);
+-			if (!err) {
+-				priv-&gt;bitrate = bitrate;
+-				priv-&gt;bittime = bittime;
+-			}
+-		}
++		/* Check if bit-timing parameters have already been set */
++		if (priv-&gt;bittiming.tq &amp;&amp; priv-&gt;bittiming.bitrate)
++			return 0;
++
++		/* Check if bit-timing parameters have been pre-defined */
++		if (!priv-&gt;bittiming.tq &amp;&amp; !priv-&gt;bittiming.bitrate)
++			return -EINVAL;
++
++		/* Non-expert mode? Check if the bitrate has been pre-defined */
++		if (!priv-&gt;bittiming.tq)
++			/* Determine bit-timing parameters */
++			err = can_calc_bittiming(dev);
++		else
++			/* Check bit-timing params and calculate proper brp */
++			err = can_fixup_bittiming(dev);
++		if (err)
++			return err;
++
++		/* Finally, set the bit-timing registers */
++		err = priv-&gt;do_set_bittiming(dev, &amp;priv-&gt;bittiming);
++		if (err)
++			return err;
+ 	}
+-out:
+-	return err;
++	return 0;
+ }
+-EXPORT_SYMBOL(can_set_bitrate);
++EXPORT_SYMBOL(can_set_bittiming);
+ 
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+ static struct net_device_stats *can_get_stats(struct net_device *dev)
+@@ -235,12 +260,7 @@ struct net_device *alloc_candev(int size
+ 
+ 	priv = netdev_priv(dev);
+ 
+-	/* Default values can be overwritten by the device driver */
+-	priv-&gt;restart_ms = restart_ms;
+-	priv-&gt;bitrate = CAN_BITRATE_UNCONFIGURED;
+ 	priv-&gt;state = CAN_STATE_STOPPED;
+-	priv-&gt;max_brp = DEFAULT_MAX_BRP;
+-	priv-&gt;max_sjw = DEFAULT_MAX_SJW;
+ 	spin_lock_init(&amp;priv-&gt;irq_lock);
+ 
+ 	init_timer(&amp;priv-&gt;timer);
+@@ -448,12 +468,6 @@ static int can_netdev_notifier_call(stru
+ 
+ 	switch (state) {
+ 	case NETDEV_REGISTER:
+-		/* set default bit timing */
+-		if (priv-&gt;do_set_bittime &amp;&amp;
+-		    priv-&gt;bitrate == CAN_BITRATE_UNCONFIGURED) {
+-			if (can_set_bitrate(dev, CAN_BITRATE_DEFAULT))
+-				dev_err(ND2D(dev), &quot;failed to set bitrate\n&quot;);
+-		}
+ #ifdef CONFIG_SYSFS
+ 		can_create_sysfs(dev);
+ #endif
+Index: trunk/kernel/2.6/include/linux/can/dev.h
+===================================================================
+--- trunk.orig/kernel/2.6/include/linux/can/dev.h
++++ trunk/kernel/2.6/include/linux/can/dev.h
+@@ -17,43 +17,29 @@
+ #include &lt;linux/can/error.h&gt;
+ 
+ /*
+- * CAN bitrate
++ * CAN bitrate and bit-timing
+  */
+-#define CAN_BITRATE_UNCONFIGURED	((__u32) 0xFFFFFFFFU)
+-#define CAN_BITRATE_UNKNOWN		0
+-#define CAN_BITRATE_DEFAULT		500000
+-
+-/*
+- * CAN custom bit time
+- */
+-enum can_bittimes {
+-	CAN_BITTIME_STD,
+-	CAN_BITTIME_BTR
+-};
+-
+-/* TSEG1 of controllers usually is a sum of synch_seg (always 1),
+- * prop_seg and phase_seg1, TSEG2 = phase_seg2 */
+-
+-struct can_bittime_std {
+-	__u32 brp;        /* baud rate prescaler */
+-	__u8  prop_seg;   /* from 1 to 8 */
+-	__u8  phase_seg1; /* from 1 to 8 */
+-	__u8  phase_seg2; /* from 1 to 8 */
+-	__u8  sjw:7;      /* from 1 to 4 */
+-	__u8  sam:1;      /* 1 - enable triple sampling */
+-};
+-
+-struct can_bittime_btr {
+-	__u8  btr0;
+-	__u8  btr1;
+-};
+-
+-struct can_bittime {
+-	enum can_bittimes type;
+-	union {
+-		struct can_bittime_std std;
+-		struct can_bittime_btr btr;
+-	};
++struct can_bittiming {
++	u32 bitrate;
++	u32 sample_point;
++	u32 tq;
++	u32 prop_seg;
++	u32 phase_seg1;
++	u32 phase_seg2;
++	u32 sjw;
++	u32 brp;
++};
++
++struct can_bittiming_const {
++	u32 clock;
++	u32 tseg1_min;
++	u32 tseg1_max;
++	u32 tseg2_min;
++	u32 tseg2_max;
++	u32 sjw_max;
++	u32 brp_min;
++	u32 brp_max;
++	u32 brp_inc;
+ };
+ 
+ /*
+@@ -68,8 +54,9 @@ enum can_mode {
+ /*
+  * CAN controller mode
+  */
+-#define CAN_CTRLMODE_LOOPBACK   0x1
+-#define CAN_CTRLMODE_LISTENONLY 0x2
++#define CAN_CTRLMODE_LOOPBACK	0x1
++#define CAN_CTRLMODE_LISTENONLY	0x2
++#define CAN_CTRLMODE_3_SAMPLES	0x4 /* Triple sampling mode */
+ 
+ /*
+  * CAN operational and error states
+@@ -87,14 +74,14 @@ enum can_state {
+  * CAN device statistics
+  */
+ struct can_device_stats {
+-	int error_warning;
+-	int data_overrun;
+-	int wakeup;
+-	int bus_error;
+-	int error_passive;
+-	int arbitration_lost;
+-	int restarts;
+-	int bus_error_at_init;
++	unsigned long error_warning;
++	unsigned long data_overrun;
++	unsigned long wakeup;
++	unsigned long bus_error;
++	unsigned long error_passive;
++	unsigned long arbitration_lost;
++	unsigned long restarts;
++	unsigned long bus_error_at_init;
+ };
+ 
+ /*
+@@ -108,25 +95,8 @@ struct can_priv {
+ #endif
+ 	struct can_device_stats can_stats;
+ 
+-	/*
+-	 * CAN bus oscillator frequency, in Hz, BE CAREFUL! SOME
+-	 * CONTROLLERS (LIKE SJA1000) FOOLISH ABOUT THIS FRQ (for
+-	 * sja1000 as ex. this clock must be xtal clock divided by 2).
+-	 */
+-	u32 can_sys_clock;
+-	/*
+-	 * By default max_brp is equal 64, but for a Freescale TouCAN,
+-	 * as ex., it can be 255.
+-	 */
+-	u32 max_brp;
+-	/*
+-	 * For the mostly all controllers, max_sjw is equal 4, but some,
+-	 * hmm, CAN implementations hardwared it to 1.
+-	 */
+-	u8 max_sjw;
+-
+-	u32 bitrate;
+-	struct can_bittime bittime;
++	struct can_bittiming bittiming;
++	struct can_bittiming_const *bittiming_const;
+ 
+ 	spinlock_t irq_lock;
+ 	/* Please hold this lock when touching net_stats/can_stats */
+@@ -140,8 +110,8 @@ struct can_priv {
+ 
+ 	struct sk_buff *echo_skb[CAN_ECHO_SKB_MAX];
+ 
+-	int (*do_set_bittime)(struct net_device *dev,
+-			      struct can_bittime *br);
++	int (*do_set_bittiming)(struct net_device *dev,
++				struct can_bittiming *br);
+ 	int (*do_get_state)(struct net_device *dev, u32 *state);
+ 	int (*do_set_mode)(struct net_device *dev, u32 mode);
+ 	int (*do_set_ctrlmode)(struct net_device *dev, u32 ctrlmode);
+@@ -161,8 +131,9 @@ struct can_priv {
+ struct net_device *alloc_candev(int sizeof_priv);
+ void free_candev(struct net_device *dev);
+ 
++int can_set_bittiming(struct net_device *dev);
++
+ int can_restart_now(struct net_device *dev);
+-int can_set_bitrate(struct net_device *dev, u32 bitrate);
+ 
+ void can_bus_off(struct net_device *dev);
+ 
+@@ -171,4 +142,6 @@ void can_close_cleanup(struct net_device
+ void can_put_echo_skb(struct sk_buff *skb, struct net_device *dev, int idx);
+ void can_get_echo_skb(struct net_device *dev, int idx);
+ 
++int can_sample_point(struct can_bittiming *bt);
++
+ #endif /* CAN_DEVICE_H */
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001772.html">[PATCH 5/4] new interface for setting bit-timing parameters
+</A></li>
+	<LI>Next message: <A HREF="001765.html">[PATCH 2/4] sysfs: new interface for setting bit-timing parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1764">[ date ]</a>
+              <a href="thread.html#1764">[ thread ]</a>
+              <a href="subject.html#1764">[ subject ]</a>
+              <a href="author.html#1764">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

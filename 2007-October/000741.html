@@ -1,0 +1,167 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC] Specific CAN bit rate settings in HW-independent way
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20Specific%20CAN%20bit%20rate%20settings%20in%20HW-independent%20way&In-Reply-To=%3C200710090944.01072.jbe%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000740.html">
+   <LINK REL="Next"  HREF="000743.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC] Specific CAN bit rate settings in HW-independent way</H1>
+    <B>Juergen Beisert</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20Specific%20CAN%20bit%20rate%20settings%20in%20HW-independent%20way&In-Reply-To=%3C200710090944.01072.jbe%40pengutronix.de%3E"
+       TITLE="[RFC] Specific CAN bit rate settings in HW-independent way">jbe at pengutronix.de
+       </A><BR>
+    <I>Tue Oct  9 09:44:00 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000740.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+        <LI>Next message: <A HREF="000743.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#741">[ date ]</a>
+              <a href="thread.html#741">[ thread ]</a>
+              <a href="subject.html#741">[ subject ]</a>
+              <a href="author.html#741">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver,
+
+On Tuesday 09 October 2007 08:59, Hartkopp, Oliver (K-GEFE/E) wrote:
+&gt;<i> Pavel Pisa wrote:
+</I>&gt;<i> &gt; On Monday 08 October 2007 21:13, Wolfgang Grandegger wrote:
+</I>&gt;<i> &gt;&gt;&gt; Currently the calculated default values are totally broken for
+</I>&gt;<i> &gt;&gt;&gt; MPC52000B.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Then it should be fixed, if possible. I agree, that the current
+</I>&gt;<i> &gt;&gt; implementation is not satisfactory. The SJA1000 (and i82572) driver does
+</I>&gt;<i> &gt;&gt; still use its own different baud-rate calculation. More feedback and
+</I>&gt;<i> &gt;&gt; maybe complaints are to be expected when they finally switch to the
+</I>&gt;<i> &gt;&gt; device interface.
+</I>&gt;<i>
+</I>&gt;<i> just to make sure i understood everything fine:
+</I>&gt;<i>
+</I>&gt;<i> We have ...
+</I>&gt;<i>
+</I>&gt;<i> SIOCSCANBAUDRATE to set a baudrate (like 100000)
+</I>&gt;<i> SIOCSCANCUSTOMBITTIME to set a BTR value like 0x4914
+</I>&gt;<i>
+</I>&gt;<i> And the idea from Juergen is to add SIOCSCANDEDBITTIME where you can add
+</I>&gt;<i> several {bitrate / calucation constants} items to a list, which is
+</I>&gt;<i> preferably used.
+</I>
+In a hardware independent way, yes. It &quot;could&quot; replace SIOCSCANBAUDRATE and 
+SIOCSCANCUSTOMBITTIME.
+
+&gt;<i> +
+</I>&gt;<i> +struct custom_mode_setting {
+</I>&gt;<i> +	struct list_head link;
+</I>&gt;<i> +	u32 bit_rate;	/* bit rate these settings are valid for */
+</I>&gt;<i> +	struct can_bittime_std custom_setting;
+</I>&gt;<i> +};
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Looking onto these three possibilities i would just get confused, as i
+</I>&gt;<i> expect SIOCSCANBAUDRATE to be the standard (for dummies) and
+</I>
+This would be all right, if it does its job perfectly. The current calculation 
+results into inadequate values, at least for our MPC5200B CPU.
+
+&gt;<i> SIOCSCANCUSTOMBITTIME to be the direct access (for professionals testing
+</I>&gt;<i> curious things).
+</I>
+IMHO this is too hardware dependend. You must know your device and its main 
+clock. And if something changes in your hardware, you must change also your 
+application.
+
+&gt;<i> As Wolfgang stated correctly SIOCSCANBAUDRATE should be fixed to be a
+</I>&gt;<i> reliable configuration interface in the common case.
+</I>
+That would be the best way. ACK. But is it possible?
+
+&gt;<i>  From the code from Pavel i got the idea, to specify that every CAN
+</I>&gt;<i>
+</I>&gt;<i> driver _has to bring his own calculation constants_, e.g.:
+</I>&gt;<i> &gt; can_calc_const_t can_calc_const_2638 = {
+</I>&gt;<i> &gt; 	.sync = 1,
+</I>&gt;<i> &gt; 	.tseg1_min = 4,
+</I>&gt;<i> &gt; 	.tseg1_max = 16,
+</I>&gt;<i> &gt; 	.tseg2_min = 2,
+</I>&gt;<i> &gt; 	.tseg2_max = 8,
+</I>&gt;<i> &gt; 	.brp_min = 2,
+</I>&gt;<i> &gt; 	.brp_max = 128,
+</I>&gt;<i> &gt; 	.brp_inc = 2,
+</I>&gt;<i> &gt; 	.fix_div = 1
+</I>&gt;<i> &gt; };
+</I>&gt;<i>
+</I>&gt;<i> or
+</I>&gt;<i>
+</I>&gt;<i> &gt; can_calc_const_t can_calc_const_sja1000 = {
+</I>&gt;<i> &gt; 	.sync = 1,
+</I>&gt;<i> &gt; 	.tseg1_min = 1,
+</I>&gt;<i> &gt; 	.tseg1_max = 16,
+</I>&gt;<i> &gt; 	.tseg2_min = 1,
+</I>&gt;<i> &gt; 	.tseg2_max = 8,
+</I>&gt;<i> &gt; 	.brp_min = 1,
+</I>&gt;<i> &gt; 	.brp_max = 64,
+</I>&gt;<i> &gt; 	.brp_inc = 1,
+</I>&gt;<i> &gt; 	.fix_div = 2
+</I>&gt;<i> &gt; };
+</I>&gt;<i>
+</I>&gt;<i> So that when the driver has to calculate SIOCSCANBAUDRATE it invokes the
+</I>&gt;<i> calculation function like suggested by Pavel:
+</I>&gt;<i> my_new_btr = can_auto_baud(&amp;brp, &amp;tseg1, &amp;tseg2, baud_rate, sampl_pt,
+</I>&gt;<i> ref_clk, calc_const);
+</I>&gt;<i>
+</I>&gt;<i> This also does not change the the ioctl() interface and should lead to
+</I>&gt;<i> an heavily improved SIOCSCANBAUDRATE.
+</I>&gt;<i>
+</I>&gt;<i> Would this solve the general problem or did i miss anything here?
+</I>
+Could be a solution. But now each driver must provide its own calculation 
+function. With this, whenever you change the hardware you hope its 
+calculation function does a good job. And if not? And if you can't adapt your 
+software to use the SIOCSCANCUSTOMBITTIME instead (because you run a closed 
+source application).
+
+Juergen
+-- 
+Dipl.-Ing. Juergen Beisert | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>
+&#160;Pengutronix - Linux Solutions for Science and Industry
+&#160;   Handelsregister: Amtsgericht Hildesheim, HRA 2686
+&#160; &#160; &#160;    Vertretung Sued/Muenchen, Germany
+   Phone: +49-8766-939 228 |  Fax: +49-5121-206917-9
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000740.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+	<LI>Next message: <A HREF="000743.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#741">[ date ]</a>
+              <a href="thread.html#741">[ thread ]</a>
+              <a href="subject.html#741">[ subject ]</a>
+              <a href="author.html#741">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

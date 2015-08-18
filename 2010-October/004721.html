@@ -1,0 +1,149 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Self-reception
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Self-reception&In-Reply-To=%3C4CB408B8.2020106%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004720.html">
+   <LINK REL="Next"  HREF="004725.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Self-reception</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Self-reception&In-Reply-To=%3C4CB408B8.2020106%40hartkopp.net%3E"
+       TITLE="Self-reception">socketcan at hartkopp.net
+       </A><BR>
+    <I>Tue Oct 12 09:05:28 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004720.html">Self-reception
+</A></li>
+        <LI>Next message: <A HREF="004725.html">Self-reception
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4721">[ date ]</a>
+              <a href="thread.html#4721">[ thread ]</a>
+              <a href="subject.html#4721">[ subject ]</a>
+              <a href="author.html#4721">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 12.10.2010 08:51, Kurt Van Dijck wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> On Mon, Oct 11, 2010 at 05:14:20PM +0200, <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A> wrote:
+</I>&gt;&gt;<i> Hello Kurt,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> IMO, a CAN frame from another socket should be treated as coming from 
+</I>&gt;&gt;&gt;<i> another bus node.
+</I>&gt;&gt;&gt;<i> I know (J1939 is still in the queue) that some protocols may benefit from
+</I>&gt;&gt;&gt;<i> several sockets cooperating, but should that be exported to userspace?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I fully agree on that. Two different sockets shall behave as two 
+</I>&gt;&gt;<i> different CAN nodes on the same CAN bus even if they are opened
+</I>&gt;&gt;<i> on the same hardware. Taking that in to account vcan shall be actually
+</I>&gt;&gt;<i> called &quot;virtual CAN bus&quot; and not &quot;virtual CAN interface&quot;...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> My understanding of &quot;self-reception&quot; per-socket option is that the
+</I>&gt;&gt;<i> messages send over the specific socket are not only received by
+</I>&gt;&gt;<i> other sockets on the same HW, but also by the original socket (so
+</I>&gt;&gt;<i> &quot;echo&quot; may be even better name for that). And the reason why I
+</I>&gt;&gt;<i> want to receive (some of) my own Tx messages is because I want
+</I>&gt;&gt;<i> to know *exactly* when whose messages where physically send over
+</I>&gt;&gt;<i> CAN bus. And that I am getting by reading the timestamp of my
+</I>&gt;&gt;<i> self-received message. And the per-message self-receive flag helps
+</I>&gt;&gt;<i> me to distinguish between Rx messages (coming from other CAN nodes
+</I>&gt;&gt;<i> or other sockets on the same CAN node) and my own Tx messages.
+</I>&gt;<i> 
+</I>&gt;<i> Thanks for the update. Seems like my understanding was right.
+</I>
+Ah, ok. So it's not to know, whether the CAN frame came from outside BUT to
+know, when my originated CAN frame from this socket touched the bus.
+
+&gt;<i> 
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Regards,
+</I>&gt;&gt;<i> Vladislav
+</I>&gt;<i> 
+</I>&gt;<i> Oliver, I assembled a patch showing my idea of what need to be done.
+</I>&gt;<i> never tested, never even compiled, it just shows my thinking.
+</I>
+I'll be on a business trip until Thursday.
+
+So far i did not have any luck to push the MSG_DONTROUTE bit into userspace.
+
+Maybe you can try.
+
+Regards,
+Oliver
+
+&gt;<i> 
+</I>&gt;<i> ---
+</I>&gt;<i>  net/can/raw.c |    9 ++++++---
+</I>&gt;<i>  1 file changed, 6 insertions(+), 3 deletions(-)
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Index: linux/net/can/raw.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- linux.orig/net/can/raw.c	2010-10-12 08:46:33.711192001 +0200
+</I>&gt;<i> +++ linux/net/can/raw.c	2010-10-12 08:49:17.191192001 +0200
+</I>&gt;<i> @@ -94,20 +94,23 @@
+</I>&gt;<i>  	return (struct raw_sock *)sk;
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> -static void raw_rcv(struct sk_buff *skb, void *data)
+</I>&gt;<i> +static void raw_rcv(struct sk_buff *oskb, void *data)
+</I>&gt;<i>  {
+</I>&gt;<i>  	struct sock *sk = (struct sock *)data;
+</I>&gt;<i>  	struct raw_sock *ro = raw_sk(sk);
+</I>&gt;<i>  	struct sockaddr_can *addr;
+</I>&gt;<i> +	struct sk_buff *skb; /* new */
+</I>&gt;<i>  
+</I>&gt;<i>  	/* check the received tx sock reference */
+</I>&gt;<i> -	if (!ro-&gt;recv_own_msgs &amp;&amp; skb-&gt;sk == sk)
+</I>&gt;<i> +	if (!ro-&gt;recv_own_msgs &amp;&amp; oskb-&gt;sk == sk)
+</I>&gt;<i>  		return;
+</I>&gt;<i>  
+</I>&gt;<i>  	/* clone the given skb to be able to enqueue it into the rcv queue */
+</I>&gt;<i> -	skb = skb_clone(skb, GFP_ATOMIC);
+</I>&gt;<i> +	skb = skb_clone(oskb, GFP_ATOMIC);
+</I>&gt;<i>  	if (!skb)
+</I>&gt;<i>  		return;
+</I>&gt;<i> +	if (oskb-&gt;sk == sk)
+</I>&gt;<i> +		skb-&gt;msg_flags |= MSG_DONTROUTE;
+</I>&gt;<i>  
+</I>&gt;<i>  	/*
+</I>&gt;<i>  	 *  Put the datagram to the queue so that raw_recvmsg() can
+</I>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004720.html">Self-reception
+</A></li>
+	<LI>Next message: <A HREF="004725.html">Self-reception
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4721">[ date ]</a>
+              <a href="thread.html#4721">[ thread ]</a>
+              <a href="subject.html#4721">[ subject ]</a>
+              <a href="author.html#4721">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

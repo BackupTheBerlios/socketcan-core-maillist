@@ -1,0 +1,241 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> kernel BUG at net/can/af_can.c:659!
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20kernel%20BUG%20at%20net/can/af_can.c%3A659%21&In-Reply-To=%3C4A82F761.5020408%40googlemail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002838.html">
+   <LINK REL="Next"  HREF="002842.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>kernel BUG at net/can/af_can.c:659!</H1>
+    <B>Maximilian Falkenstein</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20kernel%20BUG%20at%20net/can/af_can.c%3A659%21&In-Reply-To=%3C4A82F761.5020408%40googlemail.com%3E"
+       TITLE="kernel BUG at net/can/af_can.c:659!">maxf59964 at googlemail.com
+       </A><BR>
+    <I>Wed Aug 12 19:09:53 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002838.html">at91_can: fix RTR handling
+</A></li>
+        <LI>Next message: <A HREF="002842.html">kernel BUG at net/can/af_can.c:659!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2841">[ date ]</a>
+              <a href="thread.html#2841">[ thread ]</a>
+              <a href="subject.html#2841">[ subject ]</a>
+              <a href="author.html#2841">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I'm developing a simple can protocol driver for binary can data over a
+serial interface. The CAN Hardware is working fine(verified with a
+terminal). Currently, my kernel module is a copy of slcan. Sending is
+working fine, but when I receive something, the whole system hangs
+up(but after my module passed the packet on), and I get a crash dump(see
+below) over the serial console.
+
+Protocol example(hex values of the bytes):
+ID ID  ID  ID  DL D   D   CC
+00 00 FF FF 03 AA BB CC
+
+Relevant snippets from the module:
+/* Send one completely decapsulated can_frame to the network layer */
+static void slc_bump(struct bscan *sl) {
+#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+    struct net_device_stats *stats = slc_get_stats(sl-&gt;dev);
+#else
+    struct net_device_stats *stats = &amp;sl-&gt;dev-&gt;stats;
+#endif
+    struct sk_buff *skb;
+    struct can_frame cf;
+    int i;
+    printk(KERN_WARNING &quot;Started to process\n&quot;);
+    uint8_t a = sl-&gt;rbuff[0];
+    uint8_t b = sl-&gt;rbuff[1];
+    uint8_t c = sl-&gt;rbuff[2];
+    uint8_t d = sl-&gt;rbuff[3];
+    uint8_t lenght = sl-&gt;rbuff[4];
+    printk(KERN_WARNING &quot;Read header\n&quot;);
+    cf.can_id = (a &lt;&lt; 24) | (b &lt;&lt; 16) | (c &lt;&lt; 8) | d;
+    if (cf.can_id &gt; 0b11111111111) //Hack...
+        cf.can_id |= CAN_EFF_FLAG;
+
+    if (lenght == 0)//Hack...
+        cf.can_id |= CAN_RTR_FLAG;
+    printk(KERN_WARNING &quot;Set flags\n&quot;);
+    for (i = 0; i &lt; lenght; i++) {
+        cf.data[i] = sl-&gt;rbuff[5 + i];
+    }
+    printk(KERN_WARNING &quot;Read data\n&quot;);
+
+    skb = dev_alloc_skb(sizeof(struct can_frame));
+    if (!skb)
+        return;
+
+    skb-&gt;dev = sl-&gt;dev;
+    skb-&gt;protocol = htons(ETH_P_CAN);
+    skb-&gt;pkt_type = PACKET_BROADCAST;
+    skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+    memcpy(skb_put(skb, sizeof(struct can_frame)), &amp;cf,
+            sizeof(struct can_frame));
+    netif_rx(skb);
+
+    sl-&gt;dev-&gt;last_rx = jiffies;
+    stats-&gt;rx_packets++;
+    stats-&gt;rx_bytes += cf.can_dlc;
+    printk(KERN_WARNING &quot;Finished\n&quot;);
+}
+
+/* parse tty input stream */
+static void bscan_unesc(struct bscan *sl, unsigned char s) {
+#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+    struct net_device_stats *stats = slc_get_stats(sl-&gt;dev);
+#else
+    struct net_device_stats *stats = &amp;sl-&gt;dev-&gt;stats;
+#endif
+    //printk(KERN_ERR &quot;bscan: error: CAN Message has more than 8 data
+bytes!\n&quot;);
+    printk(KERN_WARNING &quot;&lt;bscan&gt; Recived: %x\n&quot;, s);
+    sl-&gt;rbuff[sl-&gt;rcount] = s;
+    if (sl-&gt;rcount == 4) {
+        //OK, now we've got the payload lenght
+        sl-&gt;rlenght = s;
+        sl-&gt;rcount++;
+        if(s &gt; 8){
+            printk(KERN_ERR &quot;bscan: error: CAN Message has more than 8
+data bytes!\n&quot;);
+            sl-&gt;rcount = 0;
+            sl-&gt;rlenght = 0;
+            stats-&gt;rx_over_errors++;
+        }
+    } else if (sl-&gt;rcount &gt; 4 &amp;&amp; sl-&gt;rlenght &gt; 0) {
+        //Data
+        sl-&gt;rlenght--;
+        if (sl-&gt;rlenght == 0) {
+            slc_bump(sl);
+            sl-&gt;rcount = 0;
+        }
+        else
+            sl-&gt;rcount++;
+    } else
+        sl-&gt;rcount++;
+
+    if (sl-&gt;rcount == SLC_MTU) {
+        printk(KERN_CRIT &quot;bscan: error: rcount&gt;SLC_MTU!\n&quot;);
+        sl-&gt;rcount = 0;
+        sl-&gt;rlenght = 0;
+        stats-&gt;rx_over_errors++;
+    }
+}
+Has anybody an idea?
+Regrades
+
+Maximilian
+
+-----------------Snippet from console-----------------
+...
+Read data
+Finished
+------------[ cut here ]------------
+kernel BUG at net/can/af_can.c:659!
+invalid opcode: 0000 [1] SMP
+last sysfs file: /sys/devices/virtual/net/slc0/flags
+CPU 0
+Modules linked in: bscan(N) can_raw can ip6t_LOG xt_tcpudp xt_pkttype
+ipt_LOG xt_limit w83627hf(N) hwmon_vid binfmt_misc cpufreq_conservative
+cpufreq_userspace cpufreq_powersave powernow_k8 snd_pcm_oss
+snd_mixer_oss snd_seq snd_seq_device ip6t_REJECT nf_conntrack_ipv6
+ip6table_raw xt_NOTRACK ipt_REJECT xt_state iptable_raw iptable_filter
+ip6table_mangle nf_conntrack_netbios_ns nf_conntrack_ipv4 nf_conntrack
+ip_tables ip6table_filter ip6_tables x_tables ipv6 fuse reiserfs
+sha256_generic aes_x86_64 aes_generic cbc usbhid hid ff_memless uhci_hcd
+dm_crypt crypto_blkcipher loop dm_mod mt312(N) stv0297(N) bcm3510(N)
+lgdt330x(N) nxt200x(N) mt352(N) stv0299(N) b2c2_flexcop_pci(N)
+b2c2_flexcop(N) gspca_pac207 snd_intel8x0 gspca_main rtc_cmos
+dvb_core(N) snd_ac97_codec rtc_core i2c_ali15x3 ppdev snd_hda_intel
+rtc_lib parport_pc compat_ioctl32 ac97_bus cx24123(N) s5h1420(N) parport
+snd_pcm i2c_ali1535 via_rhine snd_timer snd_hwdep i2c_ali1563 shpchp
+videodev k8temp(N) sr_mod mii button sg snd snd_page_alloc pci_hotplug
+uli526x v4l1_compat pcspkr i2c_core cdrom fglrx(PN) soundcore ehci_hcd
+ohci_hcd usbcore sd_mod crc_t10dif edd ext3 mbcache jbd fan
+ide_pci_generic alim15x3 ide_core ata_generic pata_ali sata_uli libata
+scsi_mod dock thermal processor thermal_sys hwmon [last unloaded: bscan]
+Supported: No
+Pid: 5, comm: events/0 Tainted: P          2.6.27.25-0.1-default #1
+RIP: 0010:[&lt;ffffffffa06f8566&gt;]  [&lt;ffffffffa06f8566&gt;] can_rcv+0x31/0xa0 [can]
+RSP: 0000:ffffffff80a3ae20  EFLAGS: 00010282
+RAX: ffff88007b043610 RBX: ffff880056098cc0 RCX: ffff88004cde6000
+RDX: ffffffffa06fbc60 RSI: ffff88004cde6000 RDI: ffff880056098cc0
+RBP: ffffffff809614f0 R08: ffffffffa06fbc60 R09: 0000000000000000
+R10: 0000d25500000001 R11: 0000000000000000 R12: ffff88004cde6000
+R13: ffff88004cde6000 R14: ffff880056090c00 R15: ffffffff80961520
+FS:  00007f08c033c6f0(0000) GS:ffffffff80a43080(0000) knlGS:00000000b71f9970
+CS:  0010 DS: 0018 ES: 0018 CR0: 000000008005003b
+CR2: 00007fc5d30ee000 CR3: 000000007c163000 CR4: 00000000000006e0
+DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+DR3: 0000000000000000 DR6: 00000000ffff0ff0 DR7: 0000000000000400
+Process events/0 (pid: 5, threadinfo ffff88007f02a000, task
+ffff88007f028140)
+Stack:  ffff880056098cc0 ffffffff809614f0 ffff880056098da4 ffffffff804294b4
+ 0000000100000001 8420804000000002 0000000000000000 ffff88000103cfd8
+ ffff88000103cfa0 0000000000000001 ffff88000103cfa8 0000000100028573
+Call Trace:
+ [&lt;ffffffff804294b4&gt;] netif_receive_skb+0x48f/0x4e9
+ [&lt;ffffffff80429585&gt;] process_backlog+0x77/0xcd
+ [&lt;ffffffff80427917&gt;] net_rx_action+0xa7/0x1db
+ [&lt;ffffffff8024264d&gt;] __do_softirq+0x7d/0x107
+ [&lt;ffffffff8020d2dc&gt;] call_softirq+0x1c/0x28
+ [&lt;ffffffff8020e583&gt;] do_softirq+0x2c/0x68
+ [&lt;ffffffff8024237a&gt;] irq_exit+0x3f/0x85
+ [&lt;ffffffff8020e831&gt;] do_IRQ+0xbd/0xda
+ [&lt;ffffffff8020c531&gt;] ret_from_intr+0x0/0xa
+ [&lt;ffffffff8023e119&gt;] vprintk+0x288/0x2b4
+ [&lt;ffffffff8049a7c5&gt;] printk+0x40/0x4b
+ [&lt;ffffffffa0706420&gt;] bscan_receive_buf+0x260/0x2c5 [bscan]
+ [&lt;ffffffff803c344c&gt;] flush_to_ldisc+0x120/0x1cd
+ [&lt;ffffffff8024c8ad&gt;] run_workqueue+0x7a/0x100
+ [&lt;ffffffff8024ca0b&gt;] worker_thread+0xd8/0xe7
+ [&lt;ffffffff8024fa07&gt;] kthread+0x47/0x73
+ [&lt;ffffffff8020cf79&gt;] child_rip+0xa/0x11
+
+
+Code: 53 66 81 be 70 01 00 00 18 01 48 89 fb 48 8b 87 d8 00 00 00 75 08
+83 7f 68 10 74 09 eb 0d e8 46 b1 d2 df eb 62 80 78 04 08 76 04 &lt;0f&gt; 0b
+eb fe 48 89 fe 48 c7 c7 30 c0 6f a0 48 ff 05 0d 3a 00 00
+RIP  [&lt;ffffffffa06f8566&gt;] can_rcv+0x31/0xa0 [can]
+ RSP &lt;ffffffff80a3ae20&gt;
+---[ end trace 62d0b14d7debda52 ]---
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002838.html">at91_can: fix RTR handling
+</A></li>
+	<LI>Next message: <A HREF="002842.html">kernel BUG at net/can/af_can.c:659!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2841">[ date ]</a>
+              <a href="thread.html#2841">[ thread ]</a>
+              <a href="subject.html#2841">[ subject ]</a>
+              <a href="author.html#2841">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

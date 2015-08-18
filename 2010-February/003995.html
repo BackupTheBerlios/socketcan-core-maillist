@@ -1,0 +1,169 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC v1] can: add support for Janz CAN board
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20v1%5D%20can%3A%20add%20support%20for%20Janz%20CAN%20board&In-Reply-To=%3C20100210090933.GA285%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003993.html">
+   <LINK REL="Next"  HREF="004002.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC v1] can: add support for Janz CAN board</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20v1%5D%20can%3A%20add%20support%20for%20Janz%20CAN%20board&In-Reply-To=%3C20100210090933.GA285%40e-circ.dyndns.org%3E"
+       TITLE="[RFC v1] can: add support for Janz CAN board">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed Feb 10 10:09:34 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003993.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+        <LI>Next message: <A HREF="004002.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3995">[ date ]</a>
+              <a href="thread.html#3995">[ thread ]</a>
+              <a href="subject.html#3995">[ subject ]</a>
+              <a href="author.html#3995">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tue, Feb 09, 2010 at 04:05:00PM -0800, Ira W. Snyder wrote:
+&gt;<i> Hello all,
+</I>&gt;<i> 
+</I>&gt;<i> I posted last week asking about a driver for boards running on a PLX
+</I>&gt;<i> chip. It turns out that these are passive boards. I have been looking
+</I>&gt;<i> for a driver for the Janz CMOD-IO board CAN interfaces.
+</I>&gt;<i> 
+</I>&gt;<i> I finally found the datasheets and took the time to write a driver. This
+</I>&gt;<i> board is an intelligent CAN interface: it has onboard microprocessors to
+</I>&gt;<i> help process CAN traffic.
+</I>&gt;<i> 
+</I>&gt;<i> This is a very rough first try at a CAN driver. I'm sure it still has
+</I>&gt;<i> problems, and I would appreciate if you can take a look and help me add
+</I>&gt;<i> what is needed. I'm am not extremely knowledgeable about the CAN bus.
+</I>&gt;<i> 
+</I>&gt;<i> The things that are known to be wrong:
+</I>&gt;<i> 
+</I>&gt;<i> - bus-on / bus-off handling
+</I>&gt;<i> 
+</I>&gt;<i> I did this straight in the network device open()/stop() methods. I don't
+</I>&gt;<i> handle the condition where we get too many bus errors and the bus goes
+</I>&gt;<i> into bus-off state. What should I be doing here?
+</I>What you call 'bus-off' is indeed the stop() method. the CAN busoff
+(which is something different)
+comes via interrupt (bus-state-change), indicating the
+can-chip cut itself from the bus. In such case, a special 'struct
+can_frame' must be emitted to userspace.
+&gt;<i> 
+</I>&gt;<i> - state changes, bit timing, etc.
+</I>the bittiming looks exactly as SJA1000 (especially the resulting
+      register values). please take a look there.
+&gt;<i> 
+</I>&gt;<i> I'm not at all sure how this is supposed to work. Perhaps someone that
+</I>&gt;<i> knows CAN bus better that I do can help.
+</I>The bittiming is calculated (in drivers/net/can/dev.c) from the
+constants you provide. again, sja1000 is a 'reference'.
+opening/closing:
+from userspace, the open() gets called somehow. You will activate the
+can chip (what you called 'bus-on', which is a strange terminology IMHO).
+can messages come &amp; go now. When there are distortions on the CAN bus,
+    the CAN chip will raise some errors (via interrupts). At a certain
+    point, distortions get so bad and the can chip cuts itself from the
+    bus (accompanied by an interrupt, as mentioned above).
+    You are not supposed to call close() there.
+&gt;<i> 
+</I>&gt;<i> - CAN bus termination
+</I>&gt;<i> 
+</I>&gt;<i> This board supports optionally terminating the CAN bus. In order to test
+</I>&gt;<i> this driver, I connected both CAN modules on a single board together. To
+</I>&gt;<i> get this to work, I needed to turn on termination on both modules.
+</I>&gt;<i> 
+</I>&gt;<i> Is this wrong?
+</I>A bus must have both ends terminated (although a labo setup will do with
+      1 termination too). The idea is that not every 'node' in the
+middle must terminate the bus, only the endpoints.
+What you did seems right.
+&gt;<i> Is there a way to enable/disable termination via the &quot;ip&quot;
+</I>&gt;<i> tool?
+</I>There is at this point no such thing yet. Such properties may be enabled
+via sysfs IMHO.
+&gt;<i> 
+</I>&gt;<i> - module probing
+</I>&gt;<i> 
+</I>&gt;<i> This board is really a MODULbus carrier board, into which plugs 4
+</I>&gt;<i> daughterboards. These can be CAN modules, or others. On my board, I have
+</I>&gt;<i> 2x CAN modules and 1x TTL GPIO module. I need support for both of these
+</I>&gt;<i> for my application. For the time being, I *did not* add support for the
+</I>&gt;<i> TTL module. That will come once the CAN part is finished.
+</I>&gt;<i> 
+</I>&gt;<i> Also, there is no way I am aware of to determine what type of board is
+</I>&gt;<i> plugged into which MODULbus slot on the carrier board. My CAN modules
+</I>&gt;<i> support identification, but the TTL module does not.
+</I>&gt;<i> 
+</I>&gt;<i> I hard-coded the module layout into the driver itself. This is
+</I>&gt;<i> sufficient for my purposes, but probably is not sufficient for mainline
+</I>&gt;<i> Linux :'(. Any ideas or suggestions?
+</I>I would (but I'm not authoring this) construct a PCI driver for the
+carrier board, with 4 platform devices. During probe of the PCI drivers,
+you can tweak the ID's of the platform devices.
+Next, you create seperate drivers: CAN, TTL, ....
+in drivers/mfd, you'll find some examples of what I try to explain.
+
+You will have to provide some access methods for the platform_devices.
+That's where you will link daughterboards to carrier board.
+
+And to make life simpler, you can create bigger structs for the
+platform_device, as in:
+
+struct janz_device {
+   struct platform_device pdev;
+   struct pci_device *carrier;
+   int (*reg_rd)(struct janz_device *, etc ...);
+   void (*reg_wr)(struct janz_device *, etc ...);
+   ....
+};
+#defien platform_to_janz(x) container_of(x, struct janz_device, pdev)
+
+As such, a clean seperation can be made between the carrier board &amp; the
+differen daughter boards.
+
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Any review will be much appreciated!
+</I>Did not get there in detail :-)
+Kurt
+&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Ira
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003993.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+	<LI>Next message: <A HREF="004002.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3995">[ date ]</a>
+              <a href="thread.html#3995">[ thread ]</a>
+              <a href="subject.html#3995">[ subject ]</a>
+              <a href="author.html#3995">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

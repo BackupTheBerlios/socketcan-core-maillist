@@ -1,0 +1,152 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC Move can-dev.ko library to drivers/net/can - was Re: Compiling	on Suse 10.3
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%20Move%20can-dev.ko%20library%20to%20drivers/net/can%20-%20was%20Re%3A%20Compiling%0A%09on%20Suse%2010.3&In-Reply-To=%3C484B0AC7.3090008%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001293.html">
+   <LINK REL="Next"  HREF="001295.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC Move can-dev.ko library to drivers/net/can - was Re: Compiling	on Suse 10.3</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%20Move%20can-dev.ko%20library%20to%20drivers/net/can%20-%20was%20Re%3A%20Compiling%0A%09on%20Suse%2010.3&In-Reply-To=%3C484B0AC7.3090008%40hartkopp.net%3E"
+       TITLE="RFC Move can-dev.ko library to drivers/net/can - was Re: Compiling	on Suse 10.3">socketcan at hartkopp.net
+       </A><BR>
+    <I>Sun Jun  8 00:25:11 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001293.html">Compiling on Suse 10.3
+</A></li>
+        <LI>Next message: <A HREF="001295.html">RFC Move can-dev.ko library to drivers/net/can - was Re:	Compiling on Suse 10.3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1294">[ date ]</a>
+              <a href="thread.html#1294">[ thread ]</a>
+              <a href="subject.html#1294">[ subject ]</a>
+              <a href="author.html#1294">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Uwe Bonnes wrote:
+&gt;<i> Linux r50 2.6.18.8-0.9-default
+</I>&gt;<i> shows that platform_driver_probe() is missing:
+</I>&gt;<i>   CC [M]
+</I>&gt;<i>   /home/bon/work/projekte/elab/socketcan/trunk/kernel/2.6/drivers/net/can/sja1000/pipcan.o
+</I>&gt;<i> /home/bon/work/projekte/elab/socketcan/trunk/kernel/2.6/drivers/net/can/sja1000/pipcan.c:
+</I>&gt;<i>   In function $,1rx(Bpc_init$,1ry(B:
+</I>&gt;<i> /home/bon/work/projekte/elab/socketcan/trunk/kernel/2.6/drivers/net/can/sja1000/pipcan.c:182:
+</I>&gt;<i>   error: implicit declaration of function $,1rx(Bplatform_driver_probe$,1ry
+</I>&gt;<i>
+</I>&gt;<i> (BAfter defining as an empty function, the next bailout is:
+</I>&gt;<i>  CC [M]
+</I>&gt;<i>  /home/bon/work/projekte/elab/socketcan/trunk/kernel/2.6/net/can/sysfs.o
+</I>&gt;<i> /home/bon/work/projekte/elab/socketcan/trunk/kernel/2.6/net/can/sysfs.c: In
+</I>&gt;<i>  function $,1rx(Bcan_show_bitrate$,1ry(B:
+</I>&gt;<i> /home/bon/work/projekte/elab/socketcan/trunk/kernel/2.6/net/can/sysfs.c:217:
+</I>&gt;<i>  error: implicit declaration of function $,1rx(Bto_net_dev$,1ry(B
+</I>&gt;<i>
+</I>&gt;<i> I give up for the moment.
+</I>&gt;<i>   
+</I>
+Hi Wolfgang and Robert,
+
+thinking about Uwes problem a bit longer i just got back to the 
+discussion that i suggested to move the can-dev.ko stuff to 
+linux/drivers/net/can/* as it (IMHO) is nothing that has to be placed in 
+the *network* layer source net/can/* ...
+
+can-dev.ko is a library for CAN *devices* and therefore it should be in 
+drivers/net/can like the USB networking framework (CONFIG_USB_USBNET) 
+sits in drivers/net/usb.
+
+For that reason i would like to move dev.c and sysfs.c from net/can to 
+drivers/net/can and i would also like to change the Kconfig and the 
+Makefile like this:
+
+Index: drivers/net/can/Kconfig
+===================================================================
+--- drivers/net/can/Kconfig    (revision 756)
++++ drivers/net/can/Kconfig    (working copy)
+@@ -35,7 +35,17 @@
+ 
+ source &quot;drivers/net/can/old/Kconfig&quot;
+ 
++config CAN_DEV
++    tristate &quot;Prompt for platform CAN drivers with sysfs support&quot;
++     depends on CAN
++    default Y
++     ---help---
++      Enables the common framework for platform CAN drivers with sysfs
++      support. This is the standard library for CAN drivers.
++      If unsure, say Y.
++
+ config CAN_SJA1000
++     depends on CAN_DEV
+            tristate &quot;Philips SJA1000&quot;
+     ---help---
+       The SJA1000 is one of the top CAN controllers out there. As it
+@@ -94,7 +104,7 @@
+     4 channel) from Kvaser (<A HREF="http://www.kvaser.com">http://www.kvaser.com</A>).
+ 
+ config CAN_MSCAN
+-    depends on CAN &amp;&amp; (PPC || M68K || M68KNOMMU)
++    depends on CAN_DEV &amp;&amp; (PPC || M68K || M68KNOMMU)
+     tristate &quot;Support for a Freescale MSCAN based chips&quot;
+     ---help---
+       The Motorola Scalable Controller Area Network (MSCAN) definition
+Index: drivers/net/can/Makefile
+===================================================================
+--- drivers/net/can/Makefile    (revision 755)
++++ drivers/net/can/Makefile    (working copy)
+@@ -23,6 +23,10 @@
+ 
+ obj-$(CONFIG_CAN_VCAN)        += vcan.o
+ obj-$(CONFIG_CAN_SLCAN)        += slcan.o
++
++obj-$(CONFIG_CAN_DEV)        += can-dev.o
++can-dev-objs            := dev.o sysfs.o
++
+ obj-$(CONFIG_CAN_SJA1000)    += sja1000/
+ obj-$(CONFIG_CAN_MSCAN)        += mscan/
+ obj-$(CONFIG_CAN_SJA1000_OLD)    += old/sja1000/
+
+
+--------------
+
+What do you think about that code movement? Any objections?
+
+Regards,
+Oliver
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001293.html">Compiling on Suse 10.3
+</A></li>
+	<LI>Next message: <A HREF="001295.html">RFC Move can-dev.ko library to drivers/net/can - was Re:	Compiling on Suse 10.3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1294">[ date ]</a>
+              <a href="thread.html#1294">[ thread ]</a>
+              <a href="subject.html#1294">[ subject ]</a>
+              <a href="author.html#1294">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

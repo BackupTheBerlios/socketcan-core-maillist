@@ -1,0 +1,430 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7 CAN	interfaces
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v3%5D%20ems_usb%3A%20CAN/USB%20driver%20for%20EMS%20CPC-USB/ARM7%20CAN%0A%09interfaces&In-Reply-To=%3C20090910145936.GF8517%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003048.html">
+   <LINK REL="Next"  HREF="003050.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7 CAN	interfaces</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v3%5D%20ems_usb%3A%20CAN/USB%20driver%20for%20EMS%20CPC-USB/ARM7%20CAN%0A%09interfaces&In-Reply-To=%3C20090910145936.GF8517%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7 CAN	interfaces">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Thu Sep 10 16:59:37 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003048.html">[PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7	CAN	interfaces
+</A></li>
+        <LI>Next message: <A HREF="003050.html">[PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7 CAN	interfaces
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3049">[ date ]</a>
+              <a href="thread.html#3049">[ thread ]</a>
+              <a href="subject.html#3049">[ subject ]</a>
+              <a href="author.html#3049">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>[...]
+&gt;<i> &gt; I was in the process of preparing a patch with alternate approach.
+</I>&gt;<i> 
+</I>&gt;<i> I started to implement the alloc_candev(int sizeof_priv, int
+</I>&gt;<i> echo_skb_max), which is quit simple. Any alternate approach is welcome,
+</I>&gt;<i> of course.
+</I>&gt;<i> 
+</I>
+By trying that, I proved myself being wrong.
+adding an extra function call keeps the existing function proper,
+but in the end, drivers just need updating
+Trying your approach in the end is
+simpler in coding, just extra docs.
+
+I attached my work, maybe you find it usefull :-).
+it compiles, I _believe_ it would run.
+
+[...]
+&gt;<i> 
+</I>&gt;<i> Currently we use 4 echo skbs and for that amount it was not worth to
+</I>&gt;<i> implement a more sophisticated approach. So far, nobody proved that
+</I>&gt;<i> there is a benefit of using a higher number and for that reason I was
+</I>&gt;<i> not willing to change it. For devices with slow queuing, like USB I see
+</I>&gt;<i> some benefit and Sebastian provided even figures.
+</I>Ack. I definitely understand that 4 is not worth the pain, and 16 does.
+&gt;<i> 
+</I>&gt;<i> Wolfgang.
+</I>
+Index: include/linux/can/dev.h
+===================================================================
+--- include/linux/can/dev.h	(revision 1053)
++++ include/linux/can/dev.h	(working copy)
+@@ -32,8 +32,6 @@
+ /*
+  * CAN common private data
+  */
+-#define CAN_ECHO_SKB_MAX  4
+-
+ struct can_priv {
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+ 	struct net_device_stats net_stats;
+@@ -50,7 +48,8 @@
+ 	int restart_ms;
+ 	struct timer_list restart_timer;
+ 
+-	struct sk_buff *echo_skb[CAN_ECHO_SKB_MAX];
++	struct sk_buff **echo_skb;
++	int echo_skb_max;
+ 
+ 	int (*do_set_bittiming)(struct net_device *dev);
+ 	int (*do_set_mode)(struct net_device *dev, enum can_mode mode);
+@@ -72,7 +71,7 @@
+ struct net_device_stats *can_get_stats(struct net_device *dev);
+ #endif
+ 
+-struct net_device *alloc_candev(int sizeof_priv);
++struct net_device *alloc_candev(int sizeof_priv, int echo_skb_max);
+ void free_candev(struct net_device *dev);
+ 
+ int open_candev(struct net_device *dev);
+Index: include/socketcan/can/dev.h
+===================================================================
+--- include/socketcan/can/dev.h	(revision 1053)
++++ include/socketcan/can/dev.h	(working copy)
+@@ -32,8 +32,6 @@
+ /*
+  * CAN common private data
+  */
+-#define CAN_ECHO_SKB_MAX  4
+-
+ struct can_priv {
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+ 	struct net_device_stats net_stats;
+@@ -50,7 +48,8 @@
+ 	int restart_ms;
+ 	struct timer_list restart_timer;
+ 
+-	struct sk_buff *echo_skb[CAN_ECHO_SKB_MAX];
++	struct sk_buff **echo_skb;
++	int echo_skb_max;
+ 
+ 	int (*do_set_bittiming)(struct net_device *dev);
+ 	int (*do_set_mode)(struct net_device *dev, enum can_mode mode);
+@@ -72,7 +71,7 @@
+ struct net_device_stats *can_get_stats(struct net_device *dev);
+ #endif
+ 
+-struct net_device *alloc_candev(int sizeof_priv);
++struct net_device *alloc_candev(int sizeof_priv, int echo_skb_max);
+ void free_candev(struct net_device *dev);
+ 
+ int open_candev(struct net_device *dev);
+Index: drivers/net/can/at91_can.c
+===================================================================
+--- drivers/net/can/at91_can.c	(revision 1053)
++++ drivers/net/can/at91_can.c	(working copy)
+@@ -1025,7 +1025,11 @@
+ 		goto exit_release;
+ 	}
+ 
+-	dev = alloc_candev(sizeof(struct at91_priv));
++	/*
++	 * I think at91_CAN can use up to 16 tx buffs
++	 * can someone verify
++	 */
++	dev = alloc_candev(sizeof(struct at91_priv), 16);
+ 	if (!dev) {
+ 		err = -ENOMEM;
+ 		goto exit_iounmap;
+Index: drivers/net/can/mcp251x.c
+===================================================================
+--- drivers/net/can/mcp251x.c	(revision 1053)
++++ drivers/net/can/mcp251x.c	(working copy)
+@@ -941,7 +941,7 @@
+ 	struct net_device *net;
+ 	struct mcp251x_priv *priv;
+ 
+-	net = alloc_candev(sizeof_priv);
++	net = alloc_candev(sizeof_priv, 1);
+ 	if (!net)
+ 		return NULL;
+ 
+Index: drivers/net/can/cc770/cc770.c
+===================================================================
+--- drivers/net/can/cc770/cc770.c	(revision 1053)
++++ drivers/net/can/cc770/cc770.c	(working copy)
+@@ -854,7 +854,7 @@
+ 	struct net_device *dev;
+ 	struct cc770_priv *priv;
+ 
+-	dev = alloc_candev(sizeof(struct cc770_priv) + sizeof_priv);
++	dev = alloc_candev(sizeof(struct cc770_priv) + sizeof_priv, 1);
+ 	if (!dev)
+ 		return NULL;
+ 
+Index: drivers/net/can/dev.c
+===================================================================
+--- drivers/net/can/dev.c	(revision 1053)
++++ drivers/net/can/dev.c	(working copy)
+@@ -272,7 +272,7 @@
+ #endif
+ 	int i;
+ 
+-	for (i = 0; i &lt; CAN_ECHO_SKB_MAX; i++) {
++	for (i = 0; i &lt; priv-&gt;echo_skb_max; i++) {
+ 		if (priv-&gt;echo_skb[i]) {
+ 			kfree_skb(priv-&gt;echo_skb[i]);
+ 			priv-&gt;echo_skb[i] = NULL;
+@@ -298,6 +298,12 @@
+ 		kfree_skb(skb);
+ 		return;
+ 	}
++	if (idx &gt; priv-&gt;echo_skb_max) {
++		dev_err(ND2D(dev), &quot;%s: BUG! echo_skb[%i] requested&quot;
++			&quot;, %i available\n&quot;, __func__, idx, priv-&gt;echo_skb_max);
++		kfree_skb(skb);
++		return;
++	}
+ 
+ 	if (!priv-&gt;echo_skb[idx]) {
+ 		struct sock *srcsk = skb-&gt;sk;
+@@ -342,6 +348,11 @@
+ {
+ 	struct can_priv *priv = netdev_priv(dev);
+ 
++	if (idx &gt; priv-&gt;echo_skb_max) {
++		dev_err(ND2D(dev), &quot;%s: BUG! echo_skb[%i] requested&quot;
++			&quot;, %i available\n&quot;, __func__, idx, priv-&gt;echo_skb_max);
++		return;
++	}
+ 	if (priv-&gt;echo_skb[idx]) {
+ 		netif_rx(priv-&gt;echo_skb[idx]);
+ 		priv-&gt;echo_skb[idx] = NULL;
+@@ -358,6 +369,11 @@
+ {
+ 	struct can_priv *priv = netdev_priv(dev);
+ 
++	if (idx &gt; priv-&gt;echo_skb_max) {
++		dev_err(ND2D(dev), &quot;%s: BUG! echo_skb[%i] requested&quot;
++			&quot;, %i available\n&quot;, __func__, idx, priv-&gt;echo_skb_max);
++		return;
++	}
+ 	if (priv-&gt;echo_skb[idx]) {
+ 		kfree_skb(priv-&gt;echo_skb[idx]);
+ 		priv-&gt;echo_skb[idx] = NULL;
+@@ -366,6 +382,36 @@
+ EXPORT_SYMBOL_GPL(can_free_echo_skb);
+ 
+ /*
++ * allocate a echo_skb
++ * 
++ * The function is typically called shortly afer alloc_candev
++ */
++int candev_set_echo_skb_max(struct net_device *dev, int max)
++{
++	struct can_priv *priv = netdev_priv(dev);
++	struct sk_buff **skbs;
++
++	if (max &lt;= 0)
++		return -EINVAL;
++	/*
++	 * don't do this while running
++	 */
++	if (dev-&gt;flags &amp; IFF_UP)
++		return -EBUSY;
++	skbs = krealloc(priv-&gt;echo_skb, max * sizeof(skbs[0]), GFP_KERNEL);
++	if (!skbs)
++		return -ENOMEM;
++	// clean the extra space
++	if (max &gt; priv-&gt;echo_skb_max)
++		memset(&amp;skbs[priv-&gt;echo_skb_max], 0,
++			sizeof(skbs[0])*(max - priv-&gt;echo_skb_max));
++	priv-&gt;echo_skb_max = max;
++	priv-&gt;echo_skb = skbs;
++	return 0;
++}
++EXPORT_SYMBOL_GPL(candev_set_echo_skb_max);
++
++/*
+  * CAN device restart for bus-off recovery
+  */
+ void can_restart(unsigned long data)
+@@ -490,12 +536,17 @@
+ /*
+  * Allocate and setup space for the CAN network device
+  */
+-struct net_device *alloc_candev(int sizeof_priv)
++struct net_device *alloc_candev(int sizeof_priv, int echo_skb_max)
+ {
+ 	struct net_device *dev;
+ 	struct can_priv *priv;
++	int echo_skb_size;
+ 
+-	dev = alloc_netdev(sizeof_priv, &quot;can%d&quot;, can_setup);
++	if (echo_skb_max &lt;= 0)
++		return NULL;
++
++	echo_skb_size = sizeof(priv-&gt;echo_skb[0]) * echo_skb_max;
++	dev = alloc_netdev(sizeof_priv + echo_skb_size, &quot;can%d&quot;, can_setup);
+ 	if (!dev)
+ 		return NULL;
+ 
+@@ -503,6 +554,12 @@
+ 
+ 	priv-&gt;state = CAN_STATE_STOPPED;
+ 
++	/*
++	 * prepare echo_skb array, behind netdev_priv
++	 */
++	priv-&gt;echo_skb = &amp;((char *)priv)[sizeof_priv];
++	priv-&gt;echo_skb_max = echo_skb_max;
++
+ 	init_timer(&amp;priv-&gt;restart_timer);
+ 
+ 	return dev;
+@@ -514,6 +571,7 @@
+  */
+ void free_candev(struct net_device *dev)
+ {
++	struct can_priv *priv = netdev_priv(dev);
+ 	free_netdev(dev);
+ }
+ EXPORT_SYMBOL_GPL(free_candev);
+Index: drivers/net/can/softing/softing_main.c
+===================================================================
+--- drivers/net/can/softing/softing_main.c	(revision 1053)
++++ drivers/net/can/softing/softing_main.c	(working copy)
+@@ -69,7 +69,7 @@
+ 		goto xmit_done;
+ 	if (card-&gt;tx.pending &gt;= TXMAX)
+ 		goto xmit_done;
+-	if (priv-&gt;tx.pending &gt;= CAN_ECHO_SKB_MAX)
++	if (priv-&gt;tx.pending &gt;= priv-&gt;can.echo_skb_max)
+ 		goto xmit_done;
+ 	fifo_wr = card-&gt;dpram.tx-&gt;wr;
+ 	if (fifo_wr == card-&gt;dpram.tx-&gt;rd)
+@@ -107,7 +107,7 @@
+ 	++priv-&gt;tx.pending;
+ 	can_put_echo_skb(skb, dev, priv-&gt;tx.echo_put);
+ 	++priv-&gt;tx.echo_put;
+-	if (priv-&gt;tx.echo_put &gt;= CAN_ECHO_SKB_MAX)
++	if (priv-&gt;tx.echo_put &gt;= priv-&gt;can.echo_skb_max)
+ 		priv-&gt;tx.echo_put = 0;
+ 	/* can_put_echo_skb() saves the skb, safe to return TX_OK */
+ 	ret = NETDEV_TX_OK;
+@@ -319,7 +319,7 @@
+ 				skb-&gt;tstamp = ktime;
+ 			can_get_echo_skb(bus-&gt;netdev, bus-&gt;tx.echo_get);
+ 			++bus-&gt;tx.echo_get;
+-			if (bus-&gt;tx.echo_get &gt;= CAN_ECHO_SKB_MAX)
++			if (bus-&gt;tx.echo_get &gt;= bus-&gt;can.echo_skb_max)
+ 				bus-&gt;tx.echo_get = 0;
+ 			if (bus-&gt;tx.pending)
+ 				--bus-&gt;tx.pending;
+@@ -360,7 +360,7 @@
+ 		if (!canif_is_active(bus-&gt;netdev))
+ 			/* it makes no sense to wake dead busses */
+ 			continue;
+-		if (bus-&gt;tx.pending &gt;= CAN_ECHO_SKB_MAX)
++		if (bus-&gt;tx.pending &gt;= bus-&gt;can.echo_skb_max)
+ 			continue;
+ 		netif_wake_queue(bus-&gt;netdev);
+ 	}
+@@ -625,7 +625,7 @@
+ 	struct net_device *ndev;
+ 	struct softing_priv *priv;
+ 
+-	ndev = alloc_candev(sizeof(*priv));
++	ndev = alloc_candev(sizeof(*priv), 8);
+ 	if (!ndev) {
+ 		dev_alert(card-&gt;dev, &quot;alloc_candev failed\n&quot;);
+ 		return 0;
+Index: drivers/net/can/sja1000/sja1000.c
+===================================================================
+--- drivers/net/can/sja1000/sja1000.c	(revision 1053)
++++ drivers/net/can/sja1000/sja1000.c	(working copy)
+@@ -596,7 +596,7 @@
+ 	struct net_device *dev;
+ 	struct sja1000_priv *priv;
+ 
+-	dev = alloc_candev(sizeof(struct sja1000_priv) + sizeof_priv);
++	dev = alloc_candev(sizeof(struct sja1000_priv) + sizeof_priv, 1);
+ 	if (!dev)
+ 		return NULL;
+ 
+Index: drivers/net/can/esd_pci331.c
+===================================================================
+--- drivers/net/can/esd_pci331.c	(revision 1053)
++++ drivers/net/can/esd_pci331.c	(working copy)
+@@ -776,7 +776,7 @@
+ 	struct esd331_priv *priv;
+ 	int err;
+ 
+-	dev = alloc_candev(sizeof(*priv));
++	dev = alloc_candev(sizeof(*priv), 1);
+ 	if (dev == NULL)
+ 		return ERR_PTR(-ENOMEM);
+ 
+Index: drivers/net/can/ems_usb.c
+===================================================================
+--- drivers/net/can/ems_usb.c	(revision 1053)
++++ drivers/net/can/ems_usb.c	(working copy)
+@@ -226,7 +226,7 @@
+ #define CPC_HEADER_SIZE 4
+ 
+ #define MAX_RX_URBS 10
+-#define MAX_TX_URBS CAN_ECHO_SKB_MAX
++#define MAX_TX_URBS 10
+ 
+ struct ems_usb;
+ 
+@@ -241,8 +241,6 @@
+ 	struct can_priv can; /* must be the first member */
+ 	int open_time;
+ 
+-	struct sk_buff *echo_skb[MAX_TX_URBS];
+-
+ 	struct usb_device *udev;
+ 	struct net_device *netdev;
+ 
+@@ -1009,7 +1007,7 @@
+ 	struct ems_usb *dev;
+ 	int i, err;
+ 
+-	netdev = alloc_candev(sizeof(struct ems_usb));
++	netdev = alloc_candev(sizeof(struct ems_usb), MAX_TX_URBS);
+ 	if (!netdev) {
+ 		dev_err(ND2D(netdev), &quot;Couldn't alloc candev\n&quot;);
+ 		return -ENOMEM;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003048.html">[PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7	CAN	interfaces
+</A></li>
+	<LI>Next message: <A HREF="003050.html">[PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7 CAN	interfaces
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3049">[ date ]</a>
+              <a href="thread.html#3049">[ thread ]</a>
+              <a href="subject.html#3049">[ subject ]</a>
+              <a href="author.html#3049">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

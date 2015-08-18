@@ -1,0 +1,133 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] Support EMS CPC-CARD (PCMCIA)
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Support%20EMS%20CPC-CARD%20%28PCMCIA%29&In-Reply-To=%3C48522CE3.5060308%40volkswagen.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001521.html">
+   <LINK REL="Next"  HREF="001525.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] Support EMS CPC-CARD (PCMCIA)</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Support%20EMS%20CPC-CARD%20%28PCMCIA%29&In-Reply-To=%3C48522CE3.5060308%40volkswagen.de%3E"
+       TITLE="[PATCH] Support EMS CPC-CARD (PCMCIA)">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Fri Jun 13 10:16:35 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001521.html">[PATCH] Support EMS CPC-CARD (PCMCIA)
+</A></li>
+        <LI>Next message: <A HREF="001525.html">[PATCH] Support EMS CPC-CARD (PCMCIA)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1522">[ date ]</a>
+              <a href="thread.html#1522">[ thread ]</a>
+              <a href="subject.html#1522">[ subject ]</a>
+              <a href="author.html#1522">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Sebastian Haas wrote:
+&gt;&gt;<i> Is this also reproducible in your setup or does the can1 can0 order also
+</I>&gt;&gt;<i> stuck? Maybe under heavy load?
+</I>&gt;&gt;<i>     
+</I>&gt;<i> The order doesn't matter in my setup here.
+</I>
+ACK - this morning i changed can0 and can1 and got the same problem.
+
+&gt;&gt;<i> If it really makes a difference in which order the interfaces are
+</I>&gt;&gt;<i> initialized we probably need to setup both interrupt routings when the
+</I>&gt;&gt;<i> first interface get's up.
+</I>&gt;&gt;<i>     
+</I>&gt;<i> Why do we register the IRQs only on open/close? If we would register them
+</I>&gt;<i> immediately, we can tell the SJA1000 driver we do the interrupt handling
+</I>&gt;<i> ourself and just call sja1000_interrupt for each opened channel. What do
+</I>&gt;<i> you think?
+</I>&gt;<i>   
+</I>AFAIK can0 and can1 share the same interrupt (wired-or).
+I assume the problem to be like this:
+
+1. e.g. can1 get's an irq and pulls the line
+2. irq handler is invoked
+3. irq handler checks can0 (nothing found)
+4. then (critical!) can0 get's an irq and pulls the line
+5. irq handler checks can1 and handles it's irq
+
+=&gt; irq handler is done but the line is still pulled by can0 =&gt; end of 
+traffic
+
+My original fix was to handle both controllers as long as there's 
+nothing to handle on both controllers.
+
+But i don't have a nice idea how this can be archived in the current driver.
+
+Some time ago i implemented a twinepp driver that had a similar problem 
+with two SJA1000 connected to *one* EPP-port.
+The solution was to clear the interrupt (of the EPP - see &quot;tmp=inb(pb)&quot;) 
+after processing the second twin controller:
+
+/* hardware specific work to do at end of irq handler */
+void hw_postirq(struct net_device *dev)
+{
+    struct can_priv *priv = netdev_priv(dev);
+    struct net_device *tdev = priv-&gt;twin;
+    unsigned long base = dev-&gt;base_addr;
+    unsigned long pb = base + 1;
+
+    volatile u8 tmp;
+
+    /* do NOT perform for first interrupt: wait for the twin */
+
+    BUG_ON(!tdev);
+
+    if (!(dev-&gt;flags &amp; IFF_UP) || !(tdev-&gt;flags &amp; IFF_UP) ||
+        (tdev-&gt;dev_id)) {
+        tdev-&gt;dev_id = 0;
+        dev-&gt;dev_id = 0;
+        tmp = inb(pb);
+    } else
+        dev-&gt;dev_id = 1;
+
+    tmp++;
+}
+
+But all this was sooo ugly and also had impacts on the sja1000.c that i 
+never wanted to post it ...
+
+Did you get any idea for your hw?
+
+Regards,
+Oliver
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001521.html">[PATCH] Support EMS CPC-CARD (PCMCIA)
+</A></li>
+	<LI>Next message: <A HREF="001525.html">[PATCH] Support EMS CPC-CARD (PCMCIA)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1522">[ date ]</a>
+              <a href="thread.html#1522">[ thread ]</a>
+              <a href="subject.html#1522">[ subject ]</a>
+              <a href="author.html#1522">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

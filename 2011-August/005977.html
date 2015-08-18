@@ -1,0 +1,195 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v10 4/5] [powerpc] Add flexcan device support for p1010rdb.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v10%204/5%5D%20%5Bpowerpc%5D%20Add%20flexcan%20device%20support%20for%20p1010rdb.&In-Reply-To=%3C1312945564-6626-5-git-send-email-holt%40sgi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005989.html">
+   <LINK REL="Next"  HREF="005980.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v10 4/5] [powerpc] Add flexcan device support for p1010rdb.</H1>
+    <B>Robin Holt</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v10%204/5%5D%20%5Bpowerpc%5D%20Add%20flexcan%20device%20support%20for%20p1010rdb.&In-Reply-To=%3C1312945564-6626-5-git-send-email-holt%40sgi.com%3E"
+       TITLE="[PATCH v10 4/5] [powerpc] Add flexcan device support for p1010rdb.">holt at sgi.com
+       </A><BR>
+    <I>Wed Aug 10 05:06:03 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005989.html">[PATCH v10 3/5] [flexcan] Add of_match to platform_device	definition.
+</A></li>
+        <LI>Next message: <A HREF="005980.html">[PATCH v10 4/5] [powerpc] Add flexcan device support for p1010rdb.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5977">[ date ]</a>
+              <a href="thread.html#5977">[ thread ]</a>
+              <a href="subject.html#5977">[ subject ]</a>
+              <a href="author.html#5977">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I added a simple clock source for the p1010rdb so the flexcan driver
+could determine a clock frequency.  The p1010 can device only has an
+oscillator of system bus frequency divided by 2.
+
+Signed-off-by: Robin Holt &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">holt at sgi.com</A>&gt;
+Acked-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;,
+Acked-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;,
+To: U Bhaskar-B22300 &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">B22300 at freescale.com</A>&gt;
+Cc: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core at lists.berlios.de</A>,
+Cc: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">netdev at vger.kernel.org</A>,
+Cc: PPC list &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">linuxppc-dev at lists.ozlabs.org</A>&gt;
+Cc: Kumar Gala &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">galak at kernel.crashing.org</A>&gt;
+---
+ arch/powerpc/platforms/85xx/Kconfig    |    2 +
+ arch/powerpc/platforms/85xx/Makefile   |    2 +
+ arch/powerpc/platforms/85xx/clock.c    |   53 ++++++++++++++++++++++++++++++++
+ arch/powerpc/platforms/85xx/p1010rdb.c |    8 +++++
+ 4 files changed, 65 insertions(+), 0 deletions(-)
+ create mode 100644 arch/powerpc/platforms/85xx/clock.c
+
+diff --git a/arch/powerpc/platforms/85xx/Kconfig b/arch/powerpc/platforms/85xx/Kconfig
+index 498534c..c4304ae 100644
+--- a/arch/powerpc/platforms/85xx/Kconfig
++++ b/arch/powerpc/platforms/85xx/Kconfig
+@@ -70,6 +70,8 @@ config MPC85xx_RDB
+ config P1010_RDB
+ 	bool &quot;Freescale P1010RDB&quot;
+ 	select DEFAULT_UIMAGE
++	select HAVE_CAN_FLEXCAN if NET &amp;&amp; CAN
++	select PPC_CLOCK if CAN_FLEXCAN
+ 	help
+ 	  This option enables support for the MPC85xx RDB (P1010 RDB) board
+ 
+diff --git a/arch/powerpc/platforms/85xx/Makefile b/arch/powerpc/platforms/85xx/Makefile
+index a971b32..cc7f381 100644
+--- a/arch/powerpc/platforms/85xx/Makefile
++++ b/arch/powerpc/platforms/85xx/Makefile
+@@ -3,6 +3,8 @@
+ #
+ obj-$(CONFIG_SMP) += smp.o
+ 
++obj-$(CONFIG_PPC_CLOCK)   += clock.o
++
+ obj-$(CONFIG_MPC8540_ADS) += mpc85xx_ads.o
+ obj-$(CONFIG_MPC8560_ADS) += mpc85xx_ads.o
+ obj-$(CONFIG_MPC85xx_CDS) += mpc85xx_cds.o
+diff --git a/arch/powerpc/platforms/85xx/clock.c b/arch/powerpc/platforms/85xx/clock.c
+new file mode 100644
+index 0000000..16fae04
+--- /dev/null
++++ b/arch/powerpc/platforms/85xx/clock.c
+@@ -0,0 +1,53 @@
++/*
++ * Copyright 2011 SGI, inc.
++ *
++ * This code is licensed for use under the GPL V2 as published by
++ * the Free Software Foundation.
++ */
++
++#include &lt;linux/device.h&gt;
++#include &lt;linux/err.h&gt;
++#include &lt;linux/of.h&gt;
++
++#include &lt;asm/clk_interface.h&gt;
++
++#include &lt;sysdev/fsl_soc.h&gt;
++
++/*
++ * p1010 needs to provide a clock source for the flexcan driver. The
++ * oscillator for the p1010 processor is only ever the system clock / 2.
++ */
++
++static struct clk *mpc85xx_clk_get(struct device *dev, const char *id)
++{
++	if (!dev)
++		return ERR_PTR(-ENOENT);
++
++        if (!dev-&gt;of_node ||
++            !of_device_is_compatible(dev-&gt;of_node, &quot;fsl,flexcan&quot;))
++                return ERR_PTR(-ENOENT);
++
++	return NULL;
++}
++
++static void mpc85xx_clk_put(struct clk *clk)
++{
++	return;
++}
++
++static unsigned long mpc85xx_clk_get_rate(struct clk *clk)
++{
++	return fsl_get_sys_freq() / 2;
++}
++
++static struct clk_interface mpc85xx_clk_functions = {
++	.clk_get = mpc85xx_clk_get,
++	.clk_get_rate = mpc85xx_clk_get_rate,
++	.clk_put = mpc85xx_clk_put,
++};
++
++void __init mpc85xx_clk_init(void)
++{
++	clk_functions = mpc85xx_clk_functions;
++}
++
+diff --git a/arch/powerpc/platforms/85xx/p1010rdb.c b/arch/powerpc/platforms/85xx/p1010rdb.c
+index d7387fa..5e52122 100644
+--- a/arch/powerpc/platforms/85xx/p1010rdb.c
++++ b/arch/powerpc/platforms/85xx/p1010rdb.c
+@@ -81,6 +81,13 @@ static void __init p1010_rdb_setup_arch(void)
+ 	printk(KERN_INFO &quot;P1010 RDB board from Freescale Semiconductor\n&quot;);
+ }
+ 
++extern void mpc85xx_clk_init(void);
++
++static void __init p1010_rdb_init(void)
++{
++	mpc85xx_clk_init();
++}
++
+ static struct of_device_id __initdata p1010rdb_ids[] = {
+ 	{ .type = &quot;soc&quot;, },
+ 	{ .compatible = &quot;soc&quot;, },
+@@ -111,6 +118,7 @@ define_machine(p1010_rdb) {
+ 	.name			= &quot;P1010 RDB&quot;,
+ 	.probe			= p1010_rdb_probe,
+ 	.setup_arch		= p1010_rdb_setup_arch,
++	.init			= p1010_rdb_init,
+ 	.init_IRQ		= p1010_rdb_pic_init,
+ #ifdef CONFIG_PCI
+ 	.pcibios_fixup_bus	= fsl_pcibios_fixup_bus,
+-- 
+1.7.2.1
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005989.html">[PATCH v10 3/5] [flexcan] Add of_match to platform_device	definition.
+</A></li>
+	<LI>Next message: <A HREF="005980.html">[PATCH v10 4/5] [powerpc] Add flexcan device support for p1010rdb.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5977">[ date ]</a>
+              <a href="thread.html#5977">[ thread ]</a>
+              <a href="subject.html#5977">[ subject ]</a>
+              <a href="author.html#5977">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

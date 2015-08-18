@@ -1,0 +1,136 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Single-shot transmission mode
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Single-shot%20transmission%20mode&In-Reply-To=%3C4705F7F8.9010009%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000713.html">
+   <LINK REL="Next"  HREF="000715.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Single-shot transmission mode</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Single-shot%20transmission%20mode&In-Reply-To=%3C4705F7F8.9010009%40grandegger.com%3E"
+       TITLE="Single-shot transmission mode">wg at grandegger.com
+       </A><BR>
+    <I>Fri Oct  5 10:38:16 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000713.html">Single-shot transmission mode
+</A></li>
+        <LI>Next message: <A HREF="000715.html">Single-shot transmission mode
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#714">[ date ]</a>
+              <a href="thread.html#714">[ thread ]</a>
+              <a href="subject.html#714">[ subject ]</a>
+              <a href="author.html#714">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hartkopp, Oliver (K-GEFE/E) wrote:
+&gt;<i> Chris Elston wrote:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> &gt; @Chris: Please check out, why you think a per-socket option is a real
+</I>&gt;&gt;<i> &gt; recommendation and why it cannot be solved on driver level (separately
+</I>&gt;&gt;<i> &gt; for each bus). In other words: Maybe your client just requires to send
+</I>&gt;&gt;<i> &gt; single-shot frames and not to send single-shot frames AND normal
+</I>&gt;&gt;<i> &gt; CAN-frames at the same time on the identical bus.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Single-shot is required for NMEA2000 address claim
+</I>&gt;&gt;<i> <A HREF="http://www.can-cia.org/j1939based/nmea2000/">http://www.can-cia.org/j1939based/nmea2000/</A>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> &quot;Regarding addressing, ISO 11783-5 defines different types of devices.
+</I>&gt;&gt;<i> All NMEA 2000 compliant devices have to be self-configurable and capable
+</I>&gt;&gt;<i> of claiming addresses as specified in ISO 11783-5.&quot;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I don't have access to the ISO 11783-5 spec, but perhaps someone else on
+</I>&gt;&gt;<i> the list does.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Hm - i also do not have it. But i've checked several CAN controller 
+</I>&gt;<i> specs &amp; ISO 11898-3 (TTCAN) this night ...
+</I>&gt;<i> 
+</I>&gt;&gt;<i> The same driver is used for both the address claim phase, and then the
+</I>&gt;&gt;<i> normal bus transfers.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Ah! - You have different 'phases' here, which may tell us, that you do 
+</I>&gt;<i> not run in single-shot mode and normal operation mode at the same time 
+</I>&gt;<i> on the wire :-)
+</I>&gt;<i> 
+</I>&gt;<i> To shortly summarize my investigations, it looks like ...
+</I>&gt;<i> 
+</I>&gt;<i> 1. the single-shot mode is not provided by every CAN controller
+</I>&gt;<i> 
+</I>&gt;<i> 2. only the SJA1000 can switch between single-shot and normal operation 
+</I>&gt;<i> on a frame base
+</I>&gt;<i> 
+</I>&gt;<i> 3. TTCAN compatible controllers (like AT89C51CC02) have a dedicated 
+</I>&gt;<i> TTCAN mode that enables single-shot (only here!)
+</I>&gt;<i> 
+</I>&gt;<i> In TTCAN you have to run single-shot even in the &quot;Arbitrating Time 
+</I>&gt;<i> Window&quot; so that the timing window remains guaranteed for the other 
+</I>&gt;<i> (fixed) time windows. Finally from what i've read and discussed with 
+</I>&gt;<i> experienced colleagues i would summarize that having single-shot frames 
+</I>&gt;<i> and normal operation frames on the wire at the same time is not a valid 
+</I>&gt;<i> use-case. For that reason i would tend to put the controlling of this 
+</I>&gt;<i> medium access configuration into the driver and not to provide a user 
+</I>&gt;<i> interface which may lead to an inconsistent node behaviour when 
+</I>&gt;<i> generating a mix of different CAN frames transfer modes in a single 
+</I>&gt;<i> context/mode/phase. This was just a gud feeling before but after reading 
+</I>&gt;<i> all that documentation, i'm quite sure that single-shot or normal 
+</I>&gt;<i> operation needs to be a bus-wide consistent setting for a given use-case.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> At the level of code which is dispatching the CAN
+</I>&gt;&gt;<i> frames it seems wrong to have awareness of what phase of usage the bus
+</I>&gt;&gt;<i> is in (address claim or normal transfers) - rather we are just told to
+</I>&gt;&gt;<i> send the packet single shot or not single shot by the layer above.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> As you wrote you can split up the communication in an 'address claim 
+</I>&gt;<i> phase' and a 'normal bus transfer' phase. For that reason, i would _not_ 
+</I>&gt;<i> assume these phases to toggle rapidly (at least i assume them to switch 
+</I>&gt;<i> one time: on and off). To solve this problem, you just could check in 
+</I>&gt;<i> which mode the CAN-frame has to be sent and to switch the appropriate 
+</I>&gt;<i> mode in the CAN-controller, if it's not already in that mode. This 
+</I>&gt;<i> should be necessary only two times in the address claim phase then.
+</I>&gt;<i> 
+</I>&gt;<i> Any concerns left?
+</I>
+No, I checked the MPC2515 manual and there &quot;Single-Shot&quot; is a mode of 
+operation like listen-only and therefore it makes little sense to handle 
+it on per transfer base because it must be set in configuration mode.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000713.html">Single-shot transmission mode
+</A></li>
+	<LI>Next message: <A HREF="000715.html">Single-shot transmission mode
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#714">[ date ]</a>
+              <a href="thread.html#714">[ thread ]</a>
+              <a href="subject.html#714">[ subject ]</a>
+              <a href="author.html#714">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

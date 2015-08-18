@@ -1,0 +1,2013 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 1/2] can: add driver for Softing card
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%201/2%5D%20can%3A%20add%20driver%20for%20Softing%20card&In-Reply-To=%3C20101223094302.GB325%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005251.html">
+   <LINK REL="Next"  HREF="005252.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 1/2] can: add driver for Softing card</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%201/2%5D%20can%3A%20add%20driver%20for%20Softing%20card&In-Reply-To=%3C20101223094302.GB325%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH net-next-2.6 1/2] can: add driver for Softing card">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Thu Dec 23 10:43:03 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005251.html">[PATCH net-next-2.6 2/2] can: add driver for Softing card
+</A></li>
+        <LI>Next message: <A HREF="005252.html">[PATCH net-next-2.6 1/2] can: add driver for Softing card
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5249">[ date ]</a>
+              <a href="thread.html#5249">[ thread ]</a>
+              <a href="subject.html#5249">[ subject ]</a>
+              <a href="author.html#5249">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch adds a driver for the platform:softing device.
+This will create (up to) 2 CAN network devices from 1
+platform:softing device
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+
+---
+ drivers/net/can/Kconfig                    |    2 +
+ drivers/net/can/Makefile                   |    1 +
+ drivers/net/can/softing/Kconfig            |   16 +
+ drivers/net/can/softing/Makefile           |    5 +
+ drivers/net/can/softing/softing.h          |  216 +++++++
+ drivers/net/can/softing/softing_fw.c       |  664 ++++++++++++++++++++
+ drivers/net/can/softing/softing_main.c     |  935 ++++++++++++++++++++++++++++
+ drivers/net/can/softing/softing_platform.h |   38 ++
+ 8 files changed, 1877 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/can/Kconfig b/drivers/net/can/Kconfig
+index d5a9db6..986195e 100644
+--- a/drivers/net/can/Kconfig
++++ b/drivers/net/can/Kconfig
+@@ -117,6 +117,8 @@ source &quot;drivers/net/can/sja1000/Kconfig&quot;
+ 
+ source &quot;drivers/net/can/usb/Kconfig&quot;
+ 
++source &quot;drivers/net/can/softing/Kconfig&quot;
++
+ config CAN_DEBUG_DEVICES
+ 	bool &quot;CAN devices debugging messages&quot;
+ 	depends on CAN
+diff --git a/drivers/net/can/Makefile b/drivers/net/can/Makefile
+index 07ca159..53c82a7 100644
+--- a/drivers/net/can/Makefile
++++ b/drivers/net/can/Makefile
+@@ -9,6 +9,7 @@ obj-$(CONFIG_CAN_DEV)		+= can-dev.o
+ can-dev-y			:= dev.o
+ 
+ obj-y				+= usb/
++obj-y				+= softing/
+ 
+ obj-$(CONFIG_CAN_SJA1000)	+= sja1000/
+ obj-$(CONFIG_CAN_MSCAN)		+= mscan/
+diff --git a/drivers/net/can/softing/Kconfig b/drivers/net/can/softing/Kconfig
+new file mode 100644
+index 0000000..072f337
+--- /dev/null
++++ b/drivers/net/can/softing/Kconfig
+@@ -0,0 +1,16 @@
++config CAN_SOFTING
++	tristate &quot;Softing Gmbh CAN generic support&quot;
++	depends on CAN_DEV
++	---help---
++	  Support for CAN cards from Softing Gmbh &amp; some cards
++	  from Vector Gmbh.
++	  Softing Gmbh CAN cards come with 1 or 2 physical busses.
++	  Those cards typically use Dual Port RAM to communicate
++	  with the host CPU. The interface is then identical for PCI
++	  and PCMCIA cards. This driver operates on a platform device,
++	  which has been created by softing_cs or softing_pci driver.
++	  Warning:
++	  The API of the card does not allow fine control per bus, but
++	  controls the 2 busses on the card together.
++	  As such, some actions (start/stop/busoff recovery) on 1 bus
++	  must bring down the other bus too temporarily.
+diff --git a/drivers/net/can/softing/Makefile b/drivers/net/can/softing/Makefile
+new file mode 100644
+index 0000000..7878b7b
+--- /dev/null
++++ b/drivers/net/can/softing/Makefile
+@@ -0,0 +1,5 @@
++
++softing-y := softing_main.o softing_fw.o
++obj-$(CONFIG_CAN_SOFTING)        += softing.o
++
++ccflags-$(CONFIG_CAN_DEBUG_DEVICES) := -DDEBUG
+diff --git a/drivers/net/can/softing/softing.h b/drivers/net/can/softing/softing.h
+new file mode 100644
+index 0000000..99046a7
+--- /dev/null
++++ b/drivers/net/can/softing/softing.h
+@@ -0,0 +1,216 @@
++/*
++ * softing common interfaces
++ *
++ * by Kurt Van Dijck, 06-2008
++ */
++
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/ktime.h&gt;
++#include &lt;linux/mutex.h&gt;
++#include &lt;linux/spinlock.h&gt;
++#include &lt;linux/can.h&gt;
++#include &lt;linux/can/dev.h&gt;
++
++#include &quot;softing_platform.h&quot;
++
++#ifndef CAN_CTRLMODE_BERR_REPORTING
++#define CAN_CTRLMODE_BERR_REPORTING 0
++#endif
++
++struct softing;
++
++struct softing_priv {
++	struct can_priv can;	/* must be the first member! */
++	struct net_device *netdev;
++	struct softing *card;
++	struct {
++		int pending;
++		/* variables wich hold the circular buffer */
++		int echo_put;
++		int echo_get;
++	} tx;
++	struct can_bittiming_const btr_const;
++	int index;
++	u8 output;
++	u16 chip;
++};
++#define netdev2softing(netdev)	((struct softing_priv *)netdev_priv(netdev))
++
++struct softing {
++	const struct softing_platform_data *pdat;
++	struct platform_device *pdev;
++	struct net_device *net[2];
++	spinlock_t	 spin; /* protect this structure &amp; DPRAM access */
++	ktime_t ts_ref;
++	ktime_t ts_overflow; /* timestamp overflow value, in ktime */
++
++	struct {
++		/* indication of firmware status */
++		int up;
++		/* protection of the 'up' variable */
++		struct mutex lock;
++	} fw;
++	struct {
++		int nr;
++		int requested;
++		struct tasklet_struct bh;
++		int svc_count;
++	} irq;
++	struct {
++		int pending;
++		int last_bus;
++		/* keep the bus that last tx'd a message,
++		 * in order to let every netdev queue resume
++		 */
++	} tx;
++	struct {
++		unsigned long phys;
++		unsigned long size;
++		unsigned char *virt;
++		unsigned char *end;
++		struct softing_fct  *fct;
++		struct softing_info *info;
++		struct softing_rx  *rx;
++		struct softing_tx  *tx;
++		struct softing_irq *irq;
++		unsigned short *command;
++		unsigned short *receipt;
++	} dpram;
++	struct {
++		u32  serial, fw, hw, lic;
++		u16  chip[2];
++		u32  freq;
++	} id;
++};
++
++extern int softing_default_output(struct net_device *netdev);
++
++extern ktime_t softing_raw2ktime(struct softing *card, u32 raw);
++
++extern int softing_fct_cmd(struct softing *card
++			, int cmd, int vector, const char *msg);
++
++extern int softing_bootloader_command(struct softing *card
++			, int command, const char *msg);
++
++/* reset DPRAM */
++static inline void softing_set_reset_dpram(struct softing *card)
++{
++	if (card-&gt;pdat-&gt;generation &gt;= 2) {
++		spin_lock_bh(&amp;card-&gt;spin);
++		card-&gt;dpram.virt[0xe00] &amp;= ~1;
++		spin_unlock_bh(&amp;card-&gt;spin);
++	}
++}
++
++static inline void softing_clr_reset_dpram(struct softing *card)
++{
++	if (card-&gt;pdat-&gt;generation &gt;= 2) {
++		spin_lock_bh(&amp;card-&gt;spin);
++		card-&gt;dpram.virt[0xe00] |= 1;
++		spin_unlock_bh(&amp;card-&gt;spin);
++	}
++}
++
++/* Load firmware after reset */
++extern int softing_load_fw(const char *file, struct softing *card,
++			unsigned char *virt, unsigned int size, int offset);
++
++/* Load final application firmware after bootloader */
++extern int softing_load_app_fw(const char *file, struct softing *card);
++
++extern int softing_reset_chip(struct softing *card);
++
++/*
++ * enable or disable irq
++ * only called with fw.lock locked
++ */
++extern int softing_enable_irq(struct softing *card, int enable);
++
++/* start/stop 1 bus on card */
++extern int softing_startstop(struct net_device *netdev, int up);
++
++/* netif_rx() */
++extern int softing_netdev_rx(struct net_device *netdev,
++		const struct can_frame *msg, ktime_t ktime);
++
++/* SOFTING DPRAM mappings */
++struct softing_rx {
++	u8  fifo[16][32];
++	u8  dummy1;
++	u16 rd;
++	u16 dummy2;
++	u16 wr;
++	u16  dummy3;
++	u16 lost_msg;
++} __attribute__((packed));
++
++#define TXMAX	31
++struct softing_tx {
++	u8  fifo[32][16];
++	u8  dummy1;
++	u16 rd;
++	u16 dummy2;
++	u16 wr;
++	u8  dummy3;
++} __attribute__((packed));
++
++struct softing_irq {
++	u8 to_host;
++	u8 to_card;
++} __attribute__((packed));
++
++struct softing_fct {
++	s16 param[20]; /* 0 is index */
++	s16 returned;
++	u8  dummy;
++	u16 host_access;
++} __attribute__((packed));
++
++struct softing_info {
++	u8  dummy1;
++	u16 bus_state;
++	u16 dummy2;
++	u16 bus_state2;
++	u16 dummy3;
++	u16 error_state;
++	u16 dummy4;
++	u16 error_state2;
++	u16 dummy5;
++	u16 reset;
++	u16 dummy6;
++	u16 clear_rcv_fifo;
++	u16 dummy7;
++	u16 dummyxx;
++	u16 dummy8;
++	u16 time_reset;
++	u8  dummy9;
++	u32 time;
++	u32 time_wrap;
++	u8  wr_start;
++	u8  wr_end;
++	u8  dummy10;
++	u16 dummy12;
++	u16 dummy12x;
++	u16 dummy13;
++	u16 reset_rcv_fifo;
++	u8  dummy14;
++	u8  reset_xmt_fifo;
++	u8  read_fifo_levels;
++	u16 rcv_fifo_level;
++	u16 xmt_fifo_level;
++} __attribute__((packed));
++
++/* DPRAM return codes */
++#define RES_NONE	0
++#define RES_OK		1
++#define RES_NOK		2
++#define RES_UNKNOWN	3
++/* DPRAM flags */
++#define CMD_TX		0x01
++#define CMD_ACK		0x02
++#define CMD_XTD		0x04
++#define CMD_RTR		0x08
++#define CMD_ERR		0x10
++#define CMD_BUS2	0x80
++
+diff --git a/drivers/net/can/softing/softing_fw.c b/drivers/net/can/softing/softing_fw.c
+new file mode 100644
+index 0000000..f61299c
+--- /dev/null
++++ b/drivers/net/can/softing/softing_fw.c
+@@ -0,0 +1,664 @@
++/*
++* drivers/net/can/softing/softing_fw.c
++*
++* Copyright (C) 2008-2010
++*
++* - Kurt Van Dijck, EIA Electronics
++*
++* This program is free software; you can redistribute it and/or modify
++* it under the terms of the version 2 of the GNU General Public License
++* as published by the Free Software Foundation
++*
++* This program is distributed in the hope that it will be useful,
++* but WITHOUT ANY WARRANTY; without even the implied warranty of
++* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++* GNU General Public License for more details.
++*
++* You should have received a copy of the GNU General Public License
++* along with this program; if not, write to the Free Software
++* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
++*/
++
++#include &lt;linux/firmware.h&gt;
++#include &lt;linux/sched.h&gt;
++#include &lt;asm/div64.h&gt;
++
++#include &quot;softing.h&quot;
++
++int softing_fct_cmd(struct softing *card, int cmd, int vector, const char *msg)
++{
++	int ret;
++	unsigned long stamp;
++	if (vector == RES_OK)
++		vector = RES_NONE;
++	card-&gt;dpram.fct-&gt;param[0] = cmd;
++	card-&gt;dpram.fct-&gt;host_access = vector;
++	/* be sure to flush this to the card */
++	wmb();
++	stamp = jiffies;
++	/*wait for card */
++	do {
++		ret = card-&gt;dpram.fct-&gt;host_access;
++		/* don't have any cached variables */
++		rmb();
++		if (ret == RES_OK) {
++			/*don't read return-value now */
++			ret = card-&gt;dpram.fct-&gt;returned;
++			if (ret)
++				dev_alert(&amp;card-&gt;pdev-&gt;dev,
++					&quot;%s returned %u\n&quot;, msg, ret);
++			return 0;
++		}
++		if ((jiffies - stamp) &gt;= 1 * HZ)
++			break;
++		if (in_interrupt())
++			/* go as fast as possible */
++			continue;
++		/* process context =&gt; relax */
++		schedule();
++	} while (!signal_pending(current));
++
++	if (ret == RES_NONE) {
++		dev_alert(&amp;card-&gt;pdev-&gt;dev,
++			&quot;%s, no response from card on %u/0x%02x\n&quot;,
++			msg, cmd, vector);
++		return 1;
++	} else {
++		dev_alert(&amp;card-&gt;pdev-&gt;dev,
++			&quot;%s, bad response from card on %u/0x%02x, 0x%04x\n&quot;,
++			msg, cmd, vector, ret);
++		/*make sure to return something not 0 */
++		return ret ? ret : 1;
++	}
++}
++
++int softing_bootloader_command(struct softing *card
++		, int command, const char *msg)
++{
++	int ret;
++	unsigned long stamp;
++	card-&gt;dpram.receipt[0] = RES_NONE;
++	card-&gt;dpram.command[0] = command;
++	/* be sure to flush this to the card */
++	wmb();
++	stamp = jiffies;
++	/*wait for card */
++	do {
++		ret = card-&gt;dpram.receipt[0];
++		/* don't have any cached variables */
++		rmb();
++		if (ret == RES_OK)
++			return 0;
++		if ((jiffies - stamp) &gt;= (3 * HZ))
++			break;
++		schedule();
++	} while (!signal_pending(current));
++
++	switch (ret) {
++	case RES_NONE:
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;%s: no response from card\n&quot;, msg);
++		break;
++	case RES_NOK:
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;%s: response from card nok\n&quot;,
++				msg);
++		break;
++	case RES_UNKNOWN:
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;%s: command 0x%04x unknown\n&quot;,
++			msg, command);
++		break;
++	default:
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;%s: bad response from card: %i\n&quot;,
++			msg, ret);
++		break;
++	}
++	return ret ? ret : 1;
++}
++
++struct fw_hdr {
++	u16 type;
++	u32 addr;
++	u16 len;
++	u16 checksum;
++	const unsigned char *base;
++} __attribute__ ((packed));
++
++static int fw_parse(const unsigned char **pmem, struct fw_hdr *hdr)
++{
++	u16 tmp;
++	const unsigned char *mem;
++	const unsigned char *end;
++	mem = *pmem;
++	hdr-&gt;type = (mem[0] &lt;&lt; 0) | (mem[1] &lt;&lt; 8);
++	hdr-&gt;addr = (mem[2] &lt;&lt; 0) | (mem[3] &lt;&lt; 8)
++		 | (mem[4] &lt;&lt; 16) | (mem[5] &lt;&lt; 24);
++	hdr-&gt;len = (mem[6] &lt;&lt; 0) | (mem[7] &lt;&lt; 8);
++	hdr-&gt;base = &amp;mem[8];
++	hdr-&gt;checksum =
++		 (hdr-&gt;base[hdr-&gt;len] &lt;&lt; 0) | (hdr-&gt;base[hdr-&gt;len + 1] &lt;&lt; 8);
++	for (tmp = 0, mem = *pmem, end = &amp;hdr-&gt;base[hdr-&gt;len]; mem &lt; end; ++mem)
++		tmp += *mem;
++	if (tmp != hdr-&gt;checksum)
++		return -EINVAL;
++	*pmem += 10 + hdr-&gt;len;
++	return 0;
++}
++
++int softing_load_fw(const char *file, struct softing *card,
++			unsigned char *virt, unsigned int size, int offset)
++{
++	const struct firmware *fw;
++	const unsigned char *mem;
++	const unsigned char *end;
++	int ret = 0;
++	u32 start_addr;
++	struct fw_hdr rec;
++	int ok = 0;
++	unsigned char buf[1024];
++
++	ret = request_firmware(&amp;fw, file, &amp;card-&gt;pdev-&gt;dev);
++	if (ret) {
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;request_firmware(%s) got %i\n&quot;,
++			file, ret);
++		return ret;
++	}
++	dev_dbg(&amp;card-&gt;pdev-&gt;dev, &quot;%s, firmware(%s) got %u bytes&quot;
++		&quot;, offset %c0x%04x\n&quot;,
++		card-&gt;pdat-&gt;name, file, (unsigned int)fw-&gt;size,
++		(offset &gt;= 0) ? '+' : '-', (unsigned int)abs(offset));
++	/* parse the firmware */
++	mem = fw-&gt;data;
++	end = &amp;mem[fw-&gt;size];
++	/* look for header record */
++	ret = fw_parse(&amp;mem, &amp;rec);
++	if (ret &lt; 0)
++		goto fw_end;
++	if (rec.type != 0xffff) {
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;firware starts with type 0x%04x\n&quot;,
++			rec.type);
++		goto fw_end;
++	}
++	if (strncmp(&quot;Structured Binary Format, Softing GmbH&quot;
++			, rec.base, rec.len)) {
++		dev_info(&amp;card-&gt;pdev-&gt;dev, &quot;firware string '%.*s'\n&quot;,
++			rec.len, rec.base);
++		goto fw_end;
++	}
++	ok |= 1;
++	/* ok, we had a header */
++	while (mem &lt; end) {
++		ret = fw_parse(&amp;mem, &amp;rec);
++		if (ret)
++			break;
++		if (rec.type == 3) {
++			/*start address */
++			start_addr = rec.addr;
++			ok |= 2;
++			continue;
++		} else if (rec.type == 1) {
++			/*eof */
++			ok |= 4;
++			goto fw_end;
++		} else if (rec.type != 0) {
++			dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;unknown record type 0x%04x\n&quot;,
++				rec.type);
++			break;
++		}
++
++		if ((rec.addr + rec.len + offset) &gt; size) {
++			dev_alert(&amp;card-&gt;pdev-&gt;dev,
++				&quot;firmware out of range (0x%08x / 0x%08x)\n&quot;,
++				(rec.addr + rec.len + offset), size);
++			goto fw_end;
++		}
++		memcpy_toio(&amp;virt[rec.addr + offset],
++				 rec.base, rec.len);
++		/* be sure to flush caches from IO space */
++		mb();
++		if (rec.len &gt; sizeof(buf)) {
++			dev_info(&amp;card-&gt;pdev-&gt;dev,
++				&quot;record is big (%u bytes), not verifying\n&quot;,
++				rec.len);
++			continue;
++		}
++		/* verify record data */
++		memcpy_fromio(buf, &amp;virt[rec.addr + offset], rec.len);
++		if (!memcmp(buf, rec.base, rec.len))
++			/* is ok */
++			continue;
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;0x%08x:0x%03x at 0x%p failed\n&quot;,
++			rec.addr, rec.len, &amp;virt[rec.addr + offset]);
++		goto fw_end;
++	}
++fw_end:
++	release_firmware(fw);
++	if (0x5 == (ok &amp; 0x5))
++		/* got eof &amp; start */
++		return 0;
++	dev_info(&amp;card-&gt;pdev-&gt;dev, &quot;firmware %s failed\n&quot;, file);
++	return ret ?: -EINVAL;
++}
++
++int softing_load_app_fw(const char *file, struct softing *card)
++{
++	const struct firmware *fw;
++	const unsigned char *mem;
++	const unsigned char *end;
++	int ret;
++	struct fw_hdr rec;
++	int ok = 0;
++	u32 start_addr = 0;
++	u16 rx_sum;
++	unsigned int sum;
++	const unsigned char *mem_lp;
++	const unsigned char *mem_end;
++	struct cpy {
++		u32 src;
++		u32 dst;
++		u16 len;
++		u8 do_cs;
++	} __attribute__((packed)) *pcpy =
++		 (struct cpy *)&amp;card-&gt;dpram.command[1];
++	struct cmd {
++		u32 start;
++		u8 autorestart;
++	} __attribute__((packed)) *pcmdstart =
++		(struct cmd *)&amp;card-&gt;dpram.command[1];
++
++	ret = request_firmware(&amp;fw, file, &amp;card-&gt;pdev-&gt;dev);
++	if (ret) {
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;request_firmware(%s) got %i\n&quot;,
++			file, ret);
++		return ret;
++	}
++	dev_dbg(&amp;card-&gt;pdev-&gt;dev, &quot;firmware(%s) got %lu bytes\n&quot;,
++		file, (unsigned long)fw-&gt;size);
++	/* parse the firmware */
++	mem = fw-&gt;data;
++	end = &amp;mem[fw-&gt;size];
++	/* look for header record */
++	ret = fw_parse(&amp;mem, &amp;rec);
++	if (ret)
++		goto fw_end;
++	if (rec.type != 0xffff) {
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;firware starts with type 0x%04x\n&quot;,
++			rec.type);
++		goto fw_end;
++	}
++	if (strncmp(&quot;Structured Binary Format, Softing GmbH&quot;
++		, rec.base, rec.len)) {
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;firware string '%.*s' fault\n&quot;,
++			rec.len, rec.base);
++		goto fw_end;
++	}
++	ok |= 1;
++	/* ok, we had a header */
++	while (mem &lt; end) {
++		ret = fw_parse(&amp;mem, &amp;rec);
++		if (ret)
++			break;
++
++		if (rec.type == 3) {
++			/*start address */
++			start_addr = rec.addr;
++			ok |= 2;
++			continue;
++		} else if (rec.type == 1) {
++			/*eof */
++			ok |= 4;
++			goto fw_end;
++		} else if (rec.type != 0) {
++			dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;unknown record type 0x%04x\n&quot;,
++				rec.type);
++			break;
++		}
++		/* regualar data */
++		for (sum = 0, mem_lp = rec.base, mem_end = &amp;mem_lp[rec.len];
++			mem_lp &lt; mem_end; ++mem_lp)
++			sum += *mem_lp;
++
++		memcpy_toio(&amp;card-&gt;dpram. virt[card-&gt;pdat-&gt;app.offs],
++				 rec.base, rec.len);
++		pcpy-&gt;src = card-&gt;pdat-&gt;app.offs + card-&gt;pdat-&gt;app.addr;
++		pcpy-&gt;dst = rec.addr;
++		pcpy-&gt;len = rec.len;
++		pcpy-&gt;do_cs = 1;
++		if (softing_bootloader_command(card, 1, &quot;loading app.&quot;))
++			goto fw_end;
++		/*verify checksum */
++		rx_sum = card-&gt;dpram.receipt[1];
++		if (rx_sum != (sum &amp; 0xffff)) {
++			dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;SRAM seems to be damaged&quot;
++				&quot;, wanted 0x%04x, got 0x%04x\n&quot;, sum, rx_sum);
++			goto fw_end;
++		}
++	}
++fw_end:
++	release_firmware(fw);
++	if (ok != 7)
++		goto fw_failed;
++	/*got start, start_addr, &amp; eof */
++	pcmdstart-&gt;start = start_addr;
++	pcmdstart-&gt;autorestart = 1;
++	if (softing_bootloader_command(card, 3, &quot;start app.&quot;))
++		goto fw_failed;
++	dev_info(&amp;card-&gt;pdev-&gt;dev, &quot;firmware %s up\n&quot;, file);
++	return 0;
++fw_failed:
++	dev_info(&amp;card-&gt;pdev-&gt;dev, &quot;firmware %s failed\n&quot;, file);
++	return ret ?: -EINVAL;
++}
++
++int softing_reset_chip(struct softing *card)
++{
++	do {
++		/*reset chip */
++		card-&gt;dpram.info-&gt;reset_rcv_fifo = 0;
++		card-&gt;dpram.info-&gt;reset = 1;
++		if (!softing_fct_cmd(card, 0, 0, &quot;reset_chip&quot;))
++			break;
++		if (signal_pending(current))
++			goto failed;
++		/*sync */
++		if (softing_fct_cmd(card, 99, 0x55, &quot;sync-a&quot;))
++			goto failed;
++		if (softing_fct_cmd(card, 99, 0xaa, &quot;sync-a&quot;))
++			goto failed;
++	} while (1);
++	card-&gt;tx.pending = 0;
++	return 0;
++failed:
++	return -EIO;
++}
++
++static void softing_initialize_timestamp(struct softing *card)
++{
++	uint64_t ovf;
++
++	card-&gt;ts_ref = ktime_get();
++
++	/* 16MHz is the reference */
++	ovf = 0x100000000ULL * 16;
++	do_div(ovf, card-&gt;pdat-&gt;freq ?: 16);
++
++	card-&gt;ts_overflow = ktime_add_us(ktime_set(0, 0), ovf);
++}
++
++ktime_t softing_raw2ktime(struct softing *card, u32 raw)
++{
++	uint64_t rawl;
++	ktime_t now, real_offset;
++	ktime_t target;
++	ktime_t tmp;
++
++	now = ktime_get();
++	real_offset = ktime_sub(ktime_get_real(), now);
++
++	/* find nsec from card */
++	rawl = raw * 16;
++	do_div(rawl, card-&gt;pdat-&gt;freq ?: 16);
++	target = ktime_add_us(card-&gt;ts_ref, rawl);
++	/* test for overflows */
++	tmp = ktime_add(target, card-&gt;ts_overflow);
++	while (unlikely(ktime_to_ns(tmp) &gt; ktime_to_ns(now))) {
++		card-&gt;ts_ref = ktime_add(card-&gt;ts_ref, card-&gt;ts_overflow);
++		target = tmp;
++		tmp = ktime_add(target, card-&gt;ts_overflow);
++	}
++	return ktime_add(target, real_offset);
++}
++
++static inline int softing_error_reporting(struct net_device *netdev)
++{
++	struct softing_priv *priv = netdev_priv(netdev);
++
++	return (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_BERR_REPORTING)
++		? 1 : 0;
++}
++
++int softing_startstop(struct net_device *dev, int up)
++{
++	int ret;
++	struct softing *card;
++	struct softing_priv *priv;
++	struct net_device *netdev;
++	int mask_start;
++	int j, error_reporting;
++	struct can_frame msg;
++
++	priv = netdev_priv(dev);
++	card = priv-&gt;card;
++
++	if (!card-&gt;fw.up)
++		return -EIO;
++
++	ret = mutex_lock_interruptible(&amp;card-&gt;fw.lock);
++	if (ret)
++		return ret;
++
++	mask_start = 0;
++	if (dev &amp;&amp; up)
++		/* prepare to start this bus as well */
++		mask_start |= (1 &lt;&lt; priv-&gt;index);
++	/* bring netdevs down */
++	for (j = 0; j &lt; ARRAY_SIZE(card-&gt;net); ++j) {
++		netdev = card-&gt;net[j];
++		if (!netdev)
++			continue;
++		priv = netdev_priv(netdev);
++
++		if (dev != netdev)
++			netif_stop_queue(netdev);
++
++		if (netif_running(netdev)) {
++			if (dev != netdev)
++				mask_start |= (1 &lt;&lt; j);
++			priv-&gt;tx.pending = 0;
++			priv-&gt;tx.echo_put = 0;
++			priv-&gt;tx.echo_get = 0;
++			/* this bus' may just have called open_candev()
++			 * which is rather stupid to call close_candev()
++			 * already
++			 * but we may come here from busoff recovery too
++			 * in which case the echo_skb _needs_ flushing too.
++			 * just be sure to call open_candev() again
++			 */
++			close_candev(netdev);
++		}
++		priv-&gt;can.state = CAN_STATE_STOPPED;
++	}
++	card-&gt;tx.pending = 0;
++
++	softing_enable_irq(card, 0);
++	ret = softing_reset_chip(card);
++	if (ret)
++		goto failed;
++	if (!mask_start)
++		/* no busses to be brought up */
++		goto card_done;
++
++	if ((mask_start &amp; 1) &amp;&amp; (mask_start &amp; 2)
++			&amp;&amp; (softing_error_reporting(card-&gt;net[0])
++				!= softing_error_reporting(card-&gt;net[1]))) {
++		dev_alert(&amp;card-&gt;pdev-&gt;dev,
++				&quot;err_reporting flag differs for busses\n&quot;);
++		goto invalid;
++	}
++	error_reporting = 0;
++	if (mask_start &amp; 1) {
++		netdev = card-&gt;net[0];
++		priv = netdev_priv(netdev);
++		error_reporting += softing_error_reporting(netdev);
++		/*init chip 1 */
++		card-&gt;dpram.fct-&gt;param[1] = priv-&gt;can.bittiming.brp;
++		card-&gt;dpram.fct-&gt;param[2] = priv-&gt;can.bittiming.sjw;
++		card-&gt;dpram.fct-&gt;param[3] =
++			priv-&gt;can.bittiming.phase_seg1 +
++			priv-&gt;can.bittiming.prop_seg;
++		card-&gt;dpram.fct-&gt;param[4] =
++			priv-&gt;can.bittiming.phase_seg2;
++		card-&gt;dpram.fct-&gt;param[5] = (priv-&gt;can.ctrlmode &amp;
++			CAN_CTRLMODE_3_SAMPLES) ? 1 : 0;
++		if (softing_fct_cmd(card, 1, 0, &quot;initialize_chip[0]&quot;))
++			goto failed;
++		/*set mode */
++		card-&gt;dpram.fct-&gt;param[1] = 0;
++		card-&gt;dpram.fct-&gt;param[2] = 0;
++		if (softing_fct_cmd(card, 3, 0, &quot;set_mode[0]&quot;))
++			goto failed;
++		/*set filter */
++		card-&gt;dpram.fct-&gt;param[1] = 0x0000;/*card-&gt;bus[0].s.msg; */
++		card-&gt;dpram.fct-&gt;param[2] = 0x07ff;/*card-&gt;bus[0].s.msk; */
++		card-&gt;dpram.fct-&gt;param[3] = 0x0000;/*card-&gt;bus[0].l.msg; */
++		card-&gt;dpram.fct-&gt;param[4] = 0xffff;/*card-&gt;bus[0].l.msk; */
++		card-&gt;dpram.fct-&gt;param[5] = 0x0000;/*card-&gt;bus[0].l.msg &gt;&gt; 16;*/
++		card-&gt;dpram.fct-&gt;param[6] = 0x1fff;/*card-&gt;bus[0].l.msk &gt;&gt; 16;*/
++		if (softing_fct_cmd(card, 7, 0, &quot;set_filter[0]&quot;))
++			goto failed;
++		/*set output control */
++		card-&gt;dpram.fct-&gt;param[1] = priv-&gt;output;
++		if (softing_fct_cmd(card, 5, 0, &quot;set_output[0]&quot;))
++			goto failed;
++	}
++	if (mask_start &amp; 2) {
++		netdev = card-&gt;net[1];
++		priv = netdev_priv(netdev);
++		error_reporting += softing_error_reporting(netdev);
++		/*init chip2 */
++		card-&gt;dpram.fct-&gt;param[1] = priv-&gt;can.bittiming.brp;
++		card-&gt;dpram.fct-&gt;param[2] = priv-&gt;can.bittiming.sjw;
++		card-&gt;dpram.fct-&gt;param[3] =
++			priv-&gt;can.bittiming.phase_seg1 +
++			priv-&gt;can.bittiming.prop_seg;
++		card-&gt;dpram.fct-&gt;param[4] =
++			priv-&gt;can.bittiming.phase_seg2;
++		card-&gt;dpram.fct-&gt;param[5] = (priv-&gt;can.ctrlmode &amp;
++			CAN_CTRLMODE_3_SAMPLES) ? 1 : 0;
++		if (softing_fct_cmd(card, 2, 0, &quot;initialize_chip[1]&quot;))
++			goto failed;
++		/*set mode2 */
++		card-&gt;dpram.fct-&gt;param[1] = 0;
++		card-&gt;dpram.fct-&gt;param[2] = 0;
++		if (softing_fct_cmd(card, 4, 0, &quot;set_mode[1]&quot;))
++			goto failed;
++		/*set filter2 */
++		card-&gt;dpram.fct-&gt;param[1] = 0x0000;/*card-&gt;bus[1].s.msg; */
++		card-&gt;dpram.fct-&gt;param[2] = 0x07ff;/*card-&gt;bus[1].s.msk; */
++		card-&gt;dpram.fct-&gt;param[3] = 0x0000;/*card-&gt;bus[1].l.msg; */
++		card-&gt;dpram.fct-&gt;param[4] = 0xffff;/*card-&gt;bus[1].l.msk; */
++		card-&gt;dpram.fct-&gt;param[5] = 0x0000;/*card-&gt;bus[1].l.msg &gt;&gt; 16;*/
++		card-&gt;dpram.fct-&gt;param[6] = 0x1fff;/*card-&gt;bus[1].l.msk &gt;&gt; 16;*/
++		if (softing_fct_cmd(card, 8, 0, &quot;set_filter[1]&quot;))
++			goto failed;
++		/*set output control2 */
++		card-&gt;dpram.fct-&gt;param[1] = priv-&gt;output;
++		if (softing_fct_cmd(card, 6, 0, &quot;set_output[1]&quot;))
++			goto failed;
++	}
++	/*enable_error_frame */
++	if (error_reporting) {
++		if (softing_fct_cmd(card, 51, 0, &quot;enable_error_frame&quot;))
++			goto failed;
++	}
++	/*initialize interface */
++	card-&gt;dpram.fct-&gt;param[1] = 1;
++	card-&gt;dpram.fct-&gt;param[2] = 1;
++	card-&gt;dpram.fct-&gt;param[3] = 1;
++	card-&gt;dpram.fct-&gt;param[4] = 1;
++	card-&gt;dpram.fct-&gt;param[5] = 1;
++	card-&gt;dpram.fct-&gt;param[6] = 1;
++	card-&gt;dpram.fct-&gt;param[7] = 1;
++	card-&gt;dpram.fct-&gt;param[8] = 1;
++	card-&gt;dpram.fct-&gt;param[9] = 1;
++	card-&gt;dpram.fct-&gt;param[10] = 1;
++	if (softing_fct_cmd(card, 17, 0, &quot;initialize_interface&quot;))
++		goto failed;
++	/*enable_fifo */
++	if (softing_fct_cmd(card, 36, 0, &quot;enable_fifo&quot;))
++		goto failed;
++	/*enable fifo tx ack */
++	if (softing_fct_cmd(card, 13, 0, &quot;fifo_tx_ack[0]&quot;))
++		goto failed;
++	/*enable fifo tx ack2 */
++	if (softing_fct_cmd(card, 14, 0, &quot;fifo_tx_ack[1]&quot;))
++		goto failed;
++	/*enable timestamps */
++	/*is default, no code found */
++	/*start_chip */
++	if (softing_fct_cmd(card, 11, 0, &quot;start_chip&quot;))
++		goto failed;
++	card-&gt;dpram.info-&gt;bus_state = 0;
++	card-&gt;dpram.info-&gt;bus_state2 = 0;
++	dev_info(&amp;card-&gt;pdev-&gt;dev, &quot;%s up\n&quot;, __func__);
++	if (card-&gt;pdat-&gt;generation &lt; 2) {
++		card-&gt;dpram.irq-&gt;to_host = 0;
++		/* flush the DPRAM caches */
++		wmb();
++	}
++
++	softing_initialize_timestamp(card);
++
++	/*
++	 * do socketcan notifications/status changes
++	 * from here, no errors should occur, or the failed: part
++	 * must be reviewed
++	 */
++	memset(&amp;msg, 0, sizeof(msg));
++	msg.can_id = CAN_ERR_FLAG | CAN_ERR_RESTARTED;
++	msg.can_dlc = CAN_ERR_DLC;
++	for (j = 0; j &lt; ARRAY_SIZE(card-&gt;net); ++j) {
++		if (!(mask_start &amp; (1 &lt;&lt; j)))
++			continue;
++		netdev = card-&gt;net[j];
++		if (!netdev)
++			continue;
++		priv = netdev_priv(netdev);
++		priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
++		open_candev(netdev);
++		if (dev != netdev) {
++			/* notify other busses on the restart */
++			softing_netdev_rx(netdev, &amp;msg, ktime_set(0, 0));
++			++priv-&gt;can.can_stats.restarts;
++		}
++		netif_wake_queue(netdev);
++	}
++
++	/* enable interrupts */
++	ret = softing_enable_irq(card, 1);
++	if (ret)
++		goto failed;
++card_done:
++	mutex_unlock(&amp;card-&gt;fw.lock);
++	return 0;
++failed:
++	dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;firmware failed, going idle\n&quot;);
++invalid:
++	softing_enable_irq(card, 0);
++	softing_reset_chip(card);
++	mutex_unlock(&amp;card-&gt;fw.lock);
++	/* bring all other interfaces down */
++	for (j = 0; j &lt; ARRAY_SIZE(card-&gt;net); ++j) {
++		netdev = card-&gt;net[j];
++		if (!netdev)
++			continue;
++		dev_close(netdev);
++	}
++	return -EIO;
++}
++
++int softing_default_output(struct net_device *netdev)
++{
++	struct softing_priv *priv = netdev_priv(netdev);
++	struct softing *card = priv-&gt;card;
++
++	switch (priv-&gt;chip) {
++	case 1000:
++		if (card-&gt;pdat-&gt;generation &lt; 2)
++			return 0xfb;
++		return 0xfa;
++	case 5:
++		return 0x60;
++	default:
++		return 0x40;
++	}
++}
++
+diff --git a/drivers/net/can/softing/softing_main.c b/drivers/net/can/softing/softing_main.c
+new file mode 100644
+index 0000000..a3d94d4
+--- /dev/null
++++ b/drivers/net/can/softing/softing_main.c
+@@ -0,0 +1,935 @@
++/*
++* drivers/net/can/softing/softing_main.c
++*
++* Copyright (C) 2008-2010
++*
++* - Kurt Van Dijck, EIA Electronics
++*
++* This program is free software; you can redistribute it and/or modify
++* it under the terms of the version 2 of the GNU General Public License
++* as published by the Free Software Foundation
++*
++* This program is distributed in the hope that it will be useful,
++* but WITHOUT ANY WARRANTY; without even the implied warranty of
++* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++* GNU General Public License for more details.
++*
++* You should have received a copy of the GNU General Public License
++* along with this program; if not, write to the Free Software
++* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
++*/
++
++#include &lt;linux/version.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/init.h&gt;
++#include &lt;linux/interrupt.h&gt;
++
++#include &quot;softing.h&quot;
++
++#define TX_ECHO_SKB_MAX (TXMAX/2)
++
++/*
++ * test is a specific CAN netdev
++ * is online (ie. up 'n running, not sleeping, not busoff
++ */
++static inline int canif_is_active(struct net_device *netdev)
++{
++	struct can_priv *can = netdev_priv(netdev);
++	if (!netif_running(netdev))
++		return 0;
++	return (can-&gt;state &lt;= CAN_STATE_ERROR_PASSIVE);
++}
++
++/* trigger the tx queue-ing */
++static netdev_tx_t
++softing_netdev_start_xmit(struct sk_buff *skb, struct net_device *dev)
++{
++	struct softing_priv *priv = netdev_priv(dev);
++	struct softing *card = priv-&gt;card;
++	int ret;
++	int bhlock;
++	u8 *ptr;
++	u8 cmd;
++	unsigned int fifo_wr;
++	struct can_frame msg;
++
++	if (can_dropped_invalid_skb(dev, skb))
++		return NETDEV_TX_OK;
++
++	if (in_interrupt()) {
++		bhlock = 0;
++		spin_lock(&amp;card-&gt;spin);
++	} else {
++		bhlock = 1;
++		spin_lock_bh(&amp;card-&gt;spin);
++	}
++	ret = NETDEV_TX_BUSY;
++	if (!card-&gt;fw.up)
++		goto xmit_done;
++	if (card-&gt;tx.pending &gt;= TXMAX)
++		goto xmit_done;
++	if (priv-&gt;tx.pending &gt;= TX_ECHO_SKB_MAX)
++		goto xmit_done;
++	fifo_wr = card-&gt;dpram.tx-&gt;wr;
++	if (fifo_wr == card-&gt;dpram.tx-&gt;rd)
++		/*fifo full */
++		goto xmit_done;
++	memcpy(&amp;msg, skb-&gt;data, sizeof(msg));
++	ptr = &amp;card-&gt;dpram.tx-&gt;fifo[fifo_wr][0];
++	cmd = CMD_TX;
++	if (msg.can_id &amp; CAN_RTR_FLAG)
++		cmd |= CMD_RTR;
++	if (msg.can_id &amp; CAN_EFF_FLAG)
++		cmd |= CMD_XTD;
++	if (priv-&gt;index)
++		cmd |= CMD_BUS2;
++	*ptr++ = cmd;
++	*ptr++ = msg.can_dlc;
++	*ptr++ = (msg.can_id &gt;&gt; 0);
++	*ptr++ = (msg.can_id &gt;&gt; 8);
++	if (msg.can_id &amp; CAN_EFF_FLAG) {
++		*ptr++ = (msg.can_id &gt;&gt; 16);
++		*ptr++ = (msg.can_id &gt;&gt; 24);
++	} else {
++		/*increment 1, not 2 as you might think */
++		ptr += 1;
++	}
++	if (!(msg.can_id &amp; CAN_RTR_FLAG))
++		memcpy_toio(ptr, &amp;msg.data[0], msg.can_dlc);
++	if (++fifo_wr &gt;=
++		 sizeof(card-&gt;dpram.tx-&gt;fifo) /
++		 sizeof(card-&gt;dpram.tx-&gt;fifo[0]))
++		fifo_wr = 0;
++	card-&gt;dpram.tx-&gt;wr = fifo_wr;
++	card-&gt;tx.last_bus = priv-&gt;index;
++	++card-&gt;tx.pending;
++	++priv-&gt;tx.pending;
++	can_put_echo_skb(skb, dev, priv-&gt;tx.echo_put);
++	++priv-&gt;tx.echo_put;
++	if (priv-&gt;tx.echo_put &gt;= TX_ECHO_SKB_MAX)
++		priv-&gt;tx.echo_put = 0;
++	/* can_put_echo_skb() saves the skb, safe to return TX_OK */
++	ret = NETDEV_TX_OK;
++xmit_done:
++	if (bhlock)
++		spin_unlock_bh(&amp;card-&gt;spin);
++	else
++		spin_unlock(&amp;card-&gt;spin);
++	if (card-&gt;tx.pending &gt;= TXMAX) {
++		int j;
++		for (j = 0; j &lt; ARRAY_SIZE(card-&gt;net); ++j) {
++			if (card-&gt;net[j])
++				netif_stop_queue(card-&gt;net[j]);
++		}
++	}
++	if (ret != NETDEV_TX_OK)
++		netif_stop_queue(dev);
++
++	return ret;
++}
++
++/*
++ * shortcut for skb delivery
++ */
++int softing_netdev_rx(struct net_device *netdev,
++		const struct can_frame *msg, ktime_t ktime)
++{
++	struct sk_buff *skb;
++	struct can_frame *cf;
++	int ret;
++
++	skb = alloc_can_skb(netdev, &amp;cf);
++	if (!skb)
++		return -ENOMEM;
++	memcpy(cf, msg, sizeof(*msg));
++	skb-&gt;tstamp = ktime;
++	ret = netif_rx(skb);
++	if (ret == NET_RX_DROP)
++		++netdev-&gt;stats.rx_dropped;
++	return ret;
++}
++
++/*
++ * softing_handle_1
++ * pop 1 entry from the DPRAM queue, and process
++ */
++static int softing_handle_1(struct softing *card)
++{
++	int j;
++	struct net_device *netdev;
++	struct softing_priv *priv;
++	ktime_t ktime;
++	struct can_frame msg;
++
++	unsigned int fifo_rd;
++	unsigned int cnt = 0;
++	u8 *ptr;
++	u32 tmp;
++	u8 cmd;
++
++	memset(&amp;msg, 0, sizeof(msg));
++	if (card-&gt;dpram.rx-&gt;lost_msg) {
++		/*reset condition */
++		card-&gt;dpram.rx-&gt;lost_msg = 0;
++		/* prepare msg */
++		msg.can_id = CAN_ERR_FLAG | CAN_ERR_CRTL;
++		msg.can_dlc = CAN_ERR_DLC;
++		msg.data[1] = CAN_ERR_CRTL_RX_OVERFLOW;
++		/*
++		 * service to all busses, we don't know which it was applicable
++		 * but only service busses that are online
++		 */
++		for (j = 0; j &lt; ARRAY_SIZE(card-&gt;net); ++j) {
++			netdev = card-&gt;net[j];
++			if (!netdev)
++				continue;
++			if (!canif_is_active(netdev))
++				/* a dead bus has no overflows */
++				continue;
++			++netdev-&gt;stats.rx_over_errors;
++			softing_netdev_rx(netdev, &amp;msg, ktime_set(0, 0));
++		}
++		/* prepare for other use */
++		memset(&amp;msg, 0, sizeof(msg));
++		++cnt;
++	}
++
++	fifo_rd = card-&gt;dpram.rx-&gt;rd;
++	if (++fifo_rd &gt;= ARRAY_SIZE(card-&gt;dpram.rx-&gt;fifo))
++		fifo_rd = 0;
++
++	if (card-&gt;dpram.rx-&gt;wr == fifo_rd)
++		return cnt;
++
++	ptr = &amp;card-&gt;dpram.rx-&gt;fifo[fifo_rd][0];
++
++	cmd = *ptr++;
++	if (cmd == 0xff) {
++		/*not quite usefull, probably the card has got out */
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;got cmd 0x%02x,&quot;
++			&quot; I suspect the card is lost\n&quot;, cmd);
++	}
++	/*mod_trace(&quot;0x%02x&quot;, cmd);*/
++	netdev = card-&gt;net[0];
++	if (cmd &amp; CMD_BUS2)
++		netdev = card-&gt;net[1];
++	priv = netdev_priv(netdev);
++
++	if (cmd &amp; CMD_ERR) {
++		u8 can_state;
++		u8 state;
++		state = *ptr++;
++
++		msg.can_id = CAN_ERR_FLAG;
++		msg.can_dlc = CAN_ERR_DLC;
++
++		if (state &amp; 0x80) {
++			can_state = CAN_STATE_BUS_OFF;
++			msg.can_id |= CAN_ERR_BUSOFF;
++			state = 2;
++		} else if (state &amp; 0x60) {
++			can_state = CAN_STATE_ERROR_PASSIVE;
++			msg.can_id |= CAN_ERR_BUSERROR;
++			msg.data[1] = CAN_ERR_CRTL_TX_PASSIVE;
++			state = 1;
++		} else {
++			can_state = CAN_STATE_ERROR_ACTIVE;
++			state = 0;
++			msg.can_id |= CAN_ERR_BUSERROR;
++		}
++		/*update DPRAM */
++		if (!priv-&gt;index)
++			card-&gt;dpram.info-&gt;bus_state = state;
++		else
++			card-&gt;dpram.info-&gt;bus_state2 = state;
++		/*timestamp */
++		tmp = (ptr[0] &lt;&lt;  0) | (ptr[1] &lt;&lt;  8)
++		    | (ptr[2] &lt;&lt; 16) | (ptr[3] &lt;&lt; 24);
++		ptr += 4;
++		ktime = softing_raw2ktime(card, tmp);
++		/*trigger dual port RAM */
++		mb();
++		card-&gt;dpram.rx-&gt;rd = fifo_rd;
++
++		++priv-&gt;can.can_stats.bus_error;
++		++netdev-&gt;stats.rx_errors;
++		/*update internal status */
++		if (can_state != priv-&gt;can.state) {
++			priv-&gt;can.state = can_state;
++			if (can_state == CAN_STATE_ERROR_PASSIVE)
++				++priv-&gt;can.can_stats.error_passive;
++			if (can_state == CAN_STATE_BUS_OFF) {
++				/* this calls can_close_cleanup() */
++				can_bus_off(netdev);
++				netif_stop_queue(netdev);
++			}
++			/*trigger socketcan */
++			softing_netdev_rx(netdev, &amp;msg, ktime);
++		}
++
++	} else {
++		if (cmd &amp; CMD_RTR)
++			msg.can_id |= CAN_RTR_FLAG;
++		/* acknowledge, was tx msg
++		 * no real tx flag to set
++		if (cmd &amp; CMD_ACK) {
++		}
++		 */
++		msg.can_dlc = get_can_dlc(*ptr++);
++		if (cmd &amp; CMD_XTD) {
++			msg.can_id |= CAN_EFF_FLAG;
++			msg.can_id |= (ptr[0] &lt;&lt;  0) | (ptr[1] &lt;&lt;  8)
++				    | (ptr[2] &lt;&lt; 16) | (ptr[3] &lt;&lt; 24);
++			ptr += 4;
++		} else {
++			msg.can_id |= (ptr[0] &lt;&lt; 0) | (ptr[1] &lt;&lt; 8);
++			ptr += 2;
++		}
++		tmp = (ptr[0] &lt;&lt;  0) | (ptr[1] &lt;&lt;  8)
++		    | (ptr[2] &lt;&lt; 16) | (ptr[3] &lt;&lt; 24);
++		ptr += 4;
++		ktime = softing_raw2ktime(card, tmp);
++		memcpy_fromio(&amp;msg.data[0], ptr, 8);
++		ptr += 8;
++		/*trigger dual port RAM */
++		mb();
++		card-&gt;dpram.rx-&gt;rd = fifo_rd;
++		/*update socket */
++		if (cmd &amp; CMD_ACK) {
++			struct sk_buff *skb;
++			skb = priv-&gt;can.echo_skb[priv-&gt;tx.echo_get];
++			if (skb)
++				skb-&gt;tstamp = ktime;
++			can_get_echo_skb(netdev, priv-&gt;tx.echo_get);
++			++priv-&gt;tx.echo_get;
++			if (priv-&gt;tx.echo_get &gt;= TX_ECHO_SKB_MAX)
++				priv-&gt;tx.echo_get = 0;
++			if (priv-&gt;tx.pending)
++				--priv-&gt;tx.pending;
++			if (card-&gt;tx.pending)
++				--card-&gt;tx.pending;
++			++netdev-&gt;stats.tx_packets;
++			netdev-&gt;stats.tx_bytes += msg.can_dlc;
++		} else {
++			++netdev-&gt;stats.rx_packets;
++			netdev-&gt;stats.rx_bytes += msg.can_dlc;
++			softing_netdev_rx(netdev, &amp;msg, ktime);
++		}
++	}
++	++cnt;
++	return cnt;
++}
++
++/*
++ * real interrupt handler
++ */
++static void softing_handler(unsigned long param)
++{
++	struct softing *card = (struct softing *)param;
++	struct net_device *netdev;
++	struct softing_priv *priv;
++	int j;
++	int offset;
++
++	spin_lock(&amp;card-&gt;spin);
++	while (softing_handle_1(card) &gt; 0)
++		++card-&gt;irq.svc_count;
++	spin_unlock(&amp;card-&gt;spin);
++	/*resume tx queue's */
++	offset = card-&gt;tx.last_bus;
++	for (j = 0; j &lt; ARRAY_SIZE(card-&gt;net); ++j) {
++		if (card-&gt;tx.pending &gt;= TXMAX)
++			break;
++		netdev = card-&gt;net[(j + offset + 1) % card-&gt;pdat-&gt;nbus];
++		if (!netdev)
++			continue;
++		priv = netdev_priv(netdev);
++		if (!canif_is_active(netdev))
++			/* it makes no sense to wake dead busses */
++			continue;
++		if (priv-&gt;tx.pending &gt;= TX_ECHO_SKB_MAX)
++			continue;
++		netif_wake_queue(netdev);
++	}
++}
++
++/*
++ * interrupt routines:
++ * schedule the 'real interrupt handler'
++ */
++static
++irqreturn_t softing_irq_new(int irq, void *dev_id)
++{
++	struct softing *card = (struct softing *)dev_id;
++	unsigned char ir;
++	ir = card-&gt;dpram.virt[0xe02];
++	card-&gt;dpram.virt[0xe02] = 0;
++	if (card-&gt;dpram.rx-&gt;rd == 0xffff) {
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;I think the card is gone\n&quot;);
++		return IRQ_NONE;
++	}
++	if (ir == 1) {
++		tasklet_schedule(&amp;card-&gt;irq.bh);
++		return IRQ_HANDLED;
++	} else if (ir == 0x10) {
++		return IRQ_NONE;
++	} else {
++		return IRQ_NONE;
++	}
++}
++
++static
++irqreturn_t softing_irq_old(int irq, void *dev_id)
++{
++	struct softing *card = (struct softing *)dev_id;
++	unsigned char irq_host;
++	irq_host = card-&gt;dpram.irq-&gt;to_host;
++	/* make sure we have a copy, before clearing the variable in DPRAM */
++	rmb();
++	card-&gt;dpram.irq-&gt;to_host = 0;
++	/* make sure we cleared it */
++	wmb();
++	if (card-&gt;dpram.rx-&gt;rd == 0xffff) {
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;I think the card is gone\n&quot;);
++		return IRQ_NONE;
++	}
++	tasklet_schedule(&amp;card-&gt;irq.bh);
++	return IRQ_HANDLED;
++}
++
++/*
++ * netdev/candev inter-operability
++ */
++static int softing_netdev_open(struct net_device *ndev)
++{
++	int ret;
++
++	/* check or determine and set bittime */
++	ret = open_candev(ndev);
++	if (ret)
++		goto failed;
++	ret = softing_startstop(ndev, 1);
++	if (ret)
++		goto failed;
++	return 0;
++failed:
++	return ret;
++}
++
++static int softing_netdev_stop(struct net_device *ndev)
++{
++	int ret;
++
++	netif_stop_queue(ndev);
++
++	/* softing cycle does close_candev() */
++	ret = softing_startstop(ndev, 0);
++	return ret;
++}
++
++static int softing_candev_set_mode(struct net_device *ndev, enum can_mode mode)
++{
++	int ret;
++
++	switch (mode) {
++	case CAN_MODE_START:
++		/* softing cycle does close_candev() */
++		ret = softing_startstop(ndev, 1);
++		return ret;
++	case CAN_MODE_STOP:
++	case CAN_MODE_SLEEP:
++		return -EOPNOTSUPP;
++	}
++	return 0;
++}
++
++/*
++ * Softing device management helpers
++ */
++int softing_enable_irq(struct softing *card, int enable)
++{
++	int ret;
++	if (!enable) {
++		if (card-&gt;irq.requested &amp;&amp; card-&gt;irq.nr) {
++			free_irq(card-&gt;irq.nr, card);
++			card-&gt;irq.requested = 0;
++		}
++		return 0;
++	}
++	if (!card-&gt;irq.requested &amp;&amp; (card-&gt;irq.nr)) {
++		ret = request_irq(card-&gt;irq.nr,
++				(card-&gt;pdat-&gt;generation &gt;= 2)
++					? softing_irq_new : softing_irq_old,
++				IRQF_SHARED, dev_name(&amp;card-&gt;pdev-&gt;dev), card);
++		if (ret) {
++			dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;%s, request_irq(%u) failed\n&quot;,
++				card-&gt;pdat-&gt;name, card-&gt;irq.nr);
++			return ret;
++		}
++		card-&gt;irq.requested = 1;
++	}
++	return 0;
++}
++
++static void softing_card_shutdown(struct softing *card)
++{
++	int fw_up = 0;
++	dev_dbg(&amp;card-&gt;pdev-&gt;dev, &quot;%s()\n&quot;, __func__);
++	if (mutex_lock_interruptible(&amp;card-&gt;fw.lock))
++		/* return -ERESTARTSYS*/;
++	fw_up = card-&gt;fw.up;
++	card-&gt;fw.up = 0;
++
++	if (card-&gt;irq.requested &amp;&amp; card-&gt;irq.nr) {
++		free_irq(card-&gt;irq.nr, card);
++		card-&gt;irq.requested = 0;
++	}
++	if (fw_up) {
++		if (card-&gt;pdat-&gt;enable_irq)
++			card-&gt;pdat-&gt;enable_irq(card-&gt;pdev, 0);
++		softing_set_reset_dpram(card);
++		if (card-&gt;pdat-&gt;reset)
++			card-&gt;pdat-&gt;reset(card-&gt;pdev, 1);
++	}
++	mutex_unlock(&amp;card-&gt;fw.lock);
++	tasklet_kill(&amp;card-&gt;irq.bh);
++}
++
++static int softing_card_boot(struct softing *card)
++{
++	unsigned char *lp;
++	static const unsigned char stream[] = {
++		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, };
++	unsigned char back[sizeof(stream)];
++	dev_dbg(&amp;card-&gt;pdev-&gt;dev, &quot;%s()\n&quot;, __func__);
++
++	if (mutex_lock_interruptible(&amp;card-&gt;fw.lock))
++		return -ERESTARTSYS;
++	if (card-&gt;fw.up) {
++		mutex_unlock(&amp;card-&gt;fw.lock);
++		return 0;
++	}
++	/* reset board */
++	if (card-&gt;pdat-&gt;enable_irq)
++		card-&gt;pdat-&gt;enable_irq(card-&gt;pdev, 1);
++	/* boot card */
++	softing_set_reset_dpram(card);
++	if (card-&gt;pdat-&gt;reset)
++		card-&gt;pdat-&gt;reset(card-&gt;pdev, 1);
++	for (lp = card-&gt;dpram.virt; &amp;lp[sizeof(stream)] &lt;= card-&gt;dpram.end;
++		lp += sizeof(stream)) {
++
++		memcpy_toio(lp, stream, sizeof(stream));
++		/* flush IO cache */
++		mb();
++		memcpy_fromio(back, lp, sizeof(stream));
++
++		if (!memcmp(back, stream, sizeof(stream)))
++			continue;
++		/* memory is not equal */
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;write to dpram failed at 0x%04lx\n&quot;,
++			(unsigned long)(lp - card-&gt;dpram.virt));
++		goto open_failed;
++	}
++	wmb();
++	/*load boot firmware */
++	if (softing_load_fw(card-&gt;pdat-&gt;boot.fw, card, card-&gt;dpram.virt,
++				 card-&gt;dpram.size,
++				 card-&gt;pdat-&gt;boot.offs -
++				 card-&gt;pdat-&gt;boot.addr))
++		goto open_failed;
++	/*load load firmware */
++	if (softing_load_fw(card-&gt;pdat-&gt;load.fw, card, card-&gt;dpram.virt,
++				 card-&gt;dpram.size,
++				 card-&gt;pdat-&gt;load.offs -
++				 card-&gt;pdat-&gt;load.addr))
++		goto open_failed;
++
++	if (card-&gt;pdat-&gt;reset)
++		card-&gt;pdat-&gt;reset(card-&gt;pdev, 0);
++	softing_clr_reset_dpram(card);
++	if (softing_bootloader_command(card, 0, &quot;card boot&quot;))
++		goto open_failed;
++	if (softing_load_app_fw(card-&gt;pdat-&gt;app.fw, card))
++		goto open_failed;
++	/*reset chip */
++	card-&gt;dpram.info-&gt;reset_rcv_fifo = 0;
++	card-&gt;dpram.info-&gt;reset = 1;
++	/*sync */
++	if (softing_fct_cmd(card, 99, 0x55, &quot;sync-a&quot;))
++		goto open_failed;
++	if (softing_fct_cmd(card, 99, 0xaa, &quot;sync-a&quot;))
++		goto open_failed;
++	/*reset chip */
++	if (softing_fct_cmd(card, 0, 0, &quot;reset_chip&quot;))
++		goto open_failed;
++	/*get_serial */
++	if (softing_fct_cmd(card, 43, 0, &quot;get_serial_number&quot;))
++		goto open_failed;
++	card-&gt;id.serial =
++		 (u16) card-&gt;dpram.fct-&gt;param[1] +
++		 (((u16) card-&gt;dpram.fct-&gt;param[2]) &lt;&lt; 16);
++	/*get_version */
++	if (softing_fct_cmd(card, 12, 0, &quot;get_version&quot;))
++		goto open_failed;
++	card-&gt;id.fw = (u16) card-&gt;dpram.fct-&gt;param[1];
++	card-&gt;id.hw = (u16) card-&gt;dpram.fct-&gt;param[2];
++	card-&gt;id.lic = (u16) card-&gt;dpram.fct-&gt;param[3];
++	card-&gt;id.chip[0] = (u16) card-&gt;dpram.fct-&gt;param[4];
++	card-&gt;id.chip[1] = (u16) card-&gt;dpram.fct-&gt;param[5];
++
++	dev_info(&amp;card-&gt;pdev-&gt;dev, &quot;card booted, type %s, &quot;
++			&quot;serial %u, fw %u, hw %u, lic %u, chip (%u,%u)\n&quot;,
++		  card-&gt;pdat-&gt;name, card-&gt;id.serial, card-&gt;id.fw, card-&gt;id.hw,
++		  card-&gt;id.lic, card-&gt;id.chip[0], card-&gt;id.chip[1]);
++
++	card-&gt;fw.up = 1;
++	mutex_unlock(&amp;card-&gt;fw.lock);
++	return 0;
++open_failed:
++	card-&gt;fw.up = 0;
++	if (card-&gt;pdat-&gt;enable_irq)
++		card-&gt;pdat-&gt;enable_irq(card-&gt;pdev, 0);
++	softing_set_reset_dpram(card);
++	if (card-&gt;pdat-&gt;reset)
++		card-&gt;pdat-&gt;reset(card-&gt;pdev, 1);
++	mutex_unlock(&amp;card-&gt;fw.lock);
++	return -EIO;
++}
++
++/*
++ * netdev sysfs
++ */
++static ssize_t show_channel(struct device *dev
++		, struct device_attribute *attr, char *buf)
++{
++	struct net_device *ndev = to_net_dev(dev);
++	struct softing_priv *priv = netdev2softing(ndev);
++	return sprintf(buf, &quot;%i\n&quot;, priv-&gt;index);
++}
++
++static ssize_t show_chip(struct device *dev
++		, struct device_attribute *attr, char *buf)
++{
++	struct net_device *ndev = to_net_dev(dev);
++	struct softing_priv *priv = netdev2softing(ndev);
++	return sprintf(buf, &quot;%i\n&quot;, priv-&gt;chip);
++}
++
++static ssize_t show_output(struct device *dev
++		, struct device_attribute *attr, char *buf)
++{
++	struct net_device *ndev = to_net_dev(dev);
++	struct softing_priv *priv = netdev2softing(ndev);
++	return sprintf(buf, &quot;0x%02x\n&quot;, priv-&gt;output);
++}
++
++static ssize_t store_output(struct device *dev
++		, struct device_attribute *attr
++		, const char *buf, size_t count)
++{
++	struct net_device *ndev = to_net_dev(dev);
++	struct softing_priv *priv = netdev2softing(ndev);
++	struct softing *card = priv-&gt;card;
++	unsigned long val;
++	int ret;
++
++	ret = strict_strtoul(buf, 0, &amp;val);
++	if (ret &lt; 0)
++		return ret;
++	val &amp;= 0xFF;
++
++	ret = mutex_lock_interruptible(&amp;card-&gt;fw.lock);
++	if (ret)
++		return -ERESTARTSYS;
++	if (netif_running(ndev)) {
++		mutex_unlock(&amp;card-&gt;fw.lock);
++		return -EBUSY;
++	}
++	priv-&gt;output = val;
++	mutex_unlock(&amp;card-&gt;fw.lock);
++	return count;
++}
++
++static const DEVICE_ATTR(channel, S_IRUGO, show_channel, 0);
++static const DEVICE_ATTR(chip, S_IRUGO, show_chip, 0);
++static const DEVICE_ATTR(output, S_IRUGO | S_IWUSR, show_output, store_output);
++
++static const struct attribute *const netdev_sysfs_attrs[] = {
++	&amp;dev_attr_channel.attr,
++	&amp;dev_attr_chip.attr,
++	&amp;dev_attr_output.attr,
++	0,
++};
++static const struct attribute_group netdev_sysfs_group = {
++	.name  = 0,
++	.attrs = (struct attribute **)netdev_sysfs_attrs,
++};
++
++static const struct net_device_ops softing_netdev_ops = {
++	.ndo_open = softing_netdev_open,
++	.ndo_stop = softing_netdev_stop,
++	.ndo_start_xmit	= softing_netdev_start_xmit,
++};
++
++static const struct can_bittiming_const softing_btr_const = {
++	.tseg1_min = 1,
++	.tseg1_max = 16,
++	.tseg2_min = 1,
++	.tseg2_max = 8,
++	.sjw_max = 4, /* overruled */
++	.brp_min = 1,
++	.brp_max = 32, /* overruled */
++	.brp_inc = 1,
++};
++
++
++static struct net_device *softing_netdev_create(
++		struct softing *card, u16 chip_id)
++{
++	struct net_device *netdev;
++	struct softing_priv *priv;
++
++	netdev = alloc_candev(sizeof(*priv), TX_ECHO_SKB_MAX);
++	if (!netdev) {
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;alloc_candev failed\n&quot;);
++		return 0;
++	}
++	priv = netdev_priv(netdev);
++	priv-&gt;netdev = netdev;
++	priv-&gt;card = card;
++	memcpy(&amp;priv-&gt;btr_const, &amp;softing_btr_const, sizeof(priv-&gt;btr_const));
++	priv-&gt;btr_const.brp_max = card-&gt;pdat-&gt;max_brp;
++	priv-&gt;btr_const.sjw_max = card-&gt;pdat-&gt;max_sjw;
++	priv-&gt;can.bittiming_const = &amp;priv-&gt;btr_const;
++	priv-&gt;can.clock.freq = 8000000;
++	priv-&gt;chip = chip_id;
++	priv-&gt;output = softing_default_output(netdev);
++	SET_NETDEV_DEV(netdev, &amp;card-&gt;pdev-&gt;dev);
++
++	netdev-&gt;flags |= IFF_ECHO;
++	netdev-&gt;netdev_ops	= &amp;softing_netdev_ops;
++	priv-&gt;can.do_set_mode	= softing_candev_set_mode;
++	priv-&gt;can.ctrlmode_supported = CAN_CTRLMODE_3_SAMPLES |
++		CAN_CTRLMODE_BERR_REPORTING;
++
++	return netdev;
++}
++
++static int softing_netdev_register(struct net_device *netdev)
++{
++	int ret;
++
++	/*
++	 * provide bus-specific sysfs attributes _during_ the uevent
++	 */
++	netdev-&gt;sysfs_groups[0] = &amp;netdev_sysfs_group;
++	ret = register_candev(netdev);
++	if (ret) {
++		dev_alert(&amp;netdev-&gt;dev, &quot;register failed\n&quot;);
++		return ret;
++	}
++	return 0;
++}
++
++static void softing_netdev_cleanup(struct net_device *netdev)
++{
++	unregister_candev(netdev);
++	free_candev(netdev);
++}
++
++/*
++ * sysfs for Platform device
++ */
++#define DEV_ATTR_RO(name, member) \
++static ssize_t show_##name(struct device *dev, \
++		struct device_attribute *attr, char *buf) \
++{ \
++	struct softing *card = platform_get_drvdata(to_platform_device(dev)); \
++	return sprintf(buf, &quot;%u\n&quot;, card-&gt;member); \
++} \
++static DEVICE_ATTR(name, 0444, show_##name, 0)
++
++DEV_ATTR_RO(serial	, id.serial);
++DEV_ATTR_RO(firmware	, id.fw);
++DEV_ATTR_RO(hardware	, id.hw);
++DEV_ATTR_RO(license	, id.lic);
++DEV_ATTR_RO(freq	, id.freq);
++DEV_ATTR_RO(txpending	, tx.pending);
++
++static struct attribute *softing_pdev_attrs[] = {
++	&amp;dev_attr_serial.attr,
++	&amp;dev_attr_firmware.attr,
++	&amp;dev_attr_hardware.attr,
++	&amp;dev_attr_license.attr,
++	&amp;dev_attr_freq.attr,
++	&amp;dev_attr_txpending.attr,
++	0,
++};
++
++static const struct attribute_group softing_pdev_group = {
++	.attrs = softing_pdev_attrs,
++};
++
++/*
++ * platform driver
++ */
++static int softing_pdev_remove(struct platform_device *pdev)
++{
++	struct softing *card = platform_get_drvdata(pdev);
++	int j;
++
++	/*first, disable card*/
++	softing_card_shutdown(card);
++	tasklet_kill(&amp;card-&gt;irq.bh);
++
++	for (j = 0; j &lt; ARRAY_SIZE(card-&gt;net); ++j) {
++		if (!card-&gt;net[j])
++			continue;
++		softing_netdev_cleanup(card-&gt;net[j]);
++		card-&gt;net[j] = 0;
++	}
++	sysfs_remove_group(&amp;pdev-&gt;dev.kobj, &amp;softing_pdev_group);
++
++	iounmap(card-&gt;dpram.virt);
++	kfree(card);
++	return 0;
++}
++
++static int softing_pdev_probe(struct platform_device *pdev)
++{
++	const struct softing_platform_data *pdat = pdev-&gt;dev.platform_data;
++	struct softing *card;
++	struct net_device *netdev;
++	struct softing_priv *priv;
++	struct resource *pres;
++	int ret;
++	int j;
++
++	if (!pdat) {
++		dev_warn(&amp;pdev-&gt;dev, &quot;no platform data\n&quot;);
++		return -EINVAL;
++	}
++	if (pdat-&gt;nbus &gt; ARRAY_SIZE(card-&gt;net)) {
++		dev_warn(&amp;pdev-&gt;dev, &quot;%u nets??\n&quot;, pdat-&gt;nbus);
++		return -EINVAL;
++	}
++
++	card = kzalloc(sizeof(*card), GFP_KERNEL);
++	if (!card)
++		return -ENOMEM;
++	card-&gt;pdat = pdat;
++	card-&gt;pdev = pdev;
++	platform_set_drvdata(pdev, card);
++	/* try_module_get(THIS_MODULE); */
++	mutex_init(&amp;card-&gt;fw.lock);
++	spin_lock_init(&amp;card-&gt;spin);
++	tasklet_init(&amp;card-&gt;irq.bh, softing_handler, (unsigned long)card);
++
++	ret = -EINVAL;
++	pres = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (!pres)
++		goto ioremap_failed;
++	card-&gt;dpram.phys = pres-&gt;start;
++	card-&gt;dpram.size = pres-&gt;end - pres-&gt;start + 1;
++	card-&gt;dpram.virt = ioremap_nocache(card-&gt;dpram.phys, card-&gt;dpram.size);
++	if (!card-&gt;dpram.virt) {
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;dpram ioremap failed\n&quot;);
++		goto ioremap_failed;
++	}
++	card-&gt;dpram.end = &amp;card-&gt;dpram.virt[card-&gt;dpram.size];
++	/*initialize_board */
++	card-&gt;dpram.rx = (struct softing_rx *)&amp;card-&gt;dpram.virt[0x0000];
++	card-&gt;dpram.tx = (struct softing_tx *)&amp;card-&gt;dpram.virt[0x0400];
++	card-&gt;dpram.fct = (struct softing_fct *)&amp;card-&gt;dpram.virt[0x0300];
++	card-&gt;dpram.info = (struct softing_info *)&amp;card-&gt;dpram.virt[0x0330];
++	card-&gt;dpram.command = (unsigned short *)&amp;card-&gt;dpram.virt[0x07e0];
++	card-&gt;dpram.receipt = (unsigned short *)&amp;card-&gt;dpram.virt[0x07f0];
++	card-&gt;dpram.irq = (struct softing_irq *)&amp;card-&gt;dpram.virt[0x07fe];
++
++	pres = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
++	if (pres)
++		card-&gt;irq.nr = pres-&gt;start;
++
++	/*reset card */
++	ret = -EIO;
++	if (softing_card_boot(card)) {
++		dev_alert(&amp;pdev-&gt;dev, &quot;failed to boot\n&quot;);
++		goto boot_failed;
++	}
++
++	/*only now, the chip's are known */
++	card-&gt;id.freq = card-&gt;pdat-&gt;freq * 1000000UL;
++
++	ret = sysfs_create_group(&amp;pdev-&gt;dev.kobj, &amp;softing_pdev_group);
++	if (ret &lt; 0) {
++		dev_alert(&amp;card-&gt;pdev-&gt;dev, &quot;sysfs failed\n&quot;);
++		goto sysfs_failed;
++	}
++
++	ret = -ENOMEM;
++	for (j = 0; j &lt; ARRAY_SIZE(card-&gt;net); ++j) {
++		card-&gt;net[j] = netdev =
++			softing_netdev_create(card, card-&gt;id.chip[j]);
++		if (!netdev) {
++			dev_alert(&amp;pdev-&gt;dev, &quot;failed to make can[%i]&quot;, j);
++			goto netdev_failed;
++		}
++		priv = netdev_priv(card-&gt;net[j]);
++		priv-&gt;index = j;
++		ret = softing_netdev_register(netdev);
++		if (ret) {
++			free_candev(netdev);
++			card-&gt;net[j] = 0;
++			dev_alert(&amp;card-&gt;pdev-&gt;dev,
++				&quot;failed to register can[%i]\n&quot;, j);
++			goto netdev_failed;
++		}
++	}
++	dev_info(&amp;card-&gt;pdev-&gt;dev, &quot;card initialised\n&quot;);
++	return 0;
++
++netdev_failed:
++	for (j = 0; j &lt; ARRAY_SIZE(card-&gt;net); ++j) {
++		if (!card-&gt;net[j])
++			continue;
++		softing_netdev_cleanup(card-&gt;net[j]);
++	}
++	sysfs_remove_group(&amp;pdev-&gt;dev.kobj, &amp;softing_pdev_group);
++sysfs_failed:
++	softing_card_shutdown(card);
++boot_failed:
++	iounmap(card-&gt;dpram.virt);
++ioremap_failed:
++	tasklet_kill(&amp;card-&gt;irq.bh);
++	kfree(card);
++	return ret;
++}
++
++static struct platform_driver softing_driver = {
++	.driver = {
++		.name = &quot;softing&quot;,
++		.owner = THIS_MODULE,
++	},
++	.probe = softing_pdev_probe,
++	.remove = softing_pdev_remove,
++};
++
++MODULE_ALIAS(&quot;platform:softing&quot;);
++
++static int __init softing_start(void)
++{
++	return platform_driver_register(&amp;softing_driver);
++}
++
++static void __exit softing_stop(void)
++{
++	platform_driver_unregister(&amp;softing_driver);
++}
++
++module_init(softing_start);
++module_exit(softing_stop);
++
++MODULE_DESCRIPTION(&quot;socketcan softing driver&quot;);
++MODULE_AUTHOR(&quot;Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;&quot;);
++MODULE_LICENSE(&quot;GPL&quot;);
+diff --git a/drivers/net/can/softing/softing_platform.h b/drivers/net/can/softing/softing_platform.h
+new file mode 100644
+index 0000000..9ff69a1
+--- /dev/null
++++ b/drivers/net/can/softing/softing_platform.h
+@@ -0,0 +1,38 @@
++
++#include &lt;linux/platform_device.h&gt;
++
++#ifndef _SOFTING_DEVICE_H_
++#define _SOFTING_DEVICE_H_
++
++/* softing firmware directory prefix */
++#define fw_dir &quot;softing-4.6/&quot;
++
++struct softing_platform_data {
++	unsigned int manf;
++	unsigned int prod;
++	/* generation
++	 * 1st with NEC or SJA1000
++	 * 8bit, exclusive interrupt, ...
++	 * 2nd only SJA11000
++	 * 16bit, shared interrupt
++	 */
++	int generation;
++	int nbus; /* # busses on device */
++	unsigned int freq; /* crystal in MHz */
++	unsigned int max_brp;
++	unsigned int max_sjw;
++	unsigned long dpram_size;
++	char name[32];
++	struct {
++		unsigned long offs;
++		unsigned long addr;
++		const char *fw;
++	} boot, load, app;
++	/* reset() function, bring pdev in or out of reset, depending on
++	   value */
++	int (*reset)(struct platform_device *pdev, int value);
++	int (*enable_irq)(struct platform_device *pdev, int value);
++};
++
++#endif
++
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005251.html">[PATCH net-next-2.6 2/2] can: add driver for Softing card
+</A></li>
+	<LI>Next message: <A HREF="005252.html">[PATCH net-next-2.6 1/2] can: add driver for Softing card
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5249">[ date ]</a>
+              <a href="thread.html#5249">[ thread ]</a>
+              <a href="subject.html#5249">[ subject ]</a>
+              <a href="author.html#5249">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

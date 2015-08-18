@@ -1,0 +1,200 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] make isotp threadsafe
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-March/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20make%20isotp%20threadsafe&In-Reply-To=%3C20110304104716.GC332%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="005599.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] make isotp threadsafe</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20make%20isotp%20threadsafe&In-Reply-To=%3C20110304104716.GC332%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH] make isotp threadsafe">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Fri Mar  4 11:47:16 CET 2011</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="005599.html">J1939 protocol addition to the kernel
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5598">[ date ]</a>
+              <a href="thread.html#5598">[ thread ]</a>
+              <a href="subject.html#5598">[ subject ]</a>
+              <a href="author.html#5598">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver,
+
+while sitting on the train back home, and looking in your isotp code,
+I suspected a possible race condition between waiting for the socket
+to become tx.state == ISOTP_IDLE and actually tx.state = ISOTP_SENDING.
+I think I solved this by using a semaphore.
+The patch is not tested, and may be incomplete. I just send it already
+so people can start thinking about the problem.
+
+Regards,
+Kurt
+
+Index: net/can/isotp.c
+===================================================================
+--- net/can/isotp.c	(revision 1198)
++++ net/can/isotp.c	(working copy)
+@@ -61,6 +61,7 @@
+ #include &lt;linux/socket.h&gt;
+ #include &lt;linux/if_arp.h&gt;
+ #include &lt;linux/skbuff.h&gt;
++#include &lt;linux/semaphore.h&gt;
+ #include &lt;socketcan/can.h&gt;
+ #include &lt;socketcan/can/core.h&gt;
+ #include &lt;socketcan/can/isotp.h&gt;
+@@ -139,6 +140,16 @@
+ 	struct tpcon rx, tx;
+ 	struct notifier_block notifier;
+ 	wait_queue_head_t wait;
++	/*
++	 * a mutex that takes care of grabbing
++	 * the socket for transmission
++	 * The lock is held for as long as the
++	 * transmission is pending. It should be released
++	 * when tx.state = ISOTP_IDLE
++	 * Since the lock &amp; unlock is done from different
++	 * process contexts, a semaphore is used
++	 */
++	struct semaphore tx_lock;
+ };
+ 
+ static inline struct isotp_sock *isotp_sk(const struct sock *sk)
+@@ -261,7 +272,7 @@
+ 	if ((so-&gt;opt.flags &amp; CAN_ISOTP_TX_PADDING) &amp;&amp;
+ 	    check_pad(so, cf, ae+3, so-&gt;opt.txpad_content)) {
+ 		so-&gt;tx.state = ISOTP_IDLE;
+-		wake_up_interruptible(&amp;so-&gt;wait);
++		up(&amp;so-&gt;tx_lock);
+ 		return 1;
+ 	}
+ 
+@@ -318,7 +329,7 @@
+ 	default:
+ 		/* stop this tx job. TODO: error reporting? */
+ 		so-&gt;tx.state = ISOTP_IDLE;
+-		wake_up_interruptible(&amp;so-&gt;wait);
++		up(&amp;so-&gt;tx_lock);
+ 	}
+ 	return 0;
+ }
+@@ -576,7 +587,7 @@
+ #endif
+ 		/* reset tx state */
+ 		so-&gt;tx.state = ISOTP_IDLE;
+-		wake_up_interruptible(&amp;so-&gt;wait);
++		up(&amp;so-&gt;tx_lock);
+ 		break;
+ 
+ 	case ISOTP_SENDING:
+@@ -616,7 +627,7 @@
+ 			DBG(&quot;we are done\n&quot;);
+ 			so-&gt;tx.state = ISOTP_IDLE;
+ 			dev_put(dev);
+-			wake_up_interruptible(&amp;so-&gt;wait);
++			up(&amp;so-&gt;tx_lock);
+ 			break;
+ 		}
+ 
+@@ -671,29 +682,37 @@
+ 		return -EADDRNOTAVAIL;
+ 
+ 	/* we do not support multiple buffers - for now */
+-	if (so-&gt;tx.state != ISOTP_IDLE) {
+-		if (msg-&gt;msg_flags &amp; MSG_DONTWAIT)
++	if (msg-&gt;msg_flags &amp; MSG_DONTWAIT) {
++		if (down_trylock(&amp;so-&gt;tx_lock))
+ 			return -EAGAIN;
+-
+-		/* wait for complete transmission of current pdu */
+-		wait_event_interruptible(so-&gt;wait, so-&gt;tx.state == ISOTP_IDLE);
++	} else {
++		ret = down_interruptible(&amp;so-&gt;tx_lock);
++		if (ret)
++			return ret;
+ 	}
+ 
+-	if (!size || size &gt; 4095)
++	if (!size || size &gt; 4095) {
++		up(&amp;so-&gt;tx_lock);
+ 		return -EINVAL;
++	}
+ 
+ 	err = memcpy_fromiovec(so-&gt;tx.buf, msg-&gt;msg_iov, size);
+-	if (err &lt; 0)
++	if (err &lt; 0) {
++		up(&amp;so-&gt;tx_lock);
+ 		return err;
++	}
+ 
+ 	dev = dev_get_by_index(&amp;init_net, so-&gt;ifindex);
+-	if (!dev)
++	if (!dev) {
++		up(&amp;so-&gt;tx_lock);
+ 		return -ENXIO;
++	}
+ 
+ 	skb = sock_alloc_send_skb(sk, sizeof(*cf),
+ 				  msg-&gt;msg_flags &amp; MSG_DONTWAIT, &amp;err);
+ 	if (!skb) {
+ 		dev_put(dev);
++		up(&amp;so-&gt;tx_lock);
+ 		return err;
+ 	}
+ 
+@@ -713,7 +732,7 @@
+ 		cf-&gt;data[ae] = size | N_PCI_SF;
+ 
+ 		so-&gt;tx.state = ISOTP_IDLE;
+-		wake_up_interruptible(&amp;so-&gt;wait);
++		up(&amp;so-&gt;tx_lock);
+ 	} else {
+ 		/* send first frame and wait for FC */
+ 
+@@ -1072,7 +1091,7 @@
+ 
+ 	tasklet_init(&amp;so-&gt;txtsklet, isotp_tx_timer_tsklet, (unsigned long)so);
+ 
+-	init_waitqueue_head(&amp;so-&gt;wait);
++	sema_init(&amp;so-&gt;tx_lock);
+ 
+ 	so-&gt;notifier.notifier_call = isotp_notifier;
+ 	register_netdevice_notifier(&amp;so-&gt;notifier);
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="005599.html">J1939 protocol addition to the kernel
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5598">[ date ]</a>
+              <a href="thread.html#5598">[ thread ]</a>
+              <a href="subject.html#5598">[ subject ]</a>
+              <a href="author.html#5598">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,554 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 09/13] can: pruss CAN driver.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%2009/13%5D%20can%3A%20pruss%20CAN%20driver.&In-Reply-To=%3C201102181607.20787.arnd%40arndb.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005521.html">
+   <LINK REL="Next"  HREF="005515.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 09/13] can: pruss CAN driver.</H1>
+    <B>Arnd Bergmann</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%2009/13%5D%20can%3A%20pruss%20CAN%20driver.&In-Reply-To=%3C201102181607.20787.arnd%40arndb.de%3E"
+       TITLE="[PATCH v2 09/13] can: pruss CAN driver.">arnd at arndb.de
+       </A><BR>
+    <I>Fri Feb 18 16:07:20 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005521.html">[PATCH v2 09/13] can: pruss CAN driver.
+</A></li>
+        <LI>Next message: <A HREF="005515.html">[PATCH v2 09/13] can: pruss CAN driver.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5594">[ date ]</a>
+              <a href="thread.html#5594">[ thread ]</a>
+              <a href="subject.html#5594">[ subject ]</a>
+              <a href="author.html#5594">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Friday 11 February 2011, Subhasish Ghosh wrote:
+&gt;<i> This patch adds support for the CAN device emulated on PRUSS.
+</I>
+Hi Subhasish,
+
+This is a detailed walk through the can driver. The pruss_can.c
+file mostly looks good, there are very tiny changes that I'm
+suggesting to improve the code. I assume that you wrote that file.
+
+The pruss_can_api.c is a bit of a mess and looks like it was copied
+from some other code base and just barely changed to follow Linux
+coding style. I can tell from the main driver file that you can do
+better than that.
+
+My recommendation for that would be to throw it away and reimplement
+the few parts that you actually need, in proper coding style.
+You can also try to fix the file according to the comments I give
+you below, but I assume that would be signficantly more work.
+
+Moving everything into one file also makes things easier to read
+here and lets you identifer more quickly what is unused.
+
+	Arnd
+
+&gt;<i> +#ifdef __CAN_DEBUG
+</I>&gt;<i> +#define __can_debug(fmt, args...) printk(KERN_DEBUG &quot;can_debug: &quot; fmt, ## args)
+</I>&gt;<i> +#else
+</I>&gt;<i> +#define __can_debug(fmt, args...)
+</I>&gt;<i> +#endif
+</I>&gt;<i> +#define __can_err(fmt, args...) printk(KERN_ERR &quot;can_err: &quot; fmt, ## args)
+</I>
+Better use the existing dev_dbg() and dev_err() macros that provide the
+same functionality in a more standard way. You already use them in
+some places, as I noticed.
+
+If you don't have a way to pass a meaningful device, you can use
+pr_debug/pr_err.
+
+&gt;<i> +void omapl_pru_can_rx_wQ(struct work_struct *work)
+</I>&gt;<i> +{
+</I>
+This is only used in the same file, so better make it static.
+
+&gt;<i> +	if (-1 == pru_can_get_intr_status(priv-&gt;dev, &amp;priv-&gt;can_rx_hndl))
+</I>&gt;<i> +		return;
+</I>
+Don't make up your own return values, just use the standard error codes,
+e.g. -EIO or -EAGAIN, whatever fits.
+
+The more common way to write the comparison would be the other way round,
+
+	if (pru_can_get_intr_status(priv-&gt;dev, &amp;priv-&gt;can_rx_hndl) == -EAGAIN)
+		return;
+
+or, simpler
+
+	if (pru_can_get_intr_status(priv-&gt;dev, &amp;priv-&gt;can_rx_hndl))
+		return;
+
+&gt;<i> +irqreturn_t omapl_tx_can_intr(int irq, void *dev_id)
+</I>&gt;<i> +{
+</I>
+This also should be static
+
+&gt;<i> +		for (bit_set = 0; ((priv-&gt;can_tx_hndl.u32interruptstatus &amp; 0xFF)
+</I>&gt;<i> +						&gt;&gt; bit_set != 0); bit_set++)
+</I>&gt;<i> +		;
+</I>
+	bit_set = fls(priv-&gt;can_tx_hndl.u32interruptstatus &amp; 0xFF); ?
+
+&gt;<i> +irqreturn_t omapl_rx_can_intr(int irq, void *dev_id)
+</I>
+static
+
+&gt;<i> diff --git a/drivers/net/can/da8xx_pruss/pruss_can_api.c b/drivers/net/can/da8xx_pruss/pruss_can_api.c
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..2f7438a
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/da8xx_pruss/pruss_can_api.c
+</I>
+A lot of code in this file seems to be unused. Is that right?
+I would suggest adding only the code that is actually being
+used. If you add more functionality later, you can always
+add back the low-level functions, but dead code usually
+turns into broken code quickly.
+
+&gt;<i> +static can_emu_drv_inst gstr_can_inst[ecanmaxinst];
+</I>
+This is global data and probably needs some for of locking
+
+&gt;<i> +/*
+</I>&gt;<i> + * pru_can_set_brp()	Updates the  BRP register of PRU0
+</I>&gt;<i> + * and PRU1 of OMAP L138. This API will be called by the
+</I>&gt;<i> + * Application to updtae the BRP register of PRU0 and PRU1
+</I>&gt;<i> + *
+</I>&gt;<i> + * param	u16bitrateprescaler		The can bus bitrate
+</I>&gt;<i> + * prescaler value be set
+</I>&gt;<i> + *
+</I>&gt;<i> + * return   SUCCESS or FAILURE
+</I>&gt;<i> + */
+</I>&gt;<i> +s16 pru_can_set_brp(struct device *dev, u16 u16bitrateprescaler)
+</I>&gt;<i> +{
+</I>
+unused.
+
+&gt;<i> +	u32 u32offset;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (u16bitrateprescaler &gt; 255) {
+</I>&gt;<i> +		return -1;
+</I>&gt;<i> +	}
+</I>
+non-standard error code. It also doesn't match the comment, which
+claims it is SUCCESS or FAILURE, both of which are (rightfully)
+not defined.
+
+&gt;<i> +	u32offset = (PRU_CAN_RX_CLOCK_BRP_REGISTER);
+</I>&gt;<i> +	pruss_writel(dev, u32offset, (u32 *) &amp;u16bitrateprescaler, 1);
+</I>&gt;<i> +
+</I>&gt;<i> +	u32offset = (PRU_CAN_TX_CLOCK_BRP_REGISTER);
+</I>&gt;<i> +	pruss_writel(dev, u32offset, (u32 *) &amp;u16bitrateprescaler, 1);
+</I>
+You pass a 32 bit pointer to a 16 bit local variable here.
+This has an undefined effect, and if you build this code on
+a big-endian platform, it cannot possibly do anything good.
+
+pruss_writel() is defined in a funny way if it takes a thirty-two bit
+input argument by reference, rather than by value. What is going
+on there?
+
+&gt;<i> +s16 pru_can_set_bit_timing(struct device *dev,
+</I>&gt;<i> +		can_bit_timing_consts *pstrbittiming)
+</I>
+unused.
+
+&gt;<i> +	u32 u32offset;
+</I>&gt;<i> +	u32 u32serregister;
+</I>
+It's a bit silly to put the name of the type into the name
+of a variable. You already spell it out in the definition.
+
+&gt;<i> +s16 pru_can_write_data_to_mailbox(struct device *dev,
+</I>&gt;<i> +			can_emu_app_hndl *pstremuapphndl)
+</I>&gt;<i> +{
+</I>&gt;<i> +	s16 s16subrtnretval;
+</I>&gt;<i> +	u32 u32offset;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (pstremuapphndl == NULL) {
+</I>&gt;<i> +		return -1;
+</I>&gt;<i> +	}
+</I>
+nonstandard error code. Also, why the heck is type function
+return type s16 when the only possible return values are 0
+and -1? Just make this an int.
+
+&gt;<i> +	switch ((u8) pstremuapphndl-&gt;ecanmailboxnumber) {
+</I>&gt;<i> +	case 0:
+</I>&gt;<i> +		u32offset = (PRU_CAN_TX_MAILBOX0);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 1:
+</I>&gt;<i> +		u32offset = (PRU_CAN_TX_MAILBOX1);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 2:
+</I>&gt;<i> +		u32offset = (PRU_CAN_TX_MAILBOX2);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 3:
+</I>&gt;<i> +		u32offset = (PRU_CAN_TX_MAILBOX3);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 4:
+</I>&gt;<i> +		u32offset = (PRU_CAN_TX_MAILBOX4);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 5:
+</I>&gt;<i> +		u32offset = (PRU_CAN_TX_MAILBOX5);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 6:
+</I>&gt;<i> +		u32offset = (PRU_CAN_TX_MAILBOX6);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 7:
+</I>&gt;<i> +		u32offset = (PRU_CAN_TX_MAILBOX7);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	default:
+</I>&gt;<i> +		return -1;
+</I>&gt;<i> +	}
+</I>
+Lovely switch statement. I'm sure you find a better way to express this ;-)
+
+&gt;<i> +	s16subrtnretval = pruss_writel(dev, u32offset,
+</I>&gt;<i> +		(u32 *) &amp;(pstremuapphndl-&gt;strcanmailbox), 4);
+</I>&gt;<i> +	if (s16subrtnretval == -1) {
+</I>&gt;<i> +		return -1;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>
+return pruss_writel(...) ?
+
+&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * pru_can_get_intr_status()
+</I>&gt;<i> + * Gets the interrupts status register value.
+</I>&gt;<i> + * This API will be called by the Application
+</I>&gt;<i> + * to get the interrupts status register value
+</I>&gt;<i> + *
+</I>&gt;<i> + * param  u8prunumber	PRU number for which IntStatusReg
+</I>&gt;<i> + * has to be read
+</I>&gt;<i> + *
+</I>&gt;<i> + * return   SUCCESS or FAILURE
+</I>&gt;<i> + */
+</I>&gt;<i> +s16 pru_can_get_intr_status(struct device *dev,
+</I>&gt;<i> +		can_emu_app_hndl *pstremuapphndl)
+</I>&gt;<i> +{
+</I>&gt;<i> +	u32 u32offset;
+</I>&gt;<i> +	s16 s16subrtnretval = -1;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (pstremuapphndl == NULL) {
+</I>&gt;<i> +		return -1;
+</I>&gt;<i> +	}
+</I>
+In every function you check that pstremuapphndl is present. This seems
+rather pointless. How about just making sure you never pass a NULL
+value to these functions? That should not be hard at all from the
+high-level driver.
+
+&gt;<i> +	if (pstremuapphndl-&gt;u8prunumber == DA8XX_PRUCORE_1) {
+</I>&gt;<i> +		u32offset = (PRU_CAN_TX_INTERRUPT_STATUS_REGISTER);
+</I>&gt;<i> +	} else if (pstremuapphndl-&gt;u8prunumber == DA8XX_PRUCORE_0) {
+</I>&gt;<i> +		u32offset = (PRU_CAN_RX_INTERRUPT_STATUS_REGISTER);
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		return -1;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	s16subrtnretval = pruss_readl(dev, u32offset,
+</I>&gt;<i> +		(u32 *) &amp;pstremuapphndl-&gt;u32interruptstatus, 1);
+</I>&gt;<i> +	if (s16subrtnretval == -1) {
+</I>&gt;<i> +		return -1;
+</I>&gt;<i> +	}
+</I>
+You can also get rid of all these {} braces around one-line statements.
+
+&gt;<i> +/*
+</I>&gt;<i> + * pru_can_get_mailbox_status()		Gets the mailbox status
+</I>&gt;<i> + * register value. This API will be called by the Application
+</I>&gt;<i> + * to get the mailbox status register value
+</I>&gt;<i> + *
+</I>&gt;<i> + * return   SUCCESS or FAILURE
+</I>&gt;<i> + */
+</I>&gt;<i> +s16 pru_can_get_mailbox_status(struct device *dev,
+</I>&gt;<i> +		can_emu_app_hndl *pstremuapphndl)
+</I>
+unused.
+
+&gt;<i> +/*
+</I>&gt;<i> + * pru_can_config_mode_set()		Sets the timing value
+</I>&gt;<i> + * for data transfer. This API will be called by the Application
+</I>&gt;<i> + * to set timing valus for data transfer
+</I>&gt;<i> + *
+</I>&gt;<i> + * return   SUCCESS or FAILURE
+</I>&gt;<i> + */
+</I>&gt;<i> +s16 pru_can_config_mode_set(struct device *dev, bool bconfigmodeflag)
+</I>
+unused.
+
+&gt;<i> +	u32offset = (PRU_CAN_TX_GLOBAL_CONTROL_REGISTER &amp; 0xFFFF);
+</I>&gt;<i> +	u32value = 0x00000000;
+</I>&gt;<i> +	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
+</I>&gt;<i> +	if (s16subrtnretval == -1) {
+</I>&gt;<i> +		return -1;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	u32offset = (PRU_CAN_TX_GLOBAL_STATUS_REGISTER &amp; 0xFFFF);
+</I>&gt;<i> +	u32value = 0x00000040;
+</I>&gt;<i> +	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
+</I>&gt;<i> +	if (s16subrtnretval == -1) {
+</I>&gt;<i> +		return -1;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	u32offset = (PRU_CAN_RX_GLOBAL_STATUS_REGISTER &amp; 0xFFFF);
+</I>&gt;<i> +	u32value = 0x00000040;
+</I>&gt;<i> +	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
+</I>&gt;<i> +	if (s16subrtnretval == -1) {
+</I>&gt;<i> +		return -1;
+</I>&gt;<i> +	}
+</I>
+&lt;skipping 50 (!) more of these&gt;
+
+After the third time of writing the same code, you should have noticed that
+there is some duplication involved that can trivially be reduced. A good
+way to express the same would be a table with the contents:
+
+static struct pru_can_register_init {
+	u16 offset;
+	u32 value;
+} = {
+	{ PRU_CAN_TX_GLOBAL_CONTROL_REGISTER, 0, },
+	{ PRU_CAN_TX_GLOBAL_STATUS_REGISTER, 0x40, },
+	{ PRU_CAN_RX_GLOBAL_STATUS_REGISTER, 0x40, },
+	...
+};
+
+
+&gt;<i> +
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * pru_can_emu_open()		Opens the can emu for
+</I>&gt;<i> + * application to use. This API will be called by the Application
+</I>&gt;<i> + * to Open the can emu for application to use.
+</I>&gt;<i> + *
+</I>&gt;<i> + * param	pstremuapphndl	Pointer to application handler
+</I>&gt;<i> + * structure
+</I>&gt;<i> + *
+</I>&gt;<i> + * return   SUCCESS or FAILURE
+</I>&gt;<i> + */
+</I>&gt;<i> +s16 pru_can_emu_open(struct device *dev, can_emu_app_hndl *pstremuapphndl)
+</I>
+unused.
+
+&gt;<i> +/*
+</I>&gt;<i> + * brief    pru_can_emu_close()	Closes the can emu for other
+</I>&gt;<i> + * applications to use. This API will be called by the Application to Close
+</I>&gt;<i> + * the can emu for other applications to use
+</I>&gt;<i> + *
+</I>&gt;<i> + * param	pstremuapphndl	Pointer to application handler structure
+</I>&gt;<i> + *
+</I>&gt;<i> + * return   SUCCESS or FAILURE
+</I>&gt;<i> + */
+</I>&gt;<i> +s16 pru_can_emu_close(struct device *dev, can_emu_app_hndl *pstremuapphndl)
+</I>
+unused
+
+&gt;<i> +s16 pru_can_emu_sreset(struct device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>
+pointless.
+
+&gt;<i> +s16 pru_can_tx(struct device *dev, u8 u8mailboxnumber, u8 u8prunumber)
+</I>&gt;<i> +{
+</I>&gt;<i> +	u32 u32offset = 0;
+</I>&gt;<i> +	u32 u32value = 0;
+</I>&gt;<i> +	s16 s16subrtnretval = -1;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (DA8XX_PRUCORE_1 == u8prunumber) {
+</I>&gt;<i> +		switch (u8mailboxnumber) {
+</I>&gt;<i> +		case 0:
+</I>&gt;<i> +			u32offset = (PRU_CAN_TX_MAILBOX0_STATUS_REGISTER &amp; 0xFFFF);
+</I>&gt;<i> +			u32value = 0x00000080;
+</I>&gt;<i> +			s16subrtnretval = pruss_writel(dev, u32offset,
+</I>&gt;<i> +					(u32 *) &amp;u32value, 1);
+</I>&gt;<i> +			if (s16subrtnretval == -1) {
+</I>&gt;<i> +				return -1;
+</I>&gt;<i> +			}
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		case 1:
+</I>&gt;<i> +			u32offset = (PRU_CAN_TX_MAILBOX1_STATUS_REGISTER &amp; 0xFFFF);
+</I>&gt;<i> +			u32value = 0x00000080;
+</I>&gt;<i> +			s16subrtnretval = pruss_writel(dev, u32offset,
+</I>&gt;<i> +						(u32 *) &amp;u32value, 1);
+</I>&gt;<i> +			if (s16subrtnretval == -1) {
+</I>&gt;<i> +				return -1;
+</I>&gt;<i> +			}
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		case 2:
+</I>&gt;<i> +			u32offset = (PRU_CAN_TX_MAILBOX2_STATUS_REGISTER &amp; 0xFFFF);
+</I>
+Another pointless switch statement.
+
+&gt;<i> +s16 pru_can_mask_ints(struct device *dev, u32 int_mask)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +int pru_can_get_error_cnt(struct device *dev, u8 u8prunumber)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>
+useless.
+
+&gt;<i> +int pru_can_get_intc_status(struct device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	u32 u32offset = 0;
+</I>&gt;<i> +	u32 u32getvalue = 0;
+</I>&gt;<i> +	u32 u32clrvalue = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	u32offset = (PRUSS_INTC_STATCLRINT1 &amp; 0xFFFF);
+</I>&gt;<i> +	pruss_readl(dev, u32offset, (u32 *) &amp;u32getvalue, 1);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (u32getvalue &amp; 4)
+</I>&gt;<i> +		u32clrvalue = 34;	/* CLR Event 34 */
+</I>&gt;<i> +
+</I>&gt;<i> +	if (u32getvalue &amp; 2)
+</I>&gt;<i> +		u32clrvalue = 33;	/* CLR Event 33  */
+</I>&gt;<i> +
+</I>&gt;<i> +	if (u32clrvalue) {
+</I>&gt;<i> +		u32offset = (PRUSS_INTC_STATIDXCLR &amp; 0xFFFF);
+</I>&gt;<i> +		pruss_writel(dev, u32offset, &amp;u32clrvalue, 1);
+</I>&gt;<i> +	} else
+</I>&gt;<i> +		return -1;
+</I>
+Could the controller signal both event 34 and 33 simultaneously?
+The only user of this function looks at the individual bits
+of the return value again, which looks wrong for all possible
+return values here.
+
+&gt;<i> +#ifndef _PRU_CAN_API_H_
+</I>&gt;<i> +#define CAN_BIT_TIMINGS			(0x273)
+</I>&gt;<i> +
+</I>&gt;<i> +/* Timer Clock is sourced from DDR freq (PLL1 SYS CLK 2) */
+</I>&gt;<i> +#define	TIMER_CLK_FREQ			132000000
+</I>&gt;<i> +
+</I>&gt;<i> +#define TIMER_SETUP_DELAY		14
+</I>&gt;<i> +#define GPIO_SETUP_DELAY		150
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_RX_PRU_0			PRUSS_NUM0
+</I>&gt;<i> +#define CAN_TX_PRU_1			PRUSS_NUM1
+</I>&gt;<i> +
+</I>&gt;<i> +/* Number of Instruction in the Delay loop */
+</I>&gt;<i> +#define DELAY_LOOP_LENGTH		2
+</I>&gt;<i> +
+</I>&gt;<i> +#define PRU1_BASE_ADDR			0x2000
+</I>&gt;<i> +
+</I>&gt;<i> +#define PRU_CAN_TX_GLOBAL_CONTROL_REGISTER		(PRU1_BASE_ADDR)
+</I>&gt;<i> +#define PRU_CAN_TX_GLOBAL_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x04)
+</I>&gt;<i> +#define PRU_CAN_TX_INTERRUPT_MASK_REGISTER		(PRU1_BASE_ADDR	+ 0x08)
+</I>&gt;<i> +#define PRU_CAN_TX_INTERRUPT_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x0C)
+</I>&gt;<i> +#define PRU_CAN_TX_MAILBOX0_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x10)
+</I>&gt;<i> +#define PRU_CAN_TX_MAILBOX1_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x14)
+</I>
+The header file should be used for interfaces between the two .c files,
+don't mix that with hardware specific definitions. Sometimes you may want
+to have register number lists in a header, if that list is going to be
+used in multiple places. In this case, there is just one user, so better
+move all those definitions over there.
+
+&gt;<i> +typedef enum {
+</I>&gt;<i> +	ecaninst0 = 0,
+</I>&gt;<i> +	ecaninst1,
+</I>&gt;<i> +	ecanmaxinst
+</I>&gt;<i> +} can_instance_enum;
+</I>&gt;<i> +
+</I>&gt;<i> +typedef enum {
+</I>&gt;<i> +	ecanmailbox0 = 0,
+</I>&gt;<i> +	ecanmailbox1,
+</I>&gt;<i> +	ecanmailbox2,
+</I>&gt;<i> +	ecanmailbox3,
+</I>&gt;<i> +	ecanmailbox4,
+</I>&gt;<i> +	ecanmailbox5,
+</I>&gt;<i> +	ecanmailbox6,
+</I>&gt;<i> +	ecanmailbox7
+</I>&gt;<i> +} can_mailbox_number;
+</I>&gt;<i> +
+</I>&gt;<i> +typedef enum {
+</I>&gt;<i> +	ecandirectioninit = 0,
+</I>&gt;<i> +	ecantransmit,
+</I>&gt;<i> +	ecanreceive
+</I>&gt;<i> +} can_transfer_direction;
+</I>
+The values are all unused, you only use the typedefs.
+IMHO it would be more sensible to just pass these as unsigned int
+or u32 values, but if you prefer, there is no reason to just do 
+
+typedef u32 can_mailbox_number;
+
+etc.
+
+&gt;<i> +typedef struct {
+</I>&gt;<i> +	u16 u16extendedidentifier;
+</I>&gt;<i> +	u16 u16baseidentifier;
+</I>&gt;<i> +	u8 u8data7;
+</I>&gt;<i> +	u8 u8data6;
+</I>&gt;<i> +	u8 u8data5;
+</I>&gt;<i> +	u8 u8data4;
+</I>&gt;<i> +	u8 u8data3;
+</I>&gt;<i> +	u8 u8data2;
+</I>&gt;<i> +	u8 u8data1;
+</I>&gt;<i> +	u8 u8data0;
+</I>&gt;<i> +	u16 u16datalength;
+</I>&gt;<i> +	u16 u16crc;
+</I>&gt;<i> +} can_mail_box_structure;
+</I>
+Please don't use typedef for complex data structures, and learn about
+better naming of identifiers. I would suggest writing this as
+
+struct pru_can_mailbox {
+	u16	ext_id;
+	u16	base_id;
+	u8	data[8]; /* note: reverse order */
+	u16	len;
+	u16	crc;
+};
+
+Sames rules apply to the other structures.
+
+	Arnd
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005521.html">[PATCH v2 09/13] can: pruss CAN driver.
+</A></li>
+	<LI>Next message: <A HREF="005515.html">[PATCH v2 09/13] can: pruss CAN driver.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5594">[ date ]</a>
+              <a href="thread.html#5594">[ thread ]</a>
+              <a href="subject.html#5594">[ subject ]</a>
+              <a href="author.html#5594">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,500 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v4 1/1] can: add pruss CAN driver.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v4%201/1%5D%20can%3A%20add%20pruss%20CAN%20driver.&In-Reply-To=%3C4DB5D452.9050500%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005655.html">
+   <LINK REL="Next"  HREF="005667.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v4 1/1] can: add pruss CAN driver.</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v4%201/1%5D%20can%3A%20add%20pruss%20CAN%20driver.&In-Reply-To=%3C4DB5D452.9050500%40grandegger.com%3E"
+       TITLE="[PATCH v4 1/1] can: add pruss CAN driver.">wg at grandegger.com
+       </A><BR>
+    <I>Mon Apr 25 22:06:42 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005655.html">[PATCH v4 1/1] can: add pruss CAN driver.
+</A></li>
+        <LI>Next message: <A HREF="005667.html">[PATCH v4 1/1] can: add pruss CAN driver.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5659">[ date ]</a>
+              <a href="thread.html#5659">[ thread ]</a>
+              <a href="subject.html#5659">[ subject ]</a>
+              <a href="author.html#5659">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+On 04/22/2011 05:50 PM, Marc Kleine-Budde wrote:
+&gt;<i> On 04/22/2011 02:11 PM, Subhasish Ghosh wrote:
+</I>&gt;&gt;<i> This patch adds support for the CAN device emulated on PRUSS.
+</I>&gt;<i> 
+</I>&gt;<i> After commenting the code inline, some remarks:
+</I>&gt;<i> - Your tx path looks broken, see commits inline
+</I>&gt;<i> - Please setup a proper struct to describe your register layout, make
+</I>&gt;<i>   use of arrays for rx and tx
+</I>&gt;<i> - don't use u32, s32 for not hardware related variables like return
+</I>&gt;<i>   codes and loop counter.
+</I>&gt;<i> - the routines that load and save the can data bytes from/into your
+</I>&gt;<i>   mailbox look way to complicated. Please write down the layout so that
+</I>&gt;<i>   we can think of a elegant way to do it
+</I>&gt;<i> - a lot of functions unconditionally return 0, make them void if no
+</I>&gt;<i>   error can happen
+</I>&gt;<i> - think about using managed devices, that would simplify the probe and
+</I>&gt;<i>   release function
+</I>
+I agree with Marc's comments and would like to add:
+
+- Use just *one* value per sysfs file
+
+A few more comments inline...
+
+&gt;&gt;<i> Signed-off-by: Subhasish Ghosh &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">subhasish at mistralsolutions.com</A>&gt;
+</I>&gt;&gt;<i> ---
+</I>&gt;&gt;<i>  drivers/net/can/Kconfig     |    7 +
+</I>&gt;&gt;<i>  drivers/net/can/Makefile    |    1 +
+</I>&gt;&gt;<i>  drivers/net/can/pruss_can.c | 1074 +++++++++++++++++++++++++++++++++++++++++++
+</I>&gt;&gt;<i>  3 files changed, 1082 insertions(+), 0 deletions(-)
+</I>&gt;&gt;<i>  create mode 100644 drivers/net/can/pruss_can.c
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> diff --git a/drivers/net/can/Kconfig b/drivers/net/can/Kconfig
+</I>&gt;&gt;<i> index 5dec456..4682a4f 100644
+</I>&gt;&gt;<i> --- a/drivers/net/can/Kconfig
+</I>&gt;&gt;<i> +++ b/drivers/net/can/Kconfig
+</I>&gt;&gt;<i> @@ -111,6 +111,13 @@ config PCH_CAN
+</I>&gt;&gt;<i>  	  embedded processor.
+</I>&gt;&gt;<i>  	  This driver can access CAN bus.
+</I>&gt;&gt;<i>  
+</I>&gt;&gt;<i> +config CAN_TI_DA8XX_PRU
+</I>&gt;&gt;<i> +	depends on CAN_DEV &amp;&amp; ARCH_DAVINCI &amp;&amp; ARCH_DAVINCI_DA850
+</I>&gt;&gt;<i> +	tristate &quot;PRU based CAN emulation for DA8XX&quot;
+</I>&gt;&gt;<i> +	---help---
+</I>&gt;&gt;<i> +	Enable this to emulate a CAN controller on the PRU of DA8XX.
+</I>&gt;&gt;<i> +	If not sure, mark N
+</I>&gt;<i> 
+</I>&gt;<i> Please indent the help text with 1 tab and 2 spaces
+</I>&gt;<i> 
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i>  source &quot;drivers/net/can/mscan/Kconfig&quot;
+</I>&gt;&gt;<i>  
+</I>&gt;&gt;<i>  source &quot;drivers/net/can/sja1000/Kconfig&quot;
+</I>&gt;&gt;<i> diff --git a/drivers/net/can/Makefile b/drivers/net/can/Makefile
+</I>&gt;&gt;<i> index 53c82a7..d0b7cbd 100644
+</I>&gt;&gt;<i> --- a/drivers/net/can/Makefile
+</I>&gt;&gt;<i> +++ b/drivers/net/can/Makefile
+</I>&gt;&gt;<i> @@ -15,6 +15,7 @@ obj-$(CONFIG_CAN_SJA1000)	+= sja1000/
+</I>&gt;&gt;<i>  obj-$(CONFIG_CAN_MSCAN)		+= mscan/
+</I>&gt;&gt;<i>  obj-$(CONFIG_CAN_AT91)		+= at91_can.o
+</I>&gt;&gt;<i>  obj-$(CONFIG_CAN_TI_HECC)	+= ti_hecc.o
+</I>&gt;&gt;<i> +obj-$(CONFIG_CAN_TI_DA8XX_PRU)	+= pruss_can.o
+</I>&gt;&gt;<i>  obj-$(CONFIG_CAN_MCP251X)	+= mcp251x.o
+</I>&gt;&gt;<i>  obj-$(CONFIG_CAN_BFIN)		+= bfin_can.o
+</I>&gt;&gt;<i>  obj-$(CONFIG_CAN_JANZ_ICAN3)	+= janz-ican3.o
+</I>&gt;&gt;<i> diff --git a/drivers/net/can/pruss_can.c b/drivers/net/can/pruss_can.c
+</I>&gt;&gt;<i> new file mode 100644
+</I>&gt;&gt;<i> index 0000000..7702509
+</I>&gt;&gt;<i> --- /dev/null
+</I>&gt;&gt;<i> +++ b/drivers/net/can/pruss_can.c
+</I>...
+&gt;<i> is this array const?
+</I>&gt;&gt;<i> +static u32 pruss_intc_init[19][3] = {
+</I>&gt;&gt;<i> +	{PRUSS_INTC_POLARITY0,		PRU_INTC_REGMAP_MASK,	0xFFFFFFFF},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_POLARITY1,		PRU_INTC_REGMAP_MASK,	0xFFFFFFFF},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_TYPE0,		PRU_INTC_REGMAP_MASK,	0x1C000000},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_TYPE1,		PRU_INTC_REGMAP_MASK,	0},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_GLBLEN,		0,			1},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_HOSTMAP0,		PRU_INTC_REGMAP_MASK,	0x03020100},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_HOSTMAP1,		PRU_INTC_REGMAP_MASK,	0x07060504},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_HOSTMAP2,		PRU_INTC_REGMAP_MASK,	0x0000908},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_CHANMAP0,		PRU_INTC_REGMAP_MASK,	0},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_CHANMAP8,		PRU_INTC_REGMAP_MASK,	0x00020200},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_STATIDXCLR,		0,			32},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_STATIDXCLR,		0,			19},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_ENIDXSET,		0,			19},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_STATIDXCLR,		0,			18},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_ENIDXSET,		0,			18},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_STATIDXCLR,		0,			34},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_ENIDXSET,		0,			34},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_ENIDXSET,		0,			32},
+</I>&gt;&gt;<i> +	{PRUSS_INTC_HOSTINTEN,		0,			5}
+</I>&gt;<i> 
+</I>&gt;<i> please add &quot;,&quot;
+</I>
+Also a struct to describe each entry would improve readability.
+Then you could also use ARRAY_SIZE.
+
+&gt;&gt;<i> +};
+</I>...
+&gt;&gt;<i> +static int pru_can_set_bittiming(struct net_device *ndev)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +	struct can_emu_priv *priv = netdev_priv(ndev);
+</I>&gt;&gt;<i> +	struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
+</I>&gt;&gt;<i> +	u32 value;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	value = priv-&gt;can.clock.freq / bt-&gt;bitrate;
+</I>&gt;&gt;<i> +	pruss_writel(priv-&gt;dev, PRUSS_CAN_TIMING_VAL_TX, value);
+</I>&gt;&gt;<i> +	pruss_writel(priv-&gt;dev, PRUSS_CAN_BIT_TIMING_VAL_RX, value);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	value = (bt-&gt;phase_seg2 + bt-&gt;phase_seg1 +
+</I>&gt;&gt;<i> +			bt-&gt;prop_seg + 1) * bt-&gt;brp;
+</I>&gt;&gt;<i> +	value = (value &gt;&gt; 1) - PRUSS_CAN_TIMER_SETUP_DELAY;
+</I>&gt;&gt;<i> +	value = (value &lt;&lt; 16) | value;
+</I>&gt;&gt;<i> +	pruss_writel(priv-&gt;dev, PRUSS_CAN_TIMING_VAL_RX, value);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	value = (PRUSS_CAN_GPIO_SETUP_DELAY *
+</I>&gt;&gt;<i> +		(priv-&gt;clk_freq_pru / 1000000) / 1000) /
+</I>&gt;&gt;<i> +		PRUSS_CAN_DELAY_LOOP_LENGTH;
+</I>
+This calculation looks delicate. 64-bit math would be safer.
+
+&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	pruss_writel(priv-&gt;dev, PRUSS_CAN_TIMING_SETUP, value);
+</I>&gt;&gt;<i> +	return 0;
+</I>&gt;&gt;<i> +}
+</I>...
+&gt;&gt;<i> +static int pru_can_err(struct net_device *ndev, int int_status,
+</I>&gt;&gt;<i> +			     int err_status)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +	struct can_emu_priv *priv = netdev_priv(ndev);
+</I>&gt;&gt;<i> +	struct net_device_stats *stats = &amp;ndev-&gt;stats;
+</I>&gt;&gt;<i> +	struct can_frame *cf;
+</I>&gt;&gt;<i> +	struct sk_buff *skb;
+</I>&gt;&gt;<i> +	u32 tx_err_cnt, rx_err_cnt;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	skb = alloc_can_err_skb(ndev, &amp;cf);
+</I>&gt;&gt;<i> +	if (!skb) {
+</I>&gt;&gt;<i> +		if (printk_ratelimit())
+</I>&gt;&gt;<i> +			dev_err(priv-&gt;dev,
+</I>&gt;&gt;<i> +				&quot;alloc_can_err_skb() failed\n&quot;);
+</I>&gt;&gt;<i> +		return -ENOMEM;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	if (err_status &amp; PRUSS_CAN_GSR_BIT_EPM) {	/* error passive int */
+</I>&gt;&gt;<i> +		priv-&gt;can.state = CAN_STATE_ERROR_PASSIVE;
+</I>&gt;&gt;<i> +		++priv-&gt;can.can_stats.error_passive;
+</I>&gt;&gt;<i> +		cf-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;&gt;<i> +		tx_err_cnt = pru_can_get_error_cnt(priv-&gt;dev,
+</I>&gt;&gt;<i> +						PRUSS_CAN_TX_PRU_1);
+</I>&gt;&gt;<i> +		rx_err_cnt = pru_can_get_error_cnt(priv-&gt;dev,
+</I>&gt;&gt;<i> +						PRUSS_CAN_RX_PRU_0);
+</I>&gt;&gt;<i> +		if (tx_err_cnt &gt; PRUSS_CAN_ERROR_ACTIVE - 1)
+</I>&gt;&gt;<i> +			cf-&gt;data[1] |= CAN_ERR_CRTL_TX_PASSIVE;
+</I>&gt;&gt;<i> +		if (rx_err_cnt &gt; PRUSS_CAN_ERROR_ACTIVE - 1)
+</I>&gt;&gt;<i> +			cf-&gt;data[1] |= CAN_ERR_CRTL_RX_PASSIVE;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +		dev_dbg(priv-&gt;ndev-&gt;dev.parent, &quot;Error passive interrupt\n&quot;);
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	if (err_status &amp; PRUSS_CAN_GSR_BIT_BFM) {
+</I>&gt;&gt;<i> +		priv-&gt;can.state = CAN_STATE_BUS_OFF;
+</I>&gt;&gt;<i> +		cf-&gt;can_id |= CAN_ERR_BUSOFF;
+</I>&gt;&gt;<i> +		/*
+</I>&gt;&gt;<i> +		 *      Disable all interrupts in bus-off to avoid int hog
+</I>&gt;&gt;<i> +		 *      this should be handled by the pru
+</I>&gt;&gt;<i> +		 */
+</I>&gt;&gt;<i> +		pru_can_mask_ints(priv-&gt;dev, PRUSS_CAN_TX_PRU_1, false);
+</I>&gt;&gt;<i> +		pru_can_mask_ints(priv-&gt;dev, PRUSS_CAN_RX_PRU_0, false);
+</I>&gt;&gt;<i> +		can_bus_off(ndev);
+</I>&gt;&gt;<i> +		dev_dbg(priv-&gt;ndev-&gt;dev.parent, &quot;Bus off mode\n&quot;);
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	netif_rx(skb);
+</I>
+You should use netif_receive_skb(skb) here as well.
+
+&gt;&gt;<i> +	stats-&gt;rx_packets++;
+</I>&gt;&gt;<i> +	stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;&gt;<i> +	return 0;
+</I>&gt;&gt;<i> +}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +static int pru_can_rx_poll(struct napi_struct *napi, int quota)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +	struct net_device *ndev = napi-&gt;dev;
+</I>&gt;&gt;<i> +	struct can_emu_priv *priv = netdev_priv(ndev);
+</I>&gt;&gt;<i> +	u32 bit_set, mbxno = 0;
+</I>&gt;&gt;<i> +	u32 num_pkts = 0;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	if (!netif_running(ndev))
+</I>&gt;&gt;<i> +		return 0;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	do {
+</I>&gt;&gt;<i> +		/* rx int sys_evt -&gt; 33 */
+</I>&gt;&gt;<i> +		pru_can_clr_intc_status(priv-&gt;dev, PRUSS_CAN_RX_PRU_0);
+</I>&gt;&gt;<i> +		if (pru_can_intr_stat_get(priv-&gt;dev, &amp;priv-&gt;can_rx_cntx))
+</I>&gt;&gt;<i> +			return num_pkts;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +		if (PRUSS_CAN_ISR_BIT_RRI &amp; priv-&gt;can_rx_cntx.intr_stat) {
+</I>&gt;&gt;<i> +			mbxno = PRUSS_CAN_RTR_BUFF_NUM;
+</I>&gt;&gt;<i> +			pru_can_rx(ndev, mbxno);
+</I>&gt;&gt;<i> +			num_pkts++;
+</I>&gt;&gt;<i> +		} else {
+</I>&gt;&gt;<i> +			/* Extract the mboxno from the status */
+</I>&gt;&gt;<i> +			bit_set = fls(priv-&gt;can_rx_cntx.intr_stat &amp; 0xFF);
+</I>&gt;&gt;<i> +			if (bit_set) {
+</I>&gt;&gt;<i> +				num_pkts++;
+</I>&gt;&gt;<i> +				mbxno = bit_set - 1;
+</I>&gt;&gt;<i> +				if (PRUSS_CAN_ISR_BIT_ESI &amp; priv-&gt;can_rx_cntx.
+</I>&gt;&gt;<i> +				    intr_stat) {
+</I>
+				if (PRUSS_CAN_ISR_BIT_ESI &amp;
+				    priv-&gt;can_rx_cntx.intr_stat) {
+
+Is more readable.
+
+
+&gt;&gt;<i> +					pru_can_gbl_stat_get(priv-&gt;dev,
+</I>&gt;&gt;<i> +						&amp;priv-&gt;can_rx_cntx);
+</I>&gt;&gt;<i> +						pru_can_err(ndev,
+</I>&gt;&gt;<i> +					priv-&gt;can_rx_cntx.intr_stat,
+</I>&gt;&gt;<i> +					priv-&gt;can_rx_cntx.gbl_stat);
+</I>
+Please fix bogous indention.
+
+&gt;&gt;<i> +				} else
+</I>&gt;&gt;<i> +					pru_can_rx(ndev, mbxno);
+</I>&gt;&gt;<i> +			} else
+</I>&gt;&gt;<i> +				break;
+</I>&gt;&gt;<i> +		}
+</I>&gt;&gt;<i> +	} while (((PRUSS_CAN_TX_INT_STAT &amp; pru_can_get_intc_status(priv-&gt;dev))
+</I>&gt;&gt;<i> +						&amp;&amp; (num_pkts &lt; quota)));
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	/* Enable packet interrupt if all pkts are handled */
+</I>&gt;&gt;<i> +	if (!(PRUSS_CAN_TX_INT_STAT &amp; pru_can_get_intc_status(priv-&gt;dev))) {
+</I>&gt;&gt;<i> +		napi_complete(napi);
+</I>&gt;&gt;<i> +		/* Re-enable RX mailbox interrupts */
+</I>&gt;&gt;<i> +		pru_can_mask_ints(priv-&gt;dev, PRUSS_CAN_RX_PRU_0, true);
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +	return num_pkts;
+</I>&gt;&gt;<i> +}
+</I>...
+&gt;&gt;<i> +/* Shows all the mailbox IDs */
+</I>&gt;&gt;<i> +static ssize_t pru_sysfs_mbx_id_show(struct device *dev,
+</I>&gt;&gt;<i> +		struct device_attribute *attr, char *buf)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +	struct can_emu_priv *priv = netdev_priv(to_net_dev(dev));
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	return snprintf(buf, PAGE_SIZE, &quot;&lt;mbx_no:mbx_id&gt;\n&quot;
+</I>&gt;&gt;<i> +					&quot;0:0x%X 1:0x%X 2:0x%X 3:0x%X &quot;
+</I>&gt;&gt;<i> +					&quot;4:0x%X 5:0x%X 6:0x%X 7:0x%X\n&quot;,
+</I>&gt;&gt;<i> +					priv-&gt;mbx_id[0], priv-&gt;mbx_id[1],
+</I>&gt;&gt;<i> +					priv-&gt;mbx_id[2], priv-&gt;mbx_id[3],
+</I>&gt;&gt;<i> +					priv-&gt;mbx_id[4], priv-&gt;mbx_id[5],
+</I>&gt;&gt;<i> +					priv-&gt;mbx_id[6], priv-&gt;mbx_id[7]);
+</I>&gt;&gt;<i> +}
+</I>
+As mentioned above, just one value per sysfs file, please...
+
+&gt;&gt;<i> +/*
+</I>&gt;&gt;<i> + * Sets Mailbox IDs
+</I>&gt;&gt;<i> + * This should be programmed as mbx_num:mbx_id (in hex)
+</I>&gt;&gt;<i> + * eg: $ echo 0:0x123 &gt; /sys/class/net/can0/mbx_id
+</I>&gt;&gt;<i> + */
+</I>
+... which would also avoid string parsing.
+
+&gt;&gt;<i> +static int __devinit pru_can_probe(struct platform_device *pdev)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +	struct net_device *ndev = NULL;
+</I>&gt;&gt;<i> +	const struct da850_evm_pruss_can_data *pdata;
+</I>&gt;&gt;<i> +	struct can_emu_priv *priv = NULL;
+</I>&gt;&gt;<i> +	struct device *dev = &amp;pdev-&gt;dev;
+</I>&gt;&gt;<i> +	struct clk *clk_pruss;
+</I>&gt;&gt;<i> +	const struct firmware *fw_rx;
+</I>&gt;&gt;<i> +	const struct firmware *fw_tx;
+</I>&gt;&gt;<i> +	u32 err;
+</I>&gt;<i> use int
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	pdata = dev-&gt;platform_data;
+</I>&gt;&gt;<i> +	if (!pdata) {
+</I>&gt;&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;platform data not found\n&quot;);
+</I>&gt;&gt;<i> +		return -EINVAL;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +	(pdata-&gt;setup)();
+</I>&gt;<i> 
+</I>&gt;<i> no need fot the ( )
+</I>&gt;<i> 
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	ndev = alloc_candev(sizeof(struct can_emu_priv), PRUSS_CAN_MB_MAX + 1);
+</I>&gt;&gt;<i> +	if (!ndev) {
+</I>&gt;&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;alloc_candev failed\n&quot;);
+</I>&gt;&gt;<i> +		err = -ENOMEM;
+</I>&gt;&gt;<i> +		goto probe_exit;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	ndev-&gt;sysfs_groups[0] = &amp;pru_sysfs_attr_group;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	priv = netdev_priv(ndev);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	priv-&gt;trx_irq = platform_get_irq(to_platform_device(dev-&gt;parent), 0);
+</I>&gt;&gt;<i> +	if (!priv-&gt;trx_irq) {
+</I>&gt;&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;unable to get pru &quot;
+</I>&gt;&gt;<i> +						&quot;interrupt resources!\n&quot;);
+</I>&gt;&gt;<i> +		err = -ENODEV;
+</I>&gt;&gt;<i> +		goto probe_exit;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	priv-&gt;ndev = ndev;
+</I>&gt;&gt;<i> +	priv-&gt;dev = dev;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	priv-&gt;can.bittiming_const = &amp;pru_can_bittiming_const;
+</I>&gt;&gt;<i> +	priv-&gt;can.do_set_bittiming = pru_can_set_bittiming;
+</I>&gt;&gt;<i> +	priv-&gt;can.do_set_mode = pru_can_set_mode;
+</I>&gt;&gt;<i> +	priv-&gt;can.do_get_state = pru_can_get_state;
+</I>
+Please remove that callback. It's not needed as state changes are
+handled properly.
+
+&gt;&gt;<i> +	priv-&gt;can_tx_cntx.pruno = PRUSS_CAN_TX_PRU_1;
+</I>&gt;&gt;<i> +	priv-&gt;can_rx_cntx.pruno = PRUSS_CAN_RX_PRU_0;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	/* we support local echo, no arp */
+</I>&gt;&gt;<i> +	ndev-&gt;flags |= (IFF_ECHO | IFF_NOARP);
+</I>&gt;<i> 
+</I>&gt;<i> no need to se NOARP
+</I>&gt;<i> 
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	/* pdev-&gt;dev-&gt;device_private-&gt;driver_data = ndev */
+</I>&gt;&gt;<i> +	platform_set_drvdata(pdev, ndev);
+</I>&gt;&gt;<i> +	SET_NETDEV_DEV(ndev, &amp;pdev-&gt;dev);
+</I>&gt;&gt;<i> +	ndev-&gt;netdev_ops = &amp;pru_can_netdev_ops;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	priv-&gt;clk_timer = clk_get(&amp;pdev-&gt;dev, &quot;pll1_sysclk2&quot;);
+</I>&gt;&gt;<i> +	if (IS_ERR(priv-&gt;clk_timer)) {
+</I>&gt;&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;no timer clock available\n&quot;);
+</I>&gt;&gt;<i> +		err = PTR_ERR(priv-&gt;clk_timer);
+</I>&gt;&gt;<i> +		priv-&gt;clk_timer = NULL;
+</I>&gt;&gt;<i> +		goto probe_exit_candev;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	priv-&gt;can.clock.freq = clk_get_rate(priv-&gt;clk_timer);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	clk_pruss = clk_get(NULL, &quot;pruss&quot;);
+</I>&gt;&gt;<i> +	if (IS_ERR(clk_pruss)) {
+</I>&gt;&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;no clock available: pruss\n&quot;);
+</I>&gt;&gt;<i> +		err = -ENODEV;
+</I>&gt;&gt;<i> +		goto probe_exit_clk;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +	priv-&gt;clk_freq_pru = clk_get_rate(clk_pruss);
+</I>&gt;&gt;<i> +	clk_put(clk_pruss);
+</I>&gt;<i> 
+</I>&gt;<i> why do you put the clock here?
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	err = register_candev(ndev);
+</I>&gt;&gt;<i> +	if (err) {
+</I>&gt;&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;register_candev() failed\n&quot;);
+</I>&gt;&gt;<i> +		err = -ENODEV;
+</I>&gt;&gt;<i> +		goto probe_exit_clk;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	err = request_firmware(&amp;fw_tx, &quot;PRU_CAN_Emulation_Tx.bin&quot;,
+</I>&gt;&gt;<i> +			&amp;pdev-&gt;dev);
+</I>&gt;&gt;<i> +	if (err) {
+</I>&gt;&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;can't load firmware\n&quot;);
+</I>&gt;&gt;<i> +		err = -ENODEV;
+</I>&gt;&gt;<i> +		goto probe_exit_clk;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	dev_info(&amp;pdev-&gt;dev, &quot;fw_tx size %d. downloading...\n&quot;, fw_tx-&gt;size);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	err = request_firmware(&amp;fw_rx, &quot;PRU_CAN_Emulation_Rx.bin&quot;,
+</I>&gt;&gt;<i> +			&amp;pdev-&gt;dev);
+</I>&gt;&gt;<i> +	if (err) {
+</I>&gt;&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;can't load firmware\n&quot;);
+</I>&gt;&gt;<i> +		err = -ENODEV;
+</I>&gt;&gt;<i> +		goto probe_release_fw;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +	dev_info(&amp;pdev-&gt;dev, &quot;fw_rx size %d. downloading...\n&quot;, fw_rx-&gt;size);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	/* init the pru */
+</I>&gt;&gt;<i> +	pru_can_emu_init(priv-&gt;dev, priv-&gt;can.clock.freq);
+</I>&gt;&gt;<i> +	udelay(200);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	netif_napi_add(ndev, &amp;priv-&gt;napi, pru_can_rx_poll,
+</I>&gt;&gt;<i> +					PRUSS_DEF_NAPI_WEIGHT);
+</I>&gt;<i> 
+</I>&gt;<i> personally I'd wait to add the interface to napi until the firmware is
+</I>&gt;<i> loaded.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	pruss_enable(priv-&gt;dev, PRUSS_CAN_RX_PRU_0);
+</I>&gt;&gt;<i> +	pruss_enable(priv-&gt;dev, PRUSS_CAN_TX_PRU_1);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	/* download firmware into pru */
+</I>&gt;&gt;<i> +	err = pruss_load(priv-&gt;dev, PRUSS_CAN_RX_PRU_0,
+</I>&gt;&gt;<i> +		(u32 *)fw_rx-&gt;data, (fw_rx-&gt;size / 4));
+</I>&gt;&gt;<i> +	if (err) {
+</I>&gt;&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;firmware download error\n&quot;);
+</I>&gt;&gt;<i> +		err = -ENODEV;
+</I>&gt;&gt;<i> +		goto probe_release_fw_1;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +	release_firmware(fw_rx);
+</I>&gt;&gt;<i> +	err = pruss_load(priv-&gt;dev, PRUSS_CAN_TX_PRU_1,
+</I>&gt;&gt;<i> +		(u32 *)fw_tx-&gt;data, (fw_tx-&gt;size / 4));
+</I>&gt;&gt;<i> +	if (err) {
+</I>&gt;&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;firmware download error\n&quot;);
+</I>&gt;&gt;<i> +		err = -ENODEV;
+</I>&gt;&gt;<i> +		goto probe_release_fw_1;
+</I>&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> +	release_firmware(fw_tx);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	pruss_run(priv-&gt;dev, PRUSS_CAN_RX_PRU_0);
+</I>&gt;&gt;<i> +	pruss_run(priv-&gt;dev, PRUSS_CAN_TX_PRU_1);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	dev_info(&amp;pdev-&gt;dev,
+</I>&gt;&gt;<i> +		 &quot;%s device registered (trx_irq = %d,  clk = %d)\n&quot;,
+</I>&gt;&gt;<i> +		 PRUSS_CAN_DRV_NAME, priv-&gt;trx_irq, priv-&gt;can.clock.freq);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	return 0;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +probe_release_fw_1:
+</I>&gt;&gt;<i> +	release_firmware(fw_rx);
+</I>&gt;&gt;<i> +probe_release_fw:
+</I>&gt;&gt;<i> +	release_firmware(fw_tx);
+</I>&gt;&gt;<i> +probe_exit_clk:
+</I>&gt;&gt;<i> +	clk_put(priv-&gt;clk_timer);
+</I>&gt;&gt;<i> +probe_exit_candev:
+</I>&gt;&gt;<i> +	if (NULL != ndev)
+</I>&gt;&gt;<i> +		free_candev(ndev);
+</I>&gt;&gt;<i> +probe_exit:
+</I>&gt;&gt;<i> +	return err;
+</I>&gt;&gt;<i> +}
+</I>
+Thanks,
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005655.html">[PATCH v4 1/1] can: add pruss CAN driver.
+</A></li>
+	<LI>Next message: <A HREF="005667.html">[PATCH v4 1/1] can: add pruss CAN driver.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5659">[ date ]</a>
+              <a href="thread.html#5659">[ thread ]</a>
+              <a href="subject.html#5659">[ subject ]</a>
+              <a href="author.html#5659">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

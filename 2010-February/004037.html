@@ -1,0 +1,177 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH RFC v2] Add support for Janz ICAN3 CAN module
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20RFC%20v2%5D%20Add%20support%20for%20Janz%20ICAN3%20CAN%20module&In-Reply-To=%3C20100215121458.f6f74fdd.iws%40ovro.caltech.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004029.html">
+   <LINK REL="Next"  HREF="004038.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH RFC v2] Add support for Janz ICAN3 CAN module</H1>
+    <B>Ira Snyder</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20RFC%20v2%5D%20Add%20support%20for%20Janz%20ICAN3%20CAN%20module&In-Reply-To=%3C20100215121458.f6f74fdd.iws%40ovro.caltech.edu%3E"
+       TITLE="[PATCH RFC v2] Add support for Janz ICAN3 CAN module">iws at ovro.caltech.edu
+       </A><BR>
+    <I>Mon Feb 15 21:14:58 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004029.html">[PATCH RFC v2] Add support for Janz ICAN3 CAN module
+</A></li>
+        <LI>Next message: <A HREF="004038.html">[PATCH RFC v2] Add support for Janz ICAN3 CAN module
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4037">[ date ]</a>
+              <a href="thread.html#4037">[ thread ]</a>
+              <a href="subject.html#4037">[ subject ]</a>
+              <a href="author.html#4037">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Mon, 15 Feb 2010 09:54:22 +0100
+Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt; wrote:
+
+&gt;<i> On Fri, Feb 12, 2010 at 03:50:53PM -0800, Ira W. Snyder wrote:
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; The Janz ICAN3 is a MODULbus daughterboard which fits on the Janz CMOD-IO
+</I>&gt;<i> &gt; PCI carrier board. It is an intelligent CAN controller, with a
+</I>&gt;<i> &gt; microcontroller and associated firmware.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Signed-off-by: Ira W. Snyder &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">iws at ovro.caltech.edu</A>&gt;
+</I>&gt;<i> &gt; ---
+</I>&gt;<i> &gt; 
+</I>&gt;<i> [...]
+</I>&gt;<i> &gt; +/* Maximum number of buffers on a CMOD-IO carrier board */
+</I>&gt;<i> &gt; +#define JANZ_MAX_MODULES 4
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +struct janz_device {
+</I>&gt;<i> &gt; +	struct device *dev;
+</I>&gt;<i> &gt; +	struct pci_dev *pdev;
+</I>&gt;<i> is dev == &amp;pdev-&gt;dev?
+</I>
+Yep. Convenience for printing stuff, so we have:
+dev_dbg(priv-&gt;dev, &quot;msg\n&quot;);
+
+Instead of:
+dev_dbg(&amp;priv-&gt;pdev-&gt;dev, &quot;msg\n&quot;);
+
+It really helps on lines that are close to the 80 character limit. If
+you're worried about speed, the PCI accesses are going to hurt much
+more than a pointer dereference.
+
+&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	void __iomem *modulbus_regs;
+</I>&gt;<i> &gt; +	void __iomem *onboard_regs;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/* hex switch position */
+</I>&gt;<i> &gt; +	u8 hex;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/* list of available modules */
+</I>&gt;<i> &gt; +	struct list_head devices;
+</I>&gt;<i> dev (see above) already contains a list of devices
+</I>&gt;<i> You could avoid locking problems by just dropping this list?
+</I>&gt;<i> see include/linux/device.h for macros walking trough the device list of
+</I>&gt;<i> a device.
+</I>
+I didn't know that. I was copying the drivers/mfd/sm501.c driver. It
+has a list of devices in it's private data strucure, just like this.
+Same with the &quot;struct janz_subdevice&quot; below.
+
+&gt;<i> &gt; +};
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> &gt; +/* Subdevice Support                                                          */
+</I>&gt;<i> &gt; +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +struct janz_subdevice {
+</I>&gt;<i> &gt; +	struct list_head entry;
+</I>&gt;<i> &gt; +	struct platform_device pdev;
+</I>&gt;<i> &gt; +};
+</I>&gt;<i> and removing this structure in total (when the janz_device.devices is
+</I>&gt;<i>       dropped).
+</I>
+Great, I'll do that for the next version.
+
+&gt;<i> &gt; +
+</I>&gt;<i> [...]
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	pdata = pdev-&gt;dev.platform_data;
+</I>&gt;<i> &gt; +	pdata-&gt;modno = modno;
+</I>&gt;<i> &gt; +	pdev-&gt;id = modno;
+</I>&gt;<i> why twice. I'd rather avoid confusion and assign modno only once.
+</I>&gt;<i> 
+</I>
+pdata-&gt;modno is part of the &quot;platform data&quot; that gets passed to
+subdevices. They need to know their MODULbus module number to be able
+to make use of the interrupt registers (which are shared between all
+MODULbus modules).
+
+&gt;<i> pdev-&gt;id should be independant of the board/module number. Right now, a
+</I>&gt;<i> second carrier board is not possible in the system because of this
+</I>&gt;<i> assignement to pdev-&gt;id.
+</I>
+Ok. I thought it was safe to make it the same as the MODULbus module
+number, but I guess not. I haven't tried the driver with two PCI cards
+in the system yet.
+
+I'll change it to a monotonically increasing integer.
+
+&gt;<i> &gt; +	dev_dbg(priv-&gt;dev, &quot;%s: PDATA %p name %s modno %d\n&quot;, __func__, pdata, name, pdata-&gt;modno);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/* MODULbus registers */
+</I>&gt;<i> 
+</I>&gt;<i> I think you're getting real close to a proper driver seperation. Good job.
+</I>&gt;<i> 
+</I>
+Thanks for the comments. I'll incorporate them in the next version.
+
+One quick question: in some systems I have, I expect to have 4 CAN
+modules present, connected to 4 different sets of devices. Is there a
+way to choose a specific CAN device (can0, can1, etc.) independent of
+the PCI enumeration order?
+
+In ethernet devices, you can use the MAC address to assign a static
+name to your ethernet devices, but AFAIK, CAN devices don't have MAC
+addresses.
+
+Note that my boards do have a user-changeable hexadecimal switch on
+them. You can read it from the PCI BAR on the board. The Janz character
+driver uses this switch + slot number to identify interfaces. You can
+move the board to different PCI slots and still have your software work.
+
+Thanks,
+Ira
+
+-- 
+Ira Snyder &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">iws at ovro.caltech.edu</A>&gt;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004029.html">[PATCH RFC v2] Add support for Janz ICAN3 CAN module
+</A></li>
+	<LI>Next message: <A HREF="004038.html">[PATCH RFC v2] Add support for Janz ICAN3 CAN module
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4037">[ date ]</a>
+              <a href="thread.html#4037">[ thread ]</a>
+              <a href="subject.html#4037">[ subject ]</a>
+              <a href="author.html#4037">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

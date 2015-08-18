@@ -1,0 +1,134 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] mpc52xx can: suspend/resume support
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20mpc52xx%20can%3A%20suspend/resume%20support&In-Reply-To=%3C20070419095635.GR18236%40moe.telargo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000502.html">
+   <LINK REL="Next"  HREF="000501.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] mpc52xx can: suspend/resume support</H1>
+    <B>Domen Puncer</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20mpc52xx%20can%3A%20suspend/resume%20support&In-Reply-To=%3C20070419095635.GR18236%40moe.telargo.com%3E"
+       TITLE="[PATCH] mpc52xx can: suspend/resume support">domen.puncer at telargo.com
+       </A><BR>
+    <I>Thu Apr 19 11:56:35 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000502.html">[PATCH] mpc52xx can: support for arch/powerpc/ tree
+</A></li>
+        <LI>Next message: <A HREF="000501.html">[PATCH] mscan : fix Rx progress set bug
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#490">[ date ]</a>
+              <a href="thread.html#490">[ thread ]</a>
+              <a href="subject.html#490">[ subject ]</a>
+              <a href="author.html#490">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Add suspend/resume support to mpc52xx can driver.
+
+Signed-off-by: Domen Puncer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">domen.puncer at telargo.com</A>&gt;
+
+---
+I can't break it, maybe someone else can?
+
+ drivers/net/can/mscan/mpc52xx_can.c |   46 +++++++++++++++++++++++++++++++++---
+ 1 file changed, 43 insertions(+), 3 deletions(-)
+
+Index: grant.git/drivers/net/can/mscan/mpc52xx_can.c
+===================================================================
+--- grant.git.orig/drivers/net/can/mscan/mpc52xx_can.c
++++ grant.git/drivers/net/can/mscan/mpc52xx_can.c
+@@ -120,15 +120,55 @@ static int __devexit mpc52xx_can_remove(
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_PM
++static struct mscan_regs saved_regs;
++static int mpc52xx_can_suspend(struct platform_device *pdev, pm_message_t state)
++{
++	struct can_device *can = platform_get_drvdata(pdev);
++	struct mscan_regs *regs = (struct mscan_regs *)(CAN2ND(can)-&gt;base_addr);
++
++	_memcpy_fromio(&amp;saved_regs, regs, sizeof(*regs));
++
++	return 0;
++}
++
++static int mpc52xx_can_resume(struct platform_device *pdev)
++{
++	struct can_device *can = platform_get_drvdata(pdev);
++	struct mscan_regs *regs = (struct mscan_regs *)(CAN2ND(can)-&gt;base_addr);
++
++	regs-&gt;canctl0 |= MSCAN_INITRQ;
++	while ((regs-&gt;canctl1 &amp; MSCAN_INITAK) == 0)
++		udelay(10);
++
++	regs-&gt;canctl1 = saved_regs.canctl1;
++	regs-&gt;canbtr0 = saved_regs.canbtr0;
++	regs-&gt;canbtr1 = saved_regs.canbtr1;
++	regs-&gt;canidac = saved_regs.canidac;
++
++	/* restore masks, buffers etc. */
++	_memcpy_toio(&amp;regs-&gt;canidar1_0, (void*)&amp;saved_regs.canidar1_0,
++			sizeof(*regs) - offsetof(struct mscan_regs, canidar1_0));
++
++	regs-&gt;canctl0 &amp;= ~MSCAN_INITRQ;
++	regs-&gt;cantbsel = saved_regs.cantbsel;
++	regs-&gt;canrier = saved_regs.canrier;
++	regs-&gt;cantier = saved_regs.cantier;
++	regs-&gt;canctl0 = saved_regs.canctl0;
++
++	return 0;
++}
++#endif
++
+ static struct platform_driver mpc52xx_can_driver = {
+ 	.driver		= {
+ 		.name	  = &quot;mpc52xx-mscan&quot;,
+ 	},
+ 	.probe 	  = mpc52xx_can_probe,
+-	.remove   = __devexit_p(mpc52xx_can_remove)
++	.remove   = __devexit_p(mpc52xx_can_remove),
+ #ifdef CONFIG_PM
+-/*	.suspend	= mpc52xx_can_suspend,	TODO */
+-/*	.resume		= mpc52xx_can_resume,	TODO */
++	.suspend	= mpc52xx_can_suspend,
++	.resume		= mpc52xx_can_resume,
+ #endif
+ };
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000502.html">[PATCH] mpc52xx can: support for arch/powerpc/ tree
+</A></li>
+	<LI>Next message: <A HREF="000501.html">[PATCH] mscan : fix Rx progress set bug
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#490">[ date ]</a>
+              <a href="thread.html#490">[ thread ]</a>
+              <a href="subject.html#490">[ subject ]</a>
+              <a href="author.html#490">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

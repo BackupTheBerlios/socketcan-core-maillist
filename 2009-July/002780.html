@@ -1,0 +1,138 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> CC770 and AN82527 compat module parameters
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20CC770%20and%20AN82527%20compat%20module%20parameters&In-Reply-To=%3C4A4B47FA.6010806%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002779.html">
+   <LINK REL="Next"  HREF="002781.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>CC770 and AN82527 compat module parameters</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20CC770%20and%20AN82527%20compat%20module%20parameters&In-Reply-To=%3C4A4B47FA.6010806%40grandegger.com%3E"
+       TITLE="CC770 and AN82527 compat module parameters">wg at grandegger.com
+       </A><BR>
+    <I>Wed Jul  1 13:26:50 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002779.html">CC770 and AN82527 compat module parameters
+</A></li>
+        <LI>Next message: <A HREF="002781.html">CC770 and AN82527 compat module parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2780">[ date ]</a>
+              <a href="thread.html#2780">[ thread ]</a>
+              <a href="subject.html#2780">[ subject ]</a>
+              <a href="author.html#2780">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver Hartkopp wrote:
+&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;&gt;<i> after reading a bit in the CC770 spec i wonder, if having the CC770 additional
+</I>&gt;&gt;&gt;<i> functions to be 'on' by default is the correct approach - especially because
+</I>&gt;&gt;&gt;<i> the CTRL_EAF bit should not be set to '1' when having the AN82527.
+</I>&gt;&gt;<i> I read that as well, but as the bit is read-only on AN82527 I do not
+</I>&gt;&gt;<i> understand why and the method of testing the EAF works fine, as you
+</I>&gt;&gt;<i> demonstrated on your hardware.
+</I>&gt;<i> 
+</I>&gt;<i> I had a CAN traffic source only with _moderate_ traffic attached.
+</I>&gt;<i> 
+</I>&gt;<i> Additionally i wonder if this code really recognizes a CC770:
+</I>&gt;<i> 
+</I>&gt;<i> static void chipset_init(struct cc770_priv *priv)
+</I>&gt;<i> {
+</I>&gt;<i>         int mo, id, data;
+</I>&gt;<i> 
+</I>&gt;<i>         /* Enable configuration and put chip in bus-off, disable interrupts */
+</I>&gt;<i>         cc770_write_reg(priv, control, (CTRL_CCE | CTRL_INI));
+</I>&gt;<i> 
+</I>&gt;<i>         /* Check if this chip is a CC770 supporting additional functions */
+</I>&gt;<i>         if (cc770_read_reg(priv, control) &amp; CTRL_EAF)
+</I>&gt;<i>                 priv-&gt;control_normal_mode |= CTRL_EAF;
+</I>&gt;<i> 
+</I>&gt;<i> (..)
+</I>&gt;<i> 
+</I>&gt;<i> IMO cc770_read_reg(priv, control) &amp; CTRL_EAF is never set after a reset as the
+</I>&gt;<i> control reg is set to 0x01 (== CTRL_INI) according the CC770 spec.
+</I>&gt;<i> 
+</I>&gt;<i> And for that reason the CC770 is currently always used in compatibility mode.
+</I>
+Oops, these two lines need to be removed. The real check is in
+cc770_probe_chip():
+
+	/* Enable configuration, put chip in bus-off, disable ints */
+	cc770_write_reg(priv, control, CTRL_CCE | CTRL_EAF | CTRL_INI);
+	...
+	/* Check if this chip is a CC770 supporting additional functions */
+	if (cc770_read_reg(priv, control) &amp; CTRL_EAF)
+		priv-&gt;control_normal_mode |= CTRL_EAF;
+
+This works on my CC770 and on your AN82527 as well, right?
+
+&gt;<i> Just another idea:
+</I>&gt;<i> 
+</I>&gt;<i> Add i82527_compat to the existing struct cc770_priv that can be filled with
+</I>&gt;<i> 
+</I>&gt;<i> 0 (default - we have a CC770)
+</I>&gt;<i> 1 (we have a i82527 mo15=sff)
+</I>&gt;<i> 2 (we have a i82527 mo15=eff)
+</I>&gt;<i> 
+</I>&gt;<i> And then add i82527_compat parameter array to cc770_isa.c to fill this
+</I>&gt;<i> priv-&gt;i82527_compat according the commandline.
+</I>&gt;<i> 
+</I>&gt;<i> It's surely feasible to add some &quot;bosch,i82527_compat&quot; field to the OF driver
+</I>&gt;<i> also.
+</I>
+No, instructions on how the software should handle the device are not
+allowed. You can already specify the compatibility string &quot;intc,82527&quot;,
+which could be used for this purpose. But if the hardware probing above
+works, I do not see a need for it.
+
+&gt;<i> In the case of a CC770 (i82527_compat = 0) we can set the CTRL_EAF bit and
+</I>&gt;<i> read it again for verification. If CTRL_EAF remains '0' we do not have a C770
+</I>&gt;<i> and can quit the initialisation process (or set i82527_compat to 1 which is
+</I>&gt;<i> hackish as we don't know the use-case).
+</I>&gt;<i> 
+</I>&gt;<i> The current implementation of the i82527_compat stuff looks unhandy to me.
+</I>
+There are two problems. On is when to select the additional functions and
+the other how to select mo15 eff on a per device base for 82527. If hardware
+probing works reliably , the first is solved. For the second problem I do not
+have a good solution yet for non-isa drivers, like OF platform, PCI drivers.
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002779.html">CC770 and AN82527 compat module parameters
+</A></li>
+	<LI>Next message: <A HREF="002781.html">CC770 and AN82527 compat module parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2780">[ date ]</a>
+              <a href="thread.html#2780">[ thread ]</a>
+              <a href="subject.html#2780">[ subject ]</a>
+              <a href="author.html#2780">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

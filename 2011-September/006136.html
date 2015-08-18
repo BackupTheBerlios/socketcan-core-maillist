@@ -1,0 +1,222 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Solving ENOBUFS returned by write()
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Solving%20ENOBUFS%20returned%20by%20write%28%29&In-Reply-To=%3C4E85C9A4.5090006%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006135.html">
+   <LINK REL="Next"  HREF="006137.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Solving ENOBUFS returned by write()</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Solving%20ENOBUFS%20returned%20by%20write%28%29&In-Reply-To=%3C4E85C9A4.5090006%40pengutronix.de%3E"
+       TITLE="Solving ENOBUFS returned by write()">mkl at pengutronix.de
+       </A><BR>
+    <I>Fri Sep 30 15:52:36 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006135.html">Solving ENOBUFS returned by write()
+</A></li>
+        <LI>Next message: <A HREF="006137.html">Solving ENOBUFS returned by write()
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6136">[ date ]</a>
+              <a href="thread.html#6136">[ thread ]</a>
+              <a href="subject.html#6136">[ subject ]</a>
+              <a href="author.html#6136">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 09/30/2011 02:32 PM, Michal Sojka wrote:
+&gt;<i> Dear SocketCAN developers,
+</I>&gt;<i> 
+</I>&gt;<i> recently, we worked with Oliver on evaluation of queuing disciplines for
+</I>&gt;<i> use in CAN networks. We will publish our results soon, but before that I
+</I>&gt;<i> would like to discuss with you one issue that annoys me for a long time
+</I>&gt;<i> (and according to the mailing list, I'm not alone). Now we may have a
+</I>
+ACK :)
+
+&gt;<i> solution for it - see the description and the patch below.
+</I>
+finally!!!!!!!11
+
+&gt;<i> This issue is that write()/send() syscalls return ENOBUFS under
+</I>&gt;<i> certain conditions. The easiest way to reproduce the problem is to
+</I>&gt;<i> send some frames to an unconnected CAN interface (i.e. no frame cannot
+</I>&gt;<i> leave the box, all stay queued somewhere). After attempting to send
+</I>&gt;<i> 10+(number of HW TX buffers) frames, the application (e.g. cangen)
+</I>&gt;<i> gets ENOBUFS. cangen tries to overcome the problem by calling poll()
+</I>&gt;<i> in this case but this doesn't work. Poll never block and cangen ends
+</I>&gt;<i> up busy waiting. Just run cangen .... -i -p 1000 and top. cangen will
+</I>&gt;<i> eat 100% CPU.
+</I>
+In the kernel poll callback does the following (citing myself):
+
+---
+
+&gt;<i> The poll callback checks if the used memory is less than the half of per
+</I>&gt;<i> socket snd buffer (IIRC ~60K). See:
+</I>&gt;<i> 
+</I>&gt;<i> datagram_poll (<A HREF="http://lxr.linux.no/linux+v2.6.38/net/core/datagram.c#L737">http://lxr.linux.no/linux+v2.6.38/net/core/datagram.c#L737</A>)
+</I>&gt;<i> sock_writeable (<A HREF="http://lxr.linux.no/linux+v2.6.38/include/net/sock.h#L1618">http://lxr.linux.no/linux+v2.6.38/include/net/sock.h#L1618</A>)
+</I>&gt;<i> 
+</I>&gt;<i> Because the size of a can frame (+the skb overhead) is much less then
+</I>&gt;<i> the ethernet frame (+overhead) the default value for the snd buffer is
+</I>&gt;<i> too big for can.
+</I>&gt;<i> 
+</I>&gt;<i> We get the -ENOBUF from write() if the tx_queue_len (default 10) is
+</I>&gt;<i> exceeded.
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://lxr.linux.no/linux+v2.6.38/drivers/net/can/dev.c#L435">http://lxr.linux.no/linux+v2.6.38/drivers/net/can/dev.c#L435</A>
+</I>&gt;<i> <A HREF="http://lxr.linux.no/linux+v2.6.38/net/can/af_can.c#L268">http://lxr.linux.no/linux+v2.6.38/net/can/af_can.c#L268</A>
+</I>
+---
+
+&gt;<i> Such a problem usually doesn't appear in Ethernet networks.
+</I>&gt;<i> Applications block automatically when there is lack of resources for
+</I>&gt;<i> sending. We dig into source codes to find out what is different in CAN
+</I>&gt;<i> compared to the Ethernet and here is what we have found.
+</I>&gt;<i> 
+</I>&gt;<i> So why is ENOBUFS typically returned? In the default configuration,
+</I>&gt;<i> CAN interfaces have attached pfifo_fast queuing discipline. Therefore,
+</I>&gt;<i> dev_queue_xmit() calls pfifo_fast_enqueue() which checks for
+</I>&gt;<i> dev-&gt;tx_queue_len (which is 10 for CAN devices by default). If the
+</I>&gt;<i> dev-&gt;number of queued frames is grater, it and returns
+</I>&gt;<i> NET_XMIT_DROP. Then, can_send() calls net_xmit_errno(), which
+</I>&gt;<i> translates NET_XMIT_DROP into -ENOBUFS which is then returned to the
+</I>&gt;<i> application.
+</I>&gt;<i> 
+</I>&gt;<i> The difference in Ethernet networks is that the default queue size is
+</I>&gt;<i> 1000 and the reason why this limit is not reached is that there is
+</I>&gt;<i> another limit, which is lower and causes the application to block.
+</I>&gt;<i> This limit is SO_SNDBUF socket option.
+</I>
+Ip over Ethernet first depletes sk-&gt;sk_sndbuf, but CAN first reaches the
+tx_queuelen limit. Because poll checks for the sk-&gt;sk_sndbuf, it never
+really blocks in the CAN use case.
+
+&gt;<i> In case of CAN_RAW sockets, this limit is checked in
+</I>&gt;<i> sock_alloc_send_skb() like this:
+</I>&gt;<i> 
+</I>&gt;<i> if (sk-&gt;sk_wmem_alloc &lt; sk-&gt;sk_sndbuf)
+</I>&gt;<i>   alloc_skb();
+</I>&gt;<i> else
+</I>&gt;<i>  sock_wait_for_wmem(); // i.e. block
+</I>&gt;<i> 
+</I>&gt;<i> sk-&gt;sk_wmem_alloc is increased by skb-&gt;truesize whenever application
+</I>&gt;<i> creates a skb belonging to the socket (i.e. on write) and decreased by
+</I>&gt;<i> the same amount whenever the skb is passed to the driver. The value
+</I>&gt;<i> of skb-&gt;truesize is the sizeof(can_frame) + sizeof(skb), which is 200
+</I>&gt;<i> in my case (PowerPC).
+</I>
+Can you check on some other ARCH, 32 and 64 bits please.
+
+&gt;<i> The default value of sk-&gt;sk_wmem_alloc is 108544 which means that for
+</I>&gt;<i> CAN, this limit is reached (and the application blocks) when it has
+</I>&gt;<i> 542 CAN frames waiting to be send to the driver. This is of cause more
+</I>&gt;<i> then 10, allowed by dev-&gt;tx_queue_len.
+</I>&gt;<i> 
+</I>&gt;<i> Therefore, we propose apply patch like this:
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/dev.c b/drivers/net/can/dev.c
+</I>&gt;<i> index d0f8c7e..4831c53 100644
+</I>&gt;<i> --- a/drivers/net/can/dev.c
+</I>&gt;<i> +++ b/drivers/net/can/dev.c
+</I>&gt;<i> @@ -438,7 +438,7 @@ static void can_setup(struct net_device *dev)
+</I>&gt;<i>  	dev-&gt;mtu = sizeof(struct can_frame);
+</I>&gt;<i>  	dev-&gt;hard_header_len = 0;
+</I>&gt;<i>  	dev-&gt;addr_len = 0;
+</I>&gt;<i> -	dev-&gt;tx_queue_len = 10;
+</I>&gt;<i> +	dev-&gt;tx_queue_len = 22;
+</I>&gt;<i>  
+</I>&gt;<i>  	/* New-style flags. */
+</I>&gt;<i>  	dev-&gt;flags = IFF_NOARP;
+</I>&gt;<i> diff --git a/net/can/af_can.c b/net/can/af_can.c
+</I>&gt;<i> index 094fc53..4cf10e7 100644
+</I>&gt;<i> --- a/net/can/af_can.c
+</I>&gt;<i> +++ b/net/can/af_can.c
+</I>&gt;<i> @@ -190,6 +190,8 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
+</I>&gt;<i>  	sock_init_data(sock, sk);
+</I>&gt;<i>  	sk-&gt;sk_destruct = can_sock_destruct;
+</I>&gt;<i>  
+</I>&gt;<i> +	sk-&gt;sk_sndbuf = SOCK_MIN_SNDBUF;
+</I>&gt;<i> +
+</I>&gt;<i>  	if (sk-&gt;sk_prot-&gt;init)
+</I>&gt;<i>  		err = sk-&gt;sk_prot-&gt;init(sk);
+</I>&gt;<i>  
+</I>&gt;<i> This sets the minimum possible sk_sndbuf, i.e. 2048, which allows to
+</I>&gt;<i> have 11 frames queued for a socket before the application blocks. In
+</I>&gt;<i> my case, the driver (mpc5200) seems to utilize 3 TX buffers and
+</I>&gt;<i> therefore cangen blocks when it tries to send the 15th frame (3 frames
+</I>&gt;<i> are buffered in driver, 11 in pfifo_fast qdisc). If the application
+</I>&gt;<i> does not want to block, it can set O_NONBLOCK flag on the socket and
+</I>&gt;<i> it receives EAGAIN instead of ENOBUFS.
+</I>
+What about dynamically calculating the sk-&gt;sk_sndbuf providing room for
+a fixed number of CAN frames in the socket, i.e. 10 so so. Maybe even
+make the number of CAN frames configurable during runtime.
+
+&gt;<i> It is also necessary to slightly increase the default tx_queue_len.
+</I>&gt;<i> Increasing it to 22 allows using two applications (or better two
+</I>&gt;<i> sockets) without seeing ENOBUFS. The third application/socket then
+</I>&gt;<i> gets ENOBUFS just for its first write().
+</I>
+Hmmm...3 applications isn't that much, is it?
+How many ether applications are needed to deplete the standard 1000 tx
+queuelen?
+
+100k snd_buf / 2k skb+data = 50 frames per sock
+1000 tx_queuelen / 50 socks = 20 Aps
+
+&gt;<i> The above described situation is not the only way how can an
+</I>&gt;<i> application get ENOBUFS, but I think that in case of PF_CAN this is
+</I>&gt;<i> the most common situation and having a blocking behavior as provided
+</I>&gt;<i> by this patch would help the users a lot.
+</I>
+cheers, Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20110930/9cc79d3d/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20110930/9cc79d3d/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006135.html">Solving ENOBUFS returned by write()
+</A></li>
+	<LI>Next message: <A HREF="006137.html">Solving ENOBUFS returned by write()
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6136">[ date ]</a>
+              <a href="thread.html#6136">[ thread ]</a>
+              <a href="subject.html#6136">[ subject ]</a>
+              <a href="author.html#6136">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

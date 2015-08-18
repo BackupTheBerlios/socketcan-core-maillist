@@ -1,0 +1,144 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> len &amp; can_dlc checks in tx path
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20len%20%26%20can_dlc%20checks%20in%20tx%20path&In-Reply-To=%3C4B23EEE7.4080504%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003612.html">
+   <LINK REL="Next"  HREF="003651.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>len &amp; can_dlc checks in tx path</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20len%20%26%20can_dlc%20checks%20in%20tx%20path&In-Reply-To=%3C4B23EEE7.4080504%40grandegger.com%3E"
+       TITLE="len &amp; can_dlc checks in tx path">wg at grandegger.com
+       </A><BR>
+    <I>Sat Dec 12 20:28:39 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003612.html">len &amp; can_dlc checks in tx path
+</A></li>
+        <LI>Next message: <A HREF="003651.html">len &amp; can_dlc checks in tx path
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3650">[ date ]</a>
+              <a href="thread.html#3650">[ thread ]</a>
+              <a href="subject.html#3650">[ subject ]</a>
+              <a href="author.html#3650">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Oliver,
+
+Oliver Hartkopp wrote:
+&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;&gt;<i> Please also check for useless &quot;dlc &gt; 8&quot; checks in the
+</I>&gt;&gt;&gt;&gt;<i> start_xmit function.
+</I>&gt;&gt;&gt;<i> I thought about that and i'm not really sure about it:
+</I>&gt;&gt;&gt;<i> What if anyone uses PF_PACKET with CAN netdevices, which is a possible use-case?
+</I>&gt;&gt;<i> OK.
+</I>&gt;<i> 
+</I>&gt;<i> Any ideas how to proceed in the start_xmit functions?
+</I>&gt;<i> 
+</I>&gt;<i> We could add something like this consistently to *all* start_xmit functions:
+</I>&gt;<i> 
+</I>&gt;<i> Index: drivers/net/can/sja1000/sja1000.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- drivers/net/can/sja1000/sja1000.c	(Revision 1095)
+</I>&gt;<i> +++ drivers/net/can/sja1000/sja1000.c	(Arbeitskopie)
+</I>&gt;<i> @@ -257,6 +257,13 @@
+</I>&gt;<i>  	uint8_t dreg;
+</I>&gt;<i>  	int i;
+</I>&gt;<i> 
+</I>&gt;<i> +	if (WARN_ONCE(skb-&gt;len != sizeof(*cf) || cf-&gt;can_dlc &gt; 8,
+</I>&gt;<i> +		      &quot;Dropped non conform skbuf: len %d, can_dlc %d\n&quot;,
+</I>&gt;<i> +		      skb-&gt;len, cf-&gt;can_dlc)) {
+</I>&gt;<i> +		kfree_skb(skb);
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i>  	netif_stop_queue(dev);
+</I>&gt;<i> 
+</I>&gt;<i>  	fi = dlc = cf-&gt;can_dlc;
+</I>
+I'm just preparing a patch for the MSCAN touching the same topic, which
+I have attached below. What do you think? I also wonder if we should
+use dev_kfree_skb()?
+
+Wolfgang.
+
+
+--------------------------------------------------------------------
+[PATCH] can: mscan: fix improper return if dlc &lt; 8 in start_xmit function
+
+The start_xmit function of the MSCAN Driver did return improperly if
+the CAN dlc check failed (skb not freed and invalid return code). This
+patch adds a proper check of the frame length and data size and returns
+now correctly. Furthermore, a little typo has been fixed.
+---
+ drivers/net/can/mscan/mscan.c |   11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+Index: linux-2.6/drivers/net/can/mscan/mscan.c
+===================================================================
+--- linux-2.6.orig/drivers/net/can/mscan/mscan.c	2009-12-11 19:52:05.000000000 +0100
++++ linux-2.6/drivers/net/can/mscan/mscan.c	2009-12-11 19:52:16.356553712 +0100
+@@ -4,7 +4,7 @@
+  * Copyright (C) 2005-2006 Andrey Volkov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">avolkov at varma-el.com</A>&gt;,
+  *                         Varma Electronics Oy
+  * Copyright (C) 2008-2009 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+- * Copytight (C) 2008-2009 Pengutronix &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kernel at pengutronix.de</A>&gt;
++ * Copyright (C) 2008-2009 Pengutronix &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kernel at pengutronix.de</A>&gt;
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the version 2 of the GNU General Public License
+@@ -177,8 +177,13 @@
+ 	int i, rtr, buf_id;
+ 	u32 can_id;
+ 
+-	if (frame-&gt;can_dlc &gt; 8)
+-		return -EINVAL;
++	if (skb-&gt;len != sizeof(*frame) || frame-&gt;can_dlc &gt; 8) {
++		dev_err(dev-&gt;dev.parent,
++			&quot;Dropping non-conform paket: len %d, can_dlc %d\n&quot;,
++			skb-&gt;len, frame-&gt;can_dlc);
++		kfree_skb(skb);
++		return  NETDEV_TX_OK;
++	}
+ 
+ 	out_8(&amp;regs-&gt;cantier, 0);
+ 
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003612.html">len &amp; can_dlc checks in tx path
+</A></li>
+	<LI>Next message: <A HREF="003651.html">len &amp; can_dlc checks in tx path
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3650">[ date ]</a>
+              <a href="thread.html#3650">[ thread ]</a>
+              <a href="subject.html#3650">[ subject ]</a>
+              <a href="author.html#3650">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

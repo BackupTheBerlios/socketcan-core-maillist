@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> mcp251x v2
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%20v2&In-Reply-To=%3Cc785bba30911161412o40d8b518l3738b9965544dc90%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003499.html">
+   <LINK REL="Next"  HREF="003516.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>mcp251x v2</H1>
+    <B>Paul Thomas</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%20v2&In-Reply-To=%3Cc785bba30911161412o40d8b518l3738b9965544dc90%40mail.gmail.com%3E"
+       TITLE="mcp251x v2">pthomas8589 at gmail.com
+       </A><BR>
+    <I>Mon Nov 16 23:12:54 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003499.html">mcp251x v2
+</A></li>
+        <LI>Next message: <A HREF="003516.html">mcp251x v2
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3501">[ date ]</a>
+              <a href="thread.html#3501">[ thread ]</a>
+              <a href="subject.html#3501">[ subject ]</a>
+              <a href="author.html#3501">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Mon, Nov 16, 2009 at 2:50 PM, Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt; wrote:
+&gt;<i> Hi Paul,
+</I>&gt;<i>
+</I>&gt;<i> Paul Thomas wrote:
+</I>&gt;&gt;<i> Hi, I've been working with Christian, and he's been very helpful. In
+</I>&gt;&gt;<i> trying to get to the bottom of my problem I wrote a /proc/file
+</I>&gt;&gt;<i> interface so I could read &amp; write mcp251x registers from userspace.
+</I>&gt;&gt;<i> I've discovered that I can only read/write resisters in one very
+</I>&gt;&gt;<i> specific condition. I describe how to get there below:
+</I>&gt;<i>
+</I>&gt;&gt;<i> 1. load the module
+</I>&gt;&gt;<i> 2. run &quot;ip link set can0 up&quot; this creates a &quot;RTNETLINK answers:
+</I>&gt;&gt;<i> Invalid argument&quot; error, however the driver is doing several things
+</I>&gt;&gt;<i> here (attached as fcall_link-up_fail is the debug output including my
+</I>&gt;&gt;<i> added debug stuff).
+</I>&gt;<i>
+</I>&gt;<i> Before you can start the device, you need to specify the bitrate:
+</I>&gt;<i>
+</I>&gt;<i> &#160;# ip link set can0 up type can bitrate 50000
+</I>&gt;<i>
+</I>&gt;<i> or
+</I>&gt;<i> &#160;# ip link set can0 type can bitrate 50000
+</I>&gt;<i> &#160;# ifconfig can0 up
+</I>&gt;<i>
+</I>&gt;<i> 50 kB/s is a rather unusual and slow bit-rate. The driver's open
+</I>&gt;<i> function should first check if the bit-timing has been set. The
+</I>&gt;<i> attached patch does fix that.
+</I>&gt;<i>
+</I>&gt;&gt;<i> 3. Now I can read/write registers. I don't even need to use my hacked
+</I>&gt;&gt;<i> /proc/file to test this. This is the only time &quot;ip link set can0 type
+</I>&gt;&gt;<i> can bitrate 50000&quot; shows a actual numbers on the CNF debug line
+</I>&gt;&gt;<i> &quot;mcp251x spi1.3: CNF: 0x09 0xbf 0x02&quot;.
+</I>&gt;<i>
+</I>&gt;<i> If the link is up, you cannot change the bit-rate.
+</I>&gt;<i>
+</I>&gt;&gt;<i> The only way I've found to get back to this state is to unload &amp;
+</I>&gt;&gt;<i> reload the driver. I understand that you can only mess with some of
+</I>&gt;&gt;<i> the mcp251x registers when CANCTRL is in configuration mode, but at
+</I>&gt;&gt;<i> the very least on startup you shouldn't need the failed link up
+</I>&gt;&gt;<i> command for it to work. And probably whenever the link is down in
+</I>&gt;&gt;<i> should be configurable.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I'm going through all of this because I was have a baud problems on the bus.
+</I>&gt;<i>
+</I>&gt;<i> Does the patch below already help to cure your problems?
+</I>&gt;<i>
+</I>&gt;<i> Wolfgang.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> ---
+</I>&gt;<i> &#160;drivers/net/can/mcp251x.c | &#160; 12 ++++++------
+</I>&gt;<i> &#160;1 file changed, 6 insertions(+), 6 deletions(-)
+</I>&gt;<i>
+</I>&gt;<i> Index: net-next-2.6/drivers/net/can/mcp251x.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- net-next-2.6.orig/drivers/net/can/mcp251x.c
+</I>&gt;<i> +++ net-next-2.6/drivers/net/can/mcp251x.c
+</I>&gt;<i> @@ -596,12 +596,6 @@ static int mcp251x_setup(struct net_devi
+</I>&gt;<i> &#160;{
+</I>&gt;<i> &#160; &#160; &#160; &#160;int ret;
+</I>&gt;<i>
+</I>&gt;<i> - &#160; &#160; &#160; ret = open_candev(net);
+</I>&gt;<i> - &#160; &#160; &#160; if (ret) {
+</I>&gt;<i> - &#160; &#160; &#160; &#160; &#160; &#160; &#160; dev_err(&amp;spi-&gt;dev, &quot;unable to set initial baudrate!\n&quot;);
+</I>&gt;<i> - &#160; &#160; &#160; &#160; &#160; &#160; &#160; return ret;
+</I>&gt;<i> - &#160; &#160; &#160; }
+</I>&gt;<i> -
+</I>&gt;<i> &#160; &#160; &#160; &#160;/* Enable RX0-&gt;RX1 buffer roll over and disable filters */
+</I>&gt;<i> &#160; &#160; &#160; &#160;mcp251x_write_bits(spi, RXBCTRL(0),
+</I>&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; RXBCTRL_BUKT | RXBCTRL_RXM0 | RXBCTRL_RXM1,
+</I>&gt;<i> @@ -671,6 +665,12 @@ static int mcp251x_open(struct net_devic
+</I>&gt;<i> &#160; &#160; &#160; &#160;struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
+</I>&gt;<i> &#160; &#160; &#160; &#160;int ret;
+</I>&gt;<i>
+</I>&gt;<i> + &#160; &#160; &#160; ret = open_candev(net);
+</I>&gt;<i> + &#160; &#160; &#160; if (ret) {
+</I>&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; dev_err(&amp;spi-&gt;dev, &quot;unable to set initial baudrate!\n&quot;);
+</I>&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; return ret;
+</I>&gt;<i> + &#160; &#160; &#160; }
+</I>&gt;<i> +
+</I>&gt;<i> &#160; &#160; &#160; &#160;if (pdata-&gt;transceiver_enable)
+</I>&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;pdata-&gt;transceiver_enable(1);
+</I>&gt;<i>
+</I>&gt;<i>
+</I>
+Wolfgang,
+
+Thanks for the response. After the patch is applied the CNF: debug
+line from &quot;ip link set can0 type can bitrate 50000&quot; always shows 0's.
+As opposed to before the patch it would work only after the module was
+loaded and after the failed &quot;ip link set can0 up&quot; command.
+
+thanks,
+Paul
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003499.html">mcp251x v2
+</A></li>
+	<LI>Next message: <A HREF="003516.html">mcp251x v2
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3501">[ date ]</a>
+              <a href="thread.html#3501">[ thread ]</a>
+              <a href="subject.html#3501">[ subject ]</a>
+              <a href="author.html#3501">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

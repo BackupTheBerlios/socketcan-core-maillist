@@ -1,0 +1,116 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> dlc check in driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20dlc%20check%20in%20driver&In-Reply-To=%3C4A8AEAC5.8080707%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002892.html">
+   <LINK REL="Next"  HREF="002894.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>dlc check in driver</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20dlc%20check%20in%20driver&In-Reply-To=%3C4A8AEAC5.8080707%40pengutronix.de%3E"
+       TITLE="dlc check in driver">mkl at pengutronix.de
+       </A><BR>
+    <I>Tue Aug 18 19:54:13 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002892.html">dlc check in driver
+</A></li>
+        <LI>Next message: <A HREF="002894.html">dlc check in driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2893">[ date ]</a>
+              <a href="thread.html#2893">[ thread ]</a>
+              <a href="subject.html#2893">[ subject ]</a>
+              <a href="author.html#2893">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver Hartkopp wrote:
+&gt;<i> Marc Kleine-Budde wrote:
+</I>&gt;&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> I'm developing a simple can protocol driver for binary can data over a
+</I>&gt;&gt;&gt;&gt;<i> serial interface. The CAN Hardware is working fine(verified with a
+</I>&gt;&gt;&gt;&gt;<i> terminal). Currently, my kernel module is a copy of slcan. Sending is
+</I>&gt;&gt;&gt;&gt;<i> working fine, but when I receive something, the whole system hangs
+</I>&gt;&gt;&gt;&gt;<i> up(but after my module passed the packet on), and I get a crash dump(see
+</I>&gt;&gt;&gt;&gt;<i> below) over the serial console.
+</I>&gt;&gt;&gt;<i> Hi Maximilian,
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> this is because your created socketbuffer is buggy.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> We had a discussion on this topic two days ago here:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> <A HREF="http://marc.info/?t=124957743000007&amp;r=1&amp;w=2">http://marc.info/?t=124957743000007&amp;r=1&amp;w=2</A>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> and there is currently a patch on it's way to move the BUG() to a WARN_ONCE():
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> <A HREF="http://marc.info/?l=linux-netdev&amp;m=124990364331851&amp;w=2">http://marc.info/?l=linux-netdev&amp;m=124990364331851&amp;w=2</A>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Btw. The crash is caused by:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> BUG_ON(skb-&gt;len != sizeof(struct can_frame) || cf-&gt;can_dlc &gt; 8);
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> and you need to fix that in your driver.
+</I>&gt;&gt;<i> I'm working now on the at91, the driver has no check for dlc &gt; 8, so
+</I>&gt;&gt;<i> that's the proper fix?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> @@ -364,7 +353,7 @@ static void at91_read_mb(struct net_device *dev, int mb, struct can_frame *cf)
+</I>&gt;&gt;&gt;<i>         reg_msr = at91_read(dev, AT91_MSR(mb));
+</I>&gt;&gt;&gt;<i>         if (reg_msr &amp; AT91_MSR_MRTR)
+</I>&gt;&gt;&gt;<i>                 cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;&gt;&gt;<i> -       cf-&gt;can_dlc = (reg_msr &gt;&gt; 16) &amp; 0xf;
+</I>&gt;&gt;&gt;<i> +       cf-&gt;can_dlc = max_t(__u8, (reg_msr &gt;&gt; 16) &amp; 0xf, 8);
+</I>&gt;<i> 
+</I>&gt;<i> You meant min_t() here right?
+</I>
+sure, it was too hot in here :D
+
+Marc
+
+-- 
+Pengutronix e.K.                         | Marc Kleine-Budde           |
+Linux Solutions for Science and Industry | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund                 | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686         | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 260 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20090818/b9f7625c/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20090818/b9f7625c/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002892.html">dlc check in driver
+</A></li>
+	<LI>Next message: <A HREF="002894.html">dlc check in driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2893">[ date ]</a>
+              <a href="thread.html#2893">[ thread ]</a>
+              <a href="subject.html#2893">[ subject ]</a>
+              <a href="author.html#2893">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,160 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: CAN state management
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20CAN%20state%20management&In-Reply-To=%3C1197208132.5411.10.camel%40pc-mob-grv-deb%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000947.html">
+   <LINK REL="Next"  HREF="000950.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: CAN state management</H1>
+    <B>Vladislav Gribov</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20CAN%20state%20management&In-Reply-To=%3C1197208132.5411.10.camel%40pc-mob-grv-deb%3E"
+       TITLE="RFC: CAN state management">gribov at ixxat.de
+       </A><BR>
+    <I>Sun Dec  9 14:48:50 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000947.html">RFC: CAN state management
+</A></li>
+        <LI>Next message: <A HREF="000950.html">RFC: CAN state management
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#948">[ date ]</a>
+              <a href="thread.html#948">[ thread ]</a>
+              <a href="subject.html#948">[ subject ]</a>
+              <a href="author.html#948">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Sat, 2007-12-08 at 11:08 +0100, Wolfgang Grandegger wrote:
+&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;<i> &gt; Wolfgang Grandegger wrote:
+</I>&gt;<i> &gt;&gt; Hartkopp, Oliver (K-GEFE/E) wrote:
+</I>&gt;<i> &gt;&gt;   
+</I>&gt;<i> &gt;&gt;&gt; Wolfgang Grandegger schrieb:
+</I>&gt;<i> &gt;&gt;&gt;     
+</I>&gt;<i> &gt;&gt;&gt;&gt; Hartkopp, Oliver (K-GEFE/E) wrote:
+</I>&gt;<i> &gt;&gt;&gt;&gt;       
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; The benefit is, that there is already a defined kernel interface for
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; netdevice operation states and a netlink interface for controlling all
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; this from the userspace.
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; It's described in the current Documentation/networking/operstates.txt
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; So for that reason, we should use this interface and should adopt the
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; RFC2863 operational states for our CAN netdevices. If we do not look on
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; RFC2863 now someone else will bring this up on netdev ML which can be
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; avoided.
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;         
+</I>&gt;<i> &gt;&gt;&gt;&gt; Ah, OK, you want to use dev-&gt;operstates. So far I understood that you
+</I>&gt;<i> &gt;&gt;&gt;&gt; just want to use the RFC2863 definitions. The MSCAN driver does a
+</I>&gt;<i> &gt;&gt;&gt;&gt; net_carrier_off() in case of bus off. Is this also something we mnay use?
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;       
+</I>&gt;<i> &gt;&gt;&gt; Yep! It's already implemented? Cool!
+</I>&gt;<i> &gt;&gt;&gt;     
+</I>&gt;<i> &gt;&gt; And if you look closer, you see that the states are mapped as shown:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; static can_state_t state_map[] = {
+</I>&gt;<i> &gt;&gt;         CAN_STATE_ACTIVE,
+</I>&gt;<i> &gt;&gt;         CAN_STATE_BUS_WARNING,
+</I>&gt;<i> &gt;&gt;         CAN_STATE_BUS_PASSIVE,
+</I>&gt;<i> &gt;&gt;         CAN_STATE_BUS_OFF
+</I>&gt;<i> &gt;&gt; };
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; These are just the error states ...
+</I>&gt;<i> &gt;&gt;   
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Ok - so we would have the RFC2683 operational states for all the typical
+</I>&gt;<i> &gt; netdriver conditions we map to our CAN netdriver and *additional* this
+</I>&gt;<i> &gt; suggested  CAN state describing the controllers view on the bus, right?
+</I>&gt;<i> 
+</I>&gt;<i> Yes.  When the CAN controller cannot (bus off) or is not allowed to send
+</I>&gt;<i> data (error passive?), or too much bus errors (?), or whatever, we call
+</I>&gt;<i> netdev_carrier_off(). After automatic or manual recovery we call
+</I>&gt;<i> netdev_carrier_on(). priv-&gt;can.state holds the bus error state when it's
+</I>&gt;<i> active or CAN_STATE_STOPPED otherwise. The latter state is set when it's
+</I>&gt;<i> in the initialization or reset state.
+</I>
+carrier_off means that no communication is possible at all. In case of
+error passive we still receive CAN messages and error messages. If there
+are to much error frames on CAN bus we go to error passive and than to
+bus-off.
+For me  netdev_carrier_* seems to be perfect to signal bus-off, but what
+is about side-effect with ioctl pointed by Marc in his mail from
+6.12.2007
+(<A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-December/000937.html">https://lists.berlios.de/pipermail/socketcan-core/2007-December/000937.html</A>) ?
+
+&gt;<i> 
+</I>&gt;<i> &gt;&gt; Looking to the doc &quot;Documentation/networking/operstates.txt&quot; you
+</I>&gt;<i> &gt;&gt; mentioned, I think netdev_carrier_off/on are useful, indeed, but I have
+</I>&gt;<i> &gt;&gt; doubts about netdev_dormant_on/off.
+</I>&gt;<i> &gt;&gt;   
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; IMO using the RFC operstates does not mean that the driver needs to
+</I>&gt;<i> &gt; support ALL defined states. Btw. netdev_dormant is an interesting state
+</I>&gt;<i> &gt; as there are CAN interfaces (and their transceivers) that can be set
+</I>&gt;<i> &gt; into a sleep mode.
+</I>&gt;<i> 
+</I>&gt;<i> OK, let's think about, discuss and add sleep mode, when the CAN device
+</I>&gt;<i> interface definition and implementation has settled a bit.
+</I>&gt;<i> 
+</I>&gt;<i> Good, I think we can now goon with the next, likely more delicate issue
+</I>&gt;<i> about starting, stopping and restarting the CAN device.
+</I>
+-- 
+Mit freundlichen Gr&#252;&#223;en / Kind regards,
+Dipl.-Ing. Vladislav Gribov MSc
+Development
+--------------------------------------------
+IXXAT Automation GmbH
+Leibnizstr. 15, 88250 Weingarten, Germany
+Phone  +49-751-56146-0
+Direct +49-751-56146-162
+Fax    +49-751-56146-29
+mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A>
+<A HREF="http://www.ixxat.de">http://www.ixxat.de</A>
+--------------------------------------------
+PRIVILEGED AND CONFIDENTIAL.
+Any unauthorized use or disclosure
+is strictly prohibited.
+--------------------------------------------
+Sitz der Gesellschaft: Weingarten
+Handelsregister Ulm HRB 551905
+Gesch&#228;ftsf&#252;hrer:
+Christian Schlegel, Sieglinde Etschberger
+--------------------------------------------
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000947.html">RFC: CAN state management
+</A></li>
+	<LI>Next message: <A HREF="000950.html">RFC: CAN state management
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#948">[ date ]</a>
+              <a href="thread.html#948">[ thread ]</a>
+              <a href="subject.html#948">[ subject ]</a>
+              <a href="author.html#948">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

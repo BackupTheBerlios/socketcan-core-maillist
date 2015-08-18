@@ -1,0 +1,139 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> MSCAN driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20MSCAN%20driver&In-Reply-To=%3C03CD1BFAE1C5E943B6268B7A573E96030245A1F6%40deeres01.ebgroup.elektrobit.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003568.html">
+   <LINK REL="Next"  HREF="003565.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>MSCAN driver</H1>
+    <B>Guenter.Ebermann at elektrobit.com</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20MSCAN%20driver&In-Reply-To=%3C03CD1BFAE1C5E943B6268B7A573E96030245A1F6%40deeres01.ebgroup.elektrobit.com%3E"
+       TITLE="MSCAN driver">Guenter.Ebermann at elektrobit.com
+       </A><BR>
+    <I>Fri Nov 27 17:44:10 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003568.html">[Socketcan-users] [RFC] [ANNOUNCEMENT] libsocketcan-nl
+</A></li>
+        <LI>Next message: <A HREF="003565.html">MSCAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3564">[ date ]</a>
+              <a href="thread.html#3564">[ thread ]</a>
+              <a href="subject.html#3564">[ subject ]</a>
+              <a href="author.html#3564">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I am the maintainer of a MPC5200 port of eCos at Elektrobit.
+I found a race-condition in the implementation of our MSCAN
+CAN-driver and it seems your driver has the same problem
+(I reviewed your code for reference reasons):
+<A HREF="http://git.kernel.org/?p=linux/kernel/git/davem/net-next-2.6.git;a=blob_plain;f=drivers/net/can/mscan/mscan.c;hb=HEAD">http://git.kernel.org/?p=linux/kernel/git/davem/net-next-2.6.git;a=blob_plain;f=drivers/net/can/mscan/mscan.c;hb=HEAD</A>
+
+I first contacted Wolfram Sang personally and he pointed me
+to the right sources and to this mailing list.
+
+Problem is:
+MSCAN has three Tx-Buffers. But only one buffer-interface.
+So to select one buffer you must use a buffer selection (cantbsel)
+register.
+
+Your driver implementation selects the buffer in the 
+mscan_start_xmit() function and then fills the buffer with
+payload.
+
+But in the ISR mscan_isr() the buffer is also selected
+to maintain the tx-stats.
+
+Race-condition occurs if mscan_isr() interrupts mscan_start_xmit()
+after it selects a buffer by writing to the tbsel register.
+After ISR returns mscan_start_xmit will continue to write payload
+into the wrong buffer.
+
+A second race condition occurs with the cantier register.
+The documentation says its an interrupt-enable register.
+But in-fact it is a sort of acknowledgement register which
+is accessed in both ISR and xmit function with load-and-store
+operations.
+
+The fix in my eCos driver was to lock the ISR from occuring during
+cantbsel and cantier register are accessed inside the transmit function.
+
+If you need a reference-implementation I can send you my
+implementation of the MSCAN driver for eCos operating system.
+It differs with your implementation because it is able to
+abort buffers whenever a Can-Message arrives at the Tx-API
+with has higher priority than the messages currently in the
+buffers (to avoid starvation on the bus).
+
+Perhaps the following lines could be  written simpler
+in function mscan_isr():
+
+   cantier = in_8(&amp;regs-&gt;cantier) &amp; MSCAN_TXE;
+   cantflg = in_8(&amp;regs-&gt;cantflg) &amp; cantier;
+
+   if (cantier &amp;&amp; cantflg) {
+      ...
+Instead of this i would write (its the same):
+   if (cantflg) {
+      ...
+
+Freundliche Gr&#252;&#223;e / Best regards
+G&#252;nter Ebermann
+
+-- 
+Dipl.-Ing. (FH) Guenter Ebermann, Software Architect, Product
+Development Bus Tools
+EB - Discover the Experience
+Phone: +43 1 59983-95, mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">guenter.ebermann at elektrobit.com</A>
+Fax: +43 1 59983-18, <A HREF="http://www.elektrobit.com">http://www.elektrobit.com</A>
+
+Elektrobit Austria GmbH, Kaiserstra&#223;e 45 / Stiege 2, A-1070 Wien, Austria 
+Managing Director Otto F&#246;&#223;el
+Register Court Vienna, Commercial Register No. FN211944h
+
+
+----------------------------------------------------------------
+Please note: This e-mail may contain confidential information
+intended solely for the addressee. If you have received this
+e-mail in error, please do not disclose it to anyone, notify
+the sender promptly, and delete the message from your system.
+Thank you.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003568.html">[Socketcan-users] [RFC] [ANNOUNCEMENT] libsocketcan-nl
+</A></li>
+	<LI>Next message: <A HREF="003565.html">MSCAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3564">[ date ]</a>
+              <a href="thread.html#3564">[ thread ]</a>
+              <a href="subject.html#3564">[ subject ]</a>
+              <a href="author.html#3564">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

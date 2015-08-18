@@ -1,0 +1,207 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Review of SVN's mcp251x.c
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Review%20of%20SVN%27s%20mcp251x.c&In-Reply-To=%3Ccabda6420910210440r2db77103o34b8f7e1dd48fdad%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003300.html">
+   <LINK REL="Next"  HREF="003303.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Review of SVN's mcp251x.c</H1>
+    <B>christian pellegrin</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Review%20of%20SVN%27s%20mcp251x.c&In-Reply-To=%3Ccabda6420910210440r2db77103o34b8f7e1dd48fdad%40mail.gmail.com%3E"
+       TITLE="Review of SVN's mcp251x.c">chripell at gmail.com
+       </A><BR>
+    <I>Wed Oct 21 13:40:12 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003300.html">Review of SVN's mcp251x.c
+</A></li>
+        <LI>Next message: <A HREF="003303.html">Query regarding `warn_on_slowpath` dump with 2.6.27
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3301">[ date ]</a>
+              <a href="thread.html#3301">[ thread ]</a>
+              <a href="subject.html#3301">[ subject ]</a>
+              <a href="author.html#3301">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Wed, Oct 21, 2009 at 11:03 AM, Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt; wrote:
+&gt;<i> Hi Christian,
+</I>
+Hi,
+
+&gt;<i>
+</I>&gt;<i> here's my quick review of the MPC251x driver. First some general comments:
+</I>&gt;<i>
+</I>&gt;<i> - Use proper Linux style for comments.
+</I>&gt;<i>
+</I>&gt;<i> - Use a consistent style for indention of function declarations and
+</I>&gt;<i> &#160;multi-line expressions.
+</I>&gt;<i>
+</I>&gt;<i> - Use macro definitions for constant values.
+</I>&gt;<i>
+</I>&gt;<i> - Check the proper usage of brackets { } for if, for, etc.
+</I>
+huh, I hoped that checkpatch.pl would alert me about these style
+problems. I'll review this carefully.
+
+&gt;<i>
+</I>&gt;<i> - Remove extended debugging message.
+</I>
+ack
+
+&gt;<i>
+</I>&gt;<i> - Consider replacing ret with err but only if err==success and
+</I>&gt;<i> &#160;!err=failure (minor issue). Then use &quot;if ([!]err) ...&quot;.
+</I>
+ack
+
+&gt;<i>
+</I>&gt;<i> - Don't use __func__ but a meaning full error message.
+</I>
+ack
+
+&gt;<i> I see redundant code above. What about implementing mcp251x_write_regs()
+</I>&gt;<i> and mcp251x_read_regs() allowing to read and write successive bytes with
+</I>&gt;<i> one SPI transfer, or many for the MCP2510. This might be used in other
+</I>&gt;<i> places as well.
+</I>&gt;<i>
+</I>
+I see. I'll write a more general function do_cmd which will take care
+of difference between the two models. So the logic of
+unpacking/packing data won't be duplicated. I'll add macros too.
+
+&gt;<i>
+</I>&gt;<i> Ditto. Also please use macro definitons to make the code more readable.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> &#160; &#160; &#160; dev_dbg(&amp;spi-&gt;dev, &quot;%s: BRP = %d, PropSeg = %d, PS1 = %d,&quot;
+</I>&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &quot; PS2 = %d, SJW = %d\n&quot;, __func__, bt-&gt;brp,
+</I>&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; bt-&gt;prop_seg, bt-&gt;phase_seg1, bt-&gt;phase_seg2,
+</I>&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; bt-&gt;sjw);
+</I>&gt;<i>
+</I>&gt;<i> Just for development?
+</I>&gt;<i>
+</I>
+ack, I can read calculated parameters via /sys if I have to check them.
+
+
+&gt;&gt;<i> &#160; &#160; &#160; mcp251x_write_bits(spi, CNF3, CNF3_PHSEG2_MASK,
+</I>&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;(bt-&gt;phase_seg2 - 1));
+</I>&gt;<i>
+</I>&gt;<i> Is triple sampling supported?
+</I>&gt;<i>
+</I>
+yes, according to paragraph 5.5 of the data sheet. It could be
+configured via bit 6 of register CNF2. I grepped other drivers and
+found priv-&gt;can.ctrlmode as a way to activate it.
+
+&gt;<i> Also, please add a dev_info(&quot;Setting CNF1=...) call.
+</I>
+ack for all the CNF.
+
+&gt;&gt;<i>
+</I>&gt;&gt;<i> &#160; &#160; &#160; if (pdata-&gt;transceiver_enable)
+</I>&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; pdata-&gt;transceiver_enable(1);
+</I>&gt;<i>
+</I>&gt;<i> This driver also need to handle the tranceiver. And this implementation
+</I>&gt;<i> is quite efficient.
+</I>&gt;<i>
+</I>
+My customer board has an SN65HVD232 which has to be turned off before
+suspending. The lowest power consumption is achieved by forcing
+mcp2510 in software sleep and by turning off the trnsceiver actually.
+
+&gt;&gt;<i>
+</I>&gt;&gt;<i> &#160; &#160; &#160; mcp251x_write_reg(spi, TXBCTRL(0), 0);
+</I>&gt;&gt;<i> &#160; &#160; &#160; if (priv-&gt;tx_skb || priv-&gt;tx_len) {
+</I>&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; net-&gt;stats.tx_errors++;
+</I>&gt;<i>
+</I>&gt;<i> Do we need to increase tx_dropped as well? Could/should be done in
+</I>&gt;<i> mcp251x_clean(). What type of TX error is that. As we don't increase
+</I>&gt;<i> statistics, a dev_dbg message would be nice to have.
+</I>
+I'll verify that it's correct to do the increment in _clean. I had a
+look at other drivers and it looks to me that dropped is incremented
+only if the packet is not sent for software problems (for example
+impossibility to alloc a skb). I'll check this.
+
+&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; /* create error frame */
+</I>&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; skb = alloc_can_err_skb(net, &amp;frame);
+</I>&gt;<i>
+</I>&gt;<i> An error message for !skb would be nice, like for normal messages.
+</I>&gt;<i>
+</I>
+ack
+
+
+&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; else
+</I>&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; new_state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;<i>
+</I>&gt;<i> Any effort to make the error code handling more compact would be nice.
+</I>&gt;<i> E.g., this if block could be combined with the above one using a temp.
+</I>&gt;<i> variable data1. Then: if (skb &amp;&amp; data1) {frame-&gt;data[1] = data1, ...}
+</I>&gt;<i>
+</I>
+ack, I'll try hard to come out with better code
+
+&gt;<i>
+</I>&gt;<i> In case of automatice bus-off recovery, a RESTARTED error message should
+</I>&gt;<i> be created (frame-&gt;can_id |= CAN_ERR_RESTARTED).
+</I>&gt;<i>
+</I>
+ack
+
+
+&gt;<i>
+</I>&gt;<i> Please return the error code of request_irq() in case of error. Also,
+</I>&gt;<i> consider requesting the irq in the open function (and free it in the
+</I>&gt;<i> stop function.
+</I>&gt;<i>
+</I>
+ack
+
+thanks for the review
+
+-- 
+Christian Pellegrin, see <A HREF="http://www.evolware.org/chri/">http://www.evolware.org/chri/</A>
+&quot;Real Programmers don't play tennis, or any other sport which requires
+you to change clothes. Mountain climbing is OK, and Real Programmers
+wear their climbing boots to work in case a mountain should suddenly
+spring up in the middle of the computer room.&quot;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003300.html">Review of SVN's mcp251x.c
+</A></li>
+	<LI>Next message: <A HREF="003303.html">Query regarding `warn_on_slowpath` dump with 2.6.27
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3301">[ date ]</a>
+              <a href="thread.html#3301">[ thread ]</a>
+              <a href="subject.html#3301">[ subject ]</a>
+              <a href="author.html#3301">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

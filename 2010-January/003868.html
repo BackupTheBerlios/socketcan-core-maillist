@@ -1,0 +1,234 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH V4] Add driver for esd USB2 CAN interface
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V4%5D%20Add%20driver%20for%20esd%20USB2%20CAN%20interface&In-Reply-To=%3C201001151026.20709.matthias.fuchs%40esd.eu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003866.html">
+   <LINK REL="Next"  HREF="003870.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH V4] Add driver for esd USB2 CAN interface</H1>
+    <B>Matthias Fuchs</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V4%5D%20Add%20driver%20for%20esd%20USB2%20CAN%20interface&In-Reply-To=%3C201001151026.20709.matthias.fuchs%40esd.eu%3E"
+       TITLE="[PATCH V4] Add driver for esd USB2 CAN interface">matthias.fuchs at esd.eu
+       </A><BR>
+    <I>Fri Jan 15 10:26:20 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003866.html">[PATCH V4] Add driver for esd USB2 CAN interface
+</A></li>
+        <LI>Next message: <A HREF="003870.html">[PATCH V4] Add driver for esd USB2 CAN interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3868">[ date ]</a>
+              <a href="thread.html#3868">[ thread ]</a>
+              <a href="subject.html#3868">[ subject ]</a>
+              <a href="author.html#3868">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Wolfgang, 
+
+On Thursday 14 January 2010 20:48, Wolfgang Grandegger wrote:
+&gt;<i> Matthias Fuchs wrote:
+</I>&gt;<i> &gt; This patch adds support for the esd USB2 CAN interface.
+</I>&gt;<i> 
+</I>&gt;<i> [snip]
+</I>&gt;<i> &gt; +#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,32)
+</I>&gt;<i> &gt; +static int esd_usb2_start_xmit(struct sk_buff *skb, struct net_device *netdev)
+</I>&gt;<i> &gt; +#else
+</I>&gt;<i> &gt; +static netdev_tx_t esd_usb2_start_xmit(struct sk_buff *skb,
+</I>&gt;<i> &gt; +				      struct net_device *netdev)
+</I>&gt;<i> &gt; +#endif
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	struct esd_usb2_net_priv *priv = netdev_priv(netdev);
+</I>&gt;<i> &gt; +	struct esd_usb2 *dev = priv-&gt;usb2;
+</I>&gt;<i> &gt; +	struct esd_tx_urb_context *context = NULL;
+</I>&gt;<i> &gt; +	struct net_device_stats *stats = &amp;netdev-&gt;stats;
+</I>&gt;<i> &gt; +	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i> &gt; +	struct esd_usb2_msg *msg;
+</I>&gt;<i> &gt; +	struct urb *urb;
+</I>&gt;<i> &gt; +	u8 *buf;
+</I>&gt;<i> &gt; +	int i, err;
+</I>&gt;<i> &gt; +	int ret = NETDEV_TX_OK;
+</I>&gt;<i> &gt; +	size_t size = sizeof(struct esd_usb2_msg);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/* create a URB, and a buffer for it, and copy the data to the URB */
+</I>&gt;<i> &gt; +	urb = usb_alloc_urb(0, GFP_ATOMIC);
+</I>&gt;<i> &gt; +	if (!urb) {
+</I>&gt;<i> &gt; +		dev_err(ND2D(netdev), &quot;No memory left for URBs\n&quot;);
+</I>&gt;<i> &gt; +		stats-&gt;tx_dropped++;
+</I>&gt;<i> &gt; +		if (skb)
+</I>&gt;<i> &gt; +			kfree_skb(skb);
+</I>&gt;<i> 
+</I>&gt;<i> skb cannot be zero.
+</I>Of course. Checking skb also would be to late here because it's already
+references above in the initialisation of cf.
+
+I must admit that I took that check from a related driver :-)
+
+&gt;<i> 
+</I>&gt;<i> &gt; +		goto nourbmem;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	buf = usb_buffer_alloc(dev-&gt;udev, size, GFP_ATOMIC, &amp;urb-&gt;transfer_dma);
+</I>&gt;<i> &gt; +	if (!buf) {
+</I>&gt;<i> &gt; +		dev_err(ND2D(netdev), &quot;No memory left for USB buffer\n&quot;);
+</I>&gt;<i> &gt; +		stats-&gt;tx_dropped++;
+</I>&gt;<i> &gt; +		if (skb)
+</I>&gt;<i> &gt; +			kfree_skb(skb);
+</I>&gt;<i> 
+</I>&gt;<i> Ditto.
+</I>Copy'n'paste ...
+&gt;<i> 
+</I>&gt;<i> &gt; +		goto nobufmem;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	msg = (struct esd_usb2_msg *)buf;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	msg-&gt;msg.hdr.len = 3; /* minimal length */
+</I>&gt;<i> &gt; +	msg-&gt;msg.hdr.cmd = CMD_CAN_TX;
+</I>&gt;<i> &gt; +	msg-&gt;msg.tx.net = priv-&gt;index;
+</I>&gt;<i> &gt; +	msg-&gt;msg.tx.dlc = cf-&gt;can_dlc;
+</I>&gt;<i> &gt; +	msg-&gt;msg.tx.id = cpu_to_le32(cf-&gt;can_id &amp; CAN_ERR_MASK);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	if (cf-&gt;can_id &amp; CAN_RTR_FLAG)
+</I>&gt;<i> &gt; +		msg-&gt;msg.tx.dlc |= ESD_RTR;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	if (cf-&gt;can_id &amp; CAN_EFF_FLAG)
+</I>&gt;<i> &gt; +		msg-&gt;msg.tx.id |= cpu_to_le32(ESD_EXTID);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	for (i = 0; i &lt; cf-&gt;can_dlc; i++)
+</I>&gt;<i> &gt; +		msg-&gt;msg.tx.data[i] = cf-&gt;data[i];
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	msg-&gt;msg.hdr.len += (cf-&gt;can_dlc + 3) &gt;&gt; 2;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	for (i = 0; i &lt; MAX_TX_URBS; i++) {
+</I>&gt;<i> &gt; +		if (priv-&gt;tx_contexts[i].echo_index == MAX_TX_URBS) {
+</I>&gt;<i> &gt; +			context = &amp;priv-&gt;tx_contexts[i];
+</I>&gt;<i> &gt; +			break;
+</I>&gt;<i> &gt; +		}
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/*
+</I>&gt;<i> &gt; +	 * This may never happen.
+</I>&gt;<i> &gt; +	 */
+</I>&gt;<i> &gt; +	if (!context) {
+</I>&gt;<i> &gt; +		dev_warn(ND2D(netdev), &quot;couldn't find free context\n&quot;);
+</I>&gt;<i> &gt; +		ret = NETDEV_TX_BUSY;
+</I>&gt;<i> &gt; +		if (skb)
+</I>&gt;<i> &gt; +			kfree_skb(skb);
+</I>&gt;<i> 
+</I>&gt;<i> If you return with NETDEV_TX_BUSY, you should *not* free the skb as the
+</I>&gt;<i> upper layer will retry later.
+</I>
+... and finally ne paste to much without thinking. Urrg.
+&gt;<i> 
+</I>&gt;<i> &gt; +		goto releasebuf;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	context-&gt;priv = priv;
+</I>&gt;<i> &gt; +	context-&gt;echo_index = i;
+</I>&gt;<i> &gt; +	context-&gt;dlc = cf-&gt;can_dlc;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/* hnd must not be 0 */
+</I>&gt;<i> &gt; +	msg-&gt;msg.tx.hnd = 0x80000000 | i; /* returned in TX done message */
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	usb_fill_bulk_urb(urb, dev-&gt;udev, usb_sndbulkpipe(dev-&gt;udev, 2), buf,
+</I>&gt;<i> &gt; +			  msg-&gt;msg.hdr.len &lt;&lt; 2,
+</I>&gt;<i> &gt; +			  esd_usb2_write_bulk_callback, context);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	urb-&gt;transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	usb_anchor_urb(urb, &amp;priv-&gt;tx_submitted);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	can_put_echo_skb(skb, netdev, context-&gt;echo_index);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	atomic_inc(&amp;priv-&gt;active_tx_jobs);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	err = usb_submit_urb(urb, GFP_ATOMIC);
+</I>&gt;<i> &gt; +	if (err) {
+</I>&gt;<i> &gt; +		can_free_echo_skb(netdev, context-&gt;echo_index);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +		atomic_dec(&amp;priv-&gt;active_tx_jobs);
+</I>&gt;<i> &gt; +		usb_unanchor_urb(urb);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +		stats-&gt;tx_dropped++;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +		if (err == -ENODEV)
+</I>&gt;<i> &gt; +			netif_device_detach(netdev);
+</I>&gt;<i> &gt; +		else
+</I>&gt;<i> &gt; +			dev_warn(ND2D(netdev), &quot;failed tx_urb %d\n&quot;, err);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +		goto releasebuf;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	netdev-&gt;trans_start = jiffies;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/* Slow down tx path */
+</I>&gt;<i> &gt; +	if (atomic_read(&amp;priv-&gt;active_tx_jobs) &gt;= MAX_TX_URBS)
+</I>&gt;<i> &gt; +		netif_stop_queue(netdev);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/*
+</I>&gt;<i> &gt; +	 * Release our reference to this URB, the USB core will eventually free
+</I>&gt;<i> &gt; +	 * it entirely.
+</I>&gt;<i> &gt; +	 */
+</I>&gt;<i> &gt; +	usb_free_urb(urb);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	return NETDEV_TX_OK;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +releasebuf:
+</I>&gt;<i> &gt; +	usb_buffer_free(dev-&gt;udev, size, buf, urb-&gt;transfer_dma);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +nobufmem:
+</I>&gt;<i> &gt; +	usb_free_urb(urb);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +nourbmem:
+</I>&gt;<i> &gt; +	return ret;
+</I>&gt;<i> &gt; +}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> 
+</I>&gt;<i> Puh, to avoid another round, I fixed the issues above and another one
+</I>&gt;<i> reported by checkpatch and commited the patch with your signed-of-by
+</I>&gt;<i> line. Please check.
+</I>Thanks. I will checkout and test it.
+&gt;<i> 
+</I>&gt;<i> Thanks for your contribution.
+</I>Thanks for review and comments.
+
+BTW, how do we keep SVN and kernel/linux-2.6-net more or less in sync?
+Should I post a proper patch to the netdev list?
+
+Matthias
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003866.html">[PATCH V4] Add driver for esd USB2 CAN interface
+</A></li>
+	<LI>Next message: <A HREF="003870.html">[PATCH V4] Add driver for esd USB2 CAN interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3868">[ date ]</a>
+              <a href="thread.html#3868">[ thread ]</a>
+              <a href="subject.html#3868">[ subject ]</a>
+              <a href="author.html#3868">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

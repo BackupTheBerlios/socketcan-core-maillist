@@ -1,0 +1,148 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> CAN statistics cleanup
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20CAN%20statistics%20cleanup&In-Reply-To=%3C49FDAD3A.9020504%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002442.html">
+   <LINK REL="Next"  HREF="002444.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>CAN statistics cleanup</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20CAN%20statistics%20cleanup&In-Reply-To=%3C49FDAD3A.9020504%40grandegger.com%3E"
+       TITLE="CAN statistics cleanup">wg at grandegger.com
+       </A><BR>
+    <I>Sun May  3 16:42:02 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002442.html">CAN statistics cleanup
+</A></li>
+        <LI>Next message: <A HREF="002444.html">CAN statistics cleanup
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2443">[ date ]</a>
+              <a href="thread.html#2443">[ thread ]</a>
+              <a href="subject.html#2443">[ subject ]</a>
+              <a href="author.html#2443">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver Hartkopp wrote:
+&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;<i> 
+</I>&gt;&gt;<i> Now I have the output below. I found an issues with state names:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> -bash-3.2# ./ip -s -d link show can0
+</I>&gt;&gt;<i> 2: can0: &lt;NOARP,UP,LOWER_UP,ECHO&gt; mtu 16 qdisc pfifo_fast state UP qlen 10
+</I>&gt;&gt;<i>     link/can 
+</I>&gt;&gt;<i>     can state ERROR-ACTIVE restart-ms 10
+</I>&gt;<i> 
+</I>&gt;<i> Why ERROR-ACTIVE and not ERROR_ACTIVE ??
+</I>
+Why ERROR_ACTIVE and not ERROR-ACTIVE ;-).
+
+&gt;&gt;<i> Looking to the Bosch CAN spec, the correct CAN error state names are
+</I>&gt;&gt;<i> error-active, error-warning, error-passive and bus-off. I also tend to fix
+</I>&gt;&gt;<i> the corresponding variable names in the code as well, e.g. 
+</I>&gt;&gt;<i> CAN_STATE_ACTIVE -&gt; CAN_STATE_ERR_ACTIVE, CAN_STATE_BUS_WARNING -&gt;
+</I>&gt;&gt;<i> CAN_STATE_ERR_WARNING, etc.
+</I>&gt;<i> 
+</I>&gt;<i> Ack. This makes it transparent, when people have the Bosch CAN spec on their
+</I>&gt;<i> desk :-)
+</I>&gt;<i> 
+</I>&gt;<i> Some more nitpicking:
+</I>&gt;<i> 
+</I>&gt;&gt;<i>     bitrate 500000 sample-point 0.875 tq 125 prop-seg 6 phase-seg1 7 phase-seg2 2 sjw 1
+</I>&gt;<i> 
+</I>&gt;<i> That does not fit into 80 chars. Maybe 'bitrate' can go one line above?
+</I>
+OK, like shown below:
+
+    bitrate 500000 sample-point 0.87
+    tq 125 prop-seg 6 phase-seg1 7 phase-seg2 2 sjw 1
+
+&gt;<i> 
+</I>&gt;&gt;<i>     clock 8000000 tseg1 1..16 tseg2 1..8 sjw 1..4 brp 1..64 brp-inc 1 
+</I>&gt;<i> 
+</I>&gt;<i> What about a &quot;hw : &quot; in front of this line to point out the hw constants?
+</I>
+Well, does this really make clear that we are dealing with hardware
+dependent constanst?
+
+&gt;&gt;<i>     bus-errors rxoverflow arbit-lost error-warn error-pass    bus-off   restarts
+</I>&gt;&gt;<i>        1509734          0          0          2          2          0          3
+</I>&gt;<i> 
+</I>&gt;<i> Numbers are aligned to the right (unusual)
+</I>
+Hm...
+
+&gt;<i> Additionally does not fit into 80 chars.
+</I>
+The line is exactly 80 chars long.
+
+&gt;&gt;<i>     RX: bytes  packets  errors  dropped overrun mcast   
+</I>&gt;&gt;<i>     12077896   1509737  0       0       0       0      
+</I>&gt;&gt;<i>     TX: bytes  packets  errors  dropped carrier collsns 
+</I>&gt;&gt;<i>     6          0        0       2       0       0      
+</I>&gt;<i> 
+</I>&gt;<i> Numbers are aligned to the left (ok)
+</I>
+OK, will change it.
+
+&gt;<i> 
+</I>&gt;&gt;<i> The normal CAN stats has a field &quot;rx_over_errors&quot; which could be used to
+</I>&gt;&gt;<i> count data overrun (RX overflow) errors.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> CAN: rxoverflow -&gt; RX: overrun containing the same value?
+</I>&gt;<i> 
+</I>&gt;<i> Why not skipping the private &quot;CAN: rxoverflow&quot; completely then and only make
+</I>&gt;<i> use of the standard &quot;RX: overrun&quot; ??
+</I>
+Yep, that's what I suggested.
+
+&gt;&gt;<i> Furthermore, we should increment
+</I>&gt;&gt;<i> the &quot;RX: errors&quot; count for CAN errors as well, especially to avoid
+</I>&gt;&gt;<i> confusion. Any objections?
+</I>&gt;<i> 
+</I>&gt;<i> Which CAN errors would be counted in &quot;RX: errors&quot; too?
+</I>
+The CAN bus, rx-overflow and arbitration-lost errors., e.g., it already
+confused peaople that plenty of bus-errors happen and the &quot;RX: error&quot;
+remains 0.
+
+Wolfgang.
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002442.html">CAN statistics cleanup
+</A></li>
+	<LI>Next message: <A HREF="002444.html">CAN statistics cleanup
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2443">[ date ]</a>
+              <a href="thread.html#2443">[ thread ]</a>
+              <a href="subject.html#2443">[ subject ]</a>
+              <a href="author.html#2443">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,127 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH V3] Add driver for esd USB2 CAN interface
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V3%5D%20Add%20driver%20for%20esd%20USB2%20CAN%20interface&In-Reply-To=%3C4B4E21D8.10603%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003854.html">
+   <LINK REL="Next"  HREF="003858.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH V3] Add driver for esd USB2 CAN interface</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V3%5D%20Add%20driver%20for%20esd%20USB2%20CAN%20interface&In-Reply-To=%3C4B4E21D8.10603%40grandegger.com%3E"
+       TITLE="[PATCH V3] Add driver for esd USB2 CAN interface">wg at grandegger.com
+       </A><BR>
+    <I>Wed Jan 13 20:41:12 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003854.html">[PATCH V3] Add driver for esd USB2 CAN interface
+</A></li>
+        <LI>Next message: <A HREF="003858.html">[PATCH V3] Add driver for esd USB2 CAN interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3856">[ date ]</a>
+              <a href="thread.html#3856">[ thread ]</a>
+              <a href="subject.html#3856">[ subject ]</a>
+              <a href="author.html#3856">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Matthias Fuchs wrote:
+&gt;<i> Wolfgang,
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	err = usb_submit_urb(urb, GFP_ATOMIC);
+</I>&gt;&gt;&gt;<i> +	if (err) {
+</I>&gt;&gt;&gt;<i> +		can_free_echo_skb(netdev, context-&gt;echo_index);
+</I>&gt;<i> 	skb = NULL;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +		atomic_dec(&amp;priv-&gt;active_tx_jobs);
+</I>&gt;&gt;&gt;<i> +		usb_unanchor_urb(urb);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +		if (err == -ENODEV)
+</I>&gt;&gt;&gt;<i> +			netif_device_detach(netdev);
+</I>&gt;&gt;&gt;<i> +		else
+</I>&gt;&gt;&gt;<i> +			dev_warn(ND2D(netdev), &quot;failed tx_urb %d\n&quot;, err);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +		goto releasebuf;
+</I>&gt;&gt;&gt;<i> +	} else {
+</I>&gt;&gt;&gt;<i> +		netdev-&gt;trans_start = jiffies;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +		/* Slow down tx path */
+</I>&gt;&gt;&gt;<i> +		if (atomic_read(&amp;priv-&gt;active_tx_jobs) &gt;= MAX_TX_URBS)
+</I>&gt;&gt;&gt;<i> +			netif_stop_queue(netdev);
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/*
+</I>&gt;&gt;&gt;<i> +	 * Release our reference to this URB, the USB core will eventually free
+</I>&gt;&gt;&gt;<i> +	 * it entirely.
+</I>&gt;&gt;&gt;<i> +	 */
+</I>&gt;&gt;&gt;<i> +	usb_free_urb(urb);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	return NETDEV_TX_OK;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +releasebuf:
+</I>&gt;&gt;&gt;<i> +	usb_buffer_free(dev-&gt;udev, size, buf, urb-&gt;transfer_dma);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +nobufmem:
+</I>&gt;&gt;&gt;<i> +	usb_free_urb(urb);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +nourbmem:
+</I>&gt;&gt;&gt;<i> +	if (ret != NETDEV_TX_BUSY) {
+</I>&gt;&gt;&gt;<i> +		if (skb)
+</I>&gt;&gt;&gt;<i> +			dev_kfree_skb(skb);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +		stats-&gt;tx_dropped++;
+</I>&gt;&gt;<i> Be aware that can_put_echo_skb() of can_free_echo_skb() above might have
+</I>&gt;&gt;<i> already freed the skb, also use kfree_skb() instead of dev_kfree_skb().
+</I>&gt;&gt;<i>
+</I>&gt;<i> Does skb=NULL fix this? Is skb always identical to the skb that is free'd in
+</I>&gt;<i> can_free_echo_skb()
+</I>
+No. &quot;can_put_echo_skb(this_skb, dev, idx)&quot; will store &quot;this_skb&quot; (or a
+clone of it). If you call &quot;can_free_echo_skb(dev, idx)&quot; it will normally
+free &quot;this_skb&quot; (or the cloned skb).
+
+&gt;<i> I think so, but just to be sure ...
+</I>
+It is not identical if the skb was cloned. Also be aware, that
+&quot;can_put_echo_skb(this_skb, dev, idx) will *free* &quot;this_skb&quot;
+immediately, if local loopback (echo) is disabled. Well, it would help
+to add more documentation for the function.
+
+Wolfgang.
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003854.html">[PATCH V3] Add driver for esd USB2 CAN interface
+</A></li>
+	<LI>Next message: <A HREF="003858.html">[PATCH V3] Add driver for esd USB2 CAN interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3856">[ date ]</a>
+              <a href="thread.html#3856">[ thread ]</a>
+              <a href="subject.html#3856">[ subject ]</a>
+              <a href="author.html#3856">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

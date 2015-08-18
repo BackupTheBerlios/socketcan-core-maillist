@@ -1,0 +1,166 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [MeeGo-Dev][PATCH v3] Topcliff: Update PCH_CAN driver to 2.6.35
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BMeeGo-Dev%5D%5BPATCH%20v3%5D%20Topcliff%3A%20Update%20PCH_CAN%20driver%20to%202.6.35&In-Reply-To=%3C004a01cb6abe%24c41a9cc0%2466f8800a%40maildom.okisemi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004737.html">
+   <LINK REL="Next"  HREF="004733.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[MeeGo-Dev][PATCH v3] Topcliff: Update PCH_CAN driver to 2.6.35</H1>
+    <B>Masayuki Ohtake</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BMeeGo-Dev%5D%5BPATCH%20v3%5D%20Topcliff%3A%20Update%20PCH_CAN%20driver%20to%202.6.35&In-Reply-To=%3C004a01cb6abe%24c41a9cc0%2466f8800a%40maildom.okisemi.com%3E"
+       TITLE="[MeeGo-Dev][PATCH v3] Topcliff: Update PCH_CAN driver to 2.6.35">masa-korg at dsn.okisemi.com
+       </A><BR>
+    <I>Wed Oct 13 12:09:42 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004737.html">Self-reception
+</A></li>
+        <LI>Next message: <A HREF="004733.html">[MeeGo-Dev][PATCH v3] Topcliff: Update PCH_CAN driver to 2.6.35
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4731">[ date ]</a>
+              <a href="thread.html#4731">[ thread ]</a>
+              <a href="subject.html#4731">[ subject ]</a>
+              <a href="author.html#4731">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thursday, September 30, 2010 6:10 PM, Wolfgang Grandegger wrote:
+
+&gt;<i>
+</I>&gt;<i> + iowrite32(num, &amp;(priv-&gt;regs)-&gt;if2_creq);
+</I>&gt;<i> + while (counter) {
+</I>&gt;&gt;<i> + if2_creq = (ioread32(&amp;(priv-&gt;regs)-&gt;if2_creq)) &amp;
+</I>&gt;&gt;<i> +      CAN_IF_CREQ_BUSY;
+</I>&gt;&gt;<i> + if (!if2_creq)
+</I>&gt;&gt;<i> + break;
+</I>&gt;&gt;<i> + counter--;
+</I>&gt;&gt;<i> + }
+</I>&gt;&gt;<i> + if (!counter)
+</I>&gt;&gt;<i> + dev_err(&amp;priv-&gt;ndev-&gt;dev, &quot;IF2 BUSY Flag is set forever.\n&quot;);
+</I>&gt;&gt;<i> +}
+</I>&gt;<i>
+</I>&gt;<i>Duplicated code!
+</I>
+No.
+These are not the same.
+
+Though it is possible to integrate to one function by adding parameter,
+I think, current two function method is more easily to read.
+
+&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;&gt;<i> + if (status &amp; PCH_STUF_ERR)
+</I>&gt;&gt;<i> + cf-&gt;data[2] |= CAN_ERR_PROT_STUFF;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> + if (status &amp; PCH_FORM_ERR)
+</I>&gt;&gt;<i> + cf-&gt;data[2] |= CAN_ERR_PROT_FORM;
+</I>&gt;<i> +
+</I>&gt;<i> + if (status &amp; PCH_ACK_ERR)
+</I>&gt;<i> + cf-&gt;data[2] |= CAN_ERR_PROT_LOC_ACK | CAN_ERR_PROT_LOC_ACK_DEL;
+</I>&gt;<i> +
+</I>&gt;<i> + if ((status &amp; PCH_BIT1_ERR) || (status &amp; PCH_BIT0_ERR))
+</I>&gt;<i> + cf-&gt;data[2] |= CAN_ERR_PROT_BIT;
+</I>&gt;<i> +
+</I>&gt;<i> + if (status &amp; PCH_CRC_ERR)
+</I>&gt;<i> + cf-&gt;data[2] |= CAN_ERR_PROT_LOC_CRC_SEQ |
+</I>&gt;<i> + CAN_ERR_PROT_LOC_CRC_DEL;
+</I>&gt;<i> +
+</I>&gt;<i> + if (status &amp; PCH_LEC_ALL)
+</I>&gt;<i> + iowrite32(status | PCH_LEC_ALL,
+</I>&gt;<i> +   &amp;(priv-&gt;regs)-&gt;stat);
+</I>&gt;<i>
+</I>&gt;<i>A bit-wise test of the above values is wrong, I believe. Please use the
+</I>&gt;<i>switch statement instead.
+</I>
+The above conditions are not only one time.
+I think &quot;switch&quot; is not suitable for the above.
+Thus, current &quot;if&quot; processing is better.
+
+&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> + u32 brp;
+</I>&gt;<i> +
+</I>&gt;<i> + pch_can_get_run_mode(priv, &amp;curr_mode);
+</I>&gt;<i> + if (curr_mode == PCH_CAN_RUN)
+</I>&gt;<i> + pch_can_set_run_mode(priv, PCH_CAN_STOP);
+</I>&gt;<i>
+</I>&gt;<i>The device is stopped when this function is called. Please remove.
+</I>
+No.
+The above is necessary.
+Because this is our HW specification.
+Before setting bitrate, run-mode must be &quot;STOP&quot;.
+
+&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> +static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+</I>&gt;<i> +{
+</I>&gt;<i> + canid_t id;
+</I>&gt;<i> + u32 id1 = 0;
+</I>&gt;<i> + u32 id2 = 0;
+</I>&gt;<i>
+</I>&gt;<i>Need these values to be preset?
+</I>
+These values are not essential.
+But these help a engineer to read this code.
+
+&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> + /* Enable CAN Interrupts */
+</I>&gt;<i> + pch_can_set_int_custom(priv);
+</I>&gt;<i> +
+</I>&gt;<i> + /* Restore Run Mode */
+</I>&gt;<i> + pch_can_set_run_mode(priv, PCH_CAN_RUN);
+</I>&gt;<i> +
+</I>&gt;<i> + return retval;
+</I>&gt;<i> +}
+</I>&gt;<i>
+</I>&gt;<i>Are the suspend and resume functions tested?
+</I>&gt;<i>
+</I>Yes, we tested before.
+
+=========================================
+
+Except the above, we are modifying for your indications.
+
+I will resubmit soon.
+
+Thanks, Ohtake(OKISemi)
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004737.html">Self-reception
+</A></li>
+	<LI>Next message: <A HREF="004733.html">[MeeGo-Dev][PATCH v3] Topcliff: Update PCH_CAN driver to 2.6.35
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4731">[ date ]</a>
+              <a href="thread.html#4731">[ thread ]</a>
+              <a href="subject.html#4731">[ subject ]</a>
+              <a href="author.html#4731">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

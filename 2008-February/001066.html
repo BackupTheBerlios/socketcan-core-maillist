@@ -1,0 +1,258 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> SJA1000 bus off recovery
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SJA1000%20bus%20off%20recovery&In-Reply-To=%3C47B1B5DF.1010903%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001064.html">
+   <LINK REL="Next"  HREF="001067.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>SJA1000 bus off recovery</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SJA1000%20bus%20off%20recovery&In-Reply-To=%3C47B1B5DF.1010903%40grandegger.com%3E"
+       TITLE="SJA1000 bus off recovery">wg at grandegger.com
+       </A><BR>
+    <I>Tue Feb 12 16:06:07 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001064.html">mscan.c CAN_FLAG_RTR
+</A></li>
+        <LI>Next message: <A HREF="001067.html">SJA1000 bus off recovery
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1066">[ date ]</a>
+              <a href="thread.html#1066">[ thread ]</a>
+              <a href="subject.html#1066">[ subject ]</a>
+              <a href="author.html#1066">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The patch below adds proper bus-off handling for the SJA1000
+
+According to the SJA1000 manual bus-off should be handled as quoted below:
+
+   When the transmit error counter exceeds the limit of 255 [the bus status
+   bit is set to logic 1 (bus-off)] the CAN controller will set the reset
+   request bit to logic 1 (present) and an error interrupt is generated, if
+   enabled. It will stay in this mode until the CPU clears the reset request
+   bit. Once this is completed the CAN controller will wait the minimum
+   protocol-defined time (128 occurrences of the bus-free signal). After
+   that the bus status bit is cleared (bus-on), the error status bit is set
+   to logic 0 (ok), the error counters are reset and an error interrupt is
+   generated, if enabled.
+
+This patch implements this approach by calling the new function can_bus_on()
+when the corresponding error interrupt arrives. Now it's like already in
+RT-Socket-CAN.
+
+What do you think? Anybody experience with bus-off handling?
+
+Thanks,
+
+Wolfgang.
+
+
+Index: cannetdriver26/drivers/net/can/mscan/mscan.c
+===================================================================
+--- cannetdriver26.orig/drivers/net/can/mscan/mscan.c
++++ cannetdriver26/drivers/net/can/mscan/mscan.c
+@@ -568,6 +568,7 @@ static int mscan_do_set_mode(struct net_
+ 			mscan_set_mode(dev, MSCAN_INIT_MODE);
+ 		if ((ret = mscan_start(dev)))
+ 			break;
++		can_bus_on(dev);
+ 		if (netif_queue_stopped(dev))
+ 			netif_wake_queue(dev);
+ 		break;
+Index: cannetdriver26/drivers/net/can/sja1000/sja1000.c
+===================================================================
+--- cannetdriver26.orig/drivers/net/can/sja1000/sja1000.c
++++ cannetdriver26/drivers/net/can/sja1000/sja1000.c
+@@ -222,20 +222,36 @@ static int set_normal_mode(struct net_de
+ static void sja1000_start(struct net_device *dev)
+ {
+ 	struct sja1000_priv *priv = netdev_priv(dev);
++	can_state_t state = priv-&gt;can.state;
+
+ 	iDBG(KERN_INFO &quot;%s: %s()\n&quot;, dev-&gt;name, __FUNCTION__);
+
+-	/* leave reset mode */
+-	if (priv-&gt;can.state != CAN_STATE_STOPPED)
++	if (state == CAN_STATE_BUS_OFF) {
++		/* Trigger bus-off recovery */
++		printk(&quot;Start bus-off recovery: mod-reg=%#x\n&quot;,
++		       priv-&gt;read_reg(dev, REG_MOD));
++		priv-&gt;write_reg(dev, REG_MOD, 0x00);
++		return;
++	}
++
++	/* enter reset mode */
++	if (state != CAN_STATE_STOPPED)
+ 		set_reset_mode(dev);
+
+-	/* Clear error counters and error code capture */
++	/* clear error counters and error code capture */
+ 	priv-&gt;write_reg(dev, REG_TXERR, 0x0);
+ 	priv-&gt;write_reg(dev, REG_RXERR, 0x0);
+ 	priv-&gt;read_reg(dev, REG_ECC);
+
+ 	/* leave reset mode */
+ 	set_normal_mode(dev);
++
++	printk(&quot;%s %sstarted: mod=%#x ier=%#x\n&quot;,
++	       dev-&gt;name, (state != CAN_STATE_STOPPED) ? &quot;re-&quot; : &quot;&quot;,
++	       priv-&gt;read_reg(dev, REG_MOD), priv-&gt;read_reg(dev, REG_IER));
++
++	if (state != CAN_STATE_STOPPED)
++		can_bus_on(dev);
+ }
+
+ static int sja1000_set_mode(struct net_device *dev, can_mode_t mode)
+@@ -249,6 +265,7 @@ static int sja1000_set_mode(struct net_d
+ 			return -EINVAL;
+
+ 		sja1000_start(dev);
++
+ 		if (netif_queue_stopped(dev))
+ 			netif_wake_queue(dev);
+ 		break;
+@@ -516,13 +533,21 @@ static int sja1000_err(struct net_device
+ 		if (status &amp; SR_BS) {
+ 			state = CAN_STATE_BUS_OFF;
+ 			cf-&gt;can_id |= CAN_ERR_BUSOFF;
++			/* suppress EPI interrupt at bus-off recovery */
++			priv-&gt;write_reg(dev, REG_IER, IRQ_EI);
+ 			can_bus_off(dev);
++			printk(&quot;%s: bus-off detected\n&quot;, dev-&gt;name);
+ 			iDBG(KERN_INFO &quot;%s: BUS OFF\n&quot;, dev-&gt;name);
+ 		} else if (status &amp; SR_ES) {
+ 			state = CAN_STATE_BUS_WARNING;
+ 			iDBG(KERN_INFO &quot;%s: error\n&quot;, dev-&gt;name);
+-		} else
++		} else {
++			/* bus-off recovery complete */
++			printk(&quot;%s: bus-off recovery compelete\n&quot;, dev-&gt;name);
+ 			state = CAN_STATE_ACTIVE;
++			priv-&gt;write_reg(dev, REG_IER, IRQ_ALL);
++			can_bus_on(dev);
++		}
+ 	}
+ 	if (isrc &amp; IRQ_BEI) {
+ 		/* bus error interrupt */
+Index: cannetdriver26/include/linux/can/dev.h
+===================================================================
+--- cannetdriver26.orig/include/linux/can/dev.h
++++ cannetdriver26/include/linux/can/dev.h
+@@ -81,6 +81,7 @@ void free_candev(struct net_device *dev)
+ int can_restart_now(struct net_device *dev);
+ int can_set_bitrate(struct net_device *dev, u32 bitrate);
+
++void can_bus_on(struct net_device *dev);
+ void can_bus_off(struct net_device *dev);
+
+ void can_close_cleanup(struct net_device *dev);
+Index: cannetdriver26/net/can/dev.c
+===================================================================
+--- cannetdriver26.orig/net/can/dev.c
++++ cannetdriver26/net/can/dev.c
+@@ -348,9 +348,6 @@ EXPORT_SYMBOL(can_get_echo_skb);
+ int can_restart_now(struct net_device *dev)
+ {
+ 	struct can_priv *priv = netdev_priv(dev);
+-	struct net_device_stats *stats = dev-&gt;get_stats(dev);
+-	struct sk_buff *skb;
+-	struct can_frame *cf;
+ 	int err;
+
+ 	if (netif_carrier_ok(dev))
+@@ -367,14 +364,36 @@ int can_restart_now(struct net_device *d
+ 	if ((err = priv-&gt;do_set_mode(dev, CAN_MODE_START)))
+ 		return err;
+
++	return 0;
++}
++
++static void can_restart_after(unsigned long data)
++{
++	struct net_device *dev = (struct net_device *)data;
++	struct can_priv *priv = netdev_priv(dev);
++
++	priv-&gt;timer.expires = 0; /* mark inactive timer */
++	can_restart_now(dev);
++}
++
++void can_bus_on(struct net_device *dev)
++{
++	struct can_priv *priv = netdev_priv(dev);
++	struct net_device_stats *stats = dev-&gt;get_stats(dev);
++	struct sk_buff *skb;
++	struct can_frame *cf;
++
+ 	netif_carrier_on(dev);
+
+ 	priv-&gt;can_stats.restarts++;
+
+ 	/* send restart message upstream */
+ 	skb = dev_alloc_skb(sizeof(struct can_frame));
+-	if (skb == NULL)
+-		return -ENOMEM;
++	if (skb == NULL) {
++		dev_err(ND2D(dev),
++			&quot;couldn't allocate skb for restart error message\n&quot;);
++		return;
++	}
+ 	skb-&gt;dev = dev;
+ 	skb-&gt;protocol = htons(ETH_P_CAN);
+ 	cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+@@ -387,18 +406,8 @@ int can_restart_now(struct net_device *d
+ 	dev-&gt;last_rx = jiffies;
+ 	stats-&gt;rx_packets++;
+ 	stats-&gt;rx_bytes += cf-&gt;can_dlc;
+-
+-	return 0;
+-}
+-
+-static void can_restart_after(unsigned long data)
+-{
+-	struct net_device *dev = (struct net_device *)data;
+-	struct can_priv *priv = netdev_priv(dev);
+-
+-	priv-&gt;timer.expires = 0; /* mark inactive timer */
+-	can_restart_now(dev);
+ }
++EXPORT_SYMBOL(can_bus_on);
+
+ void can_bus_off(struct net_device *dev)
+ {
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001064.html">mscan.c CAN_FLAG_RTR
+</A></li>
+	<LI>Next message: <A HREF="001067.html">SJA1000 bus off recovery
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1066">[ date ]</a>
+              <a href="thread.html#1066">[ thread ]</a>
+              <a href="subject.html#1066">[ subject ]</a>
+              <a href="author.html#1066">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,163 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] Phytec PCM027: register CAN resources
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Phytec%20PCM027%3A%20register%20CAN%20resources&In-Reply-To=%3C1276256776-17068-1-git-send-email-mkl%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004400.html">
+   <LINK REL="Next"  HREF="004402.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] Phytec PCM027: register CAN resources</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Phytec%20PCM027%3A%20register%20CAN%20resources&In-Reply-To=%3C1276256776-17068-1-git-send-email-mkl%40pengutronix.de%3E"
+       TITLE="[PATCH] Phytec PCM027: register CAN resources">mkl at pengutronix.de
+       </A><BR>
+    <I>Fri Jun 11 13:46:16 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004400.html">[PATCH] can: mpc5xxx_can.c: Fix build failure
+</A></li>
+        <LI>Next message: <A HREF="004402.html">error active (CAN_ERR_CRTL / CAN_ERR_CRTL_UNSPEC) not indicated in	rev1181
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4401">[ date ]</a>
+              <a href="thread.html#4401">[ thread ]</a>
+              <a href="subject.html#4401">[ subject ]</a>
+              <a href="author.html#4401">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>From: Juergen Beisert &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">jbe at pengutronix.de</A>&gt;
+
+applies to current net-next-2.6
+(which includes Wolfgang's patche &quot;can: sja1000 platform data fixes&quot;)
+
+cheers, Marc
+
+
+&gt;<i>From 66af2a1778a468610e25403336cc27650fddef2a Mon Sep 17 00:00:00 2001
+</I>From: Juergen Beisert &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">jbe at pengutronix.de</A>&gt;
+Date: Fri, 11 Jun 2010 13:27:03 +0200
+Subject: [PATCH] Phytec PCM027: register CAN resources
+
+This patch adds resources for the SJA1000 platform device.
+
+Signed-off-by: Juergen Beisert &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">jbe at pengutronix.de</A>&gt;
+Signed-off-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+---
+ arch/arm/mach-pxa/include/mach/pcm027.h |    2 +-
+ arch/arm/mach-pxa/pcm027.c              |   40 ++++++++++++++++++++++++++++++-
+ 2 files changed, 40 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-pxa/include/mach/pcm027.h b/arch/arm/mach-pxa/include/mach/pcm027.h
+index 0408326..b65fcc4 100644
+--- a/arch/arm/mach-pxa/include/mach/pcm027.h
++++ b/arch/arm/mach-pxa/include/mach/pcm027.h
+@@ -49,7 +49,7 @@
+ /* CAN controller SJA1000 (unsupported yet) */
+ #define PCM027_CAN_IRQ_GPIO	114
+ #define PCM027_CAN_IRQ		IRQ_GPIO(PCM027_CAN_IRQ_GPIO)
+-#define PCM027_CAN_IRQ_EDGE	IRQ_TYPE_EDGE_FALLING
++#define PCM027_CAN_IRQ_EDGE	IORESOURCE_IRQ_LOWEDGE
+ #define PCM027_CAN_PHYS		0x22000000
+ #define PCM027_CAN_SIZE		0x100
+ 
+diff --git a/arch/arm/mach-pxa/pcm027.c b/arch/arm/mach-pxa/pcm027.c
+index 2190af0..2ef7686 100644
+--- a/arch/arm/mach-pxa/pcm027.c
++++ b/arch/arm/mach-pxa/pcm027.c
+@@ -26,6 +26,7 @@
+ #include &lt;linux/spi/spi.h&gt;
+ #include &lt;linux/spi/max7301.h&gt;
+ #include &lt;linux/leds.h&gt;
++#include &lt;linux/can/platform/sja1000.h&gt;
+ 
+ #include &lt;asm/mach-types.h&gt;
+ #include &lt;asm/mach/arch.h&gt;
+@@ -204,13 +205,50 @@ static struct platform_device pcm027_led_dev = {
+ #endif /* CONFIG_LEDS_GPIO */
+ 
+ /*
++ * SJA1000 CAN controller
++ */
++#if defined(CONFIG_CAN_SJA1000_PLATFORM) || defined(CONFIG_CAN_SJA1000_PLATFORM_MODULE)
++static struct resource pcm027_sja1000_resources[] = {
++	[0] = {
++		.start	= PCM027_CAN_PHYS,
++		.end	= PCM027_CAN_PHYS + PCM027_CAN_SIZE - 1,
++		.flags	= IORESOURCE_MEM,
++	},
++	[1] = {
++		.start	= PCM027_CAN_IRQ,
++		.end	= PCM027_CAN_IRQ,
++		.flags	= IORESOURCE_IRQ | PCM027_CAN_IRQ_EDGE,
++	},
++};
++
++static struct sja1000_platform_data pcm027_sja1000_platform_data = {
++	.osc_freq	= 16000000,
++	.ocr		= OCR_TX1_PULLDOWN | OCR_TX0_PUSHPULL,
++	.cdr		= CDR_CBP,
++};
++
++static struct platform_device pcm027_sja1000_device = {
++	.name		= &quot;sja1000_platform&quot;,
++	.dev = {
++		.platform_data = &amp;pcm027_sja1000_platform_data,
++	},
++	.num_resources	= ARRAY_SIZE(pcm027_sja1000_resources),
++	.resource	= pcm027_sja1000_resources,
++};
++#endif /* CONFIG_CAN_SJA1000_PLATFORM || CONFIG_CAN_SJA1000_PLATFORM_MODULE */
++
++
++/*
+  * declare the available device resources on this board
+  */
+ static struct platform_device *devices[] __initdata = {
+ 	&amp;smc91x_device,
+ 	&amp;pcm027_flash,
+ #ifdef CONFIG_LEDS_GPIO
+-	&amp;pcm027_led_dev
++	&amp;pcm027_led_dev,
++#endif
++#if defined(CONFIG_CAN_SJA1000_PLATFORM) || defined(CONFIG_CAN_SJA1000_PLATFORM_MODULE)
++	&amp;pcm027_sja1000_device,
+ #endif
+ };
+ 
+-- 
+1.7.1
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004400.html">[PATCH] can: mpc5xxx_can.c: Fix build failure
+</A></li>
+	<LI>Next message: <A HREF="004402.html">error active (CAN_ERR_CRTL / CAN_ERR_CRTL_UNSPEC) not indicated in	rev1181
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4401">[ date ]</a>
+              <a href="thread.html#4401">[ thread ]</a>
+              <a href="subject.html#4401">[ subject ]</a>
+              <a href="author.html#4401">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

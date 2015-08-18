@@ -1,0 +1,144 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-users] Looping back TX messages
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-users%5D%20Looping%20back%20TX%20messages&In-Reply-To=%3C44FC7E6E.5040403%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000337.html">
+   <LINK REL="Next"  HREF="000339.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-users] Looping back TX messages</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-users%5D%20Looping%20back%20TX%20messages&In-Reply-To=%3C44FC7E6E.5040403%40grandegger.com%3E"
+       TITLE="[Socketcan-users] Looping back TX messages">wg at grandegger.com
+       </A><BR>
+    <I>Mon Sep  4 21:28:46 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000337.html">[Socketcan-users] Looping back TX messages
+</A></li>
+        <LI>Next message: <A HREF="000339.html">[Socketcan-users] Looping back TX messages
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#338">[ date ]</a>
+              <a href="thread.html#338">[ thread ]</a>
+              <a href="subject.html#338">[ subject ]</a>
+              <a href="author.html#338">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver Hartkopp wrote:
+&gt;<i> Wolfgang Grandegger schrieb:
+</I>&gt;&gt;<i> Urs Thuermann wrote:
+</I>&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt; writes:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    
+</I>&gt;&gt;&gt;&gt;<i> OK, so far you and Urs have been happy with the loopback solution in 
+</I>&gt;&gt;&gt;&gt;<i> the Linux socket-can driver and you didn't miss the ability to 
+</I>&gt;&gt;&gt;&gt;<i> switch it off. Jan and I still prefer the implementation via 
+</I>&gt;&gt;&gt;&gt;<i> protocol because we want to keep it simple and are concerned about 
+</I>&gt;&gt;&gt;&gt;<i> the RT latency. I think
+</I>&gt;&gt;&gt;&gt;<i> a resonable minimal solution for the time being could be the use of:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i>     socket(PF_CAN, SOCK_RAW, CAN_PROTO_NET); /* local loopback */
+</I>&gt;&gt;&gt;&gt;<i>     socket(PF_CAN, SOCK_RAW, CAN_PROTO_DEVICE); /* no loopback */
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i>          #define CAN_PROTO_NET 0     (or maybe better CAN_RAW_NET?)
+</I>&gt;&gt;&gt;&gt;<i>          #define CAN_PROTO_DEVICE 1  (or maybe bettr CAN_RAW_DEVICE?)
+</I>&gt;&gt;&gt;&gt;<i>       
+</I>&gt;&gt;&gt;<i> As pointed out in another posting, a new protocol is simply not the
+</I>&gt;&gt;&gt;<i> right way to do it, as it is not a different protocol, but only a
+</I>&gt;&gt;&gt;<i> minor change in behavior of an existing protocol.  You send and
+</I>&gt;&gt;&gt;<i> receive the same frames, you use the same sockaddr types, etc. the
+</I>&gt;&gt;&gt;<i> only difference is where packets are delivered to.  It is a simple
+</I>&gt;&gt;&gt;<i> on/off flag to control wether frames are looped back to local
+</I>&gt;&gt;&gt;<i> listeners or not, and this is exactly what the {get,set}sockopt calls
+</I>&gt;&gt;&gt;<i> where invented for.  There might be further similar flags in the
+</I>&gt;&gt;&gt;<i> future which might be reasonable in combination with each other, and
+</I>&gt;&gt;&gt;<i> you surely wouldn't want to define 2^n protocols for n such flags.  In
+</I>&gt;&gt;&gt;<i> fact, we already have two such flags, one to control looping back in
+</I>&gt;&gt;&gt;<i> general, and one to control looping back to the sending socket.  The
+</I>&gt;&gt;&gt;<i> two options are
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>     CAN_RAW_LOOPBACK to enable or disable loopback of packets to the
+</I>&gt;&gt;&gt;<i>         sending interface.  The default is on, so that other sockets
+</I>&gt;&gt;&gt;<i>         on the same machine will receive everything, that is sent on
+</I>&gt;&gt;&gt;<i>         that interface, and not only what is sent from other hosts.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>     CAN_RAW_RECV_OWN_MSGS to enable or disable reception of looped
+</I>&gt;&gt;&gt;<i>         back packets by the sending socket.  The default is off to
+</I>&gt;&gt;&gt;<i>         meet your expectations expressed here.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> This means if you simply open a socket and don't use these socket
+</I>&gt;&gt;&gt;<i> options you get exactly the behavior you wanted' i.e. you don't see
+</I>&gt;&gt;&gt;<i> your own messages.  As long as you open only one socket on the same
+</I>&gt;&gt;&gt;<i> host (which I understand is your normal use case) you won't see
+</I>&gt;&gt;&gt;<i> anything looped back.  If you do run other sockets connected the same
+</I>&gt;&gt;&gt;<i> CAN interface you will soon be happy that packets are looped back.  If
+</I>&gt;&gt;&gt;<i> not, switch it off using the socket option.
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Still, to loop-back the TX messages we have to disable interrupts, 
+</I>&gt;&gt;<i> walk through the list of listeners and re-enable them. This will have 
+</I>&gt;&gt;<i> some negative effect on the latency, especially if messages are sent 
+</I>&gt;&gt;<i> at high rate. Therefore we prefer CAN_RAW_LOOPBACK to be off by default.
+</I>&gt;&gt;<i>   
+</I>&gt;<i> Aehm - no. Calling netif_rx() puts the looped frame into the input-queue 
+</I>&gt;<i> of the network-layer. This frame is then processed inside a software 
+</I>&gt;<i> interrupt. That has nothing to do with a 'real' interrupt. Inside the 
+</I>&gt;<i> interrupt-routine in the CAN-netdevice  driver netif_rx() is called the 
+</I>&gt;<i> same way - and then the interrupt routine is left. The soft-irq is 
+</I>&gt;<i> processed afterwards.
+</I>&gt;<i> 
+</I>&gt;<i> Or are you writing about the RT-socketcan implementation here?
+</I>
+Yes, see 
+<A HREF="http://snail.fsffrance.org/www.xenomai.org/documentation/trunk/html/api/group__rtcan.html.">http://snail.fsffrance.org/www.xenomai.org/documentation/trunk/html/api/group__rtcan.html.</A>
+
+&gt;<i> 
+</I>&gt;<i> I don't know the RT-socketcan implementation in that point, but it 
+</I>&gt;<i> should support the loopback of frames to meet the 'broadcast' and 
+</I>&gt;<i> 'socket' idea together. Btw. if you are just using sockets as 'single 
+</I>&gt;<i> user per host' switch off the loopback by sockopt. This also indicates 
+</I>&gt;<i> the different use-case in contrast to 'multiuser'-socket-use that is 
+</I>&gt;<i> expected (when thinking about the broadcasting CAN and sockets).
+</I>
+We will support CAN_RAW_LOOPBACK via setsockopt but likely with a 
+different default with some big note in the documentation because RT 
+performance has highest priority. We have agreed an an interface and 
+that's good news.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000337.html">[Socketcan-users] Looping back TX messages
+</A></li>
+	<LI>Next message: <A HREF="000339.html">[Socketcan-users] Looping back TX messages
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#338">[ date ]</a>
+              <a href="thread.html#338">[ thread ]</a>
+              <a href="subject.html#338">[ subject ]</a>
+              <a href="author.html#338">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,415 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH RFC v2] Add support for Janz ICAN3 CAN module
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20RFC%20v2%5D%20Add%20support%20for%20Janz%20ICAN3%20CAN%20module&In-Reply-To=%3C4B7B1A2A.5000206%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004039.html">
+   <LINK REL="Next"  HREF="004041.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH RFC v2] Add support for Janz ICAN3 CAN module</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20RFC%20v2%5D%20Add%20support%20for%20Janz%20ICAN3%20CAN%20module&In-Reply-To=%3C4B7B1A2A.5000206%40grandegger.com%3E"
+       TITLE="[PATCH RFC v2] Add support for Janz ICAN3 CAN module">wg at grandegger.com
+       </A><BR>
+    <I>Tue Feb 16 23:20:26 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004039.html">[PATCH RFC v2] Add support for Janz ICAN3 CAN module
+</A></li>
+        <LI>Next message: <A HREF="004041.html">[PATCH RFC v2] Add support for Janz ICAN3 CAN module
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4040">[ date ]</a>
+              <a href="thread.html#4040">[ thread ]</a>
+              <a href="subject.html#4040">[ subject ]</a>
+              <a href="author.html#4040">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ira W. Snyder wrote:
+&gt;<i> On Mon, Feb 15, 2010 at 06:13:11PM +0100, Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> Hi Ira,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Ira W. Snyder wrote:
+</I>
+&gt;&gt;&gt;<i> +/* Get the MSYNC bits from the &quot;old-style&quot; interface control registers */
+</I>&gt;&gt;&gt;<i> +static void janz_get_msync(struct janz_ican3 *mod, u8 *locl, u8 *peer)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	janz_set_page(mod, 0);
+</I>&gt;&gt;&gt;<i> +	*peer = ioread8(mod-&gt;regs + MSYNC_PEER);
+</I>&gt;&gt;&gt;<i> +	*locl = ioread8(mod-&gt;regs + MSYNC_LOCL);
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;<i> What are your arguments against using structures to describe the
+</I>&gt;&gt;<i> register layout?
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> I don't have any strong arguments against using a structure to describe
+</I>&gt;<i> register layout, except:
+</I>&gt;<i> 
+</I>&gt;<i> 1) all datasheets I've ever used have registers described by hexadecimal
+</I>&gt;<i> offsets. Using a structure, you have to manually calculate offsets when
+</I>&gt;<i> checking that the structure is defined correctly. Once it is correct,
+</I>&gt;<i> this isn't a big deal.
+</I>
+In general structs are preferred as they allow type checking and result
+usually in more readable code. #defines are more handy if you deal with
+offset instead of addresses.
+
+&gt;<i> 2) These registers only exist in a single DPM page, page #0. They are
+</I>&gt;<i> not &quot;always accessible&quot;, as in a device which uses mmio. You must switch
+</I>&gt;<i> the DPM page before accessing them.
+</I>&gt;<i> 
+</I>&gt;<i> Does it really make sense to create a structure just for calculating the
+</I>&gt;<i> offsets in one DPM page? For the &quot;janz onboard registers&quot; (described
+</I>&gt;<i> with &quot;JANZ_OB_* defines), I agree. I'll make a structure for those.
+</I>
+Please check if it results in better code.
+
+[snip]
+&gt;&gt;&gt;<i> +	if ((xord &amp; 0x30) == 0x30) {
+</I>&gt;&gt;&gt;<i> +		dev_err(mod-&gt;dev, &quot;no mbox for writing\n&quot;);
+</I>&gt;&gt;&gt;<i> +		return -ENOMEM;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> Here and in many other places macro definitions would make the code more
+</I>&gt;&gt;<i> readable.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Yep, There are a few of these. My problem is this: what names do I use?
+</I>&gt;<i> The way this device works is stupid. You'll want to read pages C-333 to
+</I>&gt;<i> C-335 in the manual.
+</I>&gt;<i> 
+</I>&gt;<i> The basics are:
+</I>&gt;<i> You have two registers, MSYNC_PEER and MSYNC_LOCL. The firmware can
+</I>&gt;<i> only write to MSYNC_PEER, and the driver can only write to MSYNC_LOCL.
+</I>&gt;<i> 
+</I>&gt;<i> The registers are laid out like this:
+</I>&gt;<i> 
+</I>&gt;<i> MSYNC_PEER:
+</I>&gt;<i> bit0: RB0
+</I>&gt;<i> bit1: RB1
+</I>&gt;<i> bit2: LW
+</I>&gt;<i> bit4: WB0
+</I>&gt;<i> bit5: WB1
+</I>&gt;<i> 
+</I>&gt;<i> MSYNC_LOCL:
+</I>&gt;<i> bit0: RB0
+</I>&gt;<i> bit1: RB1
+</I>&gt;<i> bit4: WB0
+</I>&gt;<i> bit5: WB1
+</I>&gt;<i> bit6: LW
+</I>&gt;<i> 
+</I>&gt;<i> When you get an interrupt, and you want to read a message from the
+</I>&gt;<i> controller, you must XOR the RBn bits. If you get a 1 back for a certain
+</I>&gt;<i> bit position, then you have a buffer to read. The same is true for the
+</I>&gt;<i> WBn bits, except that the XOR will be 0 when you have a buffer to read.
+</I>&gt;<i> 
+</I>&gt;<i> In addition, you must read/set the LW (last written) bit to correspond
+</I>&gt;<i> to the buffer you last wrote to.
+</I>&gt;<i> 
+</I>&gt;<i> I would be happy to use defines to make this easier to read, but I have
+</I>&gt;<i> *no idea* what to name them. Suggestions please.
+</I>
+#define MSYNC_PEER_RB0 0x01
+#define MSYNC_PEER_RB1 0x02
+
+and so on.
+
+BTW: an inline function for that bit gymnastics would be useful as well.
+
+[snip]
+&gt;&gt;&gt;<i> +	memset(&amp;msg, 0, sizeof(msg));
+</I>&gt;&gt;&gt;<i> +	msg.control = 0x00;
+</I>&gt;&gt;&gt;<i> +	msg.spec    = MSG_INITFDPMQUEUE;
+</I>&gt;&gt;&gt;<i> +	msg.len     = cpu_to_le16(8);
+</I>&gt;&gt;<i> Please do not align expressions. Just use *one* space before and after
+</I>&gt;&gt;<i> &quot;=&quot;. Please fix globally.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Ok. This will be in the next version of the patch. I thought it made the
+</I>&gt;<i> code easier to read.
+</I>
+It's required by the coding style.
+
+&gt;&gt;&gt;<i> +static void can_to_janz(struct janz_ican3 *mod, struct can_frame *cf,
+</I>&gt;&gt;&gt;<i> +			struct janz_fast_desc *desc)
+</I>&gt;&gt;<i> Use a better name please.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> I'll try to think something up. All these two functions do is convert a
+</I>&gt;<i> struct can_frame to the appropriate structure for the firmware, and
+</I>&gt;<i> back. How about &quot;janz_convert_tocan() and janz_convert_fromcan()&quot;?
+</I>
+can_frame_to_janz and janz_to_can_frame would already be fine. &quot;can&quot; is
+to general.
+
+[snip]
+&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	cf-&gt;can_id |= idflags;
+</I>&gt;&gt;&gt;<i> +	cf-&gt;data[1] = d1;
+</I>&gt;&gt;<i> Hm, the data field to be used depends on the error type.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> This code is copied from esd_pci331.c. If I don't have a good example,
+</I>&gt;<i> how can I be expected to do things correctly!
+</I>&gt;<i> 
+</I>&gt;<i> How do I find out exactly which field belongs to which data type?
+</I>
+See include/linux/can/error.h
+
+&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	netif_rx(skb);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	stats-&gt;rx_packets++;
+</I>&gt;&gt;&gt;<i> +	stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;&gt;&gt;<i> +	return 0;
+</I>&gt;&gt;&gt;<i> +}
+</I>
+[snip]
+&gt;&gt;&gt;<i> +	rxerr = msg-&gt;data[4];
+</I>&gt;&gt;&gt;<i> +	txerr = msg-&gt;data[5];
+</I>&gt;&gt;<i> Should go to field 6 and 7.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> You're confused. These come from the firmware, they are not going into a
+</I>&gt;<i> struct can_frame. These are the buffer locations in the message sent by
+</I>&gt;<i> the firmware for rx/tx error counter registers.
+</I>
+Right. Sorry for the noise.
+
+&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* state is error-active by default */
+</I>&gt;&gt;&gt;<i> +	state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (rxerr &gt;= 96 || txerr &gt;= 96)
+</I>&gt;&gt;&gt;<i> +		state = CAN_STATE_ERROR_WARNING;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (rxerr &gt;= 128 || txerr &gt;= 128)
+</I>&gt;&gt;&gt;<i> +		state = CAN_STATE_ERROR_PASSIVE;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (rxerr &gt;= 255 || txerr &gt;= 255)
+</I>&gt;&gt;&gt;<i> +		state = CAN_STATE_BUS_OFF;
+</I>&gt;&gt;<i> You could use &quot;else if&quot; if you revert the order.
+</I>&gt;<i> 
+</I>&gt;<i> Ok, I'll try that in the next version.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> Also, 255 does not yet
+</I>&gt;&gt;<i> mean bus-error, strictly speaking. Have you seen the device going bus-off?
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Well, these are byte-sized registers. They can never exceed 255 (0xff),
+</I>&gt;<i> they would exceed their bit-width. What *should* I do here?
+</I>&gt;<i> 
+</I>&gt;<i> I don't think I've seen the device go bus-off. How would I cause that
+</I>&gt;<i> situation?
+</I>
+Short-circuit the CAN low and high wires and send a message. Do you get
+any notification?
+
+&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* check if we should generate an error frame at all */
+</I>&gt;&gt;&gt;<i> +	if (state == mod-&gt;can.state || mod-&gt;can.state == CAN_STATE_STOPPED) {
+</I>&gt;&gt;&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;no error frame needed: state %d\n&quot;, state);
+</I>&gt;&gt;&gt;<i> +		return;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> Shouldn't this check be done first?
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> The variable &quot;state&quot; isn't set then. This code is basically copied from
+</I>&gt;<i> esd_pci331.c, but I moved the checking of priv-&gt;can.state out of each
+</I>&gt;<i> 'case', into one place.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;state change: state %d\n&quot;, state);
+</I>&gt;&gt;&gt;<i> +	mod-&gt;can.state = state;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (state == CAN_STATE_BUS_OFF) {
+</I>&gt;&gt;&gt;<i> +		janz_err_frame(mod, CAN_ERR_BUSOFF, 0);
+</I>&gt;&gt;&gt;<i> +		return;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (state == CAN_STATE_ERROR_PASSIVE) {
+</I>&gt;&gt;&gt;<i> +		err = (rxerr &gt;= 128) ? CAN_ERR_CRTL_RX_PASSIVE
+</I>&gt;&gt;&gt;<i> +				     : CAN_ERR_CRTL_TX_PASSIVE;
+</I>&gt;&gt;&gt;<i> +		janz_err_frame(mod, CAN_ERR_CRTL, err);
+</I>&gt;&gt;&gt;<i> +		return;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (state == CAN_STATE_ERROR_WARNING) {
+</I>&gt;&gt;&gt;<i> +		err = (rxerr &gt;= 96) ? CAN_ERR_CRTL_RX_WARNING
+</I>&gt;&gt;&gt;<i> +				    : CAN_ERR_CRTL_TX_WARNING;
+</I>&gt;&gt;&gt;<i> +		janz_err_frame(mod, CAN_ERR_CRTL, err);
+</I>&gt;&gt;&gt;<i> +		return;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> If you use &quot;else if&quot; as suggested, the code could be shortened a lot, I
+</I>&gt;&gt;<i> think (by doing everything within the if/else block).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Just for curiosity, what does &quot;candump -t d any,0:0,#FFFFFFFF&quot; report
+</I>&gt;&gt;<i> when you trigger a bus-error or when you send a message with no cable
+</I>&gt;&gt;<i> connected.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Nothing. The device just eventually runs out of send buffers when no
+</I>&gt;<i> cable is connected. It doesn't send any error messages.
+</I>
+Hm, if you do not get any notification this code is useless.
+
+&gt;&gt;&gt;<i> +	/* nothing needed for error-active state */
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static void janz_handle_unknown(struct janz_ican3 *mod, struct janz_msg *msg)
+</I>&gt;&gt;<i> Handle what?
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> The firmware has about 50 different messages it can send to the driver.
+</I>&gt;<i> I only handled the few that we expect to see. I put this in place so we
+</I>&gt;<i> get a log of message types that the driver doesn't handle yet.
+</I>&gt;<i> 
+</I>&gt;<i> Should I remove it, and just drop all messages we don't handle without
+</I>&gt;<i> printing anything? Seems like a hindrance to debugging problems.
+</I>
+I have just a problem with the name, which is not specific enough. A
+better name would be &quot;janz_handle_unknown_message&quot;.
+
+[snip]
+&gt;&gt;&gt;<i> +	switch (msg-&gt;spec) {
+</I>&gt;&gt;&gt;<i> +	case MSG_IDVERS:
+</I>&gt;&gt;&gt;<i> +		janz_handle_idvers(mod, msg);
+</I>&gt;&gt;&gt;<i> +		break;
+</I>&gt;&gt;&gt;<i> +	case MSG_MSGLOST:
+</I>&gt;&gt;&gt;<i> +	case MSG_FMSGLOST:
+</I>&gt;&gt;&gt;<i> +		janz_handle_msglost(mod, msg);
+</I>&gt;&gt;&gt;<i> +		break;
+</I>&gt;&gt;<i> You shoud create error messages for msglost as well.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Ok. What kind of messages? This message means that the driver is not
+</I>&gt;<i> reading CAN frames fast enough, and the firmware ran out of locations to
+</I>&gt;<i> store them. It is exactly the same as this driver's xmit() routine
+</I>&gt;<i> running out of buffers to place CAN messages for sending.
+</I>
+CAN_ERR_CRTL_RX_OVERFLOW and CAN_ERR_CRTL_RX_OVERFLOW from
+<A HREF="http://lxr.linux.no/#linux+v2.6.32/include/linux/can/error.h.">http://lxr.linux.no/#linux+v2.6.32/include/linux/can/error.h.</A>
+
+[snip]
+&gt;&gt;&gt;<i> +		/* write back the control bits with IVALID unset */
+</I>&gt;&gt;&gt;<i> +		control &amp;= ~DESC_IVALID;
+</I>&gt;&gt;&gt;<i> +		iowrite8(control, addr);
+</I>&gt;&gt;<i> This seems to be duplicated code. Here a helper function would make
+</I>&gt;&gt;<i> sense in contrast to your *one* line functions, e.g. to enable the
+</I>&gt;&gt;<i> interrupts, which just increases code size.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> The one-liners are marked inline, so they should get compiled to
+</I>&gt;<i> io(read|write)8(), without any function call overhead. I used them
+</I>&gt;<i> because their *names* are descriptive.
+</I>
+You do that in a few cases but in many other you use ioread8() directly.
+I'm not worried about overhead.
+
+&gt;<i> It is much easier to tell that this clears interrupts:
+</I>&gt;<i> janz_clr_int(mod);
+</I>&gt;<i> 
+</I>&gt;<i> Than this:
+</I>&gt;<i> ioread8(mod-&gt;regs + DPM_REG_INT);
+</I>&gt;<i> 
+</I>&gt;<i> Don't you think?
+</I>
+/* Clear interrupt */
+ioread8(mod-&gt;regs + DPM_REG_INT);
+
+does make pretty clear what the call does and I do not need to lookup
+how it's implemented. If the interrupt is cleared in more than one place
+or if it's a complex action, a function is useful, of course.
+
+&gt;<i> I'm not sure how to clearly function-ize the clearing of the IVALID bit
+</I>&gt;<i> in descriptors, but I'll try for the next version.
+</I>
+Yes, a set of functions would be handy, I think.
+
+[snip]
+&gt;&gt;&gt;<i> +	/* bring the bus online */
+</I>&gt;&gt;&gt;<i> +	ret = janz_set_bus_state(mod, true);
+</I>&gt;&gt;&gt;<i> +	if (ret) {
+</I>&gt;&gt;&gt;<i> +		dev_err(mod-&gt;dev, &quot;unable to set bus-on\n&quot;);
+</I>&gt;&gt;&gt;<i> +		return ret;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> How is bus-off recovery supposed to work? In general, if the card/hw
+</I>&gt;&gt;<i> recovery automatically, we use the following procedure:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> restart_ms == 0: the device should be *stopped* on bus-off allowing
+</I>&gt;&gt;<i>                  to user/app to restart it manually using this function.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> restart_ms  &gt; 0: the device is allowed to recover from bus-off
+</I>&gt;&gt;<i>                  automatically.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Could that be implemented?
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> The datasheet doesn't mention the word &quot;restart&quot; or &quot;recover&quot;. I guess
+</I>&gt;<i> it doesn't recover automatically. Again, this code was copied from the
+</I>&gt;<i> esd_pci331.c driver. Is that driver's error recovery broken? What should
+</I>&gt;<i> I be doing here?
+</I>
+Makes sense as the SJA1000 does not recover automatically. But then some
+kind of notification should be send otherwise the app does not known
+what's going on.
+
+&gt;&gt;&gt;<i> +	/* disable our IRQ, then hookup the IRQ handler */
+</I>&gt;&gt;&gt;<i> +	janz_disable_interrupts(mod);
+</I>&gt;&gt;&gt;<i> +	ret = request_irq(mod-&gt;irq, janz_irq, IRQF_SHARED, DRV_NAME, mod);
+</I>&gt;&gt;&gt;<i> +	if (ret) {
+</I>&gt;&gt;&gt;<i> +		dev_err(dev, &quot;unable to request IRQ\n&quot;);
+</I>&gt;&gt;&gt;<i> +		goto out_iounmap_ctrl;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> Is this interrupt exclisively for CAN? ... or do you need a dispatcher
+</I>&gt;&gt;<i> in the MODULbus driver?
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> The interrupt is a function of the PCI bridge chip on the CMOD-IO
+</I>&gt;<i> carrier board. However, it uses a &quot;write-1 to enable&quot; and &quot;write-1 to
+</I>&gt;<i> disable&quot; interface, meaning each MODULbus module can have their own
+</I>&gt;<i> interrupt handler. The interrupt handler must check that its module is
+</I>&gt;<i> interrupting, just like any handler on a shared IRQ line.
+</I>&gt;<i> 
+</I>&gt;<i> I don't need a dispatcher, but each module does need to know it's module
+</I>&gt;<i> number. See the janz_irq() function, and notice how I use a bitwise and
+</I>&gt;<i> with (1 &lt;&lt; mod-&gt;num) to determine if this module is interrupting.
+</I>&gt;<i> 
+</I>&gt;<i> AFAIK, Linux always calls all interrupt handlers attached to a shared
+</I>&gt;<i> interrupt line.
+</I>
+OK, that's fine.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004039.html">[PATCH RFC v2] Add support for Janz ICAN3 CAN module
+</A></li>
+	<LI>Next message: <A HREF="004041.html">[PATCH RFC v2] Add support for Janz ICAN3 CAN module
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4040">[ date ]</a>
+              <a href="thread.html#4040">[ thread ]</a>
+              <a href="subject.html#4040">[ subject ]</a>
+              <a href="author.html#4040">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

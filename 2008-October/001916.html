@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> at91can problem with new bittiming algo
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20at91can%20problem%20with%20new%20bittiming%20algo&In-Reply-To=%3C48EA62F2.2020100%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001921.html">
+   <LINK REL="Next"  HREF="001918.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>at91can problem with new bittiming algo</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20at91can%20problem%20with%20new%20bittiming%20algo&In-Reply-To=%3C48EA62F2.2020100%40grandegger.com%3E"
+       TITLE="at91can problem with new bittiming algo">wg at grandegger.com
+       </A><BR>
+    <I>Mon Oct  6 21:11:46 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001921.html">at91can problem with new bittiming algo
+</A></li>
+        <LI>Next message: <A HREF="001918.html">at91can problem with new bittiming algo
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1916">[ date ]</a>
+              <a href="thread.html#1916">[ thread ]</a>
+              <a href="subject.html#1916">[ subject ]</a>
+              <a href="author.html#1916">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Marc,
+
+Marc Kleine-Budde wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> just ported the at91 driver to the newes socketcan bittiming interface:
+</I>&gt;<i> 
+</I>&gt;<i> This are the limts and clockrate for the hardware:
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">root at grabowski</A>:/sys/devices/platform/at91_can/net/can0/can_bittiming for
+</I>&gt;<i> i in hw*; do echo -n -e &quot;$i:\t&quot;; cat $i;done
+</I>&gt;<i> hw_brp_inc:     1
+</I>&gt;<i> hw_brp_max:     128
+</I>&gt;<i> hw_brp_min:     1
+</I>&gt;<i> hw_clock:       99532800
+</I>&gt;<i> hw_sjw_max:     4
+</I>&gt;<i> hw_tseg1_max:   8
+</I>&gt;<i> hw_tseg1_min:   1
+</I>&gt;<i> hw_tseg2_max:   8
+</I>&gt;<i> hw_tseg2_min:   1
+</I>&gt;<i> 
+</I>&gt;<i> These are the values the new algo calculates for 500000 bit/s:
+</I>&gt;<i> 
+</I>&gt;<i> &lt;4&gt;at91_can at91_can: bitrate error 0.4%
+</I>&gt;<i> &lt;7&gt;at91_can at91_can: brp: 50, sjw 1, prop_seg 0, phase_seg1 2, phase_seg2 1
+</I>&gt;<i> 
+</I>&gt;<i> prop_seg is 0. In the chip prop_seg - 1 must be written. Assuming a
+</I>&gt;<i> prop_seg of 1, writing 0 into the hardware does not work :(
+</I>
+I just commented on a similar problem on the MPC2510. The calculation
+just uses tseg1 = prop_seg + phase_seg1. Also tseg1_min should be 2 in
+your case, I guess.
+
+&gt;<i> The old algo calculates these values (but only after allowing a bigger
+</I>&gt;<i> error than the default value):
+</I>&gt;<i> 
+</I>&gt;<i> brp: 8, sjw 4, prop_seg 8, phase_seg1 8, phase_seg2 8
+</I>&gt;<i> 
+</I>&gt;<i> What can we do?
+</I>
+Obviously, this is an issue. In principle we need min and max constants
+for prop_seg *and* phase_seg1, but I still hesitate, because it's
+irrelevant for the actual bit-timing. The following quick hack should fix
+your and the issues for the MPC2510: 
+
+Index: drivers/net/can/dev.c
+===================================================================
+--- drivers/net/can/dev.c	(revision 831)
++++ drivers/net/can/dev.c	(working copy)
+@@ -126,8 +126,8 @@
+ 	v64 = (u64)best_brp * 1000000000UL;
+ 	do_div(v64, bt-&gt;clock);
+ 	bt-&gt;tq = (u32)v64;
+-	bt-&gt;prop_seg = 0;
+-	bt-&gt;phase_seg1 = tseg1;
++	bt-&gt;prop_seg = tseg1 / 2;
++	bt-&gt;phase_seg1 = tseg1 - bt-&gt;prop_seg;
+ 	bt-&gt;phase_seg2 = tseg2;
+ 	bt-&gt;sjw = 1;
+ 	bt-&gt;brp = best_brp;
+
+Are you then happy with the calculated values?
+
+But is seems cleaner to introduce min/max constants for 
+prop_seg, phase_seg1 and phase_seg2 instead of tseg1 and tseg2.
+What do you think?
+
+Wolfgang.
+
+  
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001921.html">at91can problem with new bittiming algo
+</A></li>
+	<LI>Next message: <A HREF="001918.html">at91can problem with new bittiming algo
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1916">[ date ]</a>
+              <a href="thread.html#1916">[ thread ]</a>
+              <a href="subject.html#1916">[ subject ]</a>
+              <a href="author.html#1916">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

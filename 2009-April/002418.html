@@ -1,0 +1,122 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] AT91 CAN bus driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20AT91%20CAN%20bus%20driver&In-Reply-To=%3C49D9DDE9.1050606%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002417.html">
+   <LINK REL="Next"  HREF="002419.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] AT91 CAN bus driver</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20AT91%20CAN%20bus%20driver&In-Reply-To=%3C49D9DDE9.1050606%40grandegger.com%3E"
+       TITLE="[PATCH] AT91 CAN bus driver">wg at grandegger.com
+       </A><BR>
+    <I>Mon Apr  6 12:48:09 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002417.html">[PATCH] AT91 CAN bus driver
+</A></li>
+        <LI>Next message: <A HREF="002419.html">[PATCH] AT91 CAN bus driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2418">[ date ]</a>
+              <a href="thread.html#2418">[ thread ]</a>
+              <a href="subject.html#2418">[ subject ]</a>
+              <a href="author.html#2418">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Yegor Yefremov wrote:
+&gt;<i> AT91SAM9263 CAN driver taken from Marc's GIT repository 
+</I>&gt;<i> (<A HREF="http://pasiphae.extern.pengutronix.de/?p=mkl/linux-can;a=summary">http://pasiphae.extern.pengutronix.de/?p=mkl/linux-can;a=summary</A>)
+</I>&gt;<i> commit id 95742fd12484176ecaa7c54a1d08e744fac487e3
+</I>&gt;<i> and adapted to work with the latest SVN version 963 of SocketCAN 
+</I>&gt;<i> according to SJA1000 driver. Changes:
+</I>&gt;<i> 
+</I>&gt;<i> - change register_netdev() to register_candev()
+</I>&gt;<i> - change netdev_alloc_skb() to dev_alloc_skb()
+</I>
+I think you reverted that change.
+
+&gt;<i> - fix bittiming constants to enable bitrates up to 1000000 bps
+</I>&gt;<i> - some cosmetic changes and spelling errors fixes
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Yegor Yefremov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">yegorslists at googlemail.com</A>&gt;
+</I>&gt;<i> 
+</I>&gt;<i> Index: 2.6.29-stable/drivers/net/can/at91_can.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ 2.6.29-stable/drivers/net/can/at91_can.c
+</I>&gt;<i> @@ -0,0 +1,1198 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * at91_can.c -  CAN network driver for AT91 SoC CAN controller
+</I>&gt;<i> + *
+</I>&gt;<i> + * (C) 2007 by Hans J. Koch &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hjk at linutronix.de</A>&gt;
+</I>&gt;<i> + * (C) 2008 by Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kernel at pengutronix.de</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + * This software may be distributed under the terms of the GNU General
+</I>&gt;<i> + * Public License (&quot;GPL&quot;) version 2 as distributed in the 'COPYING'
+</I>&gt;<i> + * file from the main directory of the linux kernel source.
+</I>&gt;<i> + *
+</I>&gt;<i> + * Send feedback to &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-users at lists.berlios.de</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + */
+</I>[snip]
+&gt;<i> +static void at91_read_msg(struct net_device *dev, int mb)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;<i> +	struct can_frame *cf;
+</I>&gt;<i> +	struct sk_buff *skb;
+</I>&gt;<i> +
+</I>&gt;<i> +	skb = netdev_alloc_skb(dev, sizeof(struct can_frame));
+</I>&gt;<i> +	if (unlikely(!skb)) {
+</I>&gt;<i> +		if (net_ratelimit())
+</I>&gt;<i> +			dev_warn(ND2D(dev),
+</I>&gt;<i> +				 &quot;Memory squeeze, dropping packet.\n&quot;);
+</I>&gt;<i> +		stats-&gt;rx_dropped++;
+</I>&gt;<i> +		return;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	skb-&gt;protocol = htons(ETH_P_CAN);
+</I>&gt;<i> +	cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+</I>&gt;<i> +	memset(cf, 0, sizeof(struct can_frame));
+</I>
+The memset is not needed for normal frames. I'm going to remove it.
+
+I will apply your patch with the above minor fixes.
+
+Thanks,
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002417.html">[PATCH] AT91 CAN bus driver
+</A></li>
+	<LI>Next message: <A HREF="002419.html">[PATCH] AT91 CAN bus driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2418">[ date ]</a>
+              <a href="thread.html#2418">[ thread ]</a>
+              <a href="subject.html#2418">[ subject ]</a>
+              <a href="author.html#2418">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

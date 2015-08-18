@@ -1,0 +1,343 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6] Driver for the Microchip MCP251x SPI CAN 	controllers
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%5D%20Driver%20for%20the%20Microchip%20MCP251x%20SPI%20CAN%20%0A%09controllers&In-Reply-To=%3Ccabda6420911020706r340ef073qea40527f09551a8a%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003341.html">
+   <LINK REL="Next"  HREF="003352.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6] Driver for the Microchip MCP251x SPI CAN 	controllers</H1>
+    <B>christian pellegrin</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%5D%20Driver%20for%20the%20Microchip%20MCP251x%20SPI%20CAN%20%0A%09controllers&In-Reply-To=%3Ccabda6420911020706r340ef073qea40527f09551a8a%40mail.gmail.com%3E"
+       TITLE="[PATCH net-next-2.6] Driver for the Microchip MCP251x SPI CAN 	controllers">chripell at fsfe.org
+       </A><BR>
+    <I>Mon Nov  2 16:06:21 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003341.html">[PATCH net-next-2.6] Driver for the Microchip MCP251x SPI CAN 	controllers
+</A></li>
+        <LI>Next message: <A HREF="003352.html">[PATCH net-next-2.6] Driver for the Microchip MCP251x SPI CAN	controllers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3340">[ date ]</a>
+              <a href="thread.html#3340">[ thread ]</a>
+              <a href="subject.html#3340">[ subject ]</a>
+              <a href="author.html#3340">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Sun, Nov 1, 2009 at 10:31 AM, Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt; wrote:
+&gt;<i> Hi Christian,
+</I>&gt;<i>
+</I>
+Hi,
+
+&gt;<i> there are a few. In general, please check the usage of {} for if
+</I>
+sorry for missing this: I read your link below: I missed that rule on
+first reading! And I tend to trust checkpatch.pl too much ;-)
+
+&gt;<i> statements and check if &quot;if (ret)&quot; should be used instead of &quot;if (ret &lt;
+</I>&gt;<i> 0)&quot; if 0 means success and !0 failure. I don't have a MCP251x hardware
+</I>
+ok, I misunderstood this to. Now I think it's ok.
+
+I'm replying to this thread with v2 patch. I'm rebasing the
+differences against SVN trunk too, but I'm waiting to send them until
+this patch is accepted in net-next-2.6 since their are only of
+cosmetic nature.
+
+&gt;<i>
+</I>&gt;<i> Please use the subject prefix &quot;can: Driver for the...&quot;
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; depends on CAN &amp;&amp; CAN_DEV &amp;&amp; SPI
+</I>&gt;<i>
+</I>&gt;<i> You can drop the redundant dependency on &quot;CAN&quot;.
+</I>&gt;<i>
+</I>
+ack, I just copied AT91 CAN which has this dependency
+
+&gt;&gt;<i> + * &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">chripell at evolware.org</A>&gt;
+</I>&gt;<i>
+</I>&gt;<i> Please add your &quot;Copyright ...&quot;.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> +#include &lt;linux/can/core.h&gt;
+</I>&gt;<i>
+</I>&gt;<i> I don't think you need &quot;can/core.h&quot;?
+</I>&gt;<i>
+</I>
+I tried without but there are some dependencies in &quot;can/dev.h&quot; to some
+netdev stuff that are broken if I omit it.
+
+&gt;&gt;<i> +#include &lt;linux/if_arp.h&gt;
+</I>&gt;<i>
+</I>&gt;<i> And that one either.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> +#define TXBCTRL(n) &#160;((n * 0x10) + 0x30)
+</I>&gt;<i>
+</I>&gt;<i> Please put brackets around &quot;n&quot;: (((n) * 0x10) + 0x30)
+</I>&gt;<i> Also the proper offset definition should be used.
+</I>&gt;<i>
+</I>&gt;<i> #define TXBCTRL(n) &#160;(((n) * 0x10) + 0x30 + TXBCTRL_OFF)
+</I>&gt;<i>
+</I>&gt;<i> Here and in similar cases below.
+</I>
+ack
+
+&gt;&gt;<i> +#define RXBDAT_OFF &#160;6
+</I>&gt;<i>
+</I>&gt;<i> I was thinking to use structure(s) for the offsets (register layout)
+</I>&gt;<i> above, but fiddling with offsetof() does probably not make the code more
+</I>&gt;<i> readable.
+</I>&gt;<i>
+</I>
+Well I try avoid to unpacking bitfields with structs, I saw too many
+problems witch cross-compiling when you have many different
+architectures. I guess that using u8, u16 and similar should solve the
+problems but I'm a bit like my cat: after she burned her whiskers, she
+always stays away from kitchen stoves.
+
+&gt;&gt;<i> + &#160; &#160; if (ret &lt; 0)
+</I>&gt;<i>
+</I>&gt;<i> if (ret) ?
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> +static void mcp251x_hw_tx_frame(struct spi_device *spi, u8 *data,
+</I>&gt;<i>
+</I>&gt;<i> s/data/buf/ to avoid confusion with the CAN payload data.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> +static void mcp251x_hw_rx_frame(struct spi_device *spi, u8 *data,
+</I>&gt;<i>
+</I>&gt;<i> s/data/buf/, see above.
+</I>&gt;<i>
+</I>ack
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; SET_BYTE(buf[RXBEID0_OFF], &#160; &#160; &#160; &#160; &#160; &#160; &#160; 0) |
+</I>&gt;<i>
+</I>&gt;<i> Please don't align arguments or variables.
+</I>&gt;<i>
+</I>
+ack, sorry for the nostalgia of ASCII art times
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; }
+</I>&gt;<i>
+</I>&gt;<i> Remove {}, please.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; (buf[RXBSIDL_OFF] &gt;&gt; RXBSIDL_SHIFT);
+</I>&gt;<i>
+</I>&gt;<i> Please use {} here as well.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; return 0;
+</I>&gt;<i>
+</I>&gt;<i> return NETDEV_TX_OK; ?
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_LOOPBACK);
+</I>&gt;<i>
+</I>&gt;<i> Please use brackets here as well. See:
+</I>&gt;<i>
+</I>&gt;<i> <A HREF="http://lxr.linux.no/#linux+v2.6.31/Documentation/CodingStyle#L171">http://lxr.linux.no/#linux+v2.6.31/Documentation/CodingStyle#L171</A>
+</I>&gt;<i>
+</I>
+ack and thanks for the link
+
+&gt;&gt;<i> + &#160; &#160; /* Store original mode and set mode to config */
+</I>&gt;<i>
+</I>&gt;<i> Do you need that. The bit-timing can only be set when the device is
+</I>&gt;<i> stopped (down).
+</I>&gt;<i>
+</I>
+ack, you are right, no need for it because normal/loopback mode is
+always set afterwards in _open
+
+&gt;&gt;<i> + &#160; &#160; if (ret &lt; 0)
+</I>&gt;<i>
+</I>&gt;<i> if (ret) ?
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; if (ret &lt; 0) {
+</I>&gt;<i>
+</I>&gt;<i> &quot;if (ret)&quot; ?
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; if (ret &lt; 0) {
+</I>&gt;<i>
+</I>&gt;<i> &quot;if (ret)&quot; ?
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; disable_irq(spi-&gt;irq);
+</I>&gt;<i>
+</I>&gt;<i> free_irq? And what about the transeiver? The usual goto cleanup method
+</I>&gt;<i> would make sense here.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; disable_irq(spi-&gt;irq);
+</I>&gt;<i>
+</I>&gt;<i> Why not freeing the irq already here?
+</I>&gt;<i>
+</I>
+ack, you are right
+
+&gt;&gt;<i> + &#160; &#160; flush_workqueue(priv-&gt;wq);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> + &#160; &#160; mcp251x_write_reg(spi, TXBCTRL(0), 0);
+</I>&gt;<i>
+</I>&gt;<i> Hm, but you still need the interrupt!?
+</I>
+no, SPI interface and MCP251x interrupt are different
+
+&gt;&gt;<i> + &#160; &#160; close_candev(net);
+</I>&gt;<i>
+</I>&gt;<i> You should call close_candev early to cancel the buf-off recovery timer.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; mcp251x_set_normal_mode(spi);
+</I>&gt;<i>
+</I>&gt;<i> Please use {} here as well.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; mcp251x_hw_sleep(spi);
+</I>&gt;<i>
+</I>&gt;<i> Please use {} here as well.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; new_state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;<i>
+</I>&gt;<i> Please use {} here as well.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;&quot;cannot allocate error skb\n&quot;);
+</I>&gt;<i>
+</I>&gt;<i> Please use {} here as well.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; struct mcp251x_platform_data *pdata)
+</I>&gt;<i>
+</I>&gt;<i> Add __devinit or, even better, put the code into mcp251x_can_probe?
+</I>&gt;<i>
+</I>
+ack, moved altogether
+
+&gt;&gt;<i> + &#160; &#160; priv-&gt;can.do_set_bittiming &#160; &#160; &#160;= mcp251x_do_set_bittiming;
+</I>&gt;<i>
+</I>&gt;<i> Don't align expressions. Use just *one* space before and after &quot;=&quot;.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; mcp251x_enable_dma = 0;
+</I>&gt;<i>
+</I>&gt;<i> Please use {} here as well.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; priv-&gt;spi_tx_buf, priv-&gt;spi_tx_dma);
+</I>&gt;<i>
+</I>&gt;<i> Please use {} here as well.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; priv-&gt;after_suspend = AFTER_SUSPEND_DOWN;
+</I>&gt;<i>
+</I>&gt;<i> Please use {} here as well.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;<i>
+</I>&gt;<i> Please use {} here as well and check for similar cases. I might not have
+</I>&gt;<i> spotted all.
+</I>&gt;<i>
+</I>
+ack, I searched for all else and checked
+
+&gt;&gt;<i> + &#160; &#160; .resume &#160; &#160; &#160; &#160; = mcp251x_can_resume,
+</I>&gt;<i>
+</I>&gt;<i> Use just *one* space before and after &quot;=&quot;.
+</I>&gt;<i>
+</I>
+ack
+
+
+Thanks for the review!
+
+-- 
+Christian Pellegrin, see <A HREF="http://www.evolware.org/chri/">http://www.evolware.org/chri/</A>
+&quot;Real Programmers don't play tennis, or any other sport which requires
+you to change clothes. Mountain climbing is OK, and Real Programmers
+wear their climbing boots to work in case a mountain should suddenly
+spring up in the middle of the computer room.&quot;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003341.html">[PATCH net-next-2.6] Driver for the Microchip MCP251x SPI CAN 	controllers
+</A></li>
+	<LI>Next message: <A HREF="003352.html">[PATCH net-next-2.6] Driver for the Microchip MCP251x SPI CAN	controllers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3340">[ date ]</a>
+              <a href="thread.html#3340">[ thread ]</a>
+              <a href="subject.html#3340">[ subject ]</a>
+              <a href="author.html#3340">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

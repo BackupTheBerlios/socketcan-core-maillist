@@ -1,0 +1,134 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [MeeGo-Dev][PATCH v3] Topcliff: Update PCH_CAN driver to 2.6.35
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BMeeGo-Dev%5D%5BPATCH%20v3%5D%20Topcliff%3A%20Update%20PCH_CAN%20driver%20to%202.6.35&In-Reply-To=%3C4CB414A2.8020202%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004723.html">
+   <LINK REL="Next"  HREF="004729.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[MeeGo-Dev][PATCH v3] Topcliff: Update PCH_CAN driver to 2.6.35</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BMeeGo-Dev%5D%5BPATCH%20v3%5D%20Topcliff%3A%20Update%20PCH_CAN%20driver%20to%202.6.35&In-Reply-To=%3C4CB414A2.8020202%40pengutronix.de%3E"
+       TITLE="[MeeGo-Dev][PATCH v3] Topcliff: Update PCH_CAN driver to 2.6.35">mkl at pengutronix.de
+       </A><BR>
+    <I>Tue Oct 12 09:56:18 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004723.html">[MeeGo-Dev][PATCH v3] Topcliff: Update PCH_CAN driver to 2.6.35
+</A></li>
+        <LI>Next message: <A HREF="004729.html">[MeeGo-Dev][PATCH v3] Topcliff: Update PCH_CAN driver to 2.6.35
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4724">[ date ]</a>
+              <a href="thread.html#4724">[ thread ]</a>
+              <a href="subject.html#4724">[ subject ]</a>
+              <a href="author.html#4724">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello Masayuki,
+
+On 10/12/2010 09:09 AM, Masayuki Ohtake wrote:
+&gt;<i> We have implemented our CAN driver with FIFO mode, and
+</I>&gt;<i> We are testing our CAN driver with FIFO mode.
+</I>&gt;<i> However, we have found Our CAN hardware spec is different from our anticipated.
+</I>&gt;<i> Our CAN HW FIFO is not common FIFO.
+</I>&gt;<i> Using  FIFO mode, there is possibility received packets are out-of-order.
+</I>
+It's called a FIFO in the Documentation, but it's not a real FIFO as we
+all hoped.
+
+&gt;<i> e.g.
+</I>&gt;<i> Recv packet-A from NW and set to FIFO.
+</I>&gt;<i>   |A|
+</I>&gt;<i> 
+</I>&gt;<i> Recv packet-B from NW and set to FIFO.
+</I>&gt;<i>   |A|B|
+</I>&gt;<i> 
+</I>&gt;<i> Recv packet-C is about to set to FIFO
+</I>&gt;<i>   |A|B|(C)|
+</I>&gt;<i> 
+</I>&gt;<i> Userspace Copies A from Driver
+</I>&gt;<i> Userspace Copies B from Driver
+</I>&gt;<i>   |   |   |(C)|
+</I>&gt;<i> 
+</I>&gt;<i> packet-C set to FIFO (C is not head.)
+</I>&gt;<i> Recv packet-D from NW(Next packet is set to head)
+</I>&gt;<i>   |D|   |C|
+</I>&gt;<i> 
+</I>&gt;<i> Userspace Copies D from Driver
+</I>&gt;<i> Userspace Copies C from Driver
+</I>&gt;<i> Userspace raceived packet order is like below
+</I>&gt;<i> A-B-D-C
+</I>
+I just had a small peak at the datasheet. It seems you can implement the
+same scheme for rx as on the at91, if you enough rx buffers. In the at91
+driver I use 8+4 = 12 buffers for rx. Have a look at the driver, the rx
+path is documented.
+
+The driver uses 8 + 4 rx buffers, the trick is that a buffer in read but
+_not_ marked as free, if I understand the intel datasheet correctly this
+is by not resetting the NEWDAT bit. Becasue the driver doesn't free the
+buffers it knows that the next CAN frame is in the next buffer. After
+reading the 8th buffer, the first 8 buffers (0-7) are marked as free.
+Then the driver continues to read buffers 8-11, they might have been
+filled before marking 0-7 as free. Then the driver continues from the
+beginning.
+
+&gt;<i> So, I think normal-mode is better than FIFO-mode.
+</I>
+&gt;<i> I will revert like the following spec.
+</I>&gt;<i>   Rx 1 Message Object
+</I>&gt;<i>   Tx 1 Message Object
+</I>&gt;<i> 
+</I>&gt;<i> Could you agree the above ?
+</I>
+ahh common...the hardware doesn't seem that bad :)
+
+cheers, Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101012/af1cdac0/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101012/af1cdac0/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004723.html">[MeeGo-Dev][PATCH v3] Topcliff: Update PCH_CAN driver to 2.6.35
+</A></li>
+	<LI>Next message: <A HREF="004729.html">[MeeGo-Dev][PATCH v3] Topcliff: Update PCH_CAN driver to 2.6.35
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4724">[ date ]</a>
+              <a href="thread.html#4724">[ thread ]</a>
+              <a href="subject.html#4724">[ subject ]</a>
+              <a href="author.html#4724">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

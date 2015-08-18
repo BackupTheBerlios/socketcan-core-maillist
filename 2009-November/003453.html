@@ -1,0 +1,147 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] Peak PCI CAN card driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Peak%20PCI%20CAN%20card%20driver&In-Reply-To=%3C4AFBD430.2040104%40bitbox.co.uk%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003449.html">
+   <LINK REL="Next"  HREF="003454.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] Peak PCI CAN card driver</H1>
+    <B>Peter Horton</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Peak%20PCI%20CAN%20card%20driver&In-Reply-To=%3C4AFBD430.2040104%40bitbox.co.uk%3E"
+       TITLE="[PATCH] Peak PCI CAN card driver">phorton at bitbox.co.uk
+       </A><BR>
+    <I>Thu Nov 12 10:24:00 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003449.html">[PATCH] Peak PCI CAN card driver
+</A></li>
+        <LI>Next message: <A HREF="003454.html">[PATCH] Peak PCI CAN card driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3453">[ date ]</a>
+              <a href="thread.html#3453">[ thread ]</a>
+              <a href="subject.html#3453">[ subject ]</a>
+              <a href="author.html#3453">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger wrote:
+&gt;<i> 
+</I>&gt;<i> here finally comes my review, sorry for the delay.
+</I>&gt;<i>
+</I>
+Thanks, I'll make all the changes you suggested and resubmit.
+
+I have however made some notes ...
+
+&gt;&gt;<i> +
+</I>&gt;&gt;<i> +#define PEAK_PCI_MAP_SIZE	(4 &lt;&lt; 10)
+</I>&gt;<i> 
+</I>&gt;<i> I find &quot;0x4000&quot; more readable.
+</I>&gt;<i>
+</I>
+Maybe, but it'd be wrong, it's 0x1000 :). I write it that way to 
+indicate it's 4K.
+
+&gt;<i> 
+</I>&gt;&gt;<i> +#define PEAK_PCI_CAN_CLOCK	(8 * 1000 * 1000)
+</I>&gt;<i> 
+</I>&gt;<i> Why not just &quot;8000000&quot;? Or even better (16000000 / 2) to make clear that
+</I>&gt;<i> it's half of the oscillator frequency.
+</I>&gt;<i>
+</I>
+It's obviously 8 million. 8000000 is more difficult to read, is it 
+80000000 or 8000000 or 800000?
+
+&gt;&gt;<i> +
+</I>&gt;&gt;<i> +static u8 peak_pci_can_read(struct sja1000_priv const *ctlr, int reg)
+</I>&gt;<i> 
+</I>&gt;<i> &quot;const struct sja1000_priv&quot; please.
+</I>&gt;<i>
+</I>
+It's easier to see where the &quot;const&quot; applies this way, you just read 
+from right to left. It makes the difference between &quot;struct x * const&quot; 
+and &quot;struct x const *&quot; more obvious.
+
+&gt;&gt;<i> +
+</I>&gt;&gt;<i> +static unsigned int peak_pci_intr_mask(struct sja1000_priv const *ctlr)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +	static unsigned int const mask[] =
+</I>&gt;&gt;<i> +	{
+</I>&gt;&gt;<i> +		1 &lt;&lt; 1,
+</I>&gt;&gt;<i> +		1 &lt;&lt; 0,
+</I>&gt;&gt;<i> +		1 &lt;&lt; 6,
+</I>&gt;&gt;<i> +		1 &lt;&lt; 7,
+</I>&gt;&gt;<i> +	};
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	struct peak_pci_card *card;
+</I>&gt;&gt;<i> +	unsigned int chan;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	card = ctlr-&gt;priv;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	chan = (ctlr-&gt;reg_base - card-&gt;base_addr) / PEAK_PCI_CHAN_SIZE;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	BUG_ON(chan &gt;= ARRAY_SIZE(mask));
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +	return mask[chan];
+</I>&gt;&gt;<i> +}
+</I>&gt;<i> 
+</I>&gt;<i> Hm, calculating the channel from the base address frequently seems not
+</I>&gt;<i> to be a good idea. Also please put the interrupt mask declaration into
+</I>&gt;<i> the header, e.g.:
+</I>&gt;<i>
+</I>&gt;<i> static const unsigned int peak_pci_intr_mask[PEAK_PCI_CHAN_MAX] = ...
+</I>&gt;<i>
+</I>
+I did think about the calculation but it's very fast, it's just a 
+subtraction and a shift. The other way to do it is a per channel 
+structure (as you mentioned below) which seems wasteful, it adds an 
+extra indirection for each access of the card structure. Maybe we'd be 
+better adding a &quot;channel&quot; member to &quot;sja1000_priv&quot; for use by the 
+drivers, in addition to the &quot;priv&quot; member. This would benefit all 
+multichannel cards.
+
+&gt;&gt;<i> +
+</I>&gt;&gt;<i> +		mask |= peak_pci_intr_mask(ctlr);
+</I>&gt;<i> 
+</I>&gt;<i> 		mask |= peak_pci_intr_mask[card-&gt;channels]; ?
+</I>&gt;<i> 
+</I>&gt;<i> I also would prefer reading the ICR first and just setting/clearing the
+</I>&gt;<i> bit relevant for the channel.
+</I>&gt;<i>
+</I>
+Why generate an extra PCI access for no gain?
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003449.html">[PATCH] Peak PCI CAN card driver
+</A></li>
+	<LI>Next message: <A HREF="003454.html">[PATCH] Peak PCI CAN card driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3453">[ date ]</a>
+              <a href="thread.html#3453">[ thread ]</a>
+              <a href="subject.html#3453">[ subject ]</a>
+              <a href="author.html#3453">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

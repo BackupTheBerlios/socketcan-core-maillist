@@ -1,0 +1,144 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> at91_can flooding error frames
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20at91_can%20flooding%20error%20frames&In-Reply-To=%3C4B19561F.3050804%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003603.html">
+   <LINK REL="Next"  HREF="003605.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>at91_can flooding error frames</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20at91_can%20flooding%20error%20frames&In-Reply-To=%3C4B19561F.3050804%40grandegger.com%3E"
+       TITLE="at91_can flooding error frames">wg at grandegger.com
+       </A><BR>
+    <I>Fri Dec  4 19:34:07 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003603.html">at91_can flooding error frames
+</A></li>
+        <LI>Next message: <A HREF="003605.html">at91_can flooding error frames
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3604">[ date ]</a>
+              <a href="thread.html#3604">[ thread ]</a>
+              <a href="subject.html#3604">[ subject ]</a>
+              <a href="author.html#3604">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Chris Verges wrote:
+&gt;<i> Hi gurus,
+</I>&gt;<i> 
+</I>&gt;<i> I'm using the at91_can driver on a custom board.  The following sequence
+</I>&gt;<i> seems to cause the driver to hit a flood of error frames:
+</I>
+$ ifconfig can0 down ? See below.
+
+&gt;<i> $ ip link set can0 up txqueuelen 1000 \
+</I>&gt;<i> 	type can bitrate 1000000 loopback off
+</I>&gt;<i> $ candump -L any,0:0,#FFFFFFFF &gt; candump.log &amp;
+</I>&gt;<i> $ cansend can0 00000D01#01020304
+</I>&gt;<i> $ killall candump
+</I>&gt;<i> $ ip link set can0 down
+</I>&gt;<i> $ cat candump.log
+</I>&gt;<i> 
+</I>&gt;<i> The output of this sequence is here:
+</I>&gt;<i> 
+</I>&gt;<i> Setting can0 interface
+</I>&gt;<i> RTNETLINK answers: Device or resource busy
+</I>
+Hm, the interface was still running and the settings are not done.
+
+&gt;<i> Dumping can0 receive data
+</I>&gt;<i> Sending bogus can0 message
+</I>&gt;<i> Ending can0 data dump
+</I>&gt;<i> Disabling can0 interface
+</I>&gt;<i> can0 data:
+</I>&gt;<i> ----------
+</I>&gt;<i> (1259913144.764113) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.764230) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.764308) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.764425) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.764548) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.764643) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.764775) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.764970) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.765068) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.765144) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.765209) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.765323) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.765521) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.765464) can0 20000004#0008000000000000
+</I>&gt;<i> (1259913144.765638) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.765705) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.765768) can0 20000004#0020000000000000
+</I>&gt;<i> (1259913144.765895) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.766016) can0 20000020#0000000000000000
+</I>&gt;<i> (1259913144.766140) can0 20000020#0000000000000000
+</I>
+Wired, I would expect error messages here. Looks like a separate issue.
+
+&gt;<i> The syslog output is also revealing, indicating a flood of &quot;AERR irq&quot;
+</I>&gt;<i> errors.
+</I>
+OK.
+
+&gt;<i> Some debug output:
+</I>&gt;<i> 
+</I>&gt;<i> $ ip -detail link show can0
+</I>&gt;<i> 2: can0: &lt;NOARP,UP,LOWER_UP,ECHO&gt; mtu 16 qdisc pfifo_fast state UNKNOWN
+</I>&gt;<i> qlen 100
+</I>&gt;<i>     link/can
+</I>&gt;<i>     can state ERROR-ACTIVE restart-ms 0
+</I>&gt;<i>     bitrate 1003313 sample-point 0.666
+</I>
+The bit-rate error is rather high due to ...
+
+&gt;<i>     tq 110 prop-seg 2 phase-seg1 3 phase-seg2 3 sjw 1
+</I>&gt;<i>     : tseg1 4..16 tseg2 2..8 sjw 1..4 brp 2..128 brp-inc 1
+</I>&gt;<i>     clock 99328000
+</I>
+this exotic clock frequency. Is it really correct?
+
+&gt;<i> I've verified that the bus is properly terminated at 120 ohms and
+</I>&gt;<i> CAN_H/CAN_L are wired properly.  Using multiple bitrates (1Mbps vs 40
+</I>&gt;<i> kbps) doesn't seem to affect it.
+</I>&gt;<i> 
+</I>&gt;<i> Any ideas on what might be going on?
+</I>
+I suspect CAN bus errors due to improper bit-timing parameters.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003603.html">at91_can flooding error frames
+</A></li>
+	<LI>Next message: <A HREF="003605.html">at91_can flooding error frames
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3604">[ date ]</a>
+              <a href="thread.html#3604">[ thread ]</a>
+              <a href="subject.html#3604">[ subject ]</a>
+              <a href="author.html#3604">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

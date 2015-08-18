@@ -1,0 +1,148 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: generic sja1000 platform driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20generic%20sja1000%20platform%20driver&In-Reply-To=%3C489B4E0A.1020609%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001792.html">
+   <LINK REL="Next"  HREF="001788.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: generic sja1000 platform driver</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20generic%20sja1000%20platform%20driver&In-Reply-To=%3C489B4E0A.1020609%40grandegger.com%3E"
+       TITLE="RFC: generic sja1000 platform driver">wg at grandegger.com
+       </A><BR>
+    <I>Thu Aug  7 21:33:30 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001792.html">RFC: generic sja1000 platform driver
+</A></li>
+        <LI>Next message: <A HREF="001788.html">Timestamps
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1795">[ date ]</a>
+              <a href="thread.html#1795">[ thread ]</a>
+              <a href="subject.html#1795">[ subject ]</a>
+              <a href="author.html#1795">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Marc Kleine-Budde wrote:
+&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;<i> there is more than one (ARM) board that has a sja1000 attached to the
+</I>&gt;&gt;&gt;<i> local processor bus. Phytec has at least three. So I propose to convert
+</I>&gt;&gt;&gt;<i> the existing pcm027 sja1000 driver into a generic sja1000 platform bus
+</I>&gt;&gt;&gt;<i> driver.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> That's a good idea. I have a similar driver sja1000_mem_of for OF 
+</I>&gt;&gt;<i> platform devices ready, which can be configured via flattened device
+</I>&gt;&gt;<i> tree on PowerPC systems. Here is a corresponding DTS CAN node
+</I>&gt;&gt;<i> definitions:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>    <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">can at 3</A>,100 {
+</I>&gt;&gt;<i>            compatible = &quot;philips,sja1000&quot;;
+</I>&gt;&gt;<i>            reg = &lt;3 0x100 0x80&gt;;
+</I>&gt;&gt;<i>            clock-frequency = &lt;8000000&gt;:
+</I>&gt;&gt;<i>            cdr-reg = &lt;0x48&gt;;
+</I>&gt;&gt;<i>            ocr-reg = &lt;0x0a&gt;;
+</I>&gt;&gt;<i>            interrupts = &lt;2 0 1&gt;;
+</I>&gt;&gt;<i>            interrupt-parent = &lt;&amp;fpga_pic&gt;;
+</I>&gt;&gt;<i>    };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> It might make sense to combine both drivers setting up a platform
+</I>&gt;&gt;<i> resource for OF devices like done for serial drivers.
+</I>&gt;<i> 
+</I>&gt;<i> you mean the of driver just sets up a platform device? Should work.
+</I>
+Yep, that's what I thought. Let's see if it's a resonable approach.
+
+&gt;&gt;&gt;<i> This new driver is almost a 1:1 copy of the original pcm027 driver (just
+</I>&gt;&gt;&gt;<i> &quot;s/pcm027/sp/&quot;, sp is short for sja1000_platform), The definition of the
+</I>&gt;&gt;&gt;<i> &quot;ocr&quot; and &quot;odr&quot;, aswell as the &quot;can_sys_clock&quot; has been moved into the
+</I>&gt;&gt;&gt;<i> platform_data. This driver also supports setting the irq trigger type
+</I>&gt;&gt;&gt;<i> via the flags of the corresponding IORESOURCE_IRQ.
+</I>&gt;&gt;&gt;<i> In order to specify the ocr and odr register values in the platform data
+</I>&gt;&gt;&gt;<i> of the sja device in the &lt;board&gt;.c file, (i.e. outside of the
+</I>&gt;&gt;&gt;<i> drivers/net/can/sja1000 directory) I moved the definitions into a
+</I>&gt;&gt;&gt;<i> seperate file into include/linux/can/sja1000_platform.h. The original
+</I>&gt;&gt;&gt;<i> sja10000.h include this file.
+</I>&gt;&gt;<i> Well, I see. But I would not move the CDR and OCR defines to
+</I>&gt;&gt;<i> sja1000_platform.h because the kernel depends on Socket-CAN being part
+</I>&gt;&gt;<i> of it. For backward compatibility out-of-tree builds should still be
+</I>&gt;&gt;<i> possible. I would set the hex-values directly in the platform specific
+</I>&gt;&gt;<i> code (without using defines).
+</I>&gt;<i> 
+</I>&gt;<i> I hope these drivers will made it real soon into the kernel. Working
+</I>&gt;<i> with the berlios-svn is real PITA. But with the struct platform_data
+</I>
+I would appreciate that as well.
+
+&gt;<i> definition inc OCR_*  and ODR_* in include/linux/can/sja1000_platform.h,
+</I>&gt;<i> out-of-tree building is still possible, just like before. But then you
+</I>&gt;<i> have to hard code the hex values in the platform specific code (which is
+</I>&gt;<i> in the kernel).
+</I>&gt;<i> On the other hand if you integrate the berlios patches into you kernel
+</I>&gt;<i> patchstack or the driver finally ends up in mainline you can use the
+</I>&gt;<i> OCR_ and ODR_ defines from include/linux/can/sja1000_platform.h.
+</I>
+Yep, the problem is that the platform data will be provided by board 
+specific code, which might not be available for older kernels.
+
+&gt;<i> In other words I see no problem with moving these defines into a
+</I>&gt;<i> different file. It might be even better to add a common prefix to these
+</I>&gt;<i> defines like: SJA_
+</I>
+Yes, we should add the SJA_ prefix to avoid name clashes.
+
+&gt;&gt;&gt;<i>  drivers/net/can/sja1000/sja1000.h          |   23 ---
+</I>&gt;&gt;&gt;<i>  drivers/net/can/sja1000/sja1000_platform.c |  185
+</I>&gt;&gt;<i> I find the name sja1000_platform to generic. For me it's a memory mapped 
+</I>&gt;&gt;<i> SJA1000 platform driver. I would therefor name it sja1000_mem instead.
+</I>&gt;<i> 
+</I>&gt;<i> Isn't a platform driver not memmapped by definition? What's the name of
+</I>
+Well, they seem all to use direct addressing, at least.
+
+&gt;<i> your OF-Tree driver, &quot;sja1000-mem-of&quot;?
+</I>
+Yes.
+
+&gt;<i> However a &quot;find&quot; over a recent mainline tree showed 4 driver containing
+</I>&gt;<i> &quot;_platform&quot; and one matches &quot;-platform&quot;, but none of the files
+</I>&gt;<i> containing &quot;mem&quot; in its file name registers a platform driver.
+</I>
+OK, I see, then let's use &quot;-platfomr&quot; as well.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001792.html">RFC: generic sja1000 platform driver
+</A></li>
+	<LI>Next message: <A HREF="001788.html">Timestamps
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1795">[ date ]</a>
+              <a href="thread.html#1795">[ thread ]</a>
+              <a href="subject.html#1795">[ subject ]</a>
+              <a href="author.html#1795">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

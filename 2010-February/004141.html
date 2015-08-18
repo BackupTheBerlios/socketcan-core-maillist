@@ -1,0 +1,224 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> struct sockaddr_can for j1939
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20100226111535.GA417%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004139.html">
+   <LINK REL="Next"  HREF="004145.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>struct sockaddr_can for j1939</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20100226111535.GA417%40e-circ.dyndns.org%3E"
+       TITLE="struct sockaddr_can for j1939">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Fri Feb 26 12:15:35 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004139.html">struct sockaddr_can for j1939
+</A></li>
+        <LI>Next message: <A HREF="004145.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4141">[ date ]</a>
+              <a href="thread.html#4141">[ thread ]</a>
+              <a href="subject.html#4141">[ subject ]</a>
+              <a href="author.html#4141">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Fri, Feb 26, 2010 at 10:50:00AM +0100, Oliver Hartkopp wrote:
+&gt;<i> Date: Fri, 26 Feb 2010 10:50:00 +0100
+</I>&gt;<i> Kurt Van Dijck wrote:
+</I>&gt;<i> &gt; On Fri, Feb 26, 2010 at 08:58:45AM +0100, Oliver Hartkopp wrote:
+</I>&gt;<i> &gt;&gt;&gt;&gt; Kurt says:
+</I>&gt;<i> &gt;&gt;&gt;&gt; * bind() will assign local address.
+</I>&gt;<i> &gt;&gt;&gt;&gt; * connect() assigns destination address.
+</I>&gt;<i> &gt;&gt; Would this be a &quot;write only&quot; socket then? IMO &quot;connect&quot; also requires the
+</I>&gt;<i> &gt;&gt; local address.
+</I>&gt;<i> &gt; Yes, since connect() only sets the destination address, no local address
+</I>&gt;<i> &gt; has been set, unless bind() is issued.
+</I>&gt;<i> 
+</I>&gt;<i> That looks unusual.
+</I>&gt;<i> 
+</I>&gt;<i> connect() is for &quot;connected&quot; (like TCP) and bind() for &quot;connectionless&quot; protocols.
+</I>&gt;<i> 
+</I>&gt;<i> Maybe connect is completely wrong in J1939 contexts.
+</I>I studied the man pages on this topic:
+man 2 connect
+If the socket sockfd is of type SOCK_DGRAM then serv_addr is the
+address to which datagrams are sent by default, and the only  address
+from  which  datagrams  are received.
+&gt;<i> 
+</I>&gt;<i> &gt; To make the API easier, I'd think it's usefull to have the kernel take
+</I>&gt;<i> &gt; the first 'local address assigned' when local address is missing at the
+</I>&gt;<i> &gt; time of send.
+</I>&gt;<i> &gt; IMO, bind() should not be necessary for receiving too.
+</I>&gt;<i> 
+</I>&gt;<i> You should probably use the special SA/DA values to indicate broadcast addresses.
+</I>I'm not sure I understand.
+Do you mean: use 0xff as SA to indicate to the kernel to take the
+default?  that is how I implemented now.
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> &gt;&gt;&gt;&gt; * We want to extend the j1939 bus into the
+</I>&gt;<i> &gt;&gt;&gt;&gt;   linux kernel, so different sockets can be logically different
+</I>&gt;<i> &gt;&gt;&gt;&gt;   entities, just as can_raw does for can.
+</I>&gt;<i> &gt;&gt; What is an entity here?
+</I>&gt;<i> &gt; I tried to avoid using J1939 specific terms, but here it goes.
+</I>&gt;<i> &gt; J1939 talks about ECU (electronic control module) that claims a single
+</I>&gt;<i> &gt; SA. an ECU may be regarded as a single controller on the CAN bus, but a
+</I>&gt;<i> &gt; single controller may implement several (virtual) ECU's too.
+</I>&gt;<i> &gt;&gt; A socket is a communication endpoint that can hold e.g. a communication
+</I>&gt;<i> &gt;&gt; relation from a local address to a specific destination address.
+</I>&gt;<i> 
+</I>&gt;<i> But virtual ECUs distinguish from SA, right?
+</I>yep.
+&gt;<i> Then it's not 'visible' in the concept.
+</I>??
+[...]
+&gt;<i> 
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; At the next level, j1939 describes a dynamic addressing scheme (the
+</I>&gt;<i> &gt;&gt;&gt;&gt; above is working fine with static addresses only). That's especially
+</I>&gt;<i> &gt;&gt;&gt;&gt; used a lot in agriculture (our main market).
+</I>&gt;<i> &gt;&gt;&gt;&gt; At that point, SA &amp; DA are not persistent anymore, but the 8byte name
+</I>&gt;<i> &gt;&gt;&gt;&gt; is.
+</I>&gt;<i> &gt;&gt;&gt;&gt; We intent not to let kernel code participate in this dynamic
+</I>&gt;<i> &gt;&gt;&gt;&gt; addressing,
+</I>&gt;<i> &gt;&gt;&gt;&gt; but let the kernel code follow the actions on the bus. Since a single
+</I>&gt;<i> &gt;&gt;&gt;&gt; instance must decide which name an SA belongs to &amp; vice versa, the
+</I>&gt;<i> &gt;&gt;&gt;&gt; kernel is the perfect place.
+</I>&gt;<i> &gt;&gt; No.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; I checked the idea of the Dynamic Address Configuration in SAE J1939 here
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;     <A HREF="http://www.can-wiki.info/SaeJ1939">http://www.can-wiki.info/SaeJ1939</A>
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; and this is definitely something that has to be handled outside the kernel.
+</I>&gt;<i> &gt; Like I mentioned, the actions are taken in userspace, but the kernel
+</I>&gt;<i> &gt; should track when a SA is valid and when not.
+</I>&gt;<i> 
+</I>&gt;<i> And when it's not - what happens?
+</I>good question.
+when dynamic addressing is used, then during the address claim 'dead
+time' the j1939 spec says it's illegal to send other stuff with that SA.
+So, if such packet comes in, it _should_ be dropped/ignored.
+&gt;<i> Is the socket collapsing after sending a socket error?
+</I>collapsing? I don't understand the word.
+&gt;<i> 
+</I>&gt;<i> So far i cannot see a value in putting the name into the kernel. When the
+</I>2 packets from the same ECU may arrive. a regular socket user must be
+able to recognize them as coming from the same ECU.
+therefore, instead of relying on the SA, in dynamic addressing
+environments, such user should rely on the name.
+sending a packet to a particular ECU has the same issue. the same SA
+does not necessarily address the same ECU.
+To avoid delay problems, the mapping name-&gt;SA is done in kernel, in a
+very late stage. But the kernel needs the names then.
+&gt;<i> address becomes invalid the application needs to be informed to close and/or
+</I>&gt;<i> re-initialize it's connections. E.g. with signals or from the (already planned
+</I>&gt;<i> daemon).
+</I>When an SA becomes invalid, the daemon has some time to claim a new.
+It is legal to change address, and I would not generate errors on legal
+actions. Only when address becomes invalid indefinitely, an error should
+be generated.
+It is not the daemons job to inform other sockets about such things,
+   it's the kernel's job IMHO. The daemon's job is to find valid
+   addresses &amp; claim them as much as possible. nothing more, nothing
+   less.
+The kernel's job is to keep the name-SA assignements and respect timing.
+the kernel should never claim addresses from its own.
+&gt;<i> 
+</I>&gt;<i> Like this one:
+</I>&gt;<i> 
+</I>&gt;<i> &gt;&gt; Better write a daemon and/or library for that like for DNS in IP.
+</I>&gt;<i> &gt; ack, 1 daemon per SA or so was our plan
+</I>&gt;<i> 
+</I>[...]
+&gt;<i> &gt; When a user want j1939 communication, he/she should be able to just open
+</I>&gt;<i> &gt; the socket, do bind()/connect() as he/she pleases, and start sending.
+</I>&gt;<i> &gt; A common mistake when using j1939 (at least I found that) is to deal
+</I>&gt;<i> &gt; with CAN raw messages instead of j1939 packets. This works like a brake
+</I>&gt;<i> &gt; on applications. One should be able to ignore the actual CAN raw
+</I>&gt;<i> &gt; messages, and work with J1939 packets instead.
+</I>&gt;<i> 
+</I>&gt;<i> The J1939 (sockets) just give you a different view on the CAN, where the world
+</I>ack.
+&gt;<i> is good and the sun is shining.
+</I>Mmmmh.
+&gt;<i> 
+</I>&gt;<i> Who want's to use can-raw in J1939 environments then?
+</I>that's like asking: who want's to use ethernet in IP environments?
+It's not forbidden. But sticking to j1939 keeps you from mistakes
+against the j1939 protocol.
+&gt;<i> 
+</I>&gt;<i> And that your 'DNS' daemon probably uses can-raw is hidden from the users ;-)
+</I>That is an option, but I don't see the benefit yet. If I see benefit
+from this, I won't hesitate to do so.
+&gt;<i> 
+</I>&gt;<i> Finally (even if i do not like it) a socketoption containing the 64 bit name
+</I>&gt;<i> can be placed into the socket as soon as it is created. Before or after bind()
+</I>&gt;<i> is irrelevant.
+</I>for outgoing packets, that could be done.
+and for incoming, one could create an extra ioctl.
+but, it deviates from existing API's in a way I don't like.
+Such API would suggest the SA in the sockaddr is reliable, which is not
+always the case. To know that, an extra getsockopt or ioctl is needed.
+bind(), connect(), recvfrom() &amp; sendto() all benefit from a proper
+sockaddr _with_ the 64bit name.
+
+I would not confuse my users by putting it elsewhere, when it's not
+appropriate. I don't like it too.
+
+&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>I feel that apart from dynamic addressing, we pretty much agree on
+everything :-).
+
+May I state this ?:
+Doing proper dynamic addressing across several sockets/processes needs a
+limited kernel knowledge. I don't contest the kernel's effort should be
+minimal. Without kernel support, there are some mistakes that cannot be
+avoided (and those mistakes are common, I can assure you). To let the
+kernel do it's minimal action, userspace communication must be done with
+64bit names instead of 8bit addr.
+Whether or not the 64bit name is added in the sockaddr decides on being
+capable to do proper dynamic addressing, or leaving transient problems
+in it's dynamic characteristic.
+&gt;<i> 
+</I>regards,
+Kurt
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004139.html">struct sockaddr_can for j1939
+</A></li>
+	<LI>Next message: <A HREF="004145.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4141">[ date ]</a>
+              <a href="thread.html#4141">[ thread ]</a>
+              <a href="subject.html#4141">[ subject ]</a>
+              <a href="author.html#4141">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

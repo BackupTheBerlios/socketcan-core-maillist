@@ -1,0 +1,482 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] can-utils: full duplex test to find out-of-order messages
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20can-utils%3A%20full%20duplex%20test%20to%20find%20out-of-order%20messages&In-Reply-To=%3C4ABCB5C4.6010708%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003186.html">
+   <LINK REL="Next"  HREF="003188.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] can-utils: full duplex test to find out-of-order messages</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20can-utils%3A%20full%20duplex%20test%20to%20find%20out-of-order%20messages&In-Reply-To=%3C4ABCB5C4.6010708%40grandegger.com%3E"
+       TITLE="[PATCH] can-utils: full duplex test to find out-of-order messages">wg at grandegger.com
+       </A><BR>
+    <I>Fri Sep 25 14:21:24 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003186.html">[PATCH v2] ems_pci: fix size of CAN controllers BAR mapping for	CPC-PCI v2
+</A></li>
+        <LI>Next message: <A HREF="003188.html">[PATCH V4] net-next:can: add TI CAN (HECC) driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3187">[ date ]</a>
+              <a href="thread.html#3187">[ thread ]</a>
+              <a href="subject.html#3187">[ subject ]</a>
+              <a href="author.html#3187">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch is a pepped up version of Valdislav's canecho_gen and
+canecho_dut test programs, which have proved to be useful for
+detecting out-of-order message transmission and reception. Here
+is a list of the changes and improvements:
+
+- Both programs have been merged into one test program named
+  canfdtest. Message generation can be selected via the command
+  line option '-g'.
+- A low and high verbosity level has been added.
+- send/recv is used instead of write/read.
+- The return code of send/recv is checked properly.
+- The test loop count can be specified.
+- The Linux coding style is used. 
+
+Please test and comment.
+
+Vladislav, feel free to add your signed-off-by here
+Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+---
+ can-utils/Makefile    |    2 
+ can-utils/canfdtest.c |  379 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 380 insertions(+), 1 deletion(-)
+
+Index: trunk/can-utils/Makefile
+===================================================================
+--- trunk.orig/can-utils/Makefile
++++ trunk/can-utils/Makefile
+@@ -52,7 +52,7 @@ CFLAGS    = -O2 -Wall -Wno-parentheses -
+ PROGRAMS = candump cansniffer cansend canplayer canlogserver cangen\
+ 	   canbusload log2long log2asc asc2log bcmserver\
+ 	   isotpdump isotprecv isotpsend isotpsniffer isotptun\
+-	   slcan_attach slcand slcanpty
++	   slcan_attach slcand slcanpty canfdtest
+ 
+ all: $(PROGRAMS)
+ 
+Index: trunk/can-utils/canfdtest.c
+===================================================================
+--- /dev/null
++++ trunk/can-utils/canfdtest.c
+@@ -0,0 +1,379 @@
++/*
++ * canfdtest.c - Full-duplex test program (DUT and host part)
++ *
++ * (C) 2009 by Vladislav Gribov, IXXAT Automation GmbH, &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A>&gt;
++ * (C) 2009 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * General Public License for more details.
++ *
++ * Send feedback to &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-users at lists.berlios.de</A>&gt;
++ */
++
++#include &lt;stdio.h&gt;
++#include &lt;stdlib.h&gt;
++#include &lt;unistd.h&gt;
++#include &lt;string.h&gt;
++#include &lt;signal.h&gt;
++#include &lt;libgen.h&gt;
++#include &lt;getopt.h&gt;
++#include &lt;time.h&gt;
++#include &lt;sched.h&gt;
++#include &lt;limits.h&gt;
++#include &lt;errno.h&gt;
++
++#include &lt;sys/types.h&gt;
++#include &lt;sys/time.h&gt;
++#include &lt;sys/socket.h&gt;
++#include &lt;sys/ioctl.h&gt;
++#include &lt;net/if.h&gt;
++
++#include &lt;linux/can.h&gt;
++#include &lt;linux/can/raw.h&gt;
++
++#define CAN_MSG_ID	0x77
++#define CAN_MSG_LEN	8
++#define CAN_MSG_COUNT	50
++#define CAN_MSG_WAIT	27
++
++static int running = 1;
++static int verbose;
++static int sockfd;
++static int test_loops;
++
++static void print_usage(char *prg)
++{
++	fprintf(stderr,
++		&quot;Usage: %s [options] &lt;can-interface&gt;\n&quot;
++		&quot;\n&quot;
++		&quot;Options: -v       (low verbosity)\n&quot;
++		&quot;         -vv      (high verbosity)\n&quot;
++		&quot;         -g       (generate messages)\n&quot;
++		&quot;         -l COUNT (test loop count)\n&quot;
++		&quot;\n&quot;
++		&quot;With the option '-g' CAN messages are generated and checked\n&quot;
++		&quot;on &lt;can-interface&gt;, otherwise all messages received on the\n&quot;
++                &quot;&lt;can-interface&gt; are sent back incrementing the CAN id and\n&quot;
++		&quot;all data bytes. The program can be aborted with ^C.\n&quot;
++		&quot;\n&quot;
++		&quot;Example:\n&quot;
++		&quot;\ton DUT : %s -v can0\n&quot;
++		&quot;\ton Host: %s -g -v can2\n&quot;,
++		prg, prg, prg);
++
++	exit(1);
++}
++
++static void print_frame(struct can_frame *frame)
++{
++	int i;
++
++	printf(&quot;%04x: &quot;, frame-&gt;can_id);
++	if (frame-&gt;can_id &amp; CAN_RTR_FLAG) {
++		printf(&quot;remote request&quot;);
++	} else {
++		printf(&quot;[%d]&quot;, frame-&gt;can_dlc);
++		for (i = 0; i &lt; frame-&gt;can_dlc; i++)
++			printf(&quot; %02x&quot;, frame-&gt;data[i]);
++	}
++	printf(&quot;\n&quot;);
++}
++
++static void print_compare(struct can_frame *exp, struct can_frame *rec)
++{
++	printf(&quot;expected: &quot;);
++	print_frame(exp);
++	printf(&quot;received: &quot;);
++	print_frame(rec);
++}
++
++static void compare_frame(struct can_frame *exp, struct can_frame *rec)
++{
++	int i;
++
++	if (rec-&gt;can_id != exp-&gt;can_id) {
++		printf(&quot;Message ID mismatch!\n&quot;);
++		print_compare(exp, rec);
++		running = 0;
++	} else if (rec-&gt;can_dlc != exp-&gt;can_dlc) {
++		printf(&quot;Message length mismatch!\n&quot;);
++		print_compare(exp, rec);
++		running = 0;
++	} else {
++		for (i = 0; i &lt; rec-&gt;can_dlc; i++) {
++			if (rec-&gt;data[i] != exp-&gt;data[i]) {
++				printf(&quot;Databyte %x mismatch !\n&quot;, i);
++				print_compare(exp,
++					      rec);
++				running = 0;
++			}
++		}
++	}
++}
++
++static void millisleep(int msecs)
++{
++	if (msecs &lt;= 0) {
++		sched_yield();
++	} else {
++		struct timespec rqtp, rmtp;
++
++		/* sleep in ms */
++		rqtp.tv_sec = msecs / 1000;
++		rqtp.tv_nsec = (msecs % 1000) * 1000000;
++		while (nanosleep(&amp;rqtp, &amp;rmtp)) {
++			if (errno != EINTR) {
++				printf(&quot;t\n&quot;);
++				break;
++			}
++			rqtp = rmtp;
++		}
++	}
++}
++
++static void echo_progress(unsigned char data)
++{
++	if (data == 0xff) {
++		printf(&quot;.&quot;);
++		fflush(stdout);
++	}
++}
++
++static void signal_handler(int signo)
++{
++	close(sockfd);
++	running = 0;
++}
++
++static int recv_frame(struct can_frame *frame)
++{
++	int ret;
++
++	ret = recv(sockfd, frame, sizeof(*frame), 0);
++	if (ret != sizeof(*frame)) {
++		if (ret &lt; 0)
++			perror(&quot;recv failed&quot;);
++		else
++			fprintf(stderr, &quot;recv returned %d&quot;, ret);
++		return -1;
++	}
++	return 0;
++}
++
++static int send_frame(struct can_frame *frame)
++{
++	int ret;
++
++	while ((ret = send(sockfd, frame, sizeof(*frame), 0))
++	       != sizeof(*frame)) {
++		if (ret &lt; 0) {
++			if (errno != ENOBUFS) {
++				perror(&quot;send failed&quot;);
++				return -1;
++			} else {
++				if (verbose) {
++					printf(&quot;N&quot;);
++					fflush(stdout);
++				}
++			}
++		} else {
++			fprintf(stderr, &quot;send returned %d&quot;, ret);
++			return -1;
++		}
++	}
++	return 0;
++}
++
++static int can_echo_dut(void)
++{
++	unsigned int frame_count = 0;
++	struct timeval tvn, tv_stop;
++	struct can_frame frame;
++	int i;
++
++	while (running) {
++		if (recv_frame(&amp;frame))
++			return -1;
++		frame_count++;
++		if (verbose == 1) {
++			echo_progress(frame.data[0]);
++		} else if (verbose &gt; 1) {
++			printf(&quot;%04x: &quot;, frame.can_id);
++			if (frame.can_id &amp; CAN_RTR_FLAG) {
++				printf(&quot;remote request&quot;);
++			} else {
++				printf(&quot;[%d]&quot;, frame.can_dlc);
++				for (i = 0; i &lt; frame.can_dlc; i++)
++					printf(&quot; %02x&quot;, frame.data[i]);
++			}
++			printf(&quot;\n&quot;);
++		}
++		frame.can_id++;
++		for (i = 0; i &lt; frame.can_dlc; i++)
++			frame.data[i]++;
++		if (send_frame(&amp;frame))
++			return -1;
++
++		/*
++		 * to force a interlacing of the frames send by DUT and PC
++		 * test tool a waiting time is injected
++		 */
++		if (frame_count == CAN_MSG_WAIT) {
++			frame_count = 0;
++			if (gettimeofday(&amp;tv_stop, NULL)) {
++				perror(&quot;gettimeofday failed\n&quot;);
++				return -1;
++			} else {
++				tv_stop.tv_usec += 3000;
++				if (tv_stop.tv_usec &gt; 999999) {
++					tv_stop.tv_sec++;
++					tv_stop.tv_usec =
++						tv_stop.tv_usec % 1000000;
++				}
++				gettimeofday(&amp;tvn, NULL);
++				while ((tv_stop.tv_sec &gt; tvn.tv_sec) ||
++				       ((tv_stop.tv_sec = tvn.tv_sec) &amp;&amp;
++					(tv_stop.tv_usec &gt;= tvn.tv_usec)))
++					gettimeofday(&amp;tvn, NULL);
++			}
++		}
++	}
++
++	return 0;
++}
++
++static int can_echo_gen(void)
++{
++	struct can_frame tx_frames[CAN_MSG_COUNT];
++	struct can_frame rx_frame;
++	unsigned char counter = 0;
++	int send_pos = 0, recv_pos = 0, unprocessed = 0, loops = 0;
++	int i;
++
++	while (running) {
++		if (unprocessed &lt; CAN_MSG_COUNT) {
++			/* still send messages */
++			tx_frames[send_pos].can_dlc = CAN_MSG_LEN;
++			tx_frames[send_pos].can_id = CAN_MSG_ID;
++			for (i = 0; i &lt; CAN_MSG_LEN; i++)
++				tx_frames[send_pos].data[i] = counter + i;
++			if (send_frame(&amp;tx_frames[send_pos]))
++				return -1;
++
++			/* increment to be equal to expected */
++			tx_frames[send_pos].can_id++;
++			for (i = 0; i &lt; CAN_MSG_LEN; i++)
++				tx_frames[send_pos].data[i]++;
++
++			send_pos++;
++			if (send_pos == CAN_MSG_COUNT)
++				send_pos = 0;
++			unprocessed++;
++			if (verbose == 1)
++				echo_progress(counter);
++			counter++;
++
++			if ((counter % 33) == 0)
++				millisleep(3);
++			else
++				millisleep(1);
++		} else {
++			if (recv_frame(&amp;rx_frame))
++				return -1;
++
++			if (verbose &gt; 1)
++				print_frame(&amp;rx_frame);
++
++			/* compare with expected */
++			compare_frame(&amp;tx_frames[recv_pos], &amp;rx_frame);
++
++			loops++;
++			if (test_loops &amp;&amp; loops &gt;= test_loops)
++				break;
++
++			recv_pos++;
++			if (recv_pos == CAN_MSG_COUNT)
++				recv_pos = 0;
++			unprocessed--;
++		}
++	}
++
++	printf(&quot;\nTest messages sent and received: %d\n&quot;, loops);
++
++	return 0;
++}
++
++int main(int argc, char *argv[])
++{
++	struct ifreq ifr;
++	struct sockaddr_can addr;
++	char *intf_name;
++	int family = PF_CAN, type = SOCK_RAW, proto = CAN_RAW;
++	int echo_gen = 0;
++	int opt, err;
++
++	signal(SIGTERM, signal_handler);
++	signal(SIGHUP, signal_handler);
++	signal(SIGINT, signal_handler);
++
++	while ((opt = getopt(argc, argv, &quot;gl:v&quot;)) != -1) {
++		switch (opt) {
++		case 'v':
++			verbose++;
++			break;
++
++		case 'l':
++			test_loops = atoi(optarg);;
++			break;
++
++		case 'g':
++			echo_gen = 1;
++			break;
++
++		default:
++			print_usage(basename(argv[0]));
++			break;
++		}
++	}
++
++	if ((argc - optind) != 1)
++		print_usage(basename(argv[0]));
++	intf_name = argv[optind];
++
++	printf(&quot;interface = %s, family = %d, type = %d, proto = %d\n&quot;,
++	       intf_name, family, type, proto);
++
++	if ((sockfd = socket(family, type, proto)) &lt; 0) {
++		perror(&quot;socket&quot;);
++		return 1;
++	}
++
++	addr.can_family = family;
++	strcpy(ifr.ifr_name, intf_name);
++	ioctl(sockfd, SIOCGIFINDEX, &amp;ifr);
++	addr.can_ifindex = ifr.ifr_ifindex;
++
++	if (bind(sockfd, (struct sockaddr *)&amp;addr, sizeof(addr)) &lt; 0) {
++		perror(&quot;bind&quot;);
++		close(sockfd);
++		return 1;
++	}
++
++	if (echo_gen)
++		err = can_echo_gen();
++	else
++		err = can_echo_dut();
++
++	if (verbose)
++		printf(&quot;Exiting...\n&quot;);
++
++	close(sockfd);
++	return err;
++}
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003186.html">[PATCH v2] ems_pci: fix size of CAN controllers BAR mapping for	CPC-PCI v2
+</A></li>
+	<LI>Next message: <A HREF="003188.html">[PATCH V4] net-next:can: add TI CAN (HECC) driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3187">[ date ]</a>
+              <a href="thread.html#3187">[ thread ]</a>
+              <a href="subject.html#3187">[ subject ]</a>
+              <a href="author.html#3187">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

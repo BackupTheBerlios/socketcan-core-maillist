@@ -1,0 +1,154 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Fix%20build%0A%09warnings&In-Reply-To=%3C4CCB0B3F.5050400%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004903.html">
+   <LINK REL="Next"  HREF="004927.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Fix%20build%0A%09warnings&In-Reply-To=%3C4CCB0B3F.5050400%40pengutronix.de%3E"
+       TITLE="[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings">mkl at pengutronix.de
+       </A><BR>
+    <I>Fri Oct 29 19:58:23 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004903.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+        <LI>Next message: <A HREF="004927.html">[PATCH 00/39] Cleanup WARN #defines
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4904">[ date ]</a>
+              <a href="thread.html#4904">[ thread ]</a>
+              <a href="subject.html#4904">[ subject ]</a>
+              <a href="author.html#4904">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 10/29/2010 06:46 PM, Oliver Hartkopp wrote:
+&gt;<i> Indeed the access to the data registers does not seem to be endian aware.
+</I>&gt;<i> 
+</I>&gt;<i> See in pch_can_rx_normal():
+</I>&gt;<i> 
+</I>&gt;<i> +			cf-&gt;can_dlc = get_can_dlc((ioread32(&amp;priv-&gt;regs-&gt;
+</I>&gt;<i> +						   if1_mcont)) &amp; 0xF);
+</I>&gt;<i> +			*(u16 *)(cf-&gt;data + 0) = ioread16(&amp;priv-&gt;regs-&gt;
+</I>&gt;<i> +							  if1_dataa1);
+</I>&gt;<i> +			*(u16 *)(cf-&gt;data + 2) = ioread16(&amp;priv-&gt;regs-&gt;
+</I>&gt;<i> +							  if1_dataa2);
+</I>&gt;<i> +			*(u16 *)(cf-&gt;data + 4) = ioread16(&amp;priv-&gt;regs-&gt;
+</I>&gt;<i> +							  if1_datab1);
+</I>&gt;<i> +			*(u16 *)(cf-&gt;data + 6) = ioread16(&amp;priv-&gt;regs-&gt;
+</I>&gt;<i> +							  if1_datab2);
+</I>&gt;<i> 
+</I>&gt;<i> See in pch_xmit():
+</I>&gt;<i> 
+</I>&gt;<i> +	/* Copy data to register */
+</I>&gt;<i> +	if (cf-&gt;can_dlc &gt; 0) {
+</I>&gt;<i> +		u32 data1 = *((u16 *)&amp;cf-&gt;data[0]);
+</I>&gt;<i> +		iowrite32(data1, &amp;priv-&gt;regs-&gt;if2_dataa1);
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (cf-&gt;can_dlc &gt; 2) {
+</I>&gt;<i> +		u32 data1 = *((u16 *)&amp;cf-&gt;data[2]);
+</I>&gt;<i> +		iowrite32(data1, &amp;priv-&gt;regs-&gt;if2_dataa2);
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (cf-&gt;can_dlc &gt; 4) {
+</I>&gt;<i> +		u32 data1 = *((u16 *)&amp;cf-&gt;data[4]);
+</I>&gt;<i> +		iowrite32(data1, &amp;priv-&gt;regs-&gt;if2_datab1);
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (cf-&gt;can_dlc &gt; 6) {
+</I>&gt;<i> +		u32 data1 = *((u16 *)&amp;cf-&gt;data[6]);
+</I>&gt;<i> +		iowrite32(data1, &amp;priv-&gt;regs-&gt;if2_datab2);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> 
+</I>&gt;<i> It's just a question if the driver for an Intel Chipset should/could ignore
+</I>&gt;<i> the endian problematic.
+</I>&gt;<i> 
+</I>&gt;<i> If this is intended the driver should only appear in Kconfig depending on X86
+</I>&gt;<i> or little endian systems.
+</I>&gt;<i> 
+</I>&gt;<i> Besides this remark, the struct pch_can_regs could also be defined in a way
+</I>&gt;<i> that every single CAN payload data byte could be accessed directly to allow
+</I>
+That _should_ work on x86. On the contrary on ARM some registers in SOCs
+allow only full 32 bit access.
+
+&gt;<i> e.g. this code in pch_can_rx_normal():
+</I>&gt;<i> 
+</I>&gt;<i> cf-&gt;data[0] = ioread8(&amp;priv-&gt;regs-&gt;if1_data0);
+</I>&gt;<i> cf-&gt;data[1] = ioread8(&amp;priv-&gt;regs-&gt;if1_data1);
+</I>&gt;<i> cf-&gt;data[2] = ioread8(&amp;priv-&gt;regs-&gt;if1_data2);
+</I>&gt;<i> (..)
+</I>&gt;<i> cf-&gt;data[6] = ioread8(&amp;priv-&gt;regs-&gt;if1_data6);
+</I>&gt;<i> cf-&gt;data[7] = ioread8(&amp;priv-&gt;regs-&gt;if1_data7);
+</I>
+&gt;<i> This is easy to understand and additionally endian aware.
+</I>
+or use this, (as proposed in a earlier mail)
+
+	for (i = 0; i &lt; cf-&gt;can_dlc; i += 2) {
+		reg = ioread32(&amp;priv-&gt;regs-&gt;if1_data[i &gt;&gt; 1]);
+		*(__be16 *)cf-&gt;data[i] = cpu_to_be16(reg);
+	}
+
+&gt;<i> In opposite to this:
+</I>&gt;<i> 
+</I>&gt;<i> +	if (cf-&gt;can_dlc &gt; 2) {
+</I>&gt;<i> +		u32 data1 = *((u16 *)&amp;cf-&gt;data[2]);
+</I>&gt;<i> +		iowrite32(data1, &amp;priv-&gt;regs-&gt;if2_dataa2);
+</I>&gt;<i> +	}
+</I>&gt;<i> 
+</I>&gt;<i> Which puts a little? endian u16 into the big endian register layout.
+</I>&gt;<i> Sorry i'm just getting curious on this register access implementation.
+</I>
+According to the datasheet the layout is LE.
+
+cheers, Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101029/53a6b216/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101029/53a6b216/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004903.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+	<LI>Next message: <A HREF="004927.html">[PATCH 00/39] Cleanup WARN #defines
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4904">[ date ]</a>
+              <a href="thread.html#4904">[ thread ]</a>
+              <a href="subject.html#4904">[ subject ]</a>
+              <a href="author.html#4904">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

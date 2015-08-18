@@ -1,0 +1,151 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC 5/5] [powerpc] Implement a p1010rdb clock source.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%205/5%5D%20%5Bpowerpc%5D%20Implement%20a%20p1010rdb%20clock%20source.&In-Reply-To=%3C20110808091522.GR4926%40sgi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005867.html">
+   <LINK REL="Next"  HREF="005873.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC 5/5] [powerpc] Implement a p1010rdb clock source.</H1>
+    <B>Robin Holt</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%205/5%5D%20%5Bpowerpc%5D%20Implement%20a%20p1010rdb%20clock%20source.&In-Reply-To=%3C20110808091522.GR4926%40sgi.com%3E"
+       TITLE="[RFC 5/5] [powerpc] Implement a p1010rdb clock source.">holt at sgi.com
+       </A><BR>
+    <I>Mon Aug  8 11:15:22 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005867.html">[RFC 5/5] [powerpc] Implement a p1010rdb clock source.
+</A></li>
+        <LI>Next message: <A HREF="005873.html">[RFC 5/5] [powerpc] Implement a p1010rdb clock source.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5869">[ date ]</a>
+              <a href="thread.html#5869">[ thread ]</a>
+              <a href="subject.html#5869">[ subject ]</a>
+              <a href="author.html#5869">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Mon, Aug 08, 2011 at 10:37:58AM +0200, Wolfgang Grandegger wrote:
+&gt;<i> On 08/06/2011 04:34 PM, Robin Holt wrote:
+</I>&gt;<i> &gt; flexcan driver needs the clk_get, clk_get_rate, etc functions
+</I>&gt;<i> &gt; to work.  This patch provides the minimum functionality.
+</I>&gt;<i> 
+</I>&gt;<i> This needs some more general thoughts... apart from the question where
+</I>&gt;<i> the code should go.
+</I>&gt;<i> 
+</I>&gt;<i> Like for the MSCAN on the MPC5200, the user should be *able* to select
+</I>&gt;<i> an appropriate clock source and divider via DTS node properties.
+</I>&gt;<i> Currently it seems, that the DTS properties must match some
+</I>&gt;<i> pre-configured values, most likely set by the boot loader. Please
+</I>&gt;<i> correct me if I'm wrong. For me this is generic and should go into the
+</I>&gt;<i> Flexcan driver. From there, a platform specific function, e.g.
+</I>&gt;<i> flexcan_set_clock() might be called.
+</I>
+The P1010 really only supports the system bus clock for a source.  I was
+wrong last week when I said it supported either.  That was a confusion
+I have because of a task I was assigned a couple months ago.
+
+It can select different divider values.
+
+Robin
+
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> &gt; Signed-off-by: Robin Holt &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">holt at sgi.com</A>&gt;
+</I>&gt;<i> &gt; To: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+</I>&gt;<i> &gt; To: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+</I>&gt;<i> &gt; To: U Bhaskar-B22300 &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">B22300 at freescale.com</A>&gt;
+</I>&gt;<i> &gt; Cc: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> &gt; Cc: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">netdev at vger.kernel.org</A>
+</I>&gt;<i> &gt; ---
+</I>&gt;<i> &gt;  arch/powerpc/platforms/85xx/p1010rdb.c |   78 ++++++++++++++++++++++++++++++++
+</I>&gt;<i> &gt;  1 files changed, 78 insertions(+), 0 deletions(-)
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; diff --git a/arch/powerpc/platforms/85xx/p1010rdb.c b/arch/powerpc/platforms/85xx/p1010rdb.c
+</I>&gt;<i> &gt; index 3540a88..8f78ddd 100644
+</I>&gt;<i> &gt; --- a/arch/powerpc/platforms/85xx/p1010rdb.c
+</I>&gt;<i> &gt; +++ b/arch/powerpc/platforms/85xx/p1010rdb.c
+</I>&gt;<i> &gt; @@ -28,6 +28,7 @@
+</I>&gt;<i> &gt;  #include &lt;asm/udbg.h&gt;
+</I>&gt;<i> &gt;  #include &lt;asm/mpic.h&gt;
+</I>&gt;<i> &gt;  #include &lt;asm/swiotlb.h&gt;
+</I>&gt;<i> &gt; +#include &lt;asm/clk_interface.h&gt;
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt;  #include &lt;sysdev/fsl_soc.h&gt;
+</I>&gt;<i> &gt;  #include &lt;sysdev/fsl_pci.h&gt;
+</I>&gt;<i> &gt; @@ -164,6 +165,82 @@ static void __init p1010_rdb_setup_arch(void)
+</I>&gt;<i> &gt;  	printk(KERN_INFO &quot;P1010 RDB board from Freescale Semiconductor\n&quot;);
+</I>&gt;<i> &gt;  }
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; +/*
+</I>&gt;<i> &gt; + * p1010rdb needs to provide a clock source for the flexcan driver.
+</I>&gt;<i> &gt; + */
+</I>&gt;<i> &gt; +struct clk {
+</I>&gt;<i> &gt; +	unsigned long rate;
+</I>&gt;<i> &gt; +} p1010rdb_system_clk;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +static struct clk *p1010_rdb_clk_get(struct device *dev, const char *id)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> 
+</I>&gt;<i> I persoanlly don't like the
+</I>&gt;<i> 
+</I>&gt;<i> &gt; +	struct clk *clk;
+</I>&gt;<i> &gt; +	u32 *of_property;
+</I>&gt;<i> &gt; +	unsigned long clock_freq, clock_divider;
+</I>&gt;<i> &gt; +	const char *dev_init_name;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	if (!dev)
+</I>&gt;<i> &gt; +		return ERR_PTR(-ENOENT);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/*
+</I>&gt;<i> &gt; +	 * The can devices are named ffe1c000.can0 and ffe1d000.can1 on
+</I>&gt;<i> &gt; +	 * the p1010rdb.  Check for the &quot;can&quot; portion of that name before
+</I>&gt;<i> &gt; +	 * returning a clock source.
+</I>&gt;<i> &gt; +	 */
+</I>&gt;<i> &gt; +	dev_init_name = dev_name(dev);
+</I>&gt;<i> &gt; +	if (strlen(dev_init_name) != 13)
+</I>&gt;<i> &gt; +		return ERR_PTR(-ENOENT);
+</I>&gt;<i> &gt; +	dev_init_name += 9;
+</I>&gt;<i> &gt; +	if (strncmp(dev_init_name, &quot;can&quot;, 3))
+</I>&gt;<i> &gt; +		return ERR_PTR(-ENOENT);
+</I>&gt;<i> 
+</I>&gt;<i> There are dedicated functions to find the of node. But with my above
+</I>&gt;<i> proposal we do not need to provide p1010_rdb_clk_get().
+</I>&gt;<i> 
+</I>&gt;<i> More comments on the other patches soon...
+</I>&gt;<i> 
+</I>&gt;<i> Wolfgang.
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005867.html">[RFC 5/5] [powerpc] Implement a p1010rdb clock source.
+</A></li>
+	<LI>Next message: <A HREF="005873.html">[RFC 5/5] [powerpc] Implement a p1010rdb clock source.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5869">[ date ]</a>
+              <a href="thread.html#5869">[ thread ]</a>
+              <a href="subject.html#5869">[ subject ]</a>
+              <a href="author.html#5869">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

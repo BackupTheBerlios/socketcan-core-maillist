@@ -1,0 +1,153 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Again bit time settings
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Again%20bit%20time%20settings&In-Reply-To=%3C1216019631.3582.20.camel%40pc-mob-grv-deb%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001701.html">
+   <LINK REL="Next"  HREF="001703.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Again bit time settings</H1>
+    <B>Vladislav Gribov</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Again%20bit%20time%20settings&In-Reply-To=%3C1216019631.3582.20.camel%40pc-mob-grv-deb%3E"
+       TITLE="Again bit time settings">gribov at ixxat.de
+       </A><BR>
+    <I>Mon Jul 14 09:13:48 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001701.html">Updated driver for Microchip MCP251x CAN controller ?
+</A></li>
+        <LI>Next message: <A HREF="001703.html">Again bit time settings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1702">[ date ]</a>
+              <a href="thread.html#1702">[ thread ]</a>
+              <a href="subject.html#1702">[ subject ]</a>
+              <a href="author.html#1702">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+The bit timing discussion has been paused for the last week. Just want
+to refresh it and preach for the bit timing table  :)
+First to summarize as I see it.
+We all have agreed that an expert method of setting the bit timings
+using hardware independent method is needed. The following parameters
+are required to specify bit rate (according to ISO 11898-1):
+
+time quanta (ns)
+syncronisation segment
+propagation segment
+phase segment 1
+phase segment 2
+
+This parameters are set over the sysfs over the entries like
+&lt;sysfs&gt;/btr_tq
+&lt;sysfs&gt;/btr_syncseg
+&lt;sysfs&gt;/btr_propseg
+&lt;sysfs&gt;/btr_phseg1
+&lt;sysfs&gt;/btr_phseg2
+
+The CAN driver calculates the BTR registers using btr_* values, which is
+normally just very trivial.
+The bit rate is set on setting the interface up, so no additional
+measures to provide the atomic access are required.
+The additional entry &lt;sysfs&gt;/bitrate is implemented to read the actual
+bit rate.
+
+Example of an use case:
+
+ifconfig can0 down
+echo &quot;500&quot; &gt; &lt;sysfs_can0&gt;/btr_tq
+echo &quot;1&quot; &gt; &lt;sysfs_can0&gt;/btr_syncseg
+echo &quot;11&quot; &gt; &lt;sysfs_can0&gt;/btr_propseg
+echo &quot;2&quot; &gt; &lt;sysfs_can0&gt;/btr_phseg1
+echo &quot;2&quot; &gt; &lt;sysfs_can0&gt;/btr_phseg2
+ifconfig cano up
+
+cat &lt;sysfs_can0&gt;/bitrate
+125000
+
+
+This values will work for setting 125Kbit on any CAN HW using &quot;good&quot;
+clock for the CAN controller (8, 16 MHz). You will get a problem and
+will have to find out another values if using CAN clock like 33 MHz etc.
+But it will work, and we have no need to map HW registers.
+
+The second part of the discussion was to provide for the normal user the
+easy possibility to set standard CiA values, which are used in 95% of
+cases. Definitely a good idea. 
+The original idea was to use an algorithm implemented in the driver for
+calculating the bit timing registers for the provided value. This
+approach even allows to set not only CiA values, but any which can be
+calculated by the algorithm.
+
+This approach works as long as algorithm works. It do works for SJA1000,
+but what about another CAN controllers? OK, let assume we will get that
+method work on any CAN controller we need, but I still see following
+contras:
+
+- Extra effort to support this code on different CAN controllers
+- Pretty complex untrivial code in the HW driver. This code have nothing
+to do with control of driver specific HW itself.
+- Each time I select any standard bit rate the calculating algorithm
+uses the same input values and calculate the same output values. Each
+time I select 125Kbit for my HW the same register values will be
+calculated. So why calculating each time? I can calculate it ones and
+use each time the same constants. It is like each time I need pi to
+calculate it instead of using 3,14.
+- Using that approach not only standard values may be set, but for this
+we already have &quot;proper&quot; HW independent approach. Why duplication
+features?
+
+That is why the idea with bit rate tables came up. Instead of
+calculating the bit rate on runtime each time we select it, we calculate
+the table of required bit rates once and than use that constants.
+
+Which mechanism to use for defining the table (special sysfs entries or
+ifconfig, or even icanconfig (analog to iwconfig)) is a discussion
+point. For me is important to use the same HW independant values we use
+in &quot;expert&quot; mode.
+
+The bit rate calculation algorithm may be implemented in user space and
+generate values not as HW specific register values, but as tq, propseg
+etc. By this we can achieve having only one implementation of the bit
+rate calculating code which fits all CAN HW.
+
+Regards,
+Vladislav
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001701.html">Updated driver for Microchip MCP251x CAN controller ?
+</A></li>
+	<LI>Next message: <A HREF="001703.html">Again bit time settings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1702">[ date ]</a>
+              <a href="thread.html#1702">[ thread ]</a>
+              <a href="subject.html#1702">[ subject ]</a>
+              <a href="author.html#1702">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

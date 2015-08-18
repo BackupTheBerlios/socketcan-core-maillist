@@ -1,0 +1,248 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] net-next:can: add TI CAN (HECC) driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20net-next%3Acan%3A%20add%20TI%20CAN%20%28HECC%29%20driver&In-Reply-To=%3C4A97D146.5050806%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002944.html">
+   <LINK REL="Next"  HREF="002932.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] net-next:can: add TI CAN (HECC) driver</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20net-next%3Acan%3A%20add%20TI%20CAN%20%28HECC%29%20driver&In-Reply-To=%3C4A97D146.5050806%40hartkopp.net%3E"
+       TITLE="[PATCH] net-next:can: add TI CAN (HECC) driver">socketcan at hartkopp.net
+       </A><BR>
+    <I>Fri Aug 28 14:44:54 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002944.html">[PATCH] net-next:can: add TI CAN (HECC) driver
+</A></li>
+        <LI>Next message: <A HREF="002932.html">[PATCH] net-next:can: add TI CAN (HECC) driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2931">[ date ]</a>
+              <a href="thread.html#2931">[ thread ]</a>
+              <a href="subject.html#2931">[ subject ]</a>
+              <a href="author.html#2931">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Anant Gole wrote:
+&gt;<i> TI HECC (High End CAN Controller) module is found on many TI devices. It has
+</I>&gt;<i> 32 harwdare mailboxes with full implementation of CAN protocol version 2.0B
+</I>&gt;<i> and bus speeds up to 1Mbps. The module specifications are available at TI web
+</I>&gt;<i> &lt;<A HREF="http://www.ti.com">http://www.ti.com</A>&gt;.
+</I>&gt;<i> 
+</I>&gt;<i> This driver is tested on OMAP3517 EVM. Suspend/Resume not tested as yet.
+</I>&gt;<i> 
+</I>
+Hello Anant,
+
+some nitpicking first:
+
+&gt;<i> +#include &lt;linux/can/platform/ti_hecc_platform.h&gt;
+</I>
+Please use
+
+linux/can/platform/ti_hecc.c
+
+following the other drivers.
+
+&gt;<i> +
+</I>&gt;<i> +#define DRV_NAME &quot;TI HECC&quot;
+</I>
+DRV_NAME &quot;ti_hecc&quot;
+
+like your module is called in various places in the Kernel.
+
+This could be used later in
+
+&gt;<i> +static struct platform_driver ti_hecc_driver = {
+</I>&gt;<i> +	.driver = {
+</I>&gt;<i> +		.name    = &quot;ti_hecc&quot;,
+</I>&gt;<i> +		.owner   = THIS_MODULE,
+</I>&gt;<i> +	},
+</I>
+also.
+
+And it's better for this:
+
+
+&gt;<i> +/* CAN Bittiming constants as per HECC specs */
+</I>&gt;<i> +static struct can_bittiming_const ti_hecc_bittiming_const = {
+</I>&gt;<i> +	.name = DRV_NAME,
+</I>&gt;<i> +	.tseg1_min = 1,
+</I>&gt;<i> (..)
+</I>
+
+&gt;<i> +
+</I>&gt;<i> +#ifdef CONFIG_DEBUG_FS
+</I>&gt;<i> +
+</I>&gt;<i> +static struct ti_hecc_priv *debug_priv;
+</I>&gt;<i> +
+</I>&gt;<i> +#define PRINTMBOXREG(r) seq_printf(s, &quot;%d\t%08X %08X %08X %08X %08X\n&quot;, r,\
+</I>&gt;<i> +	hecc_read(debug_priv, HECC_CANMID(r)),\
+</I>&gt;<i> +	hecc_read(debug_priv, HECC_CANMCF(r)),\
+</I>&gt;<i> +	hecc_read(debug_priv, HECC_CANMDH(r)),\
+</I>&gt;<i> +	hecc_read(debug_priv, HECC_CANMDL(r)),\
+</I>&gt;<i> +	hecc_read(debug_priv, HECC_CANLAM(r)))
+</I>&gt;<i> +
+</I>&gt;<i> +/* Print mailbox data */
+</I>&gt;<i> +static void hecc_print_mbox_regs(struct seq_file *s)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int cnt = 0;
+</I>&gt;<i> +	static struct ti_hecc_priv *priv;
+</I>&gt;<i> +	priv = debug_priv;
+</I>&gt;<i> +	seq_printf(s, &quot;\n--- %s %s - mailbox regs ---\n\n&quot;,
+</I>&gt;<i> +		DRV_NAME, HECC_MODULE_VERSION);
+</I>&gt;<i> +	seq_printf(s, &quot;MbxNo\tMID\t MCF\t  MDH\t   MDL\t   LAM\n&quot;);
+</I>&gt;<i> +	seq_printf(s, &quot;-----------------------------------------------\n&quot;);
+</I>&gt;<i> +	for (cnt = 0; cnt &lt; HECC_MAX_MAILBOXES; cnt++)
+</I>&gt;<i> +		PRINTMBOXREG(cnt);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +#define PRINTREG(d, r) seq_printf(s, &quot;%s\t%08x\n&quot;, d, hecc_read(debug_priv, r))
+</I>&gt;<i> +/* Print HECC registers */
+</I>&gt;<i> +static void hecc_print_regs(struct seq_file *s)
+</I>&gt;<i> +{
+</I>
+I discovered lot's of debug code (&gt;20%).
+
+Is this really needed?
+
+
+
+&gt;<i> +static char *hecc_debug_can_state[] = {
+</I>&gt;<i> +	&quot;CAN_STATE_ERROR_ACTIVE&quot;,
+</I>&gt;<i> +	&quot;CAN_STATE_ERROR_WARNING&quot;,
+</I>&gt;<i> +	&quot;CAN_STATE_ERROR_PASSIVE&quot;,
+</I>&gt;<i> +	&quot;CAN_STATE_BUS_OFF&quot;,
+</I>&gt;<i> +	&quot;CAN_STATE_STOPPED&quot;,
+</I>&gt;<i> +	&quot;CAN_STATE_SLEEPING&quot;,
+</I>&gt;<i> +	&quot;CAN_STATE_MAX&quot;
+</I>&gt;<i> +};
+</I>
+Hm - defining this in a driver looks like a bad idea.
+
+Maybe we could move this to the CAN driver interface depending on
+
+CONFIG_CAN_DEBUG_DEVICES
+
+?!?
+
+
+&gt;<i> +
+</I>&gt;<i> +/* Print status and statistics */
+</I>&gt;<i> +static void hecc_print_status(struct seq_file *s)
+</I>&gt;<i> +{
+</I>&gt;<i> +	seq_printf(s, &quot;\n--- %s %s - status ---\n\n&quot;,
+</I>&gt;<i> +		DRV_NAME, HECC_MODULE_VERSION);
+</I>&gt;<i> +	seq_printf(s, &quot;\n--- ti_hecc status ---\n\n&quot;);
+</I>&gt;<i> +	seq_printf(s, &quot;CAN state \t\t= %s\n&quot;,
+</I>&gt;<i> +		hecc_debug_can_state[debug_priv-&gt;can.state]);
+</I>&gt;<i> +	seq_printf(s, &quot;CAN restart_ms \t\t= %u\n&quot;, debug_priv-&gt;can.restart_ms);
+</I>&gt;<i> +	seq_printf(s, &quot;CAN input clock \t= %u\n&quot;, debug_priv-&gt;can.clock.freq);
+</I>&gt;<i> +	seq_printf(s, &quot;CAN Bittiming\n&quot;);
+</I>&gt;<i> +	seq_printf(s, &quot;\tbitrate \t= %u\n&quot;,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming.bitrate);
+</I>&gt;<i> +	seq_printf(s, &quot;\tsample_point \t= %u\n&quot;,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming.sample_point);
+</I>&gt;<i> +	seq_printf(s, &quot;\ttq \t\t= %u\n&quot;,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming.tq);
+</I>&gt;<i> +	seq_printf(s, &quot;\tprop_seg \t= %u\n&quot;,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming.prop_seg);
+</I>&gt;<i> +	seq_printf(s, &quot;\tphase_seg1 \t= %u\n&quot;,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming.phase_seg1);
+</I>&gt;<i> +	seq_printf(s, &quot;\tphase_seg2 \t= %u\n&quot;,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming.phase_seg2);
+</I>&gt;<i> +	seq_printf(s, &quot;\tsjw \t\t= %u\n&quot;,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming.sjw);
+</I>&gt;<i> +	seq_printf(s, &quot;\tbrp \t\t= %u\n&quot;,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming.brp);
+</I>&gt;<i> +	seq_printf(s, &quot;CAN Bittiming Constants\n&quot;);
+</I>&gt;<i> +	seq_printf(s, &quot;\ttseg1 min-max \t= %u-%u\n&quot;,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming_const-&gt;tseg1_min,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming_const-&gt;tseg1_max);
+</I>&gt;<i> +	seq_printf(s, &quot;\ttseg2 min-max \t= %u-%u\n&quot;,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming_const-&gt;tseg2_min,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming_const-&gt;tseg2_max);
+</I>&gt;<i> +	seq_printf(s, &quot;\tsjw_max \t= %u\n&quot;,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming_const-&gt;sjw_max);
+</I>&gt;<i> +	seq_printf(s, &quot;\tbrp min-max \t= %u-%u\n&quot;,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming_const-&gt;brp_min,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming_const-&gt;brp_max);
+</I>&gt;<i> +	seq_printf(s, &quot;\tbrp_inc \t= %u\n&quot;,
+</I>&gt;<i> +			debug_priv-&gt;can.bittiming_const-&gt;brp_inc);
+</I>
+(..)
+
+And this could be also a candidate to be in the CAN driver interface.
+
+@Wolfgang: Any preferences to this idea?
+
+
+&gt;<i> +
+</I>&gt;<i> +/** Toggle HECC Self-Test i.e loopback bit
+</I>&gt;<i> + * INFO: Reading this debug variable toggles the loopback status on the device.
+</I>&gt;<i> + * This is done to simplify the debug function to set looback
+</I>&gt;<i> + */
+</I>&gt;<i> +static int hecc_debug_loopback(struct seq_file *s)
+</I>&gt;<i> +{
+</I>&gt;<i> +	static int toggle;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Put module in self test mode i.e. loopback */
+</I>&gt;<i> +	if (toggle) {
+</I>&gt;<i> +		seq_printf(s, &quot;In Self Test Mode (loopback)\n&quot;);
+</I>&gt;<i> +		hecc_set_bit(debug_priv, HECC_CANMC, HECC_CANMC_STM);
+</I>&gt;<i> +		toggle = 0;
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		seq_printf(s, &quot;Out of Self Test Mode (NO loopback)\n&quot;);
+</I>&gt;<i> +		hecc_clear_bit(debug_priv, HECC_CANMC, HECC_CANMC_STM);
+</I>&gt;<i> +		toggle = 1;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>
+Ugh!
+
+No. This should definitely be done by netlink.
+
+I did not take a closer look into the device access and error handling right
+now. So this was just my first impression :-)
+
+Thanks,
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002944.html">[PATCH] net-next:can: add TI CAN (HECC) driver
+</A></li>
+	<LI>Next message: <A HREF="002932.html">[PATCH] net-next:can: add TI CAN (HECC) driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2931">[ date ]</a>
+              <a href="thread.html#2931">[ thread ]</a>
+              <a href="subject.html#2931">[ subject ]</a>
+              <a href="author.html#2931">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

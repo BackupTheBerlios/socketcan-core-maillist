@@ -1,0 +1,142 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v9 01/20] pch_can: Add flow control processing
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v9%2001/20%5D%20pch_can%3A%20Add%20flow%20control%20processing&In-Reply-To=%3C1292221467-8039-1-git-send-email-tomoya-linux%40dsn.okisemi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005181.html">
+   <LINK REL="Next"  HREF="005188.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v9 01/20] pch_can: Add flow control processing</H1>
+    <B>Tomoya MORINAGA</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v9%2001/20%5D%20pch_can%3A%20Add%20flow%20control%20processing&In-Reply-To=%3C1292221467-8039-1-git-send-email-tomoya-linux%40dsn.okisemi.com%3E"
+       TITLE="[PATCH net-next-2.6 v9 01/20] pch_can: Add flow control processing">tomoya-linux at dsn.okisemi.com
+       </A><BR>
+    <I>Mon Dec 13 07:24:07 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005181.html">[PATCH net-next-2.6 v2] can: tscan1: add driver for TS-CAN1 boards
+</A></li>
+        <LI>Next message: <A HREF="005188.html">[PATCH net-next-2.6 v9 02/20] pch_can: Divide poll function
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5186">[ date ]</a>
+              <a href="thread.html#5186">[ thread ]</a>
+              <a href="subject.html#5186">[ subject ]</a>
+              <a href="author.html#5186">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Currently, there is no flow control processing.
+Thus, Add flow control processing as
+when there is no empty of tx buffer,
+netif_stop_queue is called.
+When there is empty buffer, netif_wake_queue is called.
+
+Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+---
+ drivers/net/can/pch_can.c |   31 ++++++++++++-------------------
+ 1 files changed, 12 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+index a9b6a65..f0f1404 100644
+--- a/drivers/net/can/pch_can.c
++++ b/drivers/net/can/pch_can.c
+@@ -102,6 +102,10 @@
+ 
+ #define PCH_FIFO_THRESH		16
+ 
++/* TxRqst2 show status of MsgObjNo.17~32 */
++#define PCH_TREQ2_TX_MASK	(((1 &lt;&lt; PCH_TX_OBJ_NUM) - 1) &lt;&lt;\
++							(PCH_RX_OBJ_END - 16))
++
+ enum pch_ifreg {
+ 	PCH_RX_IFREG,
+ 	PCH_TX_IFREG,
+@@ -871,6 +875,8 @@ MSG_OBJ:
+ 			dlc = 8;
+ 		stats-&gt;tx_bytes += dlc;
+ 		stats-&gt;tx_packets++;
++		if (int_stat == PCH_TX_OBJ_END)
++			netif_wake_queue(ndev);
+ 	}
+ 
+ 	int_stat = pch_can_int_pending(priv);
+@@ -1009,18 +1015,6 @@ static int pch_close(struct net_device *ndev)
+ 	return 0;
+ }
+ 
+-static int pch_get_msg_obj_sts(struct net_device *ndev, u32 obj_id)
+-{
+-	u32 buffer_status = 0;
+-	struct pch_can_priv *priv = netdev_priv(ndev);
+-
+-	/* Getting the message object status. */
+-	buffer_status = (u32) pch_can_get_buffer_status(priv);
+-
+-	return buffer_status &amp; obj_id;
+-}
+-
+-
+ static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+ {
+ 	int i, j;
+@@ -1031,17 +1025,16 @@ static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+ 	if (can_dropped_invalid_skb(ndev, skb))
+ 		return NETDEV_TX_OK;
+ 
+-	if (priv-&gt;tx_obj == PCH_TX_OBJ_END) { /* Point tail Obj */
+-		while (pch_get_msg_obj_sts(ndev, (((1 &lt;&lt; PCH_TX_OBJ_NUM)-1) &lt;&lt;
+-					   PCH_RX_OBJ_NUM)))
+-			udelay(500);
++	if (priv-&gt;tx_obj == PCH_TX_OBJ_END) {
++		if (ioread32(&amp;priv-&gt;regs-&gt;treq2) &amp; PCH_TREQ2_TX_MASK)
++			netif_stop_queue(ndev);
+ 
+-		priv-&gt;tx_obj = PCH_TX_OBJ_START; /* Point head of Tx Obj ID */
+-		tx_buffer_avail = priv-&gt;tx_obj; /* Point Tail of Tx Obj */
++		tx_buffer_avail = priv-&gt;tx_obj;
++		priv-&gt;tx_obj = PCH_TX_OBJ_START;
+ 	} else {
+ 		tx_buffer_avail = priv-&gt;tx_obj;
++		priv-&gt;tx_obj++;
+ 	}
+-	priv-&gt;tx_obj++;
+ 
+ 	/* Reading the Msg Obj from the Msg RAM to the Interface register. */
+ 	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+-- 
+1.6.0.6
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005181.html">[PATCH net-next-2.6 v2] can: tscan1: add driver for TS-CAN1 boards
+</A></li>
+	<LI>Next message: <A HREF="005188.html">[PATCH net-next-2.6 v9 02/20] pch_can: Divide poll function
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5186">[ date ]</a>
+              <a href="thread.html#5186">[ thread ]</a>
+              <a href="subject.html#5186">[ subject ]</a>
+              <a href="author.html#5186">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

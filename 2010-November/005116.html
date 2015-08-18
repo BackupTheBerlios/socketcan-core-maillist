@@ -1,0 +1,301 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v6 06/20] can: EG20T PCH: Fix endianness issue
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v6%2006/20%5D%20can%3A%20EG20T%20PCH%3A%20Fix%20endianness%20issue&In-Reply-To=%3C4CF47BAA.2090209%40dsn.okisemi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005115.html">
+   <LINK REL="Next"  HREF="005131.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v6 06/20] can: EG20T PCH: Fix endianness issue</H1>
+    <B>Tomoya MORINAGA</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v6%2006/20%5D%20can%3A%20EG20T%20PCH%3A%20Fix%20endianness%20issue&In-Reply-To=%3C4CF47BAA.2090209%40dsn.okisemi.com%3E"
+       TITLE="[PATCH net-next-2.6 v6 06/20] can: EG20T PCH: Fix endianness issue">tomoya-linux at dsn.okisemi.com
+       </A><BR>
+    <I>Tue Nov 30 05:20:58 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005115.html">[PATCH net-next-2.6 v6 05/20] can: EG20T PCH: Delete unnecessary	spin_lock
+</A></li>
+        <LI>Next message: <A HREF="005131.html">[PATCH net-next-2.6 v6 06/20] can: EG20T PCH: Fix endianness issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5116">[ date ]</a>
+              <a href="thread.html#5116">[ thread ]</a>
+              <a href="subject.html#5116">[ subject ]</a>
+              <a href="author.html#5116">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>there is endianness issue both Tx and Rx.
+Currently, data is set like below.
+Register:
+MSB--LSB
+x x D0 D1
+x x D2 D3
+x x D4 D5
+x x D6 D7
+
+But Data to be sent must be set like below.
+Register:
+MSB--LSB
+x x D1 D0
+x x D3 D2
+x x D5 D4
+x x D7 D6  (x means reserved area.)
+
+Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+---
+ drivers/net/can/pch_can.c |  118 +++++++++++++++++++++------------------------
+ 1 files changed, 55 insertions(+), 63 deletions(-)
+
+diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+index 6437e60..98e7e9f 100644
+--- a/drivers/net/can/pch_can.c
++++ b/drivers/net/can/pch_can.c
+@@ -134,10 +134,7 @@ struct pch_can_if_regs {
+ 	u32 id1;
+ 	u32 id2;
+ 	u32 mcont;
+-	u32 dataa1;
+-	u32 dataa2;
+-	u32 datab1;
+-	u32 datab2;
++	u32 data[4];
+ 	u32 rsv[13];
+ };
+ 
+@@ -420,10 +417,10 @@ static void pch_can_clear_buffers(struct pch_can_priv *priv)
+ 		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].id1);
+ 		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].id2);
+ 		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].mcont);
+-		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].dataa1);
+-		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].dataa2);
+-		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].datab1);
+-		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].datab2);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].data[0]);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].data[1]);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].data[2]);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].data[3]);
+ 		iowrite32(PCH_CMASK_RDWR | PCH_CMASK_MASK |
+ 			  PCH_CMASK_ARB | PCH_CMASK_CTRL,
+ 			  &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+@@ -437,10 +434,10 @@ static void pch_can_clear_buffers(struct pch_can_priv *priv)
+ 		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].id1);
+ 		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].id2);
+ 		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].mcont);
+-		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].dataa1);
+-		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].dataa2);
+-		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].datab1);
+-		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].datab2);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].data[0]);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].data[1]);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].data[2]);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].data[3]);
+ 		iowrite32(PCH_CMASK_RDWR | PCH_CMASK_MASK |
+ 			  PCH_CMASK_ARB | PCH_CMASK_CTRL,
+ 			  &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+@@ -703,12 +700,13 @@ static int pch_can_rx_normal(struct net_device *ndev, u32 int_stat)
+ 	canid_t id;
+ 	u32 ide;
+ 	u32 rtr;
+-	int i, j, k;
++	int i, k;
+ 	int rcv_pkts = 0;
+ 	struct sk_buff *skb;
+ 	struct can_frame *cf;
+ 	struct pch_can_priv *priv = netdev_priv(ndev);
+ 	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
++	u16 data_reg;
+ 
+ 	/* Reading the messsage object from the Message RAM */
+ 	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+@@ -774,12 +772,10 @@ static int pch_can_rx_normal(struct net_device *ndev, u32 int_stat)
+ 			      ((ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].mcont)) &amp; 0x0f);
+ 		}
+ 
+-		for (i = 0, j = 0; i &lt; cf-&gt;can_dlc; j++) {
+-			reg = ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].dataa1 + j*4);
+-			cf-&gt;data[i++] = cpu_to_le32(reg &amp; 0xff);
+-			if (i == cf-&gt;can_dlc)
+-				break;
+-			cf-&gt;data[i++] = cpu_to_le32((reg &gt;&gt; 8) &amp; 0xff);
++		for (i = 0; i &lt; cf-&gt;can_dlc; i += 2) {
++			data_reg = ioread16(&amp;priv-&gt;regs-&gt;ifregs[0].data[i / 2]);
++			cf-&gt;data[i] = data_reg &amp; 0xff;
++			cf-&gt;data[i + 1] = data_reg &gt;&gt; 8;
+ 		}
+ 
+ 		netif_receive_skb(skb);
+@@ -815,72 +811,71 @@ RX_NEXT:
+ 
+ 	return rcv_pkts;
+ }
+-static int pch_can_rx_poll(struct napi_struct *napi, int quota)
++
++static void pch_can_tx_complete(struct net_device *ndev, u32 int_stat)
+ {
+-	struct net_device *ndev = napi-&gt;dev;
+ 	struct pch_can_priv *priv = netdev_priv(ndev);
+ 	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
+ 	u32 dlc;
++
++	can_get_echo_skb(ndev, int_stat - PCH_RX_OBJ_END - 1);
++	iowrite32(PCH_CMASK_RX_TX_GET | PCH_CMASK_CLRINTPND,
++		  &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[1].creq, int_stat);
++	dlc = get_can_dlc(ioread32(&amp;priv-&gt;regs-&gt;ifregs[1].mcont) &amp;
++			  PCH_IF_MCONT_DLC);
++	stats-&gt;tx_bytes += dlc;
++	stats-&gt;tx_packets++;
++	if (int_stat == PCH_TX_OBJ_END)
++		netif_wake_queue(ndev);
++}
++
++static int pch_can_rx_poll(struct napi_struct *napi, int quota)
++{
++	struct net_device *ndev = napi-&gt;dev;
++	struct pch_can_priv *priv = netdev_priv(ndev);
+ 	u32 int_stat;
+ 	int rcv_pkts = 0;
+ 	u32 reg_stat;
+ 
+ 	int_stat = pch_can_int_pending(priv);
+ 	if (!int_stat)
+-		return 0;
++		goto end;
+ 
+-INT_STAT:
+-	if (int_stat == PCH_STATUS_INT) {
++	if ((int_stat == PCH_STATUS_INT) &amp;&amp; (quota &gt; 0)) {
+ 		reg_stat = ioread32(&amp;priv-&gt;regs-&gt;stat);
+ 		if (reg_stat &amp; (PCH_BUS_OFF | PCH_LEC_ALL)) {
+-			if ((reg_stat &amp; PCH_LEC_ALL) != PCH_LEC_ALL)
++			if (reg_stat &amp; PCH_BUS_OFF ||
++			   (reg_stat &amp; PCH_LEC_ALL) != PCH_LEC_ALL) {
+ 				pch_can_error(ndev, reg_stat);
++				quota--;
++			}
+ 		}
+ 
+-		if (reg_stat &amp; PCH_TX_OK) {
+-			iowrite32(PCH_CMASK_RX_TX_GET,
+-				  &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+-			pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[1].creq,
+-					       ioread32(&amp;priv-&gt;regs-&gt;intr));
++		if (reg_stat &amp; PCH_TX_OK)
+ 			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;stat, PCH_TX_OK);
+-		}
+ 
+ 		if (reg_stat &amp; PCH_RX_OK)
+ 			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;stat, PCH_RX_OK);
+ 
+ 		int_stat = pch_can_int_pending(priv);
+-		if (int_stat == PCH_STATUS_INT)
+-			goto INT_STAT;
+ 	}
+ 
+-MSG_OBJ:
++	if (quota == 0)
++		goto end;
++
+ 	if ((int_stat &gt;= PCH_RX_OBJ_START) &amp;&amp; (int_stat &lt;= PCH_RX_OBJ_END)) {
+-		rcv_pkts = pch_can_rx_normal(ndev, int_stat);
+-		if (rcv_pkts &lt; 0)
+-			return 0;
++		rcv_pkts += pch_can_rx_normal(ndev, int_stat);
++		quota -= rcv_pkts;
++		if (quota &lt; 0)
++			goto end;
+ 	} else if ((int_stat &gt;= PCH_TX_OBJ_START) &amp;&amp;
+ 		   (int_stat &lt;= PCH_TX_OBJ_END)) {
+ 		/* Handle transmission interrupt */
+-		can_get_echo_skb(ndev, int_stat - PCH_RX_OBJ_END - 1);
+-		iowrite32(PCH_CMASK_RX_TX_GET | PCH_CMASK_CLRINTPND,
+-			  &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+-		dlc = ioread32(&amp;priv-&gt;regs-&gt;ifregs[1].mcont) &amp;
+-			       PCH_IF_MCONT_DLC;
+-		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[1].creq, int_stat);
+-		if (dlc &gt; 8)
+-			dlc = 8;
+-		stats-&gt;tx_bytes += dlc;
+-		stats-&gt;tx_packets++;
+-		if (int_stat == PCH_TX_OBJ_END)
+-			netif_wake_queue(ndev);
++		pch_can_tx_complete(ndev, int_stat);
+ 	}
+ 
+-	int_stat = pch_can_int_pending(priv);
+-	if (int_stat == PCH_STATUS_INT)
+-		goto INT_STAT;
+-	else if (int_stat &gt;= 1 &amp;&amp; int_stat &lt;= 32)
+-		goto MSG_OBJ;
+-
++end:
+ 	napi_complete(napi);
+ 	pch_can_set_int_enables(priv, PCH_CAN_ALL);
+ 
+@@ -1013,10 +1008,10 @@ static int pch_close(struct net_device *ndev)
+ 
+ static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+ {
+-	int i, j;
+ 	struct pch_can_priv *priv = netdev_priv(ndev);
+ 	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+ 	int tx_buffer_avail = 0;
++	int i;
+ 
+ 	if (can_dropped_invalid_skb(ndev, skb))
+ 		return NETDEV_TX_OK;
+@@ -1057,13 +1052,10 @@ static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+ 	if (cf-&gt;can_id &amp; CAN_RTR_FLAG)
+ 		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[1].id2, PCH_ID2_DIR);
+ 
+-	for (i = 0, j = 0; i &lt; cf-&gt;can_dlc; j++) {
+-		iowrite32(le32_to_cpu(cf-&gt;data[i++]),
+-			 (&amp;priv-&gt;regs-&gt;ifregs[1].dataa1) + j*4);
+-		if (i == cf-&gt;can_dlc)
+-			break;
+-		iowrite32(le32_to_cpu(cf-&gt;data[i++] &lt;&lt; 8),
+-			 (&amp;priv-&gt;regs-&gt;ifregs[1].dataa1) + j*4);
++	/* Copy data to register */
++	for (i = 0; i &lt; cf-&gt;can_dlc; i += 2) {
++		iowrite16(cf-&gt;data[i] | (cf-&gt;data[i + 1] &lt;&lt; 8),
++			  &amp;priv-&gt;regs-&gt;ifregs[1].data[i / 2]);
+ 	}
+ 
+ 	can_put_echo_skb(skb, ndev, tx_buffer_avail - PCH_RX_OBJ_END - 1);
+-- 
+1.6.0.6
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005115.html">[PATCH net-next-2.6 v6 05/20] can: EG20T PCH: Delete unnecessary	spin_lock
+</A></li>
+	<LI>Next message: <A HREF="005131.html">[PATCH net-next-2.6 v6 06/20] can: EG20T PCH: Fix endianness issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5116">[ date ]</a>
+              <a href="thread.html#5116">[ thread ]</a>
+              <a href="subject.html#5116">[ subject ]</a>
+              <a href="author.html#5116">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

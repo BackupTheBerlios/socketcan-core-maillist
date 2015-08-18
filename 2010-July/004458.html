@@ -1,0 +1,126 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] Fix mcp251x reset
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Fix%20mcp251x%20reset&In-Reply-To=%3C4C3EE3D4.1030102%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004454.html">
+   <LINK REL="Next"  HREF="004453.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] Fix mcp251x reset</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Fix%20mcp251x%20reset&In-Reply-To=%3C4C3EE3D4.1030102%40pengutronix.de%3E"
+       TITLE="[PATCH] Fix mcp251x reset">mkl at pengutronix.de
+       </A><BR>
+    <I>Thu Jul 15 12:32:52 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004454.html">[PATCH] Fix mcp251x reset
+</A></li>
+        <LI>Next message: <A HREF="004453.html">[PATCH] CAN: Add Flexcan CAN controller driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4458">[ date ]</a>
+              <a href="thread.html#4458">[ thread ]</a>
+              <a href="subject.html#4458">[ subject ]</a>
+              <a href="author.html#4458">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello Andrew,
+
+please don't remove the list and Christian from Cc, please don't top post.
+
+Andrew Pushkin wrote:
+&gt;<i> There are no problems without patch, but code&quot; while ((mcp251x_read_reg(spi,
+</I>&gt;<i> CANSTAT) &amp; CANCTRL_REQOP_MASK) != CANCTRL_REQOP_CONF) &quot; is hard to
+</I>&gt;<i> undestend, because REQOP bits present in CANCTRL, but no CANSTAT register
+</I>
+that's correct.
+
+&gt;<i> (In CANSTAT present OPMOD bits (see page 53 MCP2510 datasheet)). We maybe
+</I>&gt;<i> need change name CANCTRL_REQOP_MASK and to CANCTRL_OPMOD_MASK and
+</I>
+to make it consistent we can add a define CANSTAT_OPMODE_MASK, because
+it's for the CANSTAT register.
+
+&gt;<i> CANCTRL_REQOP_CONF to CANCTRL_OPMOD_CONF or apply my patch. Without patch
+</I>&gt;<i> code is good by work, but not is good by reading.
+</I>
+should be CANSTAT_OPMOD_CONF
+
+&gt;&gt;&gt;<i> --- a/drivers/net/can/mcp251x.c
+</I>&gt;&gt;&gt;<i> +++ b/drivers/net/can/mcp251x.c
+</I>&gt;&gt;&gt;<i> @@ -587,7 +587,7 @@ static int mcp251x_hw_reset(struct spi_device *spi)
+</I>&gt;&gt;&gt;<i>       /* Wait for reset to finish */
+</I>&gt;&gt;&gt;<i>       timeout = jiffies + HZ;
+</I>&gt;&gt;&gt;<i>       mdelay(10);
+</I>&gt;&gt;&gt;<i> -     while ((mcp251x_read_reg(spi, CANSTAT) &amp; CANCTRL_REQOP_MASK)
+</I>&gt;&gt;&gt;<i> +     while ((mcp251x_read_reg(spi, CANCTRL) &amp; CANCTRL_REQOP_MASK)
+</I>&gt;&gt;&gt;<i>              != CANCTRL_REQOP_CONF) {
+</I>&gt;&gt;&gt;<i>               schedule();
+</I>&gt;&gt;&gt;<i>               if (time_after(jiffies, timeout)) {
+</I>
+NACK,
+If you have a look at your patch you change the register which is read
+from. Original it's CANSTAT, but you change it to CANCTRL. Have a look
+at page 51 of the datasheet:
+
+&gt;<i> The operational mode is selected via the CANCTRL.
+</I>&gt;<i> REQOP bits (see Register 9-1). When changing
+</I>&gt;<i> modes, the mode will not actually change until all pending
+</I>&gt;<i> message transmissions are complete. Because of
+</I>&gt;<i> this, the user must verify that the device has actually
+</I>&gt;<i> changed into the requested mode before further operations
+</I>&gt;<i> are executed. Verification of the current operating
+</I>&gt;<i> mode is done by reading the CANSTAT. OPMODE
+</I>&gt;<i> bits (see Register 9-2).
+</I>
+However you can prepare another patch which adds and uses the missing
+CANSTAT_ defines.
+
+cheers, Marc
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 260 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20100715/42aeecf5/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20100715/42aeecf5/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004454.html">[PATCH] Fix mcp251x reset
+</A></li>
+	<LI>Next message: <A HREF="004453.html">[PATCH] CAN: Add Flexcan CAN controller driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4458">[ date ]</a>
+              <a href="thread.html#4458">[ thread ]</a>
+              <a href="subject.html#4458">[ subject ]</a>
+              <a href="author.html#4458">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

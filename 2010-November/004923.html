@@ -1,0 +1,294 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC can: do not expose kernel addresses via procfs
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%20can%3A%20do%20not%20expose%20kernel%20addresses%20via%20procfs&In-Reply-To=%3C4CD2FDFD.1060804%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004924.html">
+   <LINK REL="Next"  HREF="004930.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC can: do not expose kernel addresses via procfs</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%20can%3A%20do%20not%20expose%20kernel%20addresses%20via%20procfs&In-Reply-To=%3C4CD2FDFD.1060804%40hartkopp.net%3E"
+       TITLE="RFC can: do not expose kernel addresses via procfs">socketcan at hartkopp.net
+       </A><BR>
+    <I>Thu Nov  4 19:39:57 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004924.html">[PATCH] can: mcp2515: add spi_async driver for MCP2515
+</A></li>
+        <LI>Next message: <A HREF="004930.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4923">[ date ]</a>
+              <a href="thread.html#4923">[ thread ]</a>
+              <a href="subject.html#4923">[ subject ]</a>
+              <a href="author.html#4923">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Urs,
+
+i gone through your patches and created a combined patch below.
+There had been some formatting issues in the procfs output and the
+calculation #define IDENTLEN (sizeof(IDENT - 1)) had a real problem ;-)
+
+I just made the patch 'even shorter' as i don't think there's a benefit
+to split it up - what do you think?
+
+Thanks,
+Oliver
+
+
+---
+
+This patch removes the leakage of kernel space addresses to userspace.
+As it makes more sense for debugging userspace applications to deal with
+available inode numbers, the filterlists now provide the inode numbers as
+part of the ident string passed from the different AF_CAN protocols.
+
+The change of the procfs content leads to a new version string 20101104.
+
+Signed-off-by: Urs Thuermann &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">urs.thuermann at volkswagen.de</A>&gt;
+Signed-off-by: Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan at hartkopp.net</A>&gt;
+CC: Dan Rosenberg &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">drosenberg at vsecurity.com</A>&gt;
+CC: Linus Torvalds &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">torvalds at linux-foundation.org</A>&gt;
+
+---
+
+diff --git a/include/linux/can/core.h b/include/linux/can/core.h
+index 6c507be..e20a841 100644
+--- a/include/linux/can/core.h
++++ b/include/linux/can/core.h
+@@ -19,7 +19,7 @@
+ #include &lt;linux/skbuff.h&gt;
+ #include &lt;linux/netdevice.h&gt;
+ 
+-#define CAN_VERSION &quot;20090105&quot;
++#define CAN_VERSION &quot;20101104&quot;
+ 
+ /* increment this number each time you change some user-space interface */
+ #define CAN_ABI_VERSION &quot;8&quot;
+diff --git a/net/can/bcm.c b/net/can/bcm.c
+index 08ffe9e..bdec368 100644
+--- a/net/can/bcm.c
++++ b/net/can/bcm.c
+@@ -86,6 +86,12 @@ MODULE_LICENSE(&quot;Dual BSD/GPL&quot;);
+ MODULE_AUTHOR(&quot;Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">oliver.hartkopp at volkswagen.de</A>&gt;&quot;);
+ MODULE_ALIAS(&quot;can-proto-2&quot;);
+ 
++/*
++ * Point to the sockets inode number inside the bcm ident string.
++ * We skip the string length of &quot;bcm &quot; (== 4) created in bcm_init().
++ */
++#define INODENUM(bo) (bo-&gt;ident + 4)
++
+ /* easy access to can_frame payload */
+ static inline u64 GET_U64(const struct can_frame *cp)
+ {
+@@ -124,8 +130,9 @@ struct bcm_sock {
+ 	struct list_head rx_ops;
+ 	struct list_head tx_ops;
+ 	unsigned long dropped_usr_msgs;
++	unsigned long dropped_tx_msgs;
+ 	struct proc_dir_entry *bcm_proc_read;
+-	char procname [9]; /* pointer printed in ASCII with \0 */
++	char ident[32];
+ };
+ 
+ static inline struct bcm_sock *bcm_sk(const struct sock *sk)
+@@ -165,10 +172,9 @@ static int bcm_proc_show(struct seq_file *m, void *v)
+ 	struct bcm_sock *bo = bcm_sk(sk);
+ 	struct bcm_op *op;
+ 
+-	seq_printf(m, &quot;&gt;&gt;&gt; socket %p&quot;, sk-&gt;sk_socket);
+-	seq_printf(m, &quot; / sk %p&quot;, sk);
+-	seq_printf(m, &quot; / bo %p&quot;, bo);
++	seq_printf(m, &quot;&gt;&gt;&gt; socket inode %s&quot;, INODENUM(bo));
+ 	seq_printf(m, &quot; / dropped %lu&quot;, bo-&gt;dropped_usr_msgs);
++	seq_printf(m, &quot; / dropped_tx %lu&quot;, bo-&gt;dropped_tx_msgs);
+ 	seq_printf(m, &quot; / bound %s&quot;, bcm_proc_getifname(ifname, bo-&gt;ifindex));
+ 	seq_printf(m, &quot; &lt;&lt;&lt;\n&quot;);
+ 
+@@ -266,7 +272,12 @@ static void bcm_can_tx(struct bcm_op *op)
+ 	/* send with loopback */
+ 	skb-&gt;dev = dev;
+ 	skb-&gt;sk = op-&gt;sk;
+-	can_send(skb, 1);
++
++	if (can_send(skb, 1)) {
++		struct bcm_sock *bo = bcm_sk(op-&gt;sk);
++
++		bo-&gt;dropped_tx_msgs++;
++	}
+ 
+ 	/* update statistics */
+ 	op-&gt;currframe++;
+@@ -1168,7 +1179,7 @@ static int bcm_rx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
+ 				err = can_rx_register(dev, op-&gt;can_id,
+ 						      REGMASK(op-&gt;can_id),
+ 						      bcm_rx_handler, op,
+-						      &quot;bcm&quot;);
++						      bo-&gt;ident);
+ 
+ 				op-&gt;rx_reg_dev = dev;
+ 				dev_put(dev);
+@@ -1177,7 +1188,7 @@ static int bcm_rx_setup(struct bcm_msg_head *msg_head, struct msghdr *msg,
+ 		} else
+ 			err = can_rx_register(NULL, op-&gt;can_id,
+ 					      REGMASK(op-&gt;can_id),
+-					      bcm_rx_handler, op, &quot;bcm&quot;);
++					      bcm_rx_handler, op, bo-&gt;ident);
+ 		if (err) {
+ 			/* this bcm rx op is broken -&gt; remove it */
+ 			list_del(&amp;op-&gt;list);
+@@ -1402,6 +1413,8 @@ static int bcm_init(struct sock *sk)
+ {
+ 	struct bcm_sock *bo = bcm_sk(sk);
+ 
++	snprintf(bo-&gt;ident, sizeof(bo-&gt;ident), &quot;bcm %lu&quot;, sock_i_ino(sk));
++
+ 	bo-&gt;bound            = 0;
+ 	bo-&gt;ifindex          = 0;
+ 	bo-&gt;dropped_usr_msgs = 0;
+@@ -1466,7 +1479,7 @@ static int bcm_release(struct socket *sock)
+ 
+ 	/* remove procfs entry */
+ 	if (proc_dir &amp;&amp; bo-&gt;bcm_proc_read)
+-		remove_proc_entry(bo-&gt;procname, proc_dir);
++		remove_proc_entry(INODENUM(bo), proc_dir);
+ 
+ 	/* remove device reference */
+ 	if (bo-&gt;bound) {
+@@ -1519,13 +1532,11 @@ static int bcm_connect(struct socket *sock, struct sockaddr *uaddr, int len,
+ 
+ 	bo-&gt;bound = 1;
+ 
+-	if (proc_dir) {
+-		/* unique socket address as filename */
+-		sprintf(bo-&gt;procname, &quot;%p&quot;, sock);
+-		bo-&gt;bcm_proc_read = proc_create_data(bo-&gt;procname, 0644,
++	/* use unique socket inode number as filename */
++	if (proc_dir)
++		bo-&gt;bcm_proc_read = proc_create_data(INODENUM(bo), 0644,
+ 						     proc_dir,
+ 						     &amp;bcm_proc_fops, sk);
+-	}
+ 
+ 	return 0;
+ }
+diff --git a/net/can/proc.c b/net/can/proc.c
+index f4265cc..15bed1c 100644
+--- a/net/can/proc.c
++++ b/net/can/proc.c
+@@ -204,23 +204,17 @@ static void can_print_rcvlist(struct seq_file *m, struct hlist_head *rx_list,
+ 
+ 	hlist_for_each_entry_rcu(r, n, rx_list, list) {
+ 		char *fmt = (r-&gt;can_id &amp; CAN_EFF_FLAG)?
+-			&quot;   %-5s  %08X  %08x  %08x  %08x  %8ld  %s\n&quot; :
+-			&quot;   %-5s     %03X    %08x  %08lx  %08lx  %8ld  %s\n&quot;;
++			&quot;   %-5s  %08X  %08x  %8ld   %s\n&quot; :
++			&quot;   %-5s     %03X    %08x  %8ld   %s\n&quot;;
+ 
+ 		seq_printf(m, fmt, DNAME(dev), r-&gt;can_id, r-&gt;mask,
+-				(unsigned long)r-&gt;func, (unsigned long)r-&gt;data,
+ 				r-&gt;matches, r-&gt;ident);
+ 	}
+ }
+ 
+ static void can_print_recv_banner(struct seq_file *m)
+ {
+-	/*
+-	 *                  can1.  00000000  00000000  00000000
+-	 *                 .......          0  tp20
+-	 */
+-	seq_puts(m, &quot;  device   can_id   can_mask  function&quot;
+-			&quot;  userdata   matches  ident\n&quot;);
++	seq_puts(m, &quot;  device   can_id   can_mask   matches   ident\n&quot;);
+ }
+ 
+ static int can_stats_proc_show(struct seq_file *m, void *v)
+diff --git a/net/can/raw.c b/net/can/raw.c
+index e88f610..e057f0d 100644
+--- a/net/can/raw.c
++++ b/net/can/raw.c
+@@ -88,6 +88,7 @@ struct raw_sock {
+ 	struct can_filter dfilter; /* default/single filter */
+ 	struct can_filter *filter; /* pointer to filter(s) */
+ 	can_err_mask_t err_mask;
++	char ident[32];
+ };
+ 
+ /*
+@@ -154,13 +155,14 @@ static void raw_rcv(struct sk_buff *oskb, void *data)
+ static int raw_enable_filters(struct net_device *dev, struct sock *sk,
+ 			      struct can_filter *filter, int count)
+ {
++	struct raw_sock *ro = raw_sk(sk);
+ 	int err = 0;
+ 	int i;
+ 
+ 	for (i = 0; i &lt; count; i++) {
+ 		err = can_rx_register(dev, filter[i].can_id,
+ 				      filter[i].can_mask,
+-				      raw_rcv, sk, &quot;raw&quot;);
++				      raw_rcv, sk, ro-&gt;ident);
+ 		if (err) {
+ 			/* clean up successfully registered filters */
+ 			while (--i &gt;= 0)
+@@ -177,11 +179,12 @@ static int raw_enable_filters(struct net_device *dev, struct sock *sk,
+ static int raw_enable_errfilter(struct net_device *dev, struct sock *sk,
+ 				can_err_mask_t err_mask)
+ {
++	struct raw_sock *ro = raw_sk(sk);
+ 	int err = 0;
+ 
+ 	if (err_mask)
+ 		err = can_rx_register(dev, 0, err_mask | CAN_ERR_FLAG,
+-				      raw_rcv, sk, &quot;raw&quot;);
++				      raw_rcv, sk, ro-&gt;ident);
+ 
+ 	return err;
+ }
+@@ -281,6 +284,8 @@ static int raw_init(struct sock *sk)
+ {
+ 	struct raw_sock *ro = raw_sk(sk);
+ 
++	snprintf(ro-&gt;ident, sizeof(ro-&gt;ident), &quot;raw %lu&quot;, sock_i_ino(sk));
++
+ 	ro-&gt;bound            = 0;
+ 	ro-&gt;ifindex          = 0;
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004924.html">[PATCH] can: mcp2515: add spi_async driver for MCP2515
+</A></li>
+	<LI>Next message: <A HREF="004930.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4923">[ date ]</a>
+              <a href="thread.html#4923">[ thread ]</a>
+              <a href="subject.html#4923">[ subject ]</a>
+              <a href="author.html#4923">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

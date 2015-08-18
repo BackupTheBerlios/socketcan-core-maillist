@@ -1,0 +1,402 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] EMS CPC-PCI/PCIe reworked
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20EMS%20CPC-PCI/PCIe%20reworked&In-Reply-To=%3C47F4A3F5.5040008%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001145.html">
+   <LINK REL="Next"  HREF="001147.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] EMS CPC-PCI/PCIe reworked</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20EMS%20CPC-PCI/PCIe%20reworked&In-Reply-To=%3C47F4A3F5.5040008%40grandegger.com%3E"
+       TITLE="[PATCH] EMS CPC-PCI/PCIe reworked">wg at grandegger.com
+       </A><BR>
+    <I>Thu Apr  3 11:31:33 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001145.html">[PATCH] EMS CPC-PCI/PCIe reworked
+</A></li>
+        <LI>Next message: <A HREF="001147.html">[PATCH] EMS CPC-PCI/PCIe reworked
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1146">[ date ]</a>
+              <a href="thread.html#1146">[ thread ]</a>
+              <a href="subject.html#1146">[ subject ]</a>
+              <a href="author.html#1146">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Sebastian,
+
+Sebastian Haas wrote:
+&gt;<i> Thanks, Wolfgang and Sam for your kindly support. The next patch I'll
+</I>&gt;<i> commit won't have such issues, I hope. ;-)
+</I>
+I just had a closer look rising some more issues. Below is the annotated
+file
+ems_pci.c:
+
+/*
+ * Copyright (C) 2007 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+ * Copyright (C) 2008 Markus Plessing &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">plessing at ems-wuensche.com</A>&gt;
+ * Copyright (C) 2008 Sebastian Haas &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">haas at ems-wuensche.com</A>&gt;
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the version 2 of the GNU General Public License
+ * as published by the Free Software Foundation
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ */
+
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/module.h&gt;
+#include &lt;linux/interrupt.h&gt;
+#include &lt;linux/netdevice.h&gt;
+#include &lt;linux/delay.h&gt;
+#include &lt;linux/pci.h&gt;
+#include &lt;linux/can.h&gt;
+#include &lt;linux/can/dev.h&gt;
+#include &lt;asm/io.h&gt;
+
+#include &quot;sja1000.h&quot;
+
+#define DRV_NAME  &quot;can-ems-pci&quot;
+
+MODULE_AUTHOR(&quot;Sebastian Haas &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">haas at ems-wuenche.com</A>&gt;&quot;);
+MODULE_DESCRIPTION(&quot;Socket-CAN driver for EMS CPC-PCI/PCIe CAN cards&quot;);
+MODULE_SUPPORTED_DEVICE(&quot;EMS CPC-PCI/PCIe CAN card&quot;);
+MODULE_LICENSE(&quot;GPL v2&quot;);
+
+#define EMS_PCI_MAX_CHAN 2
+
+struct ems_pci_card {
+	int channels;
+
+	struct pci_dev *pci_dev;
+	struct net_device *net_dev[EMS_PCI_MAX_CHAN];
+
+	void __iomem *conf_addr;
+	void __iomem *base_addr;
+};
+
+#define EMS_PCI_CAN_CLOCK (16000000 / 2)
+
+/*
+ * Register definitions and descriptions are from LinCAN 0.3.3.
+ *
+ * PSB4610 PITA-2 bridge control registers
+ */
+#define PITA2_ICR           0x00	/* Interrupt Control Register */
+#define PITA2_ICR_INT0      0x00000002	/* [RC] INT0 Active/Clear */
+#define PITA2_ICR_INT0_EN   0x00020000	/* [RW] Enable INT0 */
+
+#define PITA2_MISC          0x1c	/* Miscellaneous Register */
+#define PITA2_MISC_CONFIG   0x04000000	/* Multiplexed parallel interface */
+
+/*
+ * The board configuration is probably following:
+ * RX1 is connected to ground.
+ * TX1 is not connected.
+ * CLKO is not connected.
+ * Setting the OCR register to 0xDA is a good idea.
+ * This means  normal output mode , push-pull and the correct polarity.
+ */
+#define EMS_PCI_OCR         (OCR_TX0_PUSHPULL | OCR_TX1_PUSHPULL)
+
+/*
+ * In the CDR register, you should set CBP to 1.
+ * You will probably also want to set the clock divider value to 7
+ * (meaning direct oscillator output) because the second SJA1000 chip
+ * is driven by the first one CLKOUT output.
+ */
+#define EMS_PCI_CDR             (CDR_CBP | CDR_CLKOUT_MASK)
+#define EMS_PCI_MEM_SIZE        1024  /* Size of the remapped io-memory */
+#define EMS_PCI_CAN_BASE_OFFSET 0x400 /* offset where the controllers
+starts */
+#define EMS_PCI_CAN_CTRL_SIZE   0x200 /* memory size for each controller */
+
+#define EMS_PCI_PORT_BYTES  0x4     /* Each register occupies 4 bytes */
+
+#define EMS_PCI_VENDOR_ID   0x110a  /* PCI device and vendor ID */
+#define EMS_PCI_DEVICE_ID   0x2104
+
+static struct pci_device_id ems_pci_tbl[] = {
+	{EMS_PCI_VENDOR_ID, EMS_PCI_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID,},
+	{ 0,}
+};
+MODULE_DEVICE_TABLE (pci, ems_pci_tbl);
+
+/*
+ * Helper to read internal registers from card logic (not CAN)
+ */
+static u8 ems_pci_readb(struct ems_pci_card *card, unsigned int port)
+{
+	return readb((void __iomem *)card-&gt;base_addr
+			+ (port * EMS_PCI_PORT_BYTES));
+}
+
+static u8 ems_pci_read_reg(struct net_device *dev, int port)
+{
+	return readb((void __iomem *)dev-&gt;base_addr
+			+ (port * EMS_PCI_PORT_BYTES));
+}
+
+static void ems_pci_write_reg(struct net_device *dev, int port, u8 val)
+{
+	writeb(val, (void __iomem *)dev-&gt;base_addr
+		+ (port * EMS_PCI_PORT_BYTES));
+}
+
+static void ems_pci_post_irq(struct net_device *dev)
+{
+	struct sja1000_priv *priv = netdev_priv(dev);
+	struct ems_pci_card *card = (struct ems_pci_card *)priv-&gt;priv;
+
+	/* reset int flag of pita */
+	writel(PITA2_ICR_INT0_EN | PITA2_ICR_INT0,
+	       card-&gt;conf_addr + PITA2_ICR);
+}
+
+/*
+ * Check if a CAN controller is present at the specified location
+ * by trying to set 'em into the PeliCAN mode
+ */
+static inline int ems_pci_check_chan(struct net_device *dev)
+{
+	unsigned char res;
+
+	/* Make sure SJA1000 is in reset mode */
+	ems_pci_write_reg(dev, REG_MOD, 1);
+
+	ems_pci_write_reg(dev, REG_CDR, CDR_PELICAN);
+
+	/* read reset-values */
+	res = ems_pci_read_reg(dev, REG_CDR);
+
+	if (res == CDR_PELICAN)
+		return 1;
+
+	return 0;
+}
+
+static void ems_pci_del_card(struct pci_dev *pdev)
+{
+	struct ems_pci_card *card = pci_get_drvdata(pdev);
+	int i = 0;
+	struct net_device *dev;
+
+	for (i = 0; i &lt; card-&gt;channels; i++) {
+		dev = card-&gt;net_dev[i];
+
+		if (!dev)
+			continue;
+
+		dev_info(&amp;pdev-&gt;dev, &quot;Removing %s.\n&quot;, dev-&gt;name);
+		unregister_sja1000dev(dev);
+		free_sja1000dev(dev);
+	}
+
+** Remove {}
+	if (card-&gt;base_addr != NULL ) {
+		pci_iounmap(card-&gt;pci_dev, card-&gt;base_addr);
+	}
+
+** Remove {}
+	if (card-&gt;conf_addr != NULL) {
+		pci_iounmap(card-&gt;pci_dev, card-&gt;conf_addr);
+	}
+
+	kfree(card);
+
+	pci_disable_device(pdev);
+	pci_set_drvdata(pdev, NULL);
+}
+
+static void ems_pci_card_reset(struct ems_pci_card *card)
+{
+	/* Request board reset */
+	writeb(0, card-&gt;base_addr);
+}
+
+/*
+ * Probe PCI device for EMS CAN signature and register each available
+ * CAN channel to SJA1000 Socket-CAN subsystem.
+ */
+static int __devinit ems_pci_add_card(struct pci_dev *pdev,
+					const struct pci_device_id *ent)
+{
+	struct sja1000_priv *priv;
+	struct ems_pci_card *card;
+	int err, i;
+
+	/* Enabling PCI device */
+	if (pci_enable_device(pdev) &lt; 0) {
+		dev_err(&amp;pdev-&gt;dev, &quot;Enabling PCI device failed\n&quot;);
+		return -ENODEV;
+	}
+
+	/* Allocating card structures to hold addresses, ... */
+	card = kzalloc(sizeof(struct ems_pci_card), GFP_KERNEL);
+	if (card == NULL) {
+		dev_err(&amp;pdev-&gt;dev, &quot;Unable to allocate memory\n&quot;);
+		pci_disable_device(pdev);
+		return -ENOMEM;
+	}
+
+	pci_set_drvdata(pdev, card);
+
+	card-&gt;pci_dev = pdev;
+
+	card-&gt;channels = 0;
+
+	/* Remap PITA configuration space, and controller memory area */
+	card-&gt;conf_addr = pci_iomap(pdev, 0, EMS_PCI_MEM_SIZE);
+** Please check the return code
+	card-&gt;base_addr = pci_iomap(pdev, 1, EMS_PCI_MEM_SIZE);
+** Please check the return code
+
+	/* Configure PITA-2 parallel interface (enable MUX) */
+	writel(PITA2_MISC_CONFIG, card-&gt;conf_addr + PITA2_MISC);
+
+	/* Check for unique EMS CAN signature */
+	if (ems_pci_readb(card, 0) != 0x55 ||
+	    ems_pci_readb(card, 1) != 0xAA ||
+	    ems_pci_readb(card, 2) != 0x01 ||
+	    ems_pci_readb(card, 3) != 0xCB ||
+	    ems_pci_readb(card, 4) != 0x11) {
+		dev_err(&amp;pdev-&gt;dev, &quot;Not EMS Dr. Thomas Wuensche interface\n&quot;);
+
+		err = -ENODEV;
+		goto failure_cleanup;
+	}
+
+	ems_pci_card_reset(card);
+
+	/* Detect available channels */
+	for (i = 0; i &lt; EMS_PCI_MAX_CHAN; i++) {
+
+** To improve readability, please use like in ems_pci_del_card:
+**              dev = card-&gt;net_dev[i];
+
+		card-&gt;net_dev[i] = alloc_sja1000dev(0);
+
+
+		if (card-&gt;net_dev[i] == NULL) {
+			err = -ENOMEM;
+			goto failure_cleanup;
+		}
+
+		priv = netdev_priv(card-&gt;net_dev[i]);
+		priv-&gt;priv = card;
+
+		card-&gt;net_dev[i]-&gt;irq = pdev-&gt;irq;
+		card-&gt;net_dev[i]-&gt;base_addr = (unsigned long)
+						(card-&gt;base_addr
+						+ EMS_PCI_CAN_BASE_OFFSET
+						+ (i * EMS_PCI_CAN_CTRL_SIZE));
+
+		/* Check if channel is present */
+		if (ems_pci_check_chan(card-&gt;net_dev[i])) {
+			card-&gt;channels++;
+** The above line should go after register_sja1000dev(), I think.
+
+			priv-&gt;read_reg  = ems_pci_read_reg;
+			priv-&gt;write_reg = ems_pci_write_reg;
+			priv-&gt;post_irq  = ems_pci_post_irq;
+			priv-&gt;can.can_sys_clock = EMS_PCI_CAN_CLOCK;
+			priv-&gt;ocr = EMS_PCI_OCR;
+			priv-&gt;cdr = EMS_PCI_CDR;
+
+			SET_NETDEV_DEV(card-&gt;net_dev[i], &amp;pdev-&gt;dev);
+
+			/* Enable interrupts from card */
+			writel(PITA2_ICR_INT0_EN, card-&gt;conf_addr + PITA2_ICR);
+
+			/* Register SJA1000 device */
+			err = register_sja1000dev(card-&gt;net_dev[i]);
+			if (err) {
+				dev_err(&amp;pdev-&gt;dev, &quot;Registering device&quot;
+						&quot; failed (err=%d)\n&quot;, err);
+				goto failure_cleanup;
+			}
+
+			dev_info(&amp;pdev-&gt;dev, &quot;Channel #%d at %lX\n&quot;, i + 1,
+						card-&gt;net_dev[i]-&gt;base_addr);
+		} else {
+			dev_info(&amp;pdev-&gt;dev, &quot;Channel #%d not present,&quot;
+						&quot; removing it\n&quot;, i);
+
+			free_sja1000dev(card-&gt;net_dev[i]);
+		}
+	}
+
+	return 0;
+
+failure_cleanup:
+	dev_err(&amp;pdev-&gt;dev, &quot;Error: %d. Cleaning Up.\n&quot;, err);
+
+	ems_pci_del_card(pdev);
+
+	return err;
+}
+
+static struct pci_driver ems_pci_driver = {
+	.name = DRV_NAME,
+	.id_table = ems_pci_tbl,
+	.probe = ems_pci_add_card,
+	.remove = __devexit_p(ems_pci_del_card),
+};
+
+static int __init ems_pci_init(void)
+{
+	return pci_register_driver(&amp;ems_pci_driver);
+}
+
+static void __exit ems_pci_exit(void)
+{
+	pci_unregister_driver(&amp;ems_pci_driver);
+}
+
+module_init(ems_pci_init);
+module_exit(ems_pci_exit);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001145.html">[PATCH] EMS CPC-PCI/PCIe reworked
+</A></li>
+	<LI>Next message: <A HREF="001147.html">[PATCH] EMS CPC-PCI/PCIe reworked
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1146">[ date ]</a>
+              <a href="thread.html#1146">[ thread ]</a>
+              <a href="subject.html#1146">[ subject ]</a>
+              <a href="author.html#1146">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

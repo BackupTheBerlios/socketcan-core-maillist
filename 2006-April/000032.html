@@ -1,0 +1,140 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-core] AW: AW: Error handling
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20AW%3A%20AW%3A%20Error%20handling&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855D38%40vwagwox00010.vw.vwg%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000031.html">
+   <LINK REL="Next"  HREF="000039.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-core] AW: AW: Error handling</H1>
+    <B>Hartkopp, Oliver (K-GEFE/E)</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20AW%3A%20AW%3A%20Error%20handling&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855D38%40vwagwox00010.vw.vwg%3E"
+       TITLE="[Socketcan-core] AW: AW: Error handling">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Tue Apr 25 13:46:32 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000031.html">AW: [Socketcan-core] Re: [Socket-can] AW: Error handling
+</A></li>
+        <LI>Next message: <A HREF="000039.html">AW: [Socketcan-core] LLCF-2.0-pre2 in socketcan/trunk
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32">[ date ]</a>
+              <a href="thread.html#32">[ thread ]</a>
+              <a href="subject.html#32">[ subject ]</a>
+              <a href="author.html#32">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Andrey &amp; Wolfgang,
+
+&gt;<i> This leads me to an tiny problem, that this bit is currently used in the
+</I>&gt;<i> can_id to identify 'inverse filters' for raw-sockets and in af_can.c. But
+</I>&gt;<i> this is not that critical, as i can move the bit-functionality to the
+</I>&gt;<i> can_mask easily.
+</I>
+This was bullshit from my side. If the error frames are switched on and off
+by setsockopt() the current filter technique doesn't need any change.
+
+&gt;<i> My proposition - don't touch flags, and use length field instead,
+</I>&gt;<i> especially that it size is 32bit, which is superfluous for a dlc.
+</I>&gt;<i> For a simplicity of filtering, error frame may have _negative_ length,
+</I>&gt;<i> as ex. And in this case, id field may contain any value.
+</I>
+Hm - not that good for my opinion. The dlc has nothing to do with error
+frames and should therefor not get any mystic coding of it's values to
+identify error frames. In fact it looks like this:
+
+This is an extended frame =&gt; CAN_EFF_FLAG
+This is a RTR frame       =&gt; CAN_RTR_FLAG
+This is an error frame    =&gt; CAN_ERR_FLAG
+
+This seems to be reasonable.
+
+&gt;<i> Also, it will be not so bad, if port id will be filled somewhere in
+</I>&gt;<i> frame too.
+</I>
+This is just done (by standard interfaces) - see in candump.c:
+
+struct sockaddr_can addr;
+socklen_t len = sizeof(addr);
+
+if ((nbytes = recvfrom(s, &amp;frame, sizeof(struct can_frame), 0, (struct
+sockaddr*)&amp;addr, &amp;len)) &lt; 0) {
+
+    ifr.ifr_ifindex = addr.can_ifindex; /* so you have the interface index
+already here */
+
+    /* print the device name */
+    ioctl(s, SIOCGIFNAME, &amp;ifr);
+    printf(&quot;%s&quot;, ifr.ifr_name);
+(..)
+
+
+&gt;<i> As Wolgang already wrote, controller depended error info
+</I>&gt;<i> must be filled in optional data[3]-data[7].
+</I>
+I will send an idea of the error frame payload on this mailing list ...
+
+
+Wolfgang Grandegger wrote:
+
+&gt;<i> The only thing I wanted to make clear is that read() and friends should 
+</I>&gt;<i> return the number of bytes written into buf, even for error frames or an 
+</I>&gt;<i> error code without data.
+</I>
+&gt;&gt;<i> What is your opinion for the default behaviour? Should all errors come
+</I>&gt;&gt;<i> through the RAW-socket by default OR should we have to enable the errors
+</I>by
+&gt;&gt;<i> hand?
+</I>
+&gt;<i> Well, personally I prefer the latter case. Then it is clear to the 
+</I>&gt;<i> developer, that error frames will arrive on the socket.
+</I>
+Me too :-)
+
+#################################
+
+Finally i think we found a nice solution together to get specific CAN-errors
+to the application. I will start implementing this concept and check it on
+my PowerPC with SJA1000 HW. I also have a MPC5200 eval board here and my
+Kernel 2.4 mscan driver (which is now on the SVN). I will check the error
+conditions with these two boards and give you feedback, if our concept was
+good.
+
+Best regards,
+
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000031.html">AW: [Socketcan-core] Re: [Socket-can] AW: Error handling
+</A></li>
+	<LI>Next message: <A HREF="000039.html">AW: [Socketcan-core] LLCF-2.0-pre2 in socketcan/trunk
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32">[ date ]</a>
+              <a href="thread.html#32">[ thread ]</a>
+              <a href="subject.html#32">[ subject ]</a>
+              <a href="author.html#32">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

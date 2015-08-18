@@ -1,0 +1,148 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: cleaning up CAN_ERR_ACK issue
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20cleaning%20up%20CAN_ERR_ACK%20issue&In-Reply-To=%3C4D5D7455.8030801%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005567.html">
+   <LINK REL="Next"  HREF="005570.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: cleaning up CAN_ERR_ACK issue</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20cleaning%20up%20CAN_ERR_ACK%20issue&In-Reply-To=%3C4D5D7455.8030801%40grandegger.com%3E"
+       TITLE="RFC: cleaning up CAN_ERR_ACK issue">wg at grandegger.com
+       </A><BR>
+    <I>Thu Feb 17 20:17:41 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005567.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+        <LI>Next message: <A HREF="005570.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5568">[ date ]</a>
+              <a href="thread.html#5568">[ thread ]</a>
+              <a href="subject.html#5568">[ subject ]</a>
+              <a href="author.html#5568">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 02/17/2011 12:05 AM, Kurt Van Dijck wrote:
+&gt;<i> On Wed, Feb 16, 2011 at 09:31:30PM +0100, Oliver Hartkopp wrote:
+</I>&gt;&gt;<i> On 16.02.2011 21:04, Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;<i> On 02/16/2011 08:00 PM, Oliver Hartkopp wrote:
+</I>&gt;&gt;&gt;&gt;<i> On 16.02.2011 09:10, Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> But wrong termination may result in other errors as well and there I
+</I>&gt;&gt;&gt;&gt;&gt;<i> think it could not be used reliably for the purpose you describe above.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> Ok. But i think we could leave it as-is. I don't think it's worth to break the
+</I>&gt;&gt;&gt;&gt;<i> definition here.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I prefer the clean solution. I don't think it's worth to keep it in the
+</I>&gt;&gt;&gt;<i> CAN id. It will just confuse users.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Is also OK for me.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Would you suggest to reuse the bit-value from CAN_ERR_ACK (0x0020U) for
+</I>&gt;&gt;<i> CAN_ERR_ACTIVE then? I've done this in my suggested patch below.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> For that reason i would prefer to have the CAN_ERR_ACTIVE bit *only* in the
+</I>&gt;&gt;&gt;&gt;<i> CAN-ID status bits and not in the detailed data[1] (CAN_ERR_CTRL_ACTIVE) as
+</I>&gt;&gt;&gt;&gt;<i> you and Kurt suggested.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> OK, but then I would drop CAN_ERR_CTRL_ACTIVE.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Yes, thanks. That was my intention.
+</I>&gt;<i> After thinking and thinking, I see the logic for both solutions, so
+</I>&gt;<i> this too is fine :-)
+</I>
+I'm still not convinced. Imaging the user wants to look for state
+changes. Then he will use CAN_ERR_CTRL bit in the CAN id. But he would
+expect to see state changes to error active then as well.
+
+&gt;&gt;&gt;&gt;&gt;<i> We then could or even should add a version information into the error
+</I>&gt;&gt;&gt;&gt;&gt;<i> message. I think data[5] could be used for that purpose.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> It's like having the CAN core version information where Dave was complaining
+</I>&gt;&gt;&gt;&gt;<i> when it gone Mainline. Who should check version numbers and maintain all this?
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> This would allow users already using the error flags to easily migrate
+</I>&gt;&gt;&gt;<i> to the new and changed error types. My idea here is:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> 	cf-&gt;data[5] = CAN_ERR_VERSION;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Also candump could use it to avoid displaying rubbish with old kernels.
+</I>&gt;<i> IMO it's not so good put the version in a 'hot path'.
+</I>
+What do you mean with hot path. It just adds a version dependency to the
+error message. So it's always clear what formatting has been used.
+
+&gt;&gt;<i> Hm - maybe then it's better to retrieve the Kernel version with uname(2) ...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I started writing the patch and realized that we need some more
+</I>&gt;&gt;&gt;<i> clarification and cleanup. Next point is how we increment the
+</I>&gt;&gt;&gt;<i> stats-&gt;[r|t]x_error counters? It's not done consistently and it's not
+</I>&gt;&gt;&gt;<i> even possible to assign the direction of bus errors properly. Have a
+</I>&gt;&gt;&gt;<i> look to the drivers to realizes the mess. Should we do that at all? We
+</I>&gt;&gt;&gt;<i> have our own stats of CAN errors:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>   struct can_device_stats {
+</I>&gt;&gt;&gt;<i>         __u32 bus_error;        /* Bus errors */
+</I>&gt;&gt;&gt;<i>         __u32 error_warning;    /* Changes to error warning state */
+</I>&gt;&gt;&gt;<i>         __u32 error_passive;    /* Changes to error passive state */
+</I>&gt;&gt;&gt;<i>         __u32 bus_off;          /* Changes to bus off state */
+</I>&gt;&gt;&gt;<i>         __u32 arbitration_lost; /* Arbitration lost errors */
+</I>&gt;&gt;&gt;<i>         __u32 restarts;         /* CAN controller re-starts */
+</I>&gt;&gt;&gt;<i>   };
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I tend to drop touching the network stats completely. What do you and
+</I>&gt;&gt;&gt;<i> others think.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Using the common network stats would have the advantage, that you can easily
+</I>&gt;&gt;<i> see problems with standard tools like 'ifconfig' or 'cat /proc/net/dev'
+</I>&gt;<i> 
+</I>&gt;<i> After dropping network stats, some other stats mechanism will appear with
+</I>&gt;<i> even less defined semantics, since some kind of stats are usefull (we even
+</I>&gt;<i> have some extra stats for CAN errors!).
+</I>&gt;<i> It is a bit messy now, I agree.
+</I>
+I thin mantaining and incementing too similar stats is overkill. Also,
+we have difficulties to map the CAN errors to the netdev errors:
+
+<A HREF="http://lxr.linux.no/#linux+v2.6.37/include/linux/netdevice.h#L173">http://lxr.linux.no/#linux+v2.6.37/include/linux/netdevice.h#L173</A>
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005567.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+	<LI>Next message: <A HREF="005570.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5568">[ date ]</a>
+              <a href="thread.html#5568">[ thread ]</a>
+              <a href="subject.html#5568">[ subject ]</a>
+              <a href="author.html#5568">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

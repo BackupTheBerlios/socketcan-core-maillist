@@ -1,0 +1,169 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 1/2 try#2]  Add hardware support for Atmel AT91 SoC CAN	controller
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%201/2%20try%232%5D%20%20Add%20hardware%20support%20for%20Atmel%20AT91%20SoC%20CAN%0A%09controller&In-Reply-To=%3C20071031001747.59b2eca8%40dilbert.local%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000788.html">
+   <LINK REL="Next"  HREF="000790.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 1/2 try#2]  Add hardware support for Atmel AT91 SoC CAN	controller</H1>
+    <B>Hans-J&#252;rgen Koch</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%201/2%20try%232%5D%20%20Add%20hardware%20support%20for%20Atmel%20AT91%20SoC%20CAN%0A%09controller&In-Reply-To=%3C20071031001747.59b2eca8%40dilbert.local%3E"
+       TITLE="[PATCH 1/2 try#2]  Add hardware support for Atmel AT91 SoC CAN	controller">hjk at linutronix.de
+       </A><BR>
+    <I>Wed Oct 31 00:17:47 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000788.html">[PATCH 0/2 try#2] Add socketcan driver for Atmel AT91 SoC CAN	controller
+</A></li>
+        <LI>Next message: <A HREF="000790.html">[PATCH 2/2 try#2] Add socketcan driver for Atmel AT91 SoC CAN	controller
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#789">[ date ]</a>
+              <a href="thread.html#789">[ thread ]</a>
+              <a href="subject.html#789">[ subject ]</a>
+              <a href="author.html#789">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch adds support for the AT91SAM9263 SoC CAN controller. It also
+adds board support for the AT91SAM9263-EK board.
+
+Signed-off-by: Hans J. Koch &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hjk at linutronix.de</A>&gt;
+
+---
+
+Index: linux-2.6.24-rc/arch/arm/mach-at91/at91sam9263_devices.c
+===================================================================
+--- linux-2.6.24-rc.orig/arch/arm/mach-at91/at91sam9263_devices.c	2007-10-09 22:31:38.000000000 +0200
++++ linux-2.6.24-rc/arch/arm/mach-at91/at91sam9263_devices.c	2007-10-24 12:20:12.000000000 +0200
+@@ -625,6 +625,42 @@
+ void __init at91_add_device_ac97(struct atmel_ac97_data *data) {}
+ #endif
+ 
++/* --------------------------------------------------------------------
++ *  CAN Controller
++ * -------------------------------------------------------------------- */
++
++#if defined(CONFIG_CAN_AT91) || defined(CONFIG_CAN_AT91_MODULE)
++static struct resource can_resources[] = {
++	[0] = {
++		.start	= AT91SAM9263_BASE_CAN,
++		.end	= AT91SAM9263_BASE_CAN + SZ_16K - 1,
++		.flags	= IORESOURCE_MEM,
++	},
++	[1] = {
++		.start	= AT91SAM9263_ID_CAN,
++		.end	= AT91SAM9263_ID_CAN,
++		.flags	= IORESOURCE_IRQ,
++	},
++};
++
++static struct platform_device at91sam9263_can_device = {
++	.name		= &quot;at91_can&quot;,
++	.id		= -1,
++	.resource	= can_resources,
++	.num_resources	= ARRAY_SIZE(can_resources),
++};
++
++void __init at91_add_device_can(struct at91_can_data *data)
++{
++	at91_set_A_periph(AT91_PIN_PA13, 0);	/* CANTX */
++	at91_set_A_periph(AT91_PIN_PA14, 0);	/* CANRX */
++	at91sam9263_can_device.dev.platform_data = data;
++
++	platform_device_register(&amp;at91sam9263_can_device);
++}
++#else
++void __init at91_add_device_can(struct at91_can_data *data) {}
++#endif
+ 
+ /* --------------------------------------------------------------------
+  *  LCD Controller
+Index: linux-2.6.24-rc/arch/arm/mach-at91/board-sam9263ek.c
+===================================================================
+--- linux-2.6.24-rc.orig/arch/arm/mach-at91/board-sam9263ek.c	2007-10-09 22:31:38.000000000 +0200
++++ linux-2.6.24-rc/arch/arm/mach-at91/board-sam9263ek.c	2007-10-24 12:20:12.000000000 +0200
+@@ -270,6 +270,23 @@
+ 	.reset_pin	= AT91_PIN_PA13,
+ };
+ 
++/*
++ * CAN
++ */
++static void sam9263ek_transceiver_enable(int enable)
++{
++	if (enable) {
++		at91_set_gpio_output(AT91_PIN_PA18, 1); /* CANRXEN */
++		at91_set_gpio_output(AT91_PIN_PA19, 0); /* CANRS */
++	} else {
++		at91_set_gpio_output(AT91_PIN_PA18, 0); /* CANRXEN */
++		at91_set_gpio_output(AT91_PIN_PA19, 1); /* CANRS */
++	}
++}
++
++static struct at91_can_data ek_can_data = {
++	.transceiver_enable = sam9263ek_transceiver_enable,
++};
+ 
+ static void __init ek_board_init(void)
+ {
+@@ -296,6 +313,8 @@
+ 	at91_add_device_lcdc(&amp;ek_lcdc_data);
+ 	/* AC97 */
+ 	at91_add_device_ac97(&amp;ek_ac97_data);
++	/* CAN */
++	at91_add_device_can(&amp;ek_can_data);
+ }
+ 
+ MACHINE_START(AT91SAM9263EK, &quot;Atmel AT91SAM9263-EK&quot;)
+Index: linux-2.6.24-rc/include/asm-arm/arch-at91/board.h
+===================================================================
+--- linux-2.6.24-rc.orig/include/asm-arm/arch-at91/board.h	2007-10-09 22:31:38.000000000 +0200
++++ linux-2.6.24-rc/include/asm-arm/arch-at91/board.h	2007-10-24 12:20:12.000000000 +0200
+@@ -125,6 +125,12 @@
+ };
+ extern void __init at91_add_device_ac97(struct atmel_ac97_data *data);
+ 
++/* CAN */
++struct at91_can_data {
++	void (*transceiver_enable)(int enable);
++};
++extern void __init at91_add_device_can(struct at91_can_data *data);
++
+  /* LEDs */
+ extern u8 at91_leds_cpu;
+ extern u8 at91_leds_timer;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000788.html">[PATCH 0/2 try#2] Add socketcan driver for Atmel AT91 SoC CAN	controller
+</A></li>
+	<LI>Next message: <A HREF="000790.html">[PATCH 2/2 try#2] Add socketcan driver for Atmel AT91 SoC CAN	controller
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#789">[ date ]</a>
+              <a href="thread.html#789">[ thread ]</a>
+              <a href="subject.html#789">[ subject ]</a>
+              <a href="author.html#789">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

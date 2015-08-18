@@ -1,0 +1,180 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v13 5/6] flexcan: Prefer device tree clock frequency if	available.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v13%205/6%5D%20flexcan%3A%20Prefer%20device%20tree%20clock%20frequency%20if%0A%09available.&In-Reply-To=%3C1313551944-28603-6-git-send-email-holt%40sgi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006064.html">
+   <LINK REL="Next"  HREF="006066.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v13 5/6] flexcan: Prefer device tree clock frequency if	available.</H1>
+    <B>Robin Holt</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v13%205/6%5D%20flexcan%3A%20Prefer%20device%20tree%20clock%20frequency%20if%0A%09available.&In-Reply-To=%3C1313551944-28603-6-git-send-email-holt%40sgi.com%3E"
+       TITLE="[PATCH v13 5/6] flexcan: Prefer device tree clock frequency if	available.">holt at sgi.com
+       </A><BR>
+    <I>Wed Aug 17 05:32:23 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006064.html">[PATCH v13 4/6] flexcan: Add of_match to platform_device definition.
+</A></li>
+        <LI>Next message: <A HREF="006066.html">[PATCH v13 6/6] flexcan: Add flexcan device support for p1010rdb.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6065">[ date ]</a>
+              <a href="thread.html#6065">[ thread ]</a>
+              <a href="subject.html#6065">[ subject ]</a>
+              <a href="author.html#6065">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>If our CAN device's device tree node has a clock-frequency property,
+then use that value for the can devices clock frequency.  If not, fall
+back to asking the platform/mach code for the clock frequency associated
+with the flexcan device.
+
+Signed-off-by: Robin Holt &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">holt at sgi.com</A>&gt;
+Acked-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;,
+Cc: Kumar Gala &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">galak at kernel.crashing.org</A>&gt;
+Cc: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;,
+Cc: U Bhaskar-B22300 &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">B22300 at freescale.com</A>&gt;
+Cc: Scott Wood &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">scottwood at freescale.com</A>&gt;
+Cc: Grant Likely &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">grant.likely at secretlab.ca</A>&gt;
+Cc: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core at lists.berlios.de</A>,
+Cc: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">netdev at vger.kernel.org</A>,
+Cc: PPC list &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">linuxppc-dev at lists.ozlabs.org</A>&gt;
+Cc: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">devicetree-discuss at lists.ozlabs.org</A>
+---
+ .../devicetree/bindings/net/can/fsl-flexcan.txt    |    2 +
+ drivers/net/can/flexcan.c                          |   34 ++++++++++++++-----
+ 2 files changed, 27 insertions(+), 9 deletions(-)
+
+diff --git a/Documentation/devicetree/bindings/net/can/fsl-flexcan.txt b/Documentation/devicetree/bindings/net/can/fsl-flexcan.txt
+index 8dfb98b..1ad80d5 100644
+--- a/Documentation/devicetree/bindings/net/can/fsl-flexcan.txt
++++ b/Documentation/devicetree/bindings/net/can/fsl-flexcan.txt
+@@ -11,6 +11,7 @@ Required properties:
+ 
+ - reg : Offset and length of the register set for this device
+ - interrupts : Interrupt tuple for this device
++- clock-frequency : The oscillator frequency driving the flexcan device
+ 
+ Example:
+ 
+@@ -19,4 +20,5 @@ Example:
+ 		reg = &lt;0x1c000 0x1000&gt;;
+ 		interrupts = &lt;48 0x2&gt;;
+ 		interrupt-parent = &lt;&amp;mpic&gt;;
++		clock-frequency = &lt;200000000&gt;; // filled in by bootloader
+ 	};
+diff --git a/drivers/net/can/flexcan.c b/drivers/net/can/flexcan.c
+index cc1e0a7..e023379 100644
+--- a/drivers/net/can/flexcan.c
++++ b/drivers/net/can/flexcan.c
+@@ -33,6 +33,7 @@
+ #include &lt;linux/kernel.h&gt;
+ #include &lt;linux/list.h&gt;
+ #include &lt;linux/module.h&gt;
++#include &lt;linux/of.h&gt;
+ #include &lt;linux/platform_device.h&gt;
+ 
+ #define DRV_NAME			&quot;flexcan&quot;
+@@ -925,16 +926,29 @@ static int __devinit flexcan_probe(struct platform_device *pdev)
+ 	struct net_device *dev;
+ 	struct flexcan_priv *priv;
+ 	struct resource *mem;
+-	struct clk *clk;
++	struct clk *clk = NULL;
+ 	void __iomem *base;
+ 	resource_size_t mem_size;
+ 	int err, irq;
++	u32 clock_freq = 0;
++
++	if (pdev-&gt;dev.of_node) {
++		const u32 *clock_freq_p;
+ 
+-	clk = clk_get(&amp;pdev-&gt;dev, NULL);
+-	if (IS_ERR(clk)) {
+-		dev_err(&amp;pdev-&gt;dev, &quot;no clock defined\n&quot;);
+-		err = PTR_ERR(clk);
+-		goto failed_clock;
++		clock_freq_p = of_get_property(pdev-&gt;dev.of_node,
++						&quot;clock-frequency&quot;, NULL);
++		if (clock_freq_p)
++			clock_freq = *clock_freq_p;
++	}
++
++	if (!clock_freq) {
++		clk = clk_get(&amp;pdev-&gt;dev, NULL);
++		if (IS_ERR(clk)) {
++			dev_err(&amp;pdev-&gt;dev, &quot;no clock defined\n&quot;);
++			err = PTR_ERR(clk);
++			goto failed_clock;
++		}
++		clock_freq = clk_get_rate(clk);
+ 	}
+ 
+ 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+@@ -967,7 +981,7 @@ static int __devinit flexcan_probe(struct platform_device *pdev)
+ 	dev-&gt;flags |= IFF_ECHO; /* we support local echo in hardware */
+ 
+ 	priv = netdev_priv(dev);
+-	priv-&gt;can.clock.freq = clk_get_rate(clk);
++	priv-&gt;can.clock.freq = clock_freq;
+ 	priv-&gt;can.bittiming_const = &amp;flexcan_bittiming_const;
+ 	priv-&gt;can.do_set_mode = flexcan_set_mode;
+ 	priv-&gt;can.do_get_berr_counter = flexcan_get_berr_counter;
+@@ -1002,7 +1016,8 @@ static int __devinit flexcan_probe(struct platform_device *pdev)
+  failed_map:
+ 	release_mem_region(mem-&gt;start, mem_size);
+  failed_get:
+-	clk_put(clk);
++	if (clk)
++		clk_put(clk);
+  failed_clock:
+ 	return err;
+ }
+@@ -1020,7 +1035,8 @@ static int __devexit flexcan_remove(struct platform_device *pdev)
+ 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+ 	release_mem_region(mem-&gt;start, resource_size(mem));
+ 
+-	clk_put(priv-&gt;clk);
++	if (priv-&gt;clk)
++		clk_put(priv-&gt;clk);
+ 
+ 	free_candev(dev);
+ 
+-- 
+1.7.2.1
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006064.html">[PATCH v13 4/6] flexcan: Add of_match to platform_device definition.
+</A></li>
+	<LI>Next message: <A HREF="006066.html">[PATCH v13 6/6] flexcan: Add flexcan device support for p1010rdb.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6065">[ date ]</a>
+              <a href="thread.html#6065">[ thread ]</a>
+              <a href="subject.html#6065">[ subject ]</a>
+              <a href="author.html#6065">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

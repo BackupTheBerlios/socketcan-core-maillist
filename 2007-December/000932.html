@@ -1,0 +1,146 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: CAN state management
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20CAN%20state%20management&In-Reply-To=%3C4756B14D.80504%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000931.html">
+   <LINK REL="Next"  HREF="000933.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: CAN state management</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20CAN%20state%20management&In-Reply-To=%3C4756B14D.80504%40grandegger.com%3E"
+       TITLE="RFC: CAN state management">wg at grandegger.com
+       </A><BR>
+    <I>Wed Dec  5 15:10:21 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000931.html">RFC: CAN state management
+</A></li>
+        <LI>Next message: <A HREF="000933.html">RFC: CAN state management
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#932">[ date ]</a>
+              <a href="thread.html#932">[ thread ]</a>
+              <a href="subject.html#932">[ subject ]</a>
+              <a href="author.html#932">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver Hartkopp wrote:
+&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> Robert Schwebel wrote:
+</I>&gt;&gt;&gt;<i>    
+</I>&gt;&gt;&gt;&gt;<i> On Tue, Dec 04, 2007 at 01:55:55PM +0100, Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;&gt;<i>      
+</I>&gt;&gt;&gt;&gt;&gt;<i> Also if can_state_t is _not_ a struct but simply of type u32?
+</I>&gt;&gt;&gt;&gt;&gt;<i>         
+</I>&gt;&gt;&gt;&gt;<i> The argumentation behind checkpatch.pl is here:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> <A HREF="http://lxr.free-electrons.com/source/Documentation/CodingStyle#267">http://lxr.free-electrons.com/source/Documentation/CodingStyle#267</A>
+</I>&gt;&gt;&gt;&gt;<i>       
+</I>&gt;&gt;&gt;<i> OK, I see...
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    
+</I>&gt;&gt;&gt;&gt;<i> It might be questionable if one likes it or not, but it is the kernel
+</I>&gt;&gt;&gt;&gt;<i> coding style and the better we follow it, the higher the chance that
+</I>&gt;&gt;&gt;&gt;<i> things are being accepted. So I wouldn't be religious about it.
+</I>&gt;&gt;&gt;&gt;<i>       
+</I>&gt;&gt;&gt;<i> ... then we should abandon can_state_t, can_id_t, can_bitrate_t, etc.
+</I>&gt;&gt;&gt;<i> They are all [su]32 or __[su]32 if visible in user space.
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I just realized that already some typedefs in can.h got accepted ;-):
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   
+</I>&gt;<i> 
+</I>&gt;<i> I just waited for that hint :-)
+</I>&gt;<i> 
+</I>&gt;&gt;<i>   $ grep typedef include/linux/can.h
+</I>&gt;&gt;<i>   typedef __u32 canid_t;
+</I>&gt;&gt;<i>   typedef __u32 can_err_mask_t;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> According to &quot;Documentation/CodingStyle&quot;, it breaks the coding style. Do
+</I>&gt;&gt;<i> we remove them as well?
+</I>&gt;<i> 
+</I>&gt;<i> There is indeed a difference as these typedefs do not only carry an
+</I>&gt;<i> usual integer (as it would be in can_state_t) but values *and* bitfields
+</I>&gt;<i> of CAN specific flags (like CAN_EFF_FLAG).
+</I>
+Well, the CAN id will always be of type u32. But for the CAN error flags
+one could indeed argue that the bit field may need to be extened to 64
+bits or more in the future. Nevertheless, for me these typedefs are fine.
+
+&gt;<i> In opposite a 'state' variable could perfectly described an an integer.
+</I>
+For state and mode I suggest to use:
+
+typedef enum {
+        CAN_STATE_ACTIVE = 0,
+        CAN_STATE_BUS_WARNING,
+        CAN_STATE_BUS_PASSIVE,
+        CAN_STATE_BUS_OFF,
+        CAN_STATE_SCANNING_BITRATE,
+        CAN_STATE_STOPPED,
+        CAN_STATE_SLEEPING
+} can_state_t;
+
+typedef enum {
+        CAN_MODE_STOP = 0,
+        CAN_MODE_START,
+        CAN_MODE_SLEEP
+} can_mode_t;
+
+This adds valuable compiler checks. We have already defined
+can_bittime_type_t that way. But I would not define can_bitrate_t, as it
+will always be of type &quot;s32&quot; or &quot;u32&quot;.
+
+At the end of IOCTL I found:
+
+/*
+ * CAN error configuration
+ */
+typedef enum CAN_ERRCFG_TYPE {
+        CAN_ERRCFG_MASK,
+        CAN_ERRCFG_BUSERR,
+        CAN_ERRCFG_BUSOFF
+} can_errcfg_type_t;
+
+Do you remember what that &quot;typedef enum&quot; is good for?
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000931.html">RFC: CAN state management
+</A></li>
+	<LI>Next message: <A HREF="000933.html">RFC: CAN state management
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#932">[ date ]</a>
+              <a href="thread.html#932">[ thread ]</a>
+              <a href="subject.html#932">[ subject ]</a>
+              <a href="author.html#932">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

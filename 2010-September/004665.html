@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] CAN: mcp251x.c: Reduce amount of SPI transactions in ISR
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20CAN%3A%20mcp251x.c%3A%20Reduce%20amount%20of%20SPI%20transactions%20in%20ISR&In-Reply-To=%3C1285168518-19748-1-git-send-email-david%40protonic.nl%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004663.html">
+   <LINK REL="Next"  HREF="004664.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] CAN: mcp251x.c: Reduce amount of SPI transactions in ISR</H1>
+    <B>David Jander</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20CAN%3A%20mcp251x.c%3A%20Reduce%20amount%20of%20SPI%20transactions%20in%20ISR&In-Reply-To=%3C1285168518-19748-1-git-send-email-david%40protonic.nl%3E"
+       TITLE="[PATCH] CAN: mcp251x.c: Reduce amount of SPI transactions in ISR">david at protonic.nl
+       </A><BR>
+    <I>Wed Sep 22 17:15:18 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004663.html">[RFC - PATCH] MCP251x driver using Async SPI Interface
+</A></li>
+        <LI>Next message: <A HREF="004664.html">RFC: [PATCH] CAN: mcp251x.c: Add support for two TX message boxes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4665">[ date ]</a>
+              <a href="thread.html#4665">[ thread ]</a>
+              <a href="subject.html#4665">[ subject ]</a>
+              <a href="author.html#4665">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch drastically reduces the amount of SPI transactions needed in
+the ISR of the driver. This can have a significant performance impact.
+
+Signed-off-by: David Jander &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">david at protonic.nl</A>&gt;
+---
+ drivers/net/can/mcp251x.c |   42 ++++++++++++++++++++++++++++++++++--------
+ 1 files changed, 34 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/net/can/mcp251x.c b/drivers/net/can/mcp251x.c
+index b11a0cb..32037d8 100644
+--- a/drivers/net/can/mcp251x.c
++++ b/drivers/net/can/mcp251x.c
+@@ -319,6 +319,20 @@ static u8 mcp251x_read_reg(struct spi_device *spi, uint8_t reg)
+ 	return val;
+ }
+ 
++static void mcp251x_read_2regs(struct spi_device *spi, uint8_t reg,
++			       uint8_t *v1, uint8_t *v2)
++{
++	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
++
++	priv-&gt;spi_tx_buf[0] = INSTRUCTION_READ;
++	priv-&gt;spi_tx_buf[1] = reg;
++
++	mcp251x_spi_trans(spi, 4);
++
++	*v1 = priv-&gt;spi_rx_buf[2];
++	*v2 = priv-&gt;spi_rx_buf[3];
++}
++
+ static void mcp251x_write_reg(struct spi_device *spi, u8 reg, uint8_t val)
+ {
+ 	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
+@@ -330,6 +344,18 @@ static void mcp251x_write_reg(struct spi_device *spi, u8 reg, uint8_t val)
+ 	mcp251x_spi_trans(spi, 3);
+ }
+ 
++static void mcp251x_write_2regs(struct spi_device *spi, u8 reg, uint8_t v1, uint8_t v2)
++{
++	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
++
++	priv-&gt;spi_tx_buf[0] = INSTRUCTION_WRITE;
++	priv-&gt;spi_tx_buf[1] = reg;
++	priv-&gt;spi_tx_buf[2] = v1;
++	priv-&gt;spi_tx_buf[3] = v2;
++
++	mcp251x_spi_trans(spi, 4);
++}
++
+ static void mcp251x_write_bits(struct spi_device *spi, u8 reg,
+ 			       u8 mask, uint8_t val)
+ {
+@@ -754,25 +780,23 @@ static irqreturn_t mcp251x_can_ist(int irq, void *dev_id)
+ 	mutex_lock(&amp;priv-&gt;mcp_lock);
+ 	while (!priv-&gt;force_quit) {
+ 		enum can_state new_state;
+-		u8 intf = mcp251x_read_reg(spi, CANINTF);
++		u8 intf;
+ 		u8 eflag;
+ 		int can_id = 0, data1 = 0;
+ 
++		mcp251x_read_2regs(spi, CANINTF, &amp;intf, &amp;eflag);
++
+ 		if (intf &amp; CANINTF_RX0IF) {
+ 			mcp251x_hw_rx(spi, 0);
+ 			/* Free one buffer ASAP */
+-			mcp251x_write_bits(spi, CANINTF, intf &amp; CANINTF_RX0IF,
+-					   0x00);
++			if (intf &amp; CANINTF_RX1IF)
++				mcp251x_write_bits(spi, CANINTF, 
++					intf &amp; CANINTF_RX0IF, 0x00);
+ 		}
+ 
+ 		if (intf &amp; CANINTF_RX1IF)
+ 			mcp251x_hw_rx(spi, 1);
+ 
+-		mcp251x_write_bits(spi, CANINTF, intf, 0x00);
+-
+-		eflag = mcp251x_read_reg(spi, EFLG);
+-		mcp251x_write_reg(spi, EFLG, 0x00);
+-
+ 		/* Update can state */
+ 		if (eflag &amp; EFLG_TXBO) {
+ 			new_state = CAN_STATE_BUS_OFF;
+@@ -838,6 +862,8 @@ static irqreturn_t mcp251x_can_ist(int irq, void *dev_id)
+ 		if (intf == 0)
+ 			break;
+ 
++		mcp251x_write_2regs(spi, CANINTF, 0x00, 0x00);
++
+ 		if (intf &amp; (CANINTF_TX2IF | CANINTF_TX1IF | CANINTF_TX0IF)) {
+ 			net-&gt;stats.tx_packets++;
+ 			net-&gt;stats.tx_bytes += priv-&gt;tx_len - 1;
+-- 
+1.6.3.3
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004663.html">[RFC - PATCH] MCP251x driver using Async SPI Interface
+</A></li>
+	<LI>Next message: <A HREF="004664.html">RFC: [PATCH] CAN: mcp251x.c: Add support for two TX message boxes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4665">[ date ]</a>
+              <a href="thread.html#4665">[ thread ]</a>
+              <a href="subject.html#4665">[ subject ]</a>
+              <a href="author.html#4665">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

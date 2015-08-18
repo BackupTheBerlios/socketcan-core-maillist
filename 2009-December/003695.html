@@ -1,0 +1,154 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] iproute2 add one-shot mode support (was&quot; Re: feature request:	one-shot mode for mcp251x)
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20iproute2%20add%20one-shot%20mode%20support%20%28was%22%20Re%3A%20feature%20request%3A%0A%09one-shot%20mode%20for%20mcp251x%29&In-Reply-To=%3C4B312135.3040204%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003701.html">
+   <LINK REL="Next"  HREF="003696.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] iproute2 add one-shot mode support (was&quot; Re: feature request:	one-shot mode for mcp251x)</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20iproute2%20add%20one-shot%20mode%20support%20%28was%22%20Re%3A%20feature%20request%3A%0A%09one-shot%20mode%20for%20mcp251x%29&In-Reply-To=%3C4B312135.3040204%40pengutronix.de%3E"
+       TITLE="[PATCH] iproute2 add one-shot mode support (was&quot; Re: feature request:	one-shot mode for mcp251x)">mkl at pengutronix.de
+       </A><BR>
+    <I>Tue Dec 22 20:42:45 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003701.html">feature request: one-shot mode for mcp251x
+</A></li>
+        <LI>Next message: <A HREF="003696.html">[PATCH] iproute2 add one-shot mode support (was&quot; Re: feature	request:	one-shot mode for mcp251x)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3695">[ date ]</a>
+              <a href="thread.html#3695">[ thread ]</a>
+              <a href="subject.html#3695">[ subject ]</a>
+              <a href="author.html#3695">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+Wolfgang Grandegger wrote:
+&gt;&gt;&gt;<i> I saw that the mcp2515 chip supports a one-shot mode. It's just setting bit
+</I>&gt;&gt;&gt;<i> 3 (OSM) of the CANCTRL register. I'd mentioned this to Christian, and I
+</I>&gt;&gt;&gt;<i> don't thing setting the register is a big deal, but the issue will be
+</I>&gt;&gt;&gt;<i> setting this mode with ip or some other user space tool.
+</I>&gt;&gt;<i> what about adding the one shot mode to the ctrl_mode? It already holds
+</I>&gt;&gt;<i> the tipple sample and listen-only feature.
+</I>
+[...]
+
+&gt;<i> I will apply the patch to the SVN trunk. Are you going to prepare a
+</I>&gt;<i> patch for mainline as well? If yes, please post it together with the
+</I>&gt;<i> necessary changes for iproute2, which should be trivial.
+</I>
+Here it goes, compile time tested only:
+
+cheers, Marc
+
+---
+
+From 8c0479ef365a52d53212fb4b8905b755a2a4c5e2 Mon Sep 17 00:00:00 2001
+From: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+Date: Tue, 22 Dec 2009 20:30:17 +0100
+Subject: [PATCH] iplink_can: add support to set one-shot mode
+
+Signed-off-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+---
+ include/linux/can/netlink.h |    1 +
+ ip/iplink_can.c             |    6 ++++++
+ 2 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/can/netlink.h b/include/linux/can/netlink.h
+index 9ecbb78..c818335 100644
+--- a/include/linux/can/netlink.h
++++ b/include/linux/can/netlink.h
+@@ -80,6 +80,7 @@ struct can_ctrlmode {
+ #define CAN_CTRLMODE_LOOPBACK	0x1	/* Loopback mode */
+ #define CAN_CTRLMODE_LISTENONLY	0x2 	/* Listen-only mode */
+ #define CAN_CTRLMODE_3_SAMPLES	0x4	/* Triple sampling mode */
++#define CAN_CTRLMODE_ONE_SHOT	0x8	/* One-Shot mode */
+
+ /*
+  * CAN device statistics
+diff --git a/ip/iplink_can.c b/ip/iplink_can.c
+index 50221e1..5d0d82c 100644
+--- a/ip/iplink_can.c
++++ b/ip/iplink_can.c
+@@ -30,6 +30,7 @@ static void usage(void)
+ 	        &quot;\t[ loopback { on | off } ]\n&quot;
+ 	        &quot;\t[ listen-only { on | off } ]\n&quot;
+ 	        &quot;\t[ triple-sampling { on | off } ]\n&quot;
++	        &quot;\t[ one-shot { on | off } ]\n&quot;
+ 		&quot;\n&quot;
+ 	        &quot;\t[ restart-ms TIME-MS ]\n&quot;
+ 	        &quot;\t[ restart ]\n&quot;
+@@ -84,6 +85,7 @@ static void print_ctrlmode(FILE *f, __u32 cm)
+ 	_PF(CAN_CTRLMODE_LOOPBACK, &quot;LOOPBACK&quot;);
+ 	_PF(CAN_CTRLMODE_LISTENONLY, &quot;LISTEN-ONLY&quot;);
+ 	_PF(CAN_CTRLMODE_3_SAMPLES, &quot;TRIPLE-SAMPLING&quot;);
++	_PF(CAN_CTRLMODE_ONE_SHOT, &quot;ONE-SHOT&quot;);
+ #undef _PF
+ 	if (cm)
+ 		fprintf(f, &quot;%x&quot;, cm);
+@@ -142,6 +144,10 @@ static int can_parse_opt(struct link_util *lu, int
+argc, char **argv,
+ 			NEXT_ARG();
+ 			set_ctrlmode(&quot;triple-sampling&quot;, *argv, &amp;cm,
+ 				     CAN_CTRLMODE_3_SAMPLES);
++		} else if (matches(*argv, &quot;one-shot&quot;) == 0) {
++			NEXT_ARG();
++			set_ctrlmode(&quot;one-shot&quot;, *argv, &amp;cm,
++				     CAN_CTRLMODE_ONE_SHOT);
+ 		} else if (matches(*argv, &quot;restart&quot;) == 0) {
+ 			__u32 val = 1;
+
+-- 
+1.6.5.7
+
+
+-- 
+Pengutronix e.K.                         | Marc Kleine-Budde           |
+Linux Solutions for Science and Industry | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund                 | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686         | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 260 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20091222/629788f6/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20091222/629788f6/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003701.html">feature request: one-shot mode for mcp251x
+</A></li>
+	<LI>Next message: <A HREF="003696.html">[PATCH] iproute2 add one-shot mode support (was&quot; Re: feature	request:	one-shot mode for mcp251x)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3695">[ date ]</a>
+              <a href="thread.html#3695">[ thread ]</a>
+              <a href="subject.html#3695">[ subject ]</a>
+              <a href="author.html#3695">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

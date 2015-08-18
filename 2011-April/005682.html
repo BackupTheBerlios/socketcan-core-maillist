@@ -1,0 +1,178 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2] add j1939 utils
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20add%20j1939%20utils&In-Reply-To=%3C4DB966D5.3000407%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005680.html">
+   <LINK REL="Next"  HREF="005684.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2] add j1939 utils</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20add%20j1939%20utils&In-Reply-To=%3C4DB966D5.3000407%40pengutronix.de%3E"
+       TITLE="[PATCH v2] add j1939 utils">mkl at pengutronix.de
+       </A><BR>
+    <I>Thu Apr 28 15:08:37 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005680.html">[PATCH v2] add j1939 utils
+</A></li>
+        <LI>Next message: <A HREF="005684.html">[PATCH v2] add j1939 utils
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5682">[ date ]</a>
+              <a href="thread.html#5682">[ thread ]</a>
+              <a href="subject.html#5682">[ subject ]</a>
+              <a href="author.html#5682">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 04/28/2011 02:47 PM, Kurt Van Dijck wrote:
+&gt;&gt;<i> I quickly looked over the code, see some comments inline.
+</I>&gt;&gt;<i>
+</I>&gt;<i> Thanks, I have some additional questions:
+</I>&gt;&gt;&gt;<i> ---
+</I>&gt;&gt;&gt;<i> +	/* run */
+</I>&gt;&gt;&gt;<i> +	while (1) {
+</I>&gt;&gt;&gt;<i> +		ret = poll(pfd, 2, -1);
+</I>&gt;&gt;<i> ARRAY_SIZE?
+</I>&gt;<i> is that available in userspace? cool!
+</I>
+...if you define it :)
+
+&gt;&gt;&gt;<i> +		if (ret &lt; 0)
+</I>&gt;&gt;&gt;<i> +			error(1, errno, &quot;poll()&quot;);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> what about EINTR?
+</I>&gt;&gt;<i>
+</I>&gt;<i> well, that's indeed a typical one, but the remainder of the program is
+</I>&gt;<i> not interested in any signal...
+</I>
+If you attach strace to this program while waiting in poll it will exit.
+
+&gt;&gt;&gt;<i> +				break;
+</I>&gt;&gt;&gt;<i> +			}
+</I>&gt;&gt;&gt;<i> +			len = ret;
+</I>&gt;&gt;&gt;<i> +			for (done = 0; done &lt; len; ) {
+</I>&gt;&gt;&gt;<i> +				ret = send(pfd[1].fd, buf, len, s.sendflags);
+</I>&gt;&gt;&gt;<i> +				if (ret &lt; 0) {
+</I>&gt;&gt;&gt;<i> +					error(0, errno, &quot;write(%s)&quot;, libj1939_addr2str(&amp;s.src));
+</I>&gt;&gt;&gt;<i> +					if (ENOBUFS == errno) {
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> the other way round?
+</I>&gt;&gt;<i>
+</I>&gt;<i> ???
+</I>
+just nitpicking:
+
+In the &quot;kernel&quot; we usually compare like this:
+
+if ($VARIABLE == $CONSTANT)
+not ($CONSTANT == $VARIABLE)
+
+&gt;&gt;&gt;<i> +						sleep(1);
+</I>&gt;&gt;&gt;<i> +						continue;
+</I>&gt;&gt;&gt;<i> +					}
+</I>&gt;&gt;&gt;<i> +					exit(1);
+</I>&gt;&gt;&gt;<i> +				}
+</I>&gt;&gt;&gt;<i> +				done += ret;
+</I>&gt;&gt;&gt;<i> +			}
+</I>&gt;&gt;&gt;<i> +		}
+</I>&gt;&gt;&gt;<i> +		if (pfd[1].revents) {
+</I>&gt;&gt;&gt;<i> +			ret = read(pfd[1].fd, buf, sizeof(buf));
+</I>&gt;&gt;&gt;<i> +			if (ret &lt; 0) {
+</I>&gt;&gt;&gt;<i> +				ret = errno;
+</I>&gt;&gt;&gt;<i> +				error(0, errno, &quot;read(%s)&quot;, libj1939_addr2str(&amp;s.dst));
+</I>&gt;&gt;&gt;<i> +				switch (ret) {
+</I>&gt;&gt;&gt;<i> +				case EHOSTDOWN:
+</I>&gt;&gt;&gt;<i> +					break;
+</I>&gt;&gt;&gt;<i> +				default:
+</I>&gt;&gt;&gt;<i> +					exit(1);
+</I>&gt;&gt;&gt;<i> +				}
+</I>&gt;&gt;&gt;<i> +			} else {
+</I>&gt;&gt;&gt;<i> +				write(STDOUT_FILENO, buf, ret);
+</I>&gt;&gt;&gt;<i> +			}
+</I>&gt;&gt;&gt;<i> +		}
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	free(buf);
+</I>&gt;&gt;<i> 	close()?
+</I>&gt;<i> will close 1 statement further...
+</I>&gt;&gt;&gt;<i> +	return 0;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;<i> closed!
+</I>&gt;<i> is that good enough?
+</I>
+yep - you might remove that free then, too :P
+
+&gt;<i> 
+</I>&gt;&gt;&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;&gt;&gt;<i> +static struct ifname *libj1939_add_ifnam(int ifindex, const char *str)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct ifname *nam;
+</I>&gt;&gt;&gt;<i> +	nam = malloc(sizeof(*nam) + strlen(str));
+</I>&gt;&gt;&gt;<i> +	memset(nam, 0, sizeof(*nam));
+</I>&gt;&gt;<i> calloc?
+</I>&gt;<i> well, that's possible. I tend to not use calloc, but that's personal.
+</I>&gt;<i> In fact, you're right here.
+</I>
+Ohh - haven't even seen this :)
+
+&gt;&gt;&gt;<i> +	nam-&gt;ifindex = ifindex;
+</I>&gt;&gt;&gt;<i> +	strcpy(nam-&gt;name, str);
+</I>&gt;&gt;&gt;<i> +	nam-&gt;next = s.names;
+</I>&gt;&gt;&gt;<i> +	s.names = nam;
+</I>&gt;&gt;&gt;<i> +	return nam;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;<i> 
+</I>&gt;<i> Kurt
+</I>
+Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20110428/499f65da/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20110428/499f65da/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005680.html">[PATCH v2] add j1939 utils
+</A></li>
+	<LI>Next message: <A HREF="005684.html">[PATCH v2] add j1939 utils
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5682">[ date ]</a>
+              <a href="thread.html#5682">[ thread ]</a>
+              <a href="subject.html#5682">[ subject ]</a>
+              <a href="author.html#5682">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

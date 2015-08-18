@@ -1,0 +1,149 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC v1] can: add support for Janz CAN board
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20v1%5D%20can%3A%20add%20support%20for%20Janz%20CAN%20board&In-Reply-To=%3C20100210183955.GA15287%40ovro.caltech.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004003.html">
+   <LINK REL="Next"  HREF="004006.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC v1] can: add support for Janz CAN board</H1>
+    <B>Ira W. Snyder</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20v1%5D%20can%3A%20add%20support%20for%20Janz%20CAN%20board&In-Reply-To=%3C20100210183955.GA15287%40ovro.caltech.edu%3E"
+       TITLE="[RFC v1] can: add support for Janz CAN board">iws at ovro.caltech.edu
+       </A><BR>
+    <I>Wed Feb 10 19:39:55 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004003.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+        <LI>Next message: <A HREF="004006.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4004">[ date ]</a>
+              <a href="thread.html#4004">[ thread ]</a>
+              <a href="subject.html#4004">[ subject ]</a>
+              <a href="author.html#4004">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Wed, Feb 10, 2010 at 07:19:26PM +0100, Kurt Van Dijck wrote:
+&gt;<i> On Wed, Feb 10, 2010 at 08:47:27AM -0800, Ira W. Snyder wrote:
+</I>&gt;<i> &gt; On Wed, Feb 10, 2010 at 10:09:34AM +0100, Kurt Van Dijck wrote:
+</I>&gt;<i> &gt; &gt; On Tue, Feb 09, 2010 at 04:05:00PM -0800, Ira W. Snyder wrote:
+</I>&gt;<i> &gt; &gt; &gt; Hello all,
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; I posted last week asking about a driver for boards running on a PLX
+</I>&gt;<i> &gt; &gt; &gt; chip. It turns out that these are passive boards. I have been looking
+</I>&gt;<i> &gt; &gt; &gt; for a driver for the Janz CMOD-IO board CAN interfaces.
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; I finally found the datasheets and took the time to write a driver. This
+</I>&gt;<i> &gt; &gt; &gt; board is an intelligent CAN interface: it has onboard microprocessors to
+</I>&gt;<i> &gt; &gt; &gt; help process CAN traffic.
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; This is a very rough first try at a CAN driver. I'm sure it still has
+</I>&gt;<i> &gt; &gt; &gt; problems, and I would appreciate if you can take a look and help me add
+</I>&gt;<i> &gt; &gt; &gt; what is needed. I'm am not extremely knowledgeable about the CAN bus.
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; The things that are known to be wrong:
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; - bus-on / bus-off handling
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; I did this straight in the network device open()/stop() methods. I don't
+</I>&gt;<i> &gt; &gt; &gt; handle the condition where we get too many bus errors and the bus goes
+</I>&gt;<i> &gt; &gt; &gt; into bus-off state. What should I be doing here?
+</I>&gt;<i> &gt; &gt; What you call 'bus-off' is indeed the stop() method. the CAN busoff
+</I>&gt;<i> &gt; &gt; (which is something different)
+</I>&gt;<i> &gt; &gt; comes via interrupt (bus-state-change), indicating the
+</I>&gt;<i> &gt; &gt; can-chip cut itself from the bus. In such case, a special 'struct
+</I>&gt;<i> &gt; &gt; can_frame' must be emitted to userspace.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Ok. The way I read this: the netdevice open()/stop() methods should put
+</I>&gt;<i> &gt; the device into &quot;CAN buson&quot; and &quot;CAN busoff&quot; state. In addition, when
+</I>&gt;<i> &gt; the device has an error, it will go into &quot;CAN busoff&quot; state eventually.
+</I>&gt;<i> &gt; In this case, I should generate a special CAN frame and send it to
+</I>&gt;<i> &gt; userspace. Is that right?
+</I>&gt;<i> Well, the net_device goes up/down (like any other net_device). There is
+</I>&gt;<i> no such thing as 'CAN buson'. And you can't put the chip in busoff
+</I>&gt;<i> either. the CAN bus state (error-active, error-passive, bus-off) is a
+</I>&gt;<i> parameter you can't control (from software, you can shortcircuit the bus
+</I>&gt;<i>       physically to force a bus-off during trasnmissions).
+</I>
+Ok.
+
+&gt;<i> I think it's important to distantiate between these.
+</I>
+I must be confused by my datasheet. That is how I have been learning the
+CAN terminology.
+
+It has two commands for &quot;Set CAN bus state&quot;, CONreq and COFFreq (on and
+off). It says:
+
+&lt;begin quote from datasheet, page 3-32&gt;
+
+The CAN controller is involved in bus activities only if its bust state
+is bus-on. For setting parameters to the controller it is necessary for
+the bus state to be bus-off (reset). The user requests the bus state to
+be set bus-on and bus-off, respectively, with messages supecified as
+CONreq and COFFreq, respectively.
+
+After reset and provider initialization the CAN controller is in the
+bus-off state. This is to allow the user to set the CAN controller
+parameters, e.g. the baud rate, to values different from their defaults
+before ICAN becomes an active station on the bus.
+
+Note that according to the CAN protocol the controller may be forced
+into the bus-off state when too many transmission errors occur.
+
+&lt;/end quote&gt;
+
+&gt;<i> You would of course in the end find out you cannot put the chip in
+</I>&gt;<i> bus-off :-).
+</I>
+It seems to me, that is not what the datasheet says. But they probably
+use a different terminology than you are using. We're probably talking
+about different things.
+
+This card does not transmit packets until you set it into &quot;bus-on&quot;
+state, using the CONreq message. I found that if I do not set the card's
+state to &quot;bus-on&quot;, then it sends me an error message. I think I should
+generate an error frame from the error message.
+
+Please note, I'm not trying to argue or be unfriendly, I'm just trying
+to get the terminology straight. Like I said, I'm not a CAN expert. I'm
+learning what I can as I write the driver. :)
+
+Thanks,
+Ira
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004003.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+	<LI>Next message: <A HREF="004006.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4004">[ date ]</a>
+              <a href="thread.html#4004">[ thread ]</a>
+              <a href="subject.html#4004">[ subject ]</a>
+              <a href="author.html#4004">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

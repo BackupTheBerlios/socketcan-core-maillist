@@ -1,0 +1,170 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: improve and consolidate state change and bus-off handling
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20improve%20and%20consolidate%20state%20change%20and%20bus-off%20handling&In-Reply-To=%3C4ED9F790.2060308%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006234.html">
+   <LINK REL="Next"  HREF="006240.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: improve and consolidate state change and bus-off handling</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20improve%20and%20consolidate%20state%20change%20and%20bus-off%20handling&In-Reply-To=%3C4ED9F790.2060308%40hartkopp.net%3E"
+       TITLE="RFC: improve and consolidate state change and bus-off handling">socketcan at hartkopp.net
+       </A><BR>
+    <I>Sat Dec  3 11:18:56 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006234.html">[PATCH 4/4] gitignore: added tarballs
+</A></li>
+        <LI>Next message: <A HREF="006240.html">CAN State Information
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6239">[ date ]</a>
+              <a href="thread.html#6239">[ thread ]</a>
+              <a href="subject.html#6239">[ subject ]</a>
+              <a href="author.html#6239">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello Sebastian,
+
+nice to read that you're back on air ;-)
+
+On 03.12.2011 10:28, Sebastian Haas wrote:
+
+&gt;<i> Hello,
+</I>&gt;<i> 
+</I>&gt;<i> Am 02.12.2011 10:41, schrieb Marc Kleine-Budde:
+</I>&gt;&gt;<i> On 12/02/2011 10:04 AM, Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;<i> - Bus-off recovery:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    Currently, I think, we do not handle bus-off recovery correctly for
+</I>&gt;&gt;&gt;<i>    most controllers. We brute-force stop and restart the controller.
+</I>&gt;&gt;&gt;<i>    The controller will do the recovery cycle anyway and we may send
+</I>&gt;&gt;&gt;<i>    messages to early. Instead the software should handle the bus-off
+</I>&gt;&gt;&gt;<i>    recovery cycle as shown below:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    * bus-off happens
+</I>&gt;&gt;&gt;<i>      - call netif_stop_queue() and maybe disable interrupts
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    * automatic or manual restart is done
+</I>&gt;<i> Short note from me about that. We should be carefully with automatic recovery
+</I>&gt;<i> at driver-level, since this is basically not covered by the standard (only the
+</I>&gt;<i> application is allowed to decide whether or not the controller shall go back
+</I>&gt;<i> to error active). A bus off is an unusual state in a CAN network, because if
+</I>&gt;<i> this happens the network is physically in a bad shape (cable length, stub
+</I>&gt;<i> lines, electrical defects) or has a logical error (identifier conflicts,
+</I>&gt;<i> different bit-rates). So in my opinion the driver shall not allow anyway of
+</I>&gt;<i> automatic recovery and shall be up to the application to decide what to do.
+</I>
+
+You are right. For that reason the automatic restart is an option. You're
+still able to define one handler on the multi-user system to cope with
+bus-off. OTOH you can enable the automatic recovery when you know that you are
+working in a proved CAN setup (regarding cable &amp; bittiming issues) to handle
+other temporary issues (EMC/hotplug). E.g. in some vehicle setups an automatic
+recovery from bus-off after 200ms is specified. If this is done by a 'special'
+handler or just by the driver can not be seen from the network view.
+
+&gt;<i> 
+</I>&gt;&gt;&gt;<i>      - trigger bus-off recovery sequence by resetting the init bit
+</I>&gt;&gt;&gt;<i>        (on SJA1000) and maybe re-enable the interrupts
+</I>&gt;&gt;&gt;<i>      - await the controller going back to error-active state
+</I>&gt;&gt;&gt;<i>        (signaled via interrupt).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I'm not sure if all controllers signal correctly that they are back in
+</I>&gt;&gt;<i> error active. My observation is that bus off handling is a bit like
+</I>&gt;&gt;<i> climbing the mount Everest, the air is quite thin and things can lock up
+</I>&gt;&gt;<i> quite fast.
+</I>&gt;<i> In a worst case you need to poll for the error state if the controller doesn't
+</I>&gt;<i> support correct signalling. But I expect most controllers to implement such a
+</I>&gt;<i> feature since this is quite essential for most application to know the
+</I>&gt;<i> controller got bus-on/error active.
+</I>
+
+Yes. Indeed some CAN controllers recover themselves (IIRC mscan) and others
+don't (SJA1000).  If a controller recovers silently (and no CAN frames come
+from the outside to detect it) the state would need to be polled to be able to
+send frames from the local host ...
+
+&gt;<i> 
+</I>&gt;&gt;&gt;<i>      - call netif_wake_queue()
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    Here is a &quot;candump -e&quot; output for the SJA1000 (with delta times)
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>      (009.832477)  can0  20000204  [8] 00 30 00 00 00 00 88 00   ERRORFRAME
+</I>&gt;&gt;&gt;<i>     controller-problem{tx-error-passive}
+</I>&gt;&gt;&gt;<i>     state-change{tx-error-passive}
+</I>&gt;&gt;&gt;<i>     error-counter-tx-rx{{136}{0}}
+</I>&gt;&gt;&gt;<i>      (000.000804)  can0  20000240  [8] 00 00 00 00 00 00 7F 00   ERRORFRAME
+</I>&gt;&gt;&gt;<i>     bus-off
+</I>&gt;&gt;&gt;<i>     state-change{}
+</I>&gt;&gt;&gt;<i>     error-counter-tx-rx{{127}{0}}
+</I>&gt;&gt;&gt;<i>      (000.099795)  can0  20000100  [8] 00 00 00 00 00 00 7F 00   ERRORFRAME
+</I>&gt;&gt;&gt;<i>     restarted-after-bus-off
+</I>&gt;&gt;&gt;<i>     error-counter-tx-rx{{127}{0}}
+</I>&gt;&gt;&gt;<i>      (000.003061)  can0  20000200  [8] 00 40 00 00 00 00 00 00   ERRORFRA
+</I>&gt;&gt;&gt;<i>     state-change{back-to-error-active}
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>     Before doing all the necessary code changes, which are not always
+</I>&gt;&gt;&gt;<i>     trivial I ask: Would that be the correct bus-off handling???
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> However if hardware permits the described steps sound reasonable (from
+</I>&gt;&gt;<i> my non CAN expert point of view).
+</I>
+
+To me too. Nice rework idea.
+
+&gt;<i> Despite the fact that you misuse a CAN message structure to carry CAN error
+</I>&gt;<i> frames, the overall procedure looks quite good.
+</I>
+
+&gt;<i>From a todays view the CAN controller states could also be transferred into
+</I>the userspace by using recvmsg() that currently supports to push the timestamp
+and the dropcounter within one syscall to the user.
+
+The idea to get the error message through the data path (when it's enabled
+with a special filter) is, that the CAN controller states fit into the logfile
+and have their own timestamps - even when there's no valid CAN frame
+receiption in that time. E.g. if you look into some Vector ASC logfiles the
+problems detected by the CAN controller are also put inside the log at the
+appropriate place. The reception of CAN data and CAN controller states in-line
+with timestamps has real debugging advantages. Although it's easy to implement
+in the interrupt handler whether you have a correct RX-interrupt or an error
+interrupt -&gt; you create a skb and push it into the system :-)
+
+Regards,
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006234.html">[PATCH 4/4] gitignore: added tarballs
+</A></li>
+	<LI>Next message: <A HREF="006240.html">CAN State Information
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6239">[ date ]</a>
+              <a href="thread.html#6239">[ thread ]</a>
+              <a href="subject.html#6239">[ subject ]</a>
+              <a href="author.html#6239">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

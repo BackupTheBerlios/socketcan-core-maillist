@@ -1,0 +1,159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> struct can_addr extensions
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20can_addr%20extensions&In-Reply-To=%3C20100209091653.GE327%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003998.html">
+   <LINK REL="Next"  HREF="003988.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>struct can_addr extensions</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20can_addr%20extensions&In-Reply-To=%3C20100209091653.GE327%40e-circ.dyndns.org%3E"
+       TITLE="struct can_addr extensions">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Tue Feb  9 10:16:54 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003998.html">[PATCH] 64bit compiler warning
+</A></li>
+        <LI>Next message: <A HREF="003988.html">struct can_addr extensions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3985">[ date ]</a>
+              <a href="thread.html#3985">[ thread ]</a>
+              <a href="subject.html#3985">[ subject ]</a>
+              <a href="author.html#3985">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I'm working on a j1939 socket type (not sure our managament will allow
+us to open source it, we're working on that too).
+During that development, we added an extra entry in
+struct sockaddr_can.can_addr. 
+----
+
+Our extension does increase the size of struct sockaddr_can
+This patch solves a problem that 'regular' socket types
+do require the full struct sockaddr_can be present, while using only the
+first few fields.
+
+It does so by not testing on sizeof() but using a newly introduced macro
+'partial_struct_size', which returns the size of the struct up to the
+requested struct member.
+When socketcan is compiled with bigger struct sockaddr_can, It will not
+pose any problems with userspace binaries that got compiled with older
+revisions of struct sockaddr_can.
+Please not that the 'partial_struct_size' macro can only work when the
+struct in only added to, not modified, which is the case here.
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+---
+Index: include/socketcan/can/core.h
+===================================================================
+--- include/socketcan/can/core.h        (revision 1123)
++++ include/socketcan/can/core.h        (working copy)
+@@ -52,6 +52,15 @@
+ #endif
+ };
+ 
++
++/*
++ * partial_struct_size
++ * macro to find the size of a struct up to a requested member (inclusive)
++ */
++#define partial_struct_size(member, type) \
++       (offsetof(typeof(type), member) + \
++        sizeof(((typeof(type) *)(0))-&gt;member))
++
+ /* function prototypes for the CAN networklayer core (af_can.c) */
+ 
+ extern int  can_proto_register(struct can_proto *cp);
+Index: net/can/isotp.c
+===================================================================
+--- net/can/isotp.c     (revision 1123)
++++ net/can/isotp.c     (working copy)
+@@ -826,7 +826,7 @@
+        int err = 0;
+        int notify_enetdown = 0;
+ 
+-       if (len &lt; sizeof(*addr))
++       if (len &lt; partial_struct_size(can_addr.tp, *addr))
+                return -EINVAL;
+ 
+        if (addr-&gt;can_addr.tp.rx_id == addr-&gt;can_addr.tp.tx_id)
+Index: net/can/bcm.c
+===================================================================
+--- net/can/bcm.c       (revision 1123)
++++ net/can/bcm.c       (working copy)
+@@ -1610,6 +1610,9 @@
+        if (bo-&gt;bound)
+                return -EISCONN;
+ 
++       if (len &lt; partial_struct_size(can_ifindex, *addr))
++               return -EINVAL;
++
+        /* bind a device to this socket */
+        if (addr-&gt;can_ifindex) {
+                struct net_device *dev;
+Index: net/can/raw.c
+===================================================================
+--- net/can/raw.c       (revision 1123)
++++ net/can/raw.c       (working copy)
+@@ -354,7 +354,7 @@
+        int err = 0;
+        int notify_enetdown = 0;
+ 
+-       if (len &lt; sizeof(*addr))
++       if (len &lt; partial_struct_size(can_ifindex, *addr))
+                return -EINVAL;
+ 
+        lock_sock(sk);
+Index: net/can/bcm-prior-2-6-22.c
+===================================================================
+--- net/can/bcm-prior-2-6-22.c  (revision 1123)
++++ net/can/bcm-prior-2-6-22.c  (working copy)
+@@ -1475,6 +1475,9 @@
+        if (bo-&gt;bound)
+                return -EISCONN;
+ 
++       if (len &lt; partial_struct_size(can_ifindex, *addr))
++               return -EINVAL;
++
+        /* bind a device to this socket */
+        if (addr-&gt;can_ifindex) {
+                struct net_device *dev;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003998.html">[PATCH] 64bit compiler warning
+</A></li>
+	<LI>Next message: <A HREF="003988.html">struct can_addr extensions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3985">[ date ]</a>
+              <a href="thread.html#3985">[ thread ]</a>
+              <a href="subject.html#3985">[ subject ]</a>
+              <a href="author.html#3985">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

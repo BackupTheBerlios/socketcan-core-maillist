@@ -1,0 +1,135 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 1/3] can: at91_can: clean up usage of AT91_MB_RX_FIRST and	AT91_MB_RX_NUM
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%201/3%5D%20can%3A%20at91_can%3A%20clean%20up%20usage%20of%20AT91_MB_RX_FIRST%20and%0A%09AT91_MB_RX_NUM&In-Reply-To=%3C1294752085-30151-2-git-send-email-mkl%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005343.html">
+   <LINK REL="Next"  HREF="005399.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 1/3] can: at91_can: clean up usage of AT91_MB_RX_FIRST and	AT91_MB_RX_NUM</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%201/3%5D%20can%3A%20at91_can%3A%20clean%20up%20usage%20of%20AT91_MB_RX_FIRST%20and%0A%09AT91_MB_RX_NUM&In-Reply-To=%3C1294752085-30151-2-git-send-email-mkl%40pengutronix.de%3E"
+       TITLE="[PATCH v2 1/3] can: at91_can: clean up usage of AT91_MB_RX_FIRST and	AT91_MB_RX_NUM">mkl at pengutronix.de
+       </A><BR>
+    <I>Tue Jan 11 14:21:23 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005343.html">[PATCH v2 0/3] can: at91_can: fix for errata 50.2.6.3 &amp; 50.3.5.3
+</A></li>
+        <LI>Next message: <A HREF="005399.html">[PATCH v2 1/3] can: at91_can: clean up usage of AT91_MB_RX_FIRST	and	AT91_MB_RX_NUM
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5344">[ date ]</a>
+              <a href="thread.html#5344">[ thread ]</a>
+              <a href="subject.html#5344">[ subject ]</a>
+              <a href="author.html#5344">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch cleans up the usage of two macros which specify the mailbox
+usage. AT91_MB_RX_FIRST and AT91_MB_RX_NUM define the first and the
+number of RX mailboxes. The current driver uses these variables in an
+unclean way; assuming that AT91_MB_RX_FIRST is 0;
+
+This patch cleans up the usage of these macros, no longer assuming
+AT91_MB_RX_FIRST == 0.
+
+Signed-off-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+---
+ drivers/net/can/at91_can.c |   18 ++++++++++--------
+ 1 files changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/net/can/at91_can.c b/drivers/net/can/at91_can.c
+index 7ef83d0..892c3d8 100644
+--- a/drivers/net/can/at91_can.c
++++ b/drivers/net/can/at91_can.c
+@@ -2,7 +2,7 @@
+  * at91_can.c - CAN network driver for AT91 SoC CAN controller
+  *
+  * (C) 2007 by Hans J. Koch &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hjk at hansjkoch.de</A>&gt;
+- * (C) 2008, 2009, 2010 by Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kernel at pengutronix.de</A>&gt;
++ * (C) 2008, 2009, 2010, 2011 by Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kernel at pengutronix.de</A>&gt;
+  *
+  * This software may be distributed under the terms of the GNU General
+  * Public License (&quot;GPL&quot;) version 2 as distributed in the 'COPYING'
+@@ -55,7 +55,8 @@
+ #define AT91_MB_RX_MASK(i)	((1 &lt;&lt; (i)) - 1)
+ #define AT91_MB_RX_SPLIT	8
+ #define AT91_MB_RX_LOW_LAST	(AT91_MB_RX_SPLIT - 1)
+-#define AT91_MB_RX_LOW_MASK	(AT91_MB_RX_MASK(AT91_MB_RX_SPLIT))
++#define AT91_MB_RX_LOW_MASK	(AT91_MB_RX_MASK(AT91_MB_RX_SPLIT) &amp; \
++				 ~AT91_MB_RX_MASK(AT91_MB_RX_FIRST))
+ 
+ #define AT91_MB_TX_NUM		(1 &lt;&lt; AT91_MB_TX_SHIFT)
+ #define AT91_MB_TX_FIRST	(AT91_MB_RX_LAST + 1)
+@@ -254,7 +255,8 @@ static void at91_setup_mailboxes(struct net_device *dev)
+ 		set_mb_mode_prio(priv, i, AT91_MB_MODE_TX, 0);
+ 
+ 	/* Reset tx and rx helper pointers */
+-	priv-&gt;tx_next = priv-&gt;tx_echo = priv-&gt;rx_next = 0;
++	priv-&gt;tx_next = priv-&gt;tx_echo = 0;
++	priv-&gt;rx_next = AT91_MB_RX_FIRST;
+ }
+ 
+ static int at91_set_bittiming(struct net_device *dev)
+@@ -590,10 +592,10 @@ static int at91_poll_rx(struct net_device *dev, int quota)
+ 			&quot;order of incoming frames cannot be guaranteed\n&quot;);
+ 
+  again:
+-	for (mb = find_next_bit(addr, AT91_MB_RX_NUM, priv-&gt;rx_next);
+-	     mb &lt; AT91_MB_RX_NUM &amp;&amp; quota &gt; 0;
++	for (mb = find_next_bit(addr, AT91_MB_RX_LAST + 1, priv-&gt;rx_next);
++	     mb &lt; AT91_MB_RX_LAST + 1 &amp;&amp; quota &gt; 0;
+ 	     reg_sr = at91_read(priv, AT91_SR),
+-	     mb = find_next_bit(addr, AT91_MB_RX_NUM, ++priv-&gt;rx_next)) {
++	     mb = find_next_bit(addr, AT91_MB_RX_LAST + 1, ++priv-&gt;rx_next)) {
+ 		at91_read_msg(dev, mb);
+ 
+ 		/* reactivate mailboxes */
+@@ -610,8 +612,8 @@ static int at91_poll_rx(struct net_device *dev, int quota)
+ 
+ 	/* upper group completed, look again in lower */
+ 	if (priv-&gt;rx_next &gt; AT91_MB_RX_LOW_LAST &amp;&amp;
+-	    quota &gt; 0 &amp;&amp; mb &gt;= AT91_MB_RX_NUM) {
+-		priv-&gt;rx_next = 0;
++	    quota &gt; 0 &amp;&amp; mb &gt; AT91_MB_RX_LAST) {
++		priv-&gt;rx_next = AT91_MB_RX_FIRST;
+ 		goto again;
+ 	}
+ 
+-- 
+1.7.2.3
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005343.html">[PATCH v2 0/3] can: at91_can: fix for errata 50.2.6.3 &amp; 50.3.5.3
+</A></li>
+	<LI>Next message: <A HREF="005399.html">[PATCH v2 1/3] can: at91_can: clean up usage of AT91_MB_RX_FIRST	and	AT91_MB_RX_NUM
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5344">[ date ]</a>
+              <a href="thread.html#5344">[ thread ]</a>
+              <a href="subject.html#5344">[ subject ]</a>
+              <a href="author.html#5344">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,106 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6] can: Unify droping of invalid tx skbs and	netdev	stats
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%5D%20can%3A%20Unify%20droping%20of%20invalid%20tx%20skbs%20and%0A%09netdev%09stats&In-Reply-To=%3C4B4B20E3.3070603%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003797.html">
+   <LINK REL="Next"  HREF="003816.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6] can: Unify droping of invalid tx skbs and	netdev	stats</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%5D%20can%3A%20Unify%20droping%20of%20invalid%20tx%20skbs%20and%0A%09netdev%09stats&In-Reply-To=%3C4B4B20E3.3070603%40grandegger.com%3E"
+       TITLE="[PATCH net-next-2.6] can: Unify droping of invalid tx skbs and	netdev	stats">wg at grandegger.com
+       </A><BR>
+    <I>Mon Jan 11 14:00:19 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003797.html">[PATCH net-next-2.6] can: Unify droping of invalid tx skbs and netdev	stats
+</A></li>
+        <LI>Next message: <A HREF="003816.html">[PATCH net-next-2.6] can: Unify droping of invalid tx skbs and	netdev	stats
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3811">[ date ]</a>
+              <a href="thread.html#3811">[ thread ]</a>
+              <a href="subject.html#3811">[ subject ]</a>
+              <a href="author.html#3811">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Oliver,
+
+Oliver Hartkopp wrote:
+&gt;<i> To prevent the CAN drivers to operate on invalid socketbuffers the skbs are
+</I>&gt;<i> now checked and silently dropped at the xmit-function consistently.
+</I>&gt;<i> 
+</I>&gt;<i> Also the netdev stats are consistently using the CAN data length code (dlc)
+</I>&gt;<i> for [rx|tx]_bytes now.
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">oliver at hartkopp.net</A>&gt;
+</I>&gt;<i> 
+</I>&gt;<i> ---
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/at91_can.c b/drivers/net/can/at91_can.c
+</I>&gt;<i> index 166cc7e..95567be 100644
+</I>&gt;<i> --- a/drivers/net/can/at91_can.c
+</I>&gt;<i> +++ b/drivers/net/can/at91_can.c
+</I>&gt;<i> @@ -336,18 +336,24 @@ static void at91_chip_stop(struct net_device *dev, enum can_state state)
+</I>&gt;<i>   */
+</I>&gt;<i>  static netdev_tx_t at91_start_xmit(struct sk_buff *skb, struct net_device *dev)
+</I>&gt;<i>  {
+</I>&gt;<i>  	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;<i>  	struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;<i>  	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i>  	unsigned int mb, prio;
+</I>&gt;<i>  	u32 reg_mid, reg_mcr;
+</I>&gt;<i>  
+</I>&gt;<i> +	if (skb-&gt;len != sizeof(*cf) || cf-&gt;can_dlc &gt; 8) {
+</I>&gt;<i> +		kfree_skb(skb);
+</I>&gt;<i> +		dev-&gt;stats.tx_dropped++;
+</I>&gt;<i> +		return NETDEV_TX_OK;
+</I>&gt;<i> +	}
+</I>
+A static inline function &quot;invalid_can_skb(skb)&quot; (or &quot;no_can_skb&quot;) would
+be handy here:
+
+	if (invalid_can_skb(skb)) {
+		kfree_skb(skb);
+		dev-&gt;stats.tx_dropped++;
+		return NETDEV_TX_OK;		
+	}
+
+Wolfgang.
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003797.html">[PATCH net-next-2.6] can: Unify droping of invalid tx skbs and netdev	stats
+</A></li>
+	<LI>Next message: <A HREF="003816.html">[PATCH net-next-2.6] can: Unify droping of invalid tx skbs and	netdev	stats
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3811">[ date ]</a>
+              <a href="thread.html#3811">[ thread ]</a>
+              <a href="subject.html#3811">[ subject ]</a>
+              <a href="author.html#3811">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,264 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] MCP251x PM fixes and robustness
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20MCP251x%20PM%20fixes%20and%20robustness&In-Reply-To=%3C1224175532305-git-send-email-chripell%40gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001997.html">
+   <LINK REL="Next"  HREF="002009.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] MCP251x PM fixes and robustness</H1>
+    <B>Christian Pellegrin</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20MCP251x%20PM%20fixes%20and%20robustness&In-Reply-To=%3C1224175532305-git-send-email-chripell%40gmail.com%3E"
+       TITLE="[PATCH] MCP251x PM fixes and robustness">chripell at gmail.com
+       </A><BR>
+    <I>Thu Oct 16 18:45:32 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001997.html">Problem with AT91 CAN driver
+</A></li>
+        <LI>Next message: <A HREF="002009.html">[PATCH] MCP251x PM fixes and robustness
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1995">[ date ]</a>
+              <a href="thread.html#1995">[ thread ]</a>
+              <a href="subject.html#1995">[ subject ]</a>
+              <a href="author.html#1995">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch fixes suspend/resume for platforms that &quot;lose&quot; bit
+timing settings after a suspend/resume cycle and improves robustness
+in case of misbehaving hardware (doesn't lock the machine anymore)
+
+---
+Index: kernel/2.6/drivers/net/can/mcp251x.c
+===================================================================
+--- kernel/2.6/drivers/net/can/mcp251x.c	(revision 837)
++++ kernel/2.6/drivers/net/can/mcp251x.c	(working copy)
+@@ -535,7 +535,8 @@
+ 	mcp251x_write_bits(spi, CANINTF, CANINTF_WAKIF, CANINTF_WAKIF);
+ 
+ 	/* Wait until the device is awake */
+-	wait_for_completion(&amp;priv-&gt;awake);
++	if (!wait_for_completion_timeout(&amp;priv-&gt;awake, HZ))
++		dev_err(&amp;spi-&gt;dev, &quot;MCP251x didn't wake-up\n&quot;);
+ }
+ 
+ static int mcp251x_hard_start_xmit(struct sk_buff *skb, struct net_device *net)
+@@ -583,6 +584,7 @@
+ static void mcp251x_set_normal_mode(struct spi_device *spi)
+ {
+ 	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
++	unsigned long timeout;
+ 
+ 	/* Enable interrupts */
+ 	mcp251x_write_reg(spi, CANINTE,
+@@ -597,20 +599,61 @@
+ 		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_NORMAL);
+ 
+ 		/* Wait for the device to enter normal mode */
+-		while (mcp251x_read_reg(spi, CANSTAT) &amp; 0xE0)
++		timeout = jiffies + HZ;
++		while (mcp251x_read_reg(spi, CANSTAT) &amp; 0xE0) {
+ 			udelay(10);
++			if (time_after(jiffies, timeout)) {
++				dev_err(&amp;spi-&gt;dev, &quot;MCP251x didn't&quot;
++					&quot; enter in normal mode\n&quot;);
++				break;
++			}
++		}
+ 	}
+ }
+ 
++static int mcp251x_do_set_bittiming(struct net_device *net)
++{
++	struct mcp251x_priv *priv = netdev_priv(net);
++	struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
++	struct spi_device *spi = priv-&gt;spi;
++	u8 state;
++
++	dev_dbg(&amp;spi-&gt;dev, &quot;%s: BRP = %d, PropSeg = %d, PS1 = %d,&quot;
++		&quot; PS2 = %d, SJW = %d\n&quot;, __func__, bt-&gt;brp,
++		bt-&gt;prop_seg, bt-&gt;phase_seg1, bt-&gt;phase_seg2,
++		bt-&gt;sjw);
++
++	/* Store original mode and set mode to config */
++	state = mcp251x_read_reg(spi, CANCTRL);
++	state = mcp251x_read_reg(spi, CANSTAT) &amp; CANCTRL_REQOP_MASK;
++	mcp251x_write_bits(spi, CANCTRL, CANCTRL_REQOP_MASK,
++			   CANCTRL_REQOP_CONF);
++
++	mcp251x_write_reg(spi, CNF1, ((bt-&gt;sjw - 1) &lt;&lt; 6) | (bt-&gt;brp - 1));
++	mcp251x_write_reg(spi, CNF2, CNF2_BTLMODE |
++			  ((bt-&gt;phase_seg1 - 1) &lt;&lt; 3) |
++			  (bt-&gt;prop_seg - 1));
++	mcp251x_write_bits(spi, CNF3, CNF3_PHSEG2_MASK,
++			   (bt-&gt;phase_seg2 - 1));
++
++	/* Restore original state */
++	mcp251x_write_bits(spi, CANCTRL, CANCTRL_REQOP_MASK, state);
++
++	return 0;
++}
++
+ static void mcp251x_setup(struct net_device *net, struct mcp251x_priv *priv,
+ 			  struct spi_device *spi)
+ {
+ 	int ret;
+ 
+-	/* Set initial baudrate */
++	/* Set initial baudrate. Make sure that registers are updated
++	   always by explicitly calling mcp251x_do_set_bittiming */
+ 	ret = can_set_bittiming(net);
+ 	if (ret)
+ 		dev_err(&amp;spi-&gt;dev, &quot;unable to set initial baudrate!\n&quot;);
++	else
++		mcp251x_do_set_bittiming(net);
+ 
+ 	/* Enable RX0-&gt;RX1 buffer roll over and disable filters */
+ 	mcp251x_write_bits(spi, RXBCTRL(0),
+@@ -640,6 +683,8 @@
+ 
+ 	if (ret &lt; 0)
+ 		dev_dbg(&amp;spi-&gt;dev, &quot;%s: failed: ret = %d\n&quot;, __func__, ret);
++	/* wait for reset to finish */
++	mdelay(10);
+ }
+ 
+ static int mcp251x_open(struct net_device *net)
+@@ -696,37 +741,6 @@
+ 	return 0;
+ }
+ 
+-static int mcp251x_do_set_bittiming(struct net_device *net)
+-{
+-	struct mcp251x_priv *priv = netdev_priv(net);
+-	struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
+-	struct spi_device *spi = priv-&gt;spi;
+-	u8 state;
+-
+-	dev_dbg(&amp;spi-&gt;dev, &quot;%s: BRP = %d, PropSeg = %d, PS1 = %d,&quot;
+-		&quot; PS2 = %d, SJW = %d\n&quot;, __func__, bt-&gt;brp,
+-		bt-&gt;prop_seg, bt-&gt;phase_seg1, bt-&gt;phase_seg2,
+-		bt-&gt;sjw);
+-
+-	/* Store original mode and set mode to config */
+-	state = mcp251x_read_reg(spi, CANCTRL);
+-	state = mcp251x_read_reg(spi, CANSTAT) &amp; CANCTRL_REQOP_MASK;
+-	mcp251x_write_bits(spi, CANCTRL, CANCTRL_REQOP_MASK,
+-			   CANCTRL_REQOP_CONF);
+-
+-	mcp251x_write_reg(spi, CNF1, ((bt-&gt;sjw - 1) &lt;&lt; 6) | (bt-&gt;brp - 1));
+-	mcp251x_write_reg(spi, CNF2, CNF2_BTLMODE |
+-			  ((bt-&gt;phase_seg1 - 1) &lt;&lt; 3) |
+-			  (bt-&gt;prop_seg - 1));
+-	mcp251x_write_bits(spi, CNF3, CNF3_PHSEG2_MASK,
+-			   (bt-&gt;phase_seg2 - 1));
+-
+-	/* Restore original state */
+-	mcp251x_write_bits(spi, CANCTRL, CANCTRL_REQOP_MASK, state);
+-
+-	return 0;
+-}
+-
+ static int mcp251x_do_get_state(struct net_device *net, enum can_state	*state)
+ {
+ 	struct mcp251x_priv *priv = netdev_priv(net);
+@@ -768,7 +782,6 @@
+ 						 irq_work);
+ 	struct spi_device *spi = priv-&gt;spi;
+ 	struct net_device *net = priv-&gt;net;
+-	struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
+ 	u8 intf;
+ 	u8 txbnctrl;
+ 	/* the next limitation is needed so we give some time to the
+@@ -778,13 +791,12 @@
+ 
+ 	if (priv-&gt;after_suspend) {
+ 		/* Wait whilst the device wakes up */
+-		udelay(200 * (128 * USEC_PER_SEC /
+-			      pdata-&gt;oscillator_frequency));
++		mdelay(10);
+ 		mcp251x_hw_reset(spi);
+ 		mcp251x_setup(net, priv, spi);
+ 		if (priv-&gt;after_suspend &amp; AFTER_SUSPEND_UP) {
++			netif_device_attach(net);
+ 			/* clear since we lost tx buffer */
+-			netif_device_attach(net);
+ 			if (priv-&gt;tx_skb) {
+ 				net-&gt;stats.tx_errors++;
+ 				dev_kfree_skb(priv-&gt;tx_skb);
+@@ -815,8 +827,7 @@
+ 
+ 		if (priv-&gt;wake) {
+ 			/* Wait whilst the device wakes up */
+-			udelay(200 * (128 * USEC_PER_SEC /
+-				      pdata-&gt;oscillator_frequency));
++			mdelay(10);
+ 			priv-&gt;wake = 0;
+ 		}
+ 
+@@ -975,7 +986,7 @@
+ 	net-&gt;watchdog_timeo	= HZ;
+ 
+ 	priv-&gt;can.bittiming_const = &amp;mcp251x_bittiming_const;
+-	priv-&gt;can.do_set_bittiming = mcp251x_do_set_bittiming;
++	priv-&gt;can.do_set_bittiming = NULL;
+ 	priv-&gt;can.do_get_state	  = mcp251x_do_get_state;
+ 	priv-&gt;can.do_set_mode	  = mcp251x_do_set_mode;
+ 
+@@ -1159,7 +1170,6 @@
+ {
+ 	struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
+ 	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
+-	struct net_device *net = priv-&gt;net;
+ 
+ 	if (priv-&gt;after_suspend &amp; AFTER_SUSPEND_POWER) {
+ 		pdata-&gt;power_enable(1);
+@@ -1168,10 +1178,9 @@
+ 		if (priv-&gt;after_suspend &amp; AFTER_SUSPEND_UP) {
+ 			if (pdata-&gt;transceiver_enable)
+ 				pdata-&gt;transceiver_enable(1);
+-			mcp251x_hw_wakeup(spi);
+-
+-			netif_device_attach(net);
+-		}
++			queue_work(priv-&gt;wq, &amp;priv-&gt;irq_work);
++		} else
++			priv-&gt;after_suspend = 0;
+ 	}
+ 	return 0;
+ }
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001997.html">Problem with AT91 CAN driver
+</A></li>
+	<LI>Next message: <A HREF="002009.html">[PATCH] MCP251x PM fixes and robustness
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1995">[ date ]</a>
+              <a href="thread.html#1995">[ thread ]</a>
+              <a href="subject.html#1995">[ subject ]</a>
+              <a href="author.html#1995">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

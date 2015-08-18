@@ -1,0 +1,419 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] mcp251x driver fixes
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20mcp251x%20driver%20fixes&In-Reply-To=%3Ccabda6420906170512n3d7d6545t414d64265e2caf20%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002661.html">
+   <LINK REL="Next"  HREF="002682.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] mcp251x driver fixes</H1>
+    <B>christian pellegrin</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20mcp251x%20driver%20fixes&In-Reply-To=%3Ccabda6420906170512n3d7d6545t414d64265e2caf20%40mail.gmail.com%3E"
+       TITLE="[PATCH] mcp251x driver fixes">chripell at gmail.com
+       </A><BR>
+    <I>Wed Jun 17 14:12:33 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002661.html">merging branches/netlink: please test
+</A></li>
+        <LI>Next message: <A HREF="002682.html">[PATCH] mcp251x driver fixes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2679">[ date ]</a>
+              <a href="thread.html#2679">[ thread ]</a>
+              <a href="subject.html#2679">[ subject ]</a>
+              <a href="author.html#2679">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch updates mcp251x driver fixing the
+followings points:
+
+* echo support missing (requilred for IFF_ECHO)
+* increment can_stats in case of state changes
+* state changes by interrupt
+* do_set_mode not implemented (required for restart)
+* remove tx timeout callback
+
+Signed-off-by: Christian Pellegrin &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">chripell at fsfe.org</A>&gt;
+---
+Index: drivers/net/can/mcp251x.c
+===================================================================
+--- drivers/net/can/mcp251x.c	(revision 1013)
++++ drivers/net/can/mcp251x.c	(working copy)
+@@ -176,6 +176,7 @@
+ 	dma_addr_t spi_rx_dma;
+
+ 	struct sk_buff *tx_skb;
++	int tx_len;
+ 	struct workqueue_struct *wq;
+ 	struct work_struct tx_work;
+ 	struct work_struct irq_work;
+@@ -225,7 +226,9 @@
+
+ 	mutex_unlock(&amp;priv-&gt;spi_lock);
+
++#ifdef DEBUG_IO
+ 	dev_dbg(&amp;spi-&gt;dev, &quot;%s: read %02x = %02x\n&quot;, __func__, reg, val);
++#endif
+ 	return val;
+ }
+
+@@ -546,8 +549,9 @@
+
+ 	dev_dbg(&amp;spi-&gt;dev, &quot;%s\n&quot;, __func__);
+
+-	if (priv-&gt;tx_skb) {
+-		dev_warn(&amp;spi-&gt;dev, &quot;hard_xmit called with not null tx_skb\n&quot;);
++	if (priv-&gt;tx_skb || priv-&gt;tx_len) {
++		dev_warn(&amp;spi-&gt;dev, &quot;hard_xmit called while tx busy\n&quot;);
++		netif_stop_queue(net);
+ 		return NETDEV_TX_BUSY;
+ 	}
+
+@@ -571,9 +575,13 @@
+ 	struct mcp251x_priv *priv = netdev_priv(net);
+ 	struct spi_device *spi = priv-&gt;spi;
+
+-	dev_dbg(&amp;spi-&gt;dev, &quot;%s (unimplemented)\n&quot;, __func__);
+-
+ 	switch (mode) {
++	case CAN_MODE_START:
++		dev_dbg(&amp;spi-&gt;dev, &quot;%s: CAN_MODE_START\n&quot;, __func__);
++		/* we have to delay work since spi_sync may sleep */
++		priv-&gt;restart_tx = 1;
++		queue_work(priv-&gt;wq, &amp;priv-&gt;irq_work);
++		break;
+ 	default:
+ 		return -EOPNOTSUPP;
+ 	}
+@@ -601,14 +609,15 @@
+ 		/* Wait for the device to enter normal mode */
+ 		timeout = jiffies + HZ;
+ 		while (mcp251x_read_reg(spi, CANSTAT) &amp; 0xE0) {
+-			udelay(10);
++			schedule();
+ 			if (time_after(jiffies, timeout)) {
+ 				dev_err(&amp;spi-&gt;dev, &quot;MCP251x didn't&quot;
+ 					&quot; enter in normal mode\n&quot;);
+-				break;
++				return;
+ 			}
+ 		}
+ 	}
++	priv-&gt;can.state = CAN_STATE_ACTIVE;
+ }
+
+ static int mcp251x_do_set_bittiming(struct net_device *net)
+@@ -716,6 +725,7 @@
+
+ 	priv-&gt;force_quit = 0;
+ 	priv-&gt;tx_skb = NULL;
++	priv-&gt;tx_len = 0;
+ 	enable_irq(spi-&gt;irq);
+ 	mcp251x_hw_wakeup(spi);
+ 	mcp251x_hw_reset(spi);
+@@ -743,10 +753,14 @@
+ 	flush_workqueue(priv-&gt;wq);
+
+ 	mcp251x_write_reg(spi, TXBCTRL(0), 0);
+-	if (priv-&gt;tx_skb) {
++	if (priv-&gt;tx_skb || priv-&gt;tx_len) {
+ 		net-&gt;stats.tx_errors++;
+-		dev_kfree_skb(priv-&gt;tx_skb);
++		if (priv-&gt;tx_skb)
++			dev_kfree_skb(priv-&gt;tx_skb);
++		if (priv-&gt;tx_len)
++			can_free_echo_skb(net, 0);
+ 		priv-&gt;tx_skb = NULL;
++		priv-&gt;tx_len = 0;
+ 	}
+
+ 	mcp251x_hw_sleep(spi);
+@@ -760,20 +774,7 @@
+ static int mcp251x_do_get_state(struct net_device *net, enum can_state	*state)
+ {
+ 	struct mcp251x_priv *priv = netdev_priv(net);
+-	struct spi_device *spi = priv-&gt;spi;
+-	u8 eflag;
+-
+-	eflag = mcp251x_read_reg(spi, EFLG);
+-
+-	if (eflag &amp; EFLG_TXBO)
+-		*state = CAN_STATE_BUS_OFF;
+-	else if (eflag &amp; (EFLG_RXEP | EFLG_TXEP))
+-		*state = CAN_STATE_BUS_PASSIVE;
+-	else if (eflag &amp; EFLG_EWARN)
+-		*state = CAN_STATE_BUS_WARNING;
+-	else
+-		*state = CAN_STATE_ACTIVE;
+-
++	*state = priv-&gt;can.state;
+ 	return 0;
+ }
+
+@@ -782,15 +783,18 @@
+ 	struct mcp251x_priv *priv = container_of(ws, struct mcp251x_priv,
+ 						 tx_work);
+ 	struct spi_device *spi = priv-&gt;spi;
++	struct net_device *net = priv-&gt;net;
+ 	struct can_frame *frame;
+
+-	dev_dbg(&amp;spi-&gt;dev, &quot;%s\n&quot;, __func__);
+-
+ 	if (priv-&gt;tx_skb) {
+ 		frame = (struct can_frame *)priv-&gt;tx_skb-&gt;data;
+ 		if (frame-&gt;can_dlc &gt; CAN_FRAME_MAX_DATA_LEN)
+ 			frame-&gt;can_dlc = CAN_FRAME_MAX_DATA_LEN;
+ 		mcp251x_hw_tx(spi, frame, 0);
++		priv-&gt;tx_len = 1 + frame-&gt;can_dlc;
++		dev_dbg(&amp;spi-&gt;dev, &quot;%s %d\n&quot;, __func__, priv-&gt;tx_len);
++		can_put_echo_skb(priv-&gt;tx_skb, net, 0);
++		priv-&gt;tx_skb = NULL;
+ 	}
+ }
+
+@@ -802,6 +806,7 @@
+ 	struct net_device *net = priv-&gt;net;
+ 	u8 intf;
+ 	u8 txbnctrl;
++	enum can_state new_state;
+
+ 	if (priv-&gt;after_suspend) {
+ 		/* Wait whilst the device wakes up */
+@@ -811,10 +816,14 @@
+ 		if (priv-&gt;after_suspend &amp; AFTER_SUSPEND_UP) {
+ 			netif_device_attach(net);
+ 			/* clear since we lost tx buffer */
+-			if (priv-&gt;tx_skb) {
++			if (priv-&gt;tx_skb || priv-&gt;tx_len) {
+ 				net-&gt;stats.tx_errors++;
+-				dev_kfree_skb(priv-&gt;tx_skb);
++				if (priv-&gt;tx_skb)
++					dev_kfree_skb(priv-&gt;tx_skb);
++				if (priv-&gt;tx_len)
++					can_free_echo_skb(net, 0);
+ 				priv-&gt;tx_skb = NULL;
++				priv-&gt;tx_len = 0;
+ 				netif_wake_queue(net);
+ 			}
+ 			mcp251x_set_normal_mode(spi);
+@@ -827,13 +836,17 @@
+ 	while (!priv-&gt;force_quit &amp;&amp; !freezing(current)) {
+ 		if (priv-&gt;restart_tx) {
+ 			priv-&gt;restart_tx = 0;
+-			dev_warn(&amp;spi-&gt;dev,
+-				 &quot;timeout in txing a packet, restarting\n&quot;);
++			dev_dbg(&amp;spi-&gt;dev,
++				&quot;timeout in txing a packet, restarting\n&quot;);
+ 			mcp251x_write_reg(spi, TXBCTRL(0), 0);
+-			if (priv-&gt;tx_skb) {
++			if (priv-&gt;tx_skb || priv-&gt;tx_len) {
+ 				net-&gt;stats.tx_errors++;
+-				dev_kfree_skb(priv-&gt;tx_skb);
++				if (priv-&gt;tx_skb)
++					dev_kfree_skb(priv-&gt;tx_skb);
++				if (priv-&gt;tx_len)
++					can_free_echo_skb(net, 0);
+ 				priv-&gt;tx_skb = NULL;
++				priv-&gt;tx_len = 0;
+ 			}
+ 			netif_wake_queue(net);
+ 		}
+@@ -863,13 +876,17 @@
+ 			complete(&amp;priv-&gt;awake);
+
+ 		if (intf &amp; CANINTF_MERRF) {
+-			/* if there are no pending Tx buffers, restart queue */
++			/* if there are pending Tx buffers, restart queue */
+ 			txbnctrl = mcp251x_read_reg(spi, TXBCTRL(0));
+ 			if (!(txbnctrl &amp; TXBCTRL_TXREQ)) {
+-				if (priv-&gt;tx_skb) {
++				if (priv-&gt;tx_skb || priv-&gt;tx_len) {
+ 					net-&gt;stats.tx_errors++;
+-					dev_kfree_skb(priv-&gt;tx_skb);
++					if (priv-&gt;tx_skb)
++						dev_kfree_skb(priv-&gt;tx_skb);
++					if (priv-&gt;tx_len)
++						can_free_echo_skb(net, 0);
+ 					priv-&gt;tx_skb = NULL;
++					priv-&gt;tx_len = 0;
+ 				}
+ 				netif_wake_queue(net);
+ 			}
+@@ -882,7 +899,7 @@
+
+ 			dev_dbg(&amp;spi-&gt;dev, &quot;EFLG = 0x%02x\n&quot;, eflag);
+
+-			/* Create error frame */
++			/* create error frame */
+ 			skb = dev_alloc_skb(sizeof(struct can_frame));
+ 			if (skb) {
+ 				frame = (struct can_frame *)
+@@ -918,6 +935,7 @@
+ 				}
+ 			}
+
++			/* update net stats */
+ 			if (eflag &amp; (EFLG_RX0OVR | EFLG_RX1OVR)) {
+ 				if (eflag &amp; EFLG_RX0OVR)
+ 					net-&gt;stats.rx_over_errors++;
+@@ -929,21 +947,59 @@
+ 					  CAN_ERR_CRTL_RX_OVERFLOW;
+ 				}
+ 			}
++
++			/* update can state */
++			if (eflag &amp; EFLG_TXBO) {
++				new_state = CAN_STATE_BUS_OFF;
++				can_bus_off(net);
++			} else if (eflag &amp; EFLG_TXEP)
++				new_state = CAN_STATE_BUS_PASSIVE;
++			else if (eflag &amp; EFLG_RXEP)
++				new_state = CAN_STATE_BUS_PASSIVE;
++			else if (eflag &amp; EFLG_TXWAR)
++				new_state = CAN_STATE_BUS_WARNING;
++			else if (eflag &amp; EFLG_RXWAR)
++				new_state = CAN_STATE_BUS_WARNING;
++			else
++				new_state = CAN_STATE_ACTIVE;
++
+ 			mcp251x_write_reg(spi, EFLG, 0x00);
+
+ 			if (skb)
+ 				netif_rx(skb);
++		} else
++			new_state = CAN_STATE_ACTIVE;
++
++		/* update can state statistics */
++		switch (priv-&gt;can.state) {
++		case CAN_STATE_ACTIVE:
++			if (new_state &gt;= CAN_STATE_BUS_WARNING &amp;&amp;
++			    new_state &lt;= CAN_STATE_BUS_OFF)
++				priv-&gt;can.can_stats.error_warning++;
++		case CAN_STATE_BUS_WARNING:	/* fallthrough */
++			if (new_state &gt;= CAN_STATE_BUS_PASSIVE &amp;&amp;
++			    new_state &lt;= CAN_STATE_BUS_OFF)
++				priv-&gt;can.can_stats.error_passive++;
++			break;
++		case CAN_STATE_BUS_OFF:
++			if (new_state &lt;= CAN_STATE_BUS_PASSIVE)
++				netif_carrier_on(net);
++			break;
++		default:
++			break;
+ 		}
++		priv-&gt;can.state = new_state;
+
+ 		if (intf &amp; (CANINTF_TX2IF | CANINTF_TX1IF | CANINTF_TX0IF)) {
+-			if (priv-&gt;tx_skb) {
+-				net-&gt;stats.tx_packets++;
+-				net-&gt;stats.tx_bytes +=
+-					((struct can_frame *)
+-					 (priv-&gt;tx_skb-&gt;data))-&gt;can_dlc;
++			dev_dbg(&amp;spi-&gt;dev, &quot;tx ended %d\n&quot;, priv-&gt;tx_len);
++			net-&gt;stats.tx_packets++;
++			net-&gt;stats.tx_bytes += priv-&gt;tx_len - 1;
++			if (priv-&gt;tx_skb)
+ 				dev_kfree_skb(priv-&gt;tx_skb);
+-				priv-&gt;tx_skb = NULL;
+-			}
++			if (priv-&gt;tx_len)
++				can_get_echo_skb(net, 0);
++			priv-&gt;tx_skb = NULL;
++			priv-&gt;tx_len = 0;
+ 			netif_wake_queue(net);
+ 		}
+
+@@ -973,16 +1029,9 @@
+ 	return IRQ_HANDLED;
+ }
+
+-static void mcp251x_tx_timeout(struct net_device *net)
++static struct net_device *alloc_mcp251x_netdev(int sizeof_priv,
++			 struct mcp251x_platform_data *pdata)
+ {
+-	struct mcp251x_priv *priv = netdev_priv(net);
+-
+-	priv-&gt;restart_tx = 1;
+-	queue_work(priv-&gt;wq, &amp;priv-&gt;irq_work);
+-}
+-
+-static struct net_device *alloc_mcp251x_netdev(int sizeof_priv)
+-{
+ 	struct net_device *net;
+ 	struct mcp251x_priv *priv;
+
+@@ -995,10 +1044,11 @@
+ 	net-&gt;open		= mcp251x_open;
+ 	net-&gt;stop		= mcp251x_stop;
+ 	net-&gt;hard_start_xmit	= mcp251x_hard_start_xmit;
+-	net-&gt;tx_timeout		= mcp251x_tx_timeout;
+-	net-&gt;watchdog_timeo	= HZ;
++	net-&gt;flags		|= IFF_ECHO;
+
+ 	priv-&gt;can.bittiming_const = &amp;mcp251x_bittiming_const;
++	priv-&gt;can.bittiming.clock = pdata-&gt;oscillator_frequency / 2;
++	priv-&gt;can.do_set_bittiming	= mcp251x_do_set_bittiming;
+ 	priv-&gt;can.do_get_state	  = mcp251x_do_get_state;
+ 	priv-&gt;can.do_set_mode	  = mcp251x_do_set_mode;
+
+@@ -1020,7 +1070,7 @@
+ 	}
+
+ 	/* Allocate can/net device */
+-	net = alloc_mcp251x_netdev(sizeof(struct mcp251x_priv));
++	net = alloc_mcp251x_netdev(sizeof(struct mcp251x_priv), pdata);
+ 	if (!net) {
+ 		ret = -ENOMEM;
+ 		goto error_alloc;
+@@ -1032,8 +1082,6 @@
+ 	priv-&gt;spi = spi;
+ 	mutex_init(&amp;priv-&gt;spi_lock);
+
+-	priv-&gt;can.bittiming.clock = pdata-&gt;oscillator_frequency / 2;
+-
+ 	/* If requested, allocate DMA buffers */
+ 	if (mcp251x_enable_dma) {
+ 		spi-&gt;dev.coherent_dma_mask = DMA_32BIT_MASK;
+
+
+-- 
+Christian Pellegrin, see <A HREF="http://www.evolware.org/chri/">http://www.evolware.org/chri/</A>
+&quot;Real Programmers don't play tennis, or any other sport which requires
+you to change clothes. Mountain climbing is OK, and Real Programmers
+wear their climbing boots to work in case a mountain should suddenly
+spring up in the middle of the computer room.&quot;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002661.html">merging branches/netlink: please test
+</A></li>
+	<LI>Next message: <A HREF="002682.html">[PATCH] mcp251x driver fixes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2679">[ date ]</a>
+              <a href="thread.html#2679">[ thread ]</a>
+              <a href="subject.html#2679">[ subject ]</a>
+              <a href="author.html#2679">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

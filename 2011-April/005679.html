@@ -1,0 +1,1659 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2] add j1939 utils
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20add%20j1939%20utils&In-Reply-To=%3C4DB94BD1.7090008%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005678.html">
+   <LINK REL="Next"  HREF="005680.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2] add j1939 utils</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20add%20j1939%20utils&In-Reply-To=%3C4DB94BD1.7090008%40pengutronix.de%3E"
+       TITLE="[PATCH v2] add j1939 utils">mkl at pengutronix.de
+       </A><BR>
+    <I>Thu Apr 28 13:13:21 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005678.html">[PATCH v2] add j1939 utils
+</A></li>
+        <LI>Next message: <A HREF="005680.html">[PATCH v2] add j1939 utils
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5679">[ date ]</a>
+              <a href="thread.html#5679">[ thread ]</a>
+              <a href="subject.html#5679">[ subject ]</a>
+              <a href="author.html#5679">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 04/28/2011 12:55 PM, Kurt Van Dijck wrote:
+&gt;<i> On Thu, Apr 28, 2011 at 09:45:30AM +0200, Marc Kleine-Budde wrote:
+</I>&gt;&gt;&gt;<i> +LDADD += libj1939.la
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> It would be cleaner if you just link your j1939 programs with the lib:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> jacd_LDADD = libj1939.la
+</I>&gt;&gt;<i> jsr_LDADD = libj1939.la
+</I>&gt;&gt;<i> jspy_LDADD = libj1939.la
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> (I know we link everything against libcan.la)
+</I>&gt;<i> 
+</I>&gt;<i> you're right. Thanks for the example automake syntax!
+</I>&gt;<i> ---
+</I>&gt;<i> This patch adds SAE J1939 tools &amp; libraries to can-utils
+</I>&gt;<i> 
+</I>&gt;<i> * jacd: a J1939 address claiming daemon
+</I>&gt;<i> * jspy: spy on a J1939 bus
+</I>&gt;<i> * jsr: send/receive J1939 packets
+</I>&gt;<i> 
+</I>&gt;<i> * libj1939.a: conversion to/from struct sockaddr_can to string
+</I>&gt;<i> 
+</I>&gt;<i> Changes with v1:
+</I>&gt;<i> * update for autotools
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+</I>
+I quickly looked over the code, see some comments inline.
+
+&gt;<i> ---
+</I>&gt;<i> Index: can-utils/jsr.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- can-utils/jsr.c	(revision 0)
+</I>&gt;<i> +++ can-utils/jsr.c	(revision 0)
+</I>&gt;<i> @@ -0,0 +1,229 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Copyright (c) 2011 EIA Electronics
+</I>&gt;<i> + *
+</I>&gt;<i> + * Authors:
+</I>&gt;<i> + * Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is free software; you can redistribute it and/or modify
+</I>&gt;<i> + * it under the terms of the version 2 of the GNU General Public License
+</I>&gt;<i> + * as published by the Free Software Foundation
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;string.h&gt;
+</I>&gt;<i> +#include &lt;stdlib.h&gt;
+</I>&gt;<i> +#include &lt;stdio.h&gt;
+</I>&gt;<i> +#include &lt;errno.h&gt;
+</I>&gt;<i> +#include &lt;inttypes.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;unistd.h&gt;
+</I>&gt;<i> +#include &lt;getopt.h&gt;
+</I>&gt;<i> +#include &lt;error.h&gt;
+</I>&gt;<i> +#include &lt;poll.h&gt;
+</I>&gt;<i> +#include &lt;sys/types.h&gt;
+</I>&gt;<i> +#include &lt;sys/socket.h&gt;
+</I>&gt;<i> +#include &lt;sys/ioctl.h&gt;
+</I>&gt;<i> +#include &lt;sys/stat.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +//#include &lt;net/if.h&gt;
+</I>
+remove?
+
+&gt;<i> +
+</I>&gt;<i> +#include &quot;libj1939.h&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * getopt
+</I>&gt;<i> + */
+</I>&gt;<i> +static const char help_msg[] =
+</I>&gt;<i> +	&quot;jsr: An SAE J1939 send/recv utility&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;Usage: jsr [OPTION...] SOURCE [DEST]&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;\n&quot;
+</I>&gt;<i> +	&quot;  -v, --verbose		Increase verbosity&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;  -p, --priority=VAL	J1939 priority (0..7, default 6)&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;  -S, --serialize	Strictly serialize outgoing packets&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;  -s, --size		Packet size, default autodetected&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;\n&quot;
+</I>&gt;<i> +	&quot;  SOURCE	[IFACE:][NAME|SA][,PGN]&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;  DEST			[NAME|SA]&quot; &quot;\n&quot;
+</I>&gt;<i> +	;
+</I>&gt;<i> +
+</I>&gt;<i> +#ifdef _GNU_SOURCE
+</I>&gt;<i> +static struct option long_opts[] = {
+</I>&gt;<i> +	{ &quot;help&quot;, no_argument, NULL, '?', },
+</I>&gt;<i> +	{ &quot;verbose&quot;, no_argument, NULL, 'v', },
+</I>&gt;<i> +
+</I>&gt;<i> +	{ &quot;priority&quot;, required_argument, NULL, 'p', },
+</I>&gt;<i> +	{ &quot;size&quot;, required_argument, NULL, 's', },
+</I>&gt;<i> +	{ &quot;serialize&quot;, no_argument, NULL, 'S', },
+</I>&gt;<i> +	{ },
+</I>&gt;<i> +};
+</I>&gt;<i> +#else
+</I>&gt;<i> +#define getopt_long(argc, argv, optstring, longopts, longindex) \
+</I>&gt;<i> +	getopt((argc), (argv), (optstring))
+</I>&gt;<i> +#endif
+</I>&gt;<i> +static const char optstring[] = &quot;vp:s:S?&quot;;
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * static variables: configurations
+</I>&gt;<i> + */
+</I>&gt;<i> +static struct {
+</I>&gt;<i> +	int verbose;
+</I>&gt;<i> +	int sendflags; /* flags for sendto() */
+</I>&gt;<i> +	long pkt_len;
+</I>&gt;<i> +	int priority;
+</I>&gt;<i> +	int defined;
+</I>&gt;<i> +	#define DEF_SRC		1
+</I>&gt;<i> +	#define DEF_DST		2
+</I>&gt;<i> +	#define DEF_PRIO	4
+</I>&gt;<i> +	struct sockaddr_can src, dst;
+</I>&gt;<i> +} s = {
+</I>&gt;<i> +	.priority = 6,
+</I>&gt;<i> +	.src.can_addr.j1939 = {
+</I>&gt;<i> +		.name = J1939_NO_NAME,
+</I>&gt;<i> +		.addr = J1939_NO_ADDR,
+</I>&gt;<i> +		.pgn = J1939_NO_PGN,
+</I>&gt;<i> +	},
+</I>&gt;<i> +	.dst.can_addr.j1939 = {
+</I>&gt;<i> +		.name = J1939_NO_NAME,
+</I>&gt;<i> +		.addr = J1939_NO_ADDR,
+</I>&gt;<i> +		.pgn = J1939_NO_PGN,
+</I>&gt;<i> +	},
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static uint8_t *buf;
+</I>
+can we make this non global?
+
+&gt;<i> +
+</I>&gt;<i> +int main(int argc, char** argv)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int ret, sock, opt;
+</I>&gt;<i> +	unsigned int len, done;
+</I>&gt;<i> +	struct pollfd pfd[2];
+</I>&gt;<i> +
+</I>&gt;<i> +#ifdef _GNU_SOURCE
+</I>&gt;<i> +	program_invocation_name = program_invocation_short_name;
+</I>&gt;<i> +#endif
+</I>&gt;<i> +	/* argument parsing */
+</I>&gt;<i> +	while ((opt = getopt_long(argc, argv, optstring, long_opts, NULL)) != -1)
+</I>&gt;<i> +	switch (opt) {
+</I>&gt;<i> +	case 'v':
+</I>&gt;<i> +		++s.verbose;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 's':
+</I>&gt;<i> +		s.pkt_len = strtoul(optarg, 0, 0);
+</I>&gt;<i> +		if (!s.pkt_len)
+</I>&gt;<i> +			error(1, EINVAL, &quot;packet size of %s&quot;, optarg);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 'p':
+</I>&gt;<i> +		s.priority = strtoul(optarg, 0, 0);
+</I>&gt;<i> +		s.defined |= DEF_PRIO;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 'S':
+</I>&gt;<i> +		s.sendflags |= MSG_SYN;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	default:
+</I>&gt;<i> +		fputs(help_msg, stderr);
+</I>&gt;<i> +		exit(1);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (argv[optind]) {
+</I>&gt;<i> +		optarg = argv[optind++];
+</I>&gt;<i> +		ret = libj1939_str2addr(optarg, 0, &amp;s.src);
+</I>&gt;<i> +		if (ret &lt; 0)
+</I>&gt;<i> +			error(1, 0, &quot;bad address spec [%s]&quot;, optarg);
+</I>&gt;<i> +		s.defined |= DEF_SRC;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (argv[optind]) {
+</I>&gt;<i> +		optarg = argv[optind++];
+</I>&gt;<i> +		ret = libj1939_str2addr(optarg, 0, &amp;s.dst);
+</I>&gt;<i> +		if (ret &lt; 0)
+</I>&gt;<i> +			error(1, 0, &quot;bad address spec [%s]&quot;, optarg);
+</I>&gt;<i> +		s.defined |= DEF_DST;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!s.pkt_len) {
+</I>&gt;<i> +		struct stat st;
+</I>&gt;<i> +
+</I>&gt;<i> +		if (fstat(STDIN_FILENO, &amp;st) &lt; 0)
+</I>&gt;<i> +			error(1, errno, &quot;stat stdin, could not determine buffer size&quot;);
+</I>&gt;<i> +		s.pkt_len = st.st_size;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* prepare */
+</I>&gt;<i> +	buf = malloc(s.pkt_len);
+</I>&gt;<i> +	if (!buf)
+</I>&gt;<i> +		error(1, errno, &quot;malloc %lu&quot;, s.pkt_len);
+</I>&gt;<i> +
+</I>&gt;<i> +	sock = socket(PF_CAN, SOCK_DGRAM, CAN_J1939);
+</I>&gt;<i> +	if(sock &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;socket(can, dgram, j1939)&quot;);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (s.defined &amp; DEF_PRIO) {
+</I>&gt;<i> +		ret = setsockopt(sock, SOL_CAN_J1939, SO_J1939_SEND_PRIO, &amp;s.priority, sizeof(s.priority));
+</I>&gt;<i> +		if (ret &lt; 0)
+</I>&gt;<i> +			error(1, errno, &quot;setsockopt priority&quot;);
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (s.defined &amp; DEF_SRC) {
+</I>&gt;<i> +		s.src.can_family = AF_CAN;
+</I>&gt;<i> +		ret = bind(sock, (void *)&amp;s.src, sizeof(s.src));
+</I>&gt;<i> +		if (ret &lt; 0)
+</I>&gt;<i> +			error(1, errno, &quot;bind(%s), %i&quot;, libj1939_addr2str(&amp;s.src), -errno);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (s.defined &amp; DEF_DST) {
+</I>&gt;<i> +		s.dst.can_family = AF_CAN;
+</I>&gt;<i> +		ret = connect(sock, (void *)&amp;s.dst, sizeof(s.dst));
+</I>&gt;<i> +		if (ret &lt; 0)
+</I>&gt;<i> +			error(1, errno, &quot;connect(%s), %i&quot;, libj1939_addr2str(&amp;s.dst), -errno);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	pfd[0].fd = STDIN_FILENO;
+</I>&gt;<i> +	pfd[0].events = POLLIN;
+</I>&gt;<i> +	pfd[1].fd = sock;
+</I>&gt;<i> +	pfd[1].events = POLLIN;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* run */
+</I>&gt;<i> +	while (1) {
+</I>&gt;<i> +		ret = poll(pfd, 2, -1);
+</I>ARRAY_SIZE?
+&gt;<i> +		if (ret &lt; 0)
+</I>&gt;<i> +			error(1, errno, &quot;poll()&quot;);
+</I>
+what about EINTR?
+
+&gt;<i> +		if (pfd[0].revents) {
+</I>&gt;<i> +			ret = read(pfd[0].fd, buf, s.pkt_len);
+</I>
+read returns &quot;ssize_t&quot; not an int
+
+&gt;<i> +			if (ret &lt; 0)
+</I>&gt;<i> +				error(1, errno, &quot;read(stdin)&quot;);
+</I>&gt;<i> +			if (!ret) {
+</I>&gt;<i> +				//error(0, 0, &quot;stdin EOF&quot;);
+</I>remove?
+&gt;<i> +				break;
+</I>&gt;<i> +			}
+</I>&gt;<i> +			len = ret;
+</I>&gt;<i> +			for (done = 0; done &lt; len; ) {
+</I>&gt;<i> +				ret = send(pfd[1].fd, buf, len, s.sendflags);
+</I>&gt;<i> +				if (ret &lt; 0) {
+</I>&gt;<i> +					error(0, errno, &quot;write(%s)&quot;, libj1939_addr2str(&amp;s.src));
+</I>&gt;<i> +					if (ENOBUFS == errno) {
+</I>
+the other way round?
+
+&gt;<i> +						sleep(1);
+</I>&gt;<i> +						continue;
+</I>&gt;<i> +					}
+</I>&gt;<i> +					exit(1);
+</I>&gt;<i> +				}
+</I>&gt;<i> +				done += ret;
+</I>&gt;<i> +			}
+</I>&gt;<i> +		}
+</I>&gt;<i> +		if (pfd[1].revents) {
+</I>&gt;<i> +			ret = read(pfd[1].fd, buf, sizeof(buf));
+</I>&gt;<i> +			if (ret &lt; 0) {
+</I>&gt;<i> +				ret = errno;
+</I>&gt;<i> +				error(0, errno, &quot;read(%s)&quot;, libj1939_addr2str(&amp;s.dst));
+</I>&gt;<i> +				switch (ret) {
+</I>&gt;<i> +				case EHOSTDOWN:
+</I>&gt;<i> +					break;
+</I>&gt;<i> +				default:
+</I>&gt;<i> +					exit(1);
+</I>&gt;<i> +				}
+</I>&gt;<i> +			} else {
+</I>&gt;<i> +				write(STDOUT_FILENO, buf, ret);
+</I>&gt;<i> +			}
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	free(buf);
+</I>	close()?
+&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;<i> +
+</I>&gt;<i> 
+</I>&gt;<i> Property changes on: can-utils/jsr.c
+</I>&gt;<i> ___________________________________________________________________
+</I>&gt;<i> Name: svn:eol-style
+</I>&gt;<i>    + native
+</I>&gt;<i> 
+</I>&gt;<i> Index: can-utils/jacd.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- can-utils/jacd.c	(revision 0)
+</I>&gt;<i> +++ can-utils/jacd.c	(revision 0)
+</I>&gt;<i> @@ -0,0 +1,620 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Copyright (c) 2011 EIA Electronics
+</I>&gt;<i> + *
+</I>&gt;<i> + * Authors:
+</I>&gt;<i> + * Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is free software; you can redistribute it and/or modify
+</I>&gt;<i> + * it under the terms of the version 2 of the GNU General Public License
+</I>&gt;<i> + * as published by the Free Software Foundation
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;signal.h&gt;
+</I>&gt;<i> +#include &lt;time.h&gt;
+</I>&gt;<i> +#include &lt;inttypes.h&gt;
+</I>&gt;<i> +#include &lt;errno.h&gt;
+</I>&gt;<i> +#include &lt;string.h&gt;
+</I>&gt;<i> +#include &lt;stdlib.h&gt;
+</I>&gt;<i> +#include &lt;stdio.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;unistd.h&gt;
+</I>&gt;<i> +#include &lt;getopt.h&gt;
+</I>&gt;<i> +#include &lt;error.h&gt;
+</I>&gt;<i> +#include &lt;sys/time.h&gt;
+</I>&gt;<i> +#include &lt;sys/socket.h&gt;
+</I>&gt;<i> +#include &lt;linux/can.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/j1939.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +static const char help_msg[] =
+</I>&gt;<i> +	&quot;jacd: An SAE J1939 address claiming daemon&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;Usage: jacd [options] NAME [INTF]&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;\n&quot;
+</I>&gt;<i> +	&quot;  -v, --verbose		Increase verbosity&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;  -r, --range=RANGE	Ranges of source addresses&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;			e.g. 80,50-100,200-210 (defaults to 0-253)&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;  -c, --cache=FILE	Cache file to save/restore the source address&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;  -a, --address=ADDRESS	Start with Source Address ADDRESS&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;  -p, --prefix=STR	Prefix to use when logging&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;\n&quot;
+</I>&gt;<i> +	&quot;NAME is the 64bit nodename&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;\n&quot;
+</I>&gt;<i> +	&quot;Example:&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;jacd -r 100,80-120 -c /tmp/1122334455667788.jacd 1122334455667788&quot; &quot;\n&quot;
+</I>&gt;<i> +	;
+</I>&gt;<i> +
+</I>&gt;<i> +#ifdef _GNU_SOURCE
+</I>&gt;<i> +static struct option long_opts[] = {
+</I>&gt;<i> +	{ &quot;help&quot;, no_argument, NULL, '?', },
+</I>&gt;<i> +	{ &quot;verbose&quot;, no_argument, NULL, 'v', },
+</I>&gt;<i> +	{ &quot;range&quot;, required_argument, NULL, 'r', },
+</I>&gt;<i> +	{ &quot;cache&quot;, required_argument, NULL, 'c', },
+</I>&gt;<i> +	{ &quot;address&quot;, required_argument, NULL, 'a', },
+</I>&gt;<i> +	{ &quot;prefix&quot;, required_argument, NULL, 'p', },
+</I>&gt;<i> +	{ },
+</I>&gt;<i> +};
+</I>&gt;<i> +#else
+</I>&gt;<i> +#define getopt_long(argc, argv, optstring, longopts, longindex) \
+</I>&gt;<i> +	getopt((argc), (argv), (optstring))
+</I>&gt;<i> +#endif
+</I>&gt;<i> +static const char optstring[] = &quot;vr:c:a:p:?&quot;;
+</I>&gt;<i> +
+</I>&gt;<i> +/* byte swap functions */
+</I>&gt;<i> +static inline int host_is_little_endian(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +       static const uint16_t endian_test = 1;
+</I>&gt;<i> +       return *(const uint8_t *)&amp;endian_test;
+</I>&gt;<i> +} 
+</I>&gt;<i> +
+</I>&gt;<i> +static __attribute__((unused)) void bswap(void *vptr, int size)
+</I>&gt;<i> +{
+</I>&gt;<i> +	uint8_t *p0, *pe;
+</I>&gt;<i> +	uint8_t tmp;
+</I>&gt;<i> +
+</I>&gt;<i> +	p0 = vptr;
+</I>&gt;<i> +	pe = &amp;p0[size-1];
+</I>&gt;<i> +	for (; p0 &lt; pe; ++p0, --pe) {
+</I>&gt;<i> +		tmp = *p0;
+</I>&gt;<i> +		*p0 = *pe;
+</I>&gt;<i> +		*pe = tmp;
+</I>&gt;<i> +	}
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* rate-limiting for errors */
+</I>&gt;<i> +static inline int must_warn(int ret)
+</I>&gt;<i> +{
+</I>&gt;<i> +	if (ret &gt;= 0)
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +	switch (errno) {
+</I>&gt;<i> +	case EINTR:
+</I>&gt;<i> +	case ENOBUFS:
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	return 1;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* global variables */
+</I>&gt;<i> +static char default_range[] = &quot;0x80-0xfd&quot;;
+</I>&gt;<i> +static const char default_intf[] = &quot;can0&quot;;
+</I>&gt;<i> +
+</I>&gt;<i> +static struct {
+</I>&gt;<i> +	int verbose;
+</I>&gt;<i> +	const char *cachefile;
+</I>&gt;<i> +
+</I>&gt;<i> +	const char *intf;
+</I>&gt;<i> +	char *ranges;
+</I>&gt;<i> +	uint64_t name;
+</I>&gt;<i> +	uint8_t current_sa;
+</I>&gt;<i> +	uint8_t last_sa;
+</I>&gt;<i> +	int sig_term;
+</I>&gt;<i> +	int sig_alrm;
+</I>&gt;<i> +	int sig_usr1;
+</I>&gt;<i> +	int state;
+</I>&gt;<i> +		#define STATE_INITIAL 0
+</I>&gt;<i> +		#define STATE_REQ_SENT 1
+</I>&gt;<i> +		#define STATE_REQ_PENDING 2 /* wait 1250 msec for first claim */
+</I>&gt;<i> +		#define STATE_OPERATIONAL 3
+</I>&gt;<i> +} s = {
+</I>&gt;<i> +	.intf = default_intf,
+</I>&gt;<i> +	.ranges = default_range,
+</I>&gt;<i> +	.current_sa = J1939_IDLE_ADDR,
+</I>&gt;<i> +	.last_sa = J1939_NO_ADDR,
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +struct {
+</I>&gt;<i> +	uint64_t name;
+</I>&gt;<i> +	int flags;
+</I>&gt;<i> +		#define F_USE	0x01
+</I>&gt;<i> +		#define F_SEEN	0x02
+</I>&gt;<i> +} addr[J1939_IDLE_ADDR /* =254 */];
+</I>&gt;<i> +
+</I>&gt;<i> +/* lookup by name */
+</I>&gt;<i> +static int lookup_name(uint64_t name)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int j;
+</I>&gt;<i> +
+</I>&gt;<i> +	for (j = 0; j &lt; J1939_IDLE_ADDR; ++j) {
+</I>&gt;<i> +		if (addr[j].name == name)
+</I>&gt;<i> +			return j;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	return J1939_IDLE_ADDR;
+</I>&gt;<i> +
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* parse address range */
+</I>&gt;<i> +static int parse_range(char *str)
+</I>&gt;<i> +{
+</I>&gt;<i> +	char *tok, *endp;
+</I>&gt;<i> +	int a0, ae;
+</I>&gt;<i> +	int j, cnt;
+</I>&gt;<i> +
+</I>&gt;<i> +	cnt = 0;
+</I>&gt;<i> +	for (tok = strtok(str, &quot;,;&quot;); tok; tok = strtok(NULL, &quot;,;&quot;)) {
+</I>&gt;<i> +		a0 = ae = strtoul(tok, &amp;endp, 0);
+</I>&gt;<i> +		if (endp &lt;= tok)
+</I>&gt;<i> +			error(1, 0, &quot;parsing range '%s'&quot;, tok);
+</I>&gt;<i> +		if (*endp == '-') {
+</I>&gt;<i> +			tok = endp+1;
+</I>&gt;<i> +			ae = strtoul(tok, &amp;endp, 0);
+</I>&gt;<i> +			if (endp &lt;= tok)
+</I>&gt;<i> +				error(1, 0, &quot;parsing addr '%s'&quot;, tok);
+</I>&gt;<i> +			if (ae &lt; a0)
+</I>&gt;<i> +				ae = a0;
+</I>&gt;<i> +		}
+</I>&gt;<i> +		for (j = a0; j &lt;= ae; ++j, ++cnt) {
+</I>&gt;<i> +			if (j == J1939_IDLE_ADDR)
+</I>&gt;<i> +				break;
+</I>&gt;<i> +			addr[j].flags |= F_USE;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +	return cnt;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* j1939 socket */
+</I>&gt;<i> +static const struct j1939_filter filt[] = {
+</I>&gt;<i> +	{
+</I>&gt;<i> +		.pgn = 0x0ee00,
+</I>&gt;<i> +		.pgn_mask = 0x3ff00,
+</I>&gt;<i> +	}, {
+</I>&gt;<i> +		.pgn = 0x0ea00,
+</I>&gt;<i> +		.pgn_mask = 0x3ff00,
+</I>&gt;<i> +	}, {
+</I>&gt;<i> +		.pgn = 0x0fed8,
+</I>&gt;<i> +		.pgn_mask = 0x3ffff,
+</I>&gt;<i> +	},
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static int open_socket(const char *device, uint64_t name)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int ret, sock;
+</I>&gt;<i> +	struct sockaddr_can saddr;
+</I>&gt;<i> +	int value;
+</I>&gt;<i> +
+</I>&gt;<i> +	sock = ret = socket(PF_CAN, SOCK_DGRAM, CAN_J1939);
+</I>&gt;<i> +	if (ret &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;socket(j1939)&quot;);
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE,
+</I>&gt;<i> +			device, strlen(device));
+</I>&gt;<i> +	if (ret &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;bindtodevice %s&quot;, device);
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = setsockopt(sock, SOL_CAN_J1939, SO_J1939_FILTER,
+</I>&gt;<i> +			&amp;filt, sizeof(filt));
+</I>&gt;<i> +	if (ret &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;setsockopt filter&quot;);
+</I>&gt;<i> +
+</I>&gt;<i> +	value = 1;
+</I>&gt;<i> +	ret = setsockopt(sock, SOL_CAN_J1939, SO_J1939_RECV_OWN,
+</I>&gt;<i> +			&amp;value, sizeof(value));
+</I>&gt;<i> +	if (ret &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;setsockopt receive own msgs&quot;);
+</I>&gt;<i> +
+</I>&gt;<i> +	memset(&amp;saddr, 0, sizeof(saddr));
+</I>&gt;<i> +	saddr.can_family = AF_CAN;
+</I>&gt;<i> +	saddr.can_addr.j1939.name = name;
+</I>&gt;<i> +	saddr.can_addr.j1939.addr = J1939_IDLE_ADDR;
+</I>&gt;<i> +	saddr.can_addr.j1939.pgn = 0x0ee00;
+</I>
+C99 initializer?
+
+&gt;<i> +
+</I>&gt;<i> +	ret = bind(sock, (void *)&amp;saddr, sizeof(saddr));
+</I>&gt;<i> +	if (ret &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;bind()&quot;);
+</I>&gt;<i> +	return sock;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* real IO function */
+</I>&gt;<i> +static int repeat_address(int sock, uint64_t name)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +	uint8_t dat[8];
+</I>&gt;<i> +
+</I>&gt;<i> +	memcpy(dat, &amp;name, 8);
+</I>&gt;<i> +	if (!host_is_little_endian())
+</I>&gt;<i> +		bswap(dat, 8);
+</I>&gt;<i> +	ret = send(sock, dat, 8, 0);
+</I>&gt;<i> +	if (must_warn(ret))
+</I>&gt;<i> +		error(1, errno, &quot;send address claim for 0x%02x&quot;, s.last_sa);
+</I>&gt;<i> +	return ret;
+</I>&gt;<i> +}
+</I>&gt;<i> +static int claim_address(int sock, uint64_t name, int sa)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +	struct sockaddr_can saddr;
+</I>&gt;<i> +
+</I>&gt;<i> +	memset(&amp;saddr, 0, sizeof(saddr));
+</I>&gt;<i> +	saddr.can_family = AF_CAN;
+</I>&gt;<i> +	saddr.can_addr.j1939.name = name;
+</I>&gt;<i> +	saddr.can_addr.j1939.addr = sa;
+</I>&gt;<i> +	saddr.can_addr.j1939.pgn = 0x0ee00;
+</I>
+C99?
+
+&gt;<i> +
+</I>&gt;<i> +	ret = bind(sock, (void *)&amp;saddr, sizeof(saddr));
+</I>&gt;<i> +	if (ret &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;rebind with sa 0x%02x&quot;, sa);
+</I>&gt;<i> +	s.last_sa = sa;
+</I>&gt;<i> +	return repeat_address(sock, name);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int request_addresses(int sock)
+</I>&gt;<i> +{
+</I>&gt;<i> +	static const uint8_t dat[3] = { 0, 0xee, 0, };
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +	static const struct sockaddr_can saddr = {
+</I>&gt;<i> +		.can_family = AF_CAN,
+</I>&gt;<i> +		.can_addr.j1939.pgn = 0x0ea00,
+</I>&gt;<i> +		.can_addr.j1939.addr = J1939_NO_ADDR,
+</I>&gt;<i> +	};
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = sendto(sock, dat, sizeof(dat), 0, (void *)&amp;saddr, sizeof(saddr));
+</I>&gt;<i> +	if (must_warn(ret))
+</I>&gt;<i> +		error(1, errno, &quot;send request for address claims&quot;);
+</I>&gt;<i> +	return ret;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* real policy */
+</I>&gt;<i> +static int choose_new_sa(uint64_t name, int sa) {
+</I>&gt;<i> +	int j, cnt;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* test current entry */
+</I>&gt;<i> +	if ((sa &lt; J1939_IDLE_ADDR) &amp;&amp; (addr[sa].flags &amp; F_USE)) {
+</I>&gt;<i> +		j = sa;
+</I>&gt;<i> +		if (!addr[j].name || (addr[j].name == name) || (addr[j].name &gt; name))
+</I>&gt;<i> +			return j;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	/* take first empty spot */
+</I>&gt;<i> +	for (j = 0; j &lt; J1939_IDLE_ADDR; ++j) {
+</I>&gt;<i> +		if (!(addr[j].flags &amp; F_USE))
+</I>&gt;<i> +			continue;
+</I>&gt;<i> +		if (!addr[j].name || (addr[j].name == name))
+</I>&gt;<i> +			return j;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	
+</I>&gt;<i> +	/*
+</I>&gt;<i> +	 * no empty spot found
+</I>&gt;<i> +	 * take next (relative to @sa) spot that we can
+</I>&gt;<i> +	 * successfully contest
+</I>&gt;<i> +	 */
+</I>&gt;<i> +	j = sa + 1;
+</I>&gt;<i> +	for (cnt = 0; cnt &lt; J1939_IDLE_ADDR; ++j, ++cnt) {
+</I>&gt;<i> +		if (j &gt;= J1939_IDLE_ADDR)
+</I>&gt;<i> +			j = 0;
+</I>&gt;<i> +		if (!(addr[j].flags &amp; F_USE))
+</I>&gt;<i> +			continue;
+</I>&gt;<i> +		if (name &lt; addr[j].name)
+</I>&gt;<i> +			return j;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	return J1939_IDLE_ADDR;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* signa handling */
+</I>&gt;<i> +static void sighandler(int sig, siginfo_t *info, void *vp)
+</I>&gt;<i> +{
+</I>&gt;<i> +	switch (sig) {
+</I>&gt;<i> +	case SIGINT:
+</I>&gt;<i> +	case SIGTERM:
+</I>&gt;<i> +		s.sig_term = 1;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case SIGALRM:
+</I>&gt;<i> +		s.sig_alrm = 1;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case SIGUSR1:
+</I>&gt;<i> +		s.sig_usr1 = 1;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	}
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void install_signal(int sig)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +	struct sigaction sigact = {
+</I>&gt;<i> +		.sa_sigaction = sighandler,
+</I>&gt;<i> +		.sa_flags = SA_SIGINFO,
+</I>&gt;<i> +	};
+</I>&gt;<i> +
+</I>&gt;<i> +	sigfillset(&amp;sigact.sa_mask);
+</I>&gt;<i> +	ret = sigaction(sig, &amp;sigact, NULL);
+</I>&gt;<i> +	if (ret &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;sigaction for signal %i&quot;, sig);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void schedule_itimer(int msec)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +	struct itimerval val = {};
+</I>&gt;<i> +
+</I>&gt;<i> +	val.it_value.tv_sec = msec / 1000;
+</I>&gt;<i> +	val.it_value.tv_usec = (msec % 1000) * 1000;
+</I>&gt;<i> +
+</I>&gt;<i> +	s.sig_alrm = 0;
+</I>&gt;<i> +	do {
+</I>&gt;<i> +		ret = setitimer(ITIMER_REAL, &amp;val, NULL);
+</I>&gt;<i> +	} while ((ret &lt; 0) &amp;&amp; (errno == EINTR));
+</I>&gt;<i> +	if (ret &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;setitimer %i msec&quot;, msec);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* dump status */
+</I>&gt;<i> +static inline int addr_status_mine(int sa)
+</I>&gt;<i> +{
+</I>&gt;<i> +	if (sa == s.current_sa)
+</I>&gt;<i> +		return '*';
+</I>&gt;<i> +	else if (addr[sa].flags &amp; F_USE)
+</I>&gt;<i> +		return '+';
+</I>&gt;<i> +	else
+</I>&gt;<i> +		return '-';
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void dump_status(void) {
+</I>&gt;<i> +	int j;
+</I>&gt;<i> +
+</I>&gt;<i> +	for (j = 0; j &lt; J1939_IDLE_ADDR; ++j) {
+</I>&gt;<i> +		if (!addr[j].flags &amp;&amp; !addr[j].name)
+</I>&gt;<i> +			continue;
+</I>&gt;<i> +		fprintf(stdout, &quot;%02x: %c&quot;, j, addr_status_mine(j));
+</I>&gt;<i> +		if (addr[j].name)
+</I>&gt;<i> +			fprintf(stdout, &quot; %016llx&quot;, (long long)addr[j].name);
+</I>&gt;<i> +		else
+</I>&gt;<i> +			fprintf(stdout, &quot; -&quot;);
+</I>&gt;<i> +		fprintf(stdout, &quot;\n&quot;);
+</I>&gt;<i> +	}
+</I>&gt;<i> +	fflush(stdout);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* cache file */
+</I>&gt;<i> +static void save_cache(void) {
+</I>&gt;<i> +	FILE *fp;
+</I>&gt;<i> +	time_t t;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!s.cachefile)
+</I>&gt;<i> +		return;
+</I>&gt;<i> +	fp = fopen(s.cachefile, &quot;w&quot;);
+</I>&gt;<i> +	if (!fp)
+</I>&gt;<i> +		error(1, errno, &quot;fopen %s, w&quot;, s.cachefile);
+</I>&gt;<i> +
+</I>&gt;<i> +	time(&amp;t);
+</I>&gt;<i> +	fprintf(fp, &quot;# saved on %s\n&quot;, ctime(&amp;t));
+</I>&gt;<i> +	fprintf(fp, &quot;\n&quot;);
+</I>&gt;<i> +	fprintf(fp, &quot;0x%02x\n&quot;, s.current_sa);
+</I>&gt;<i> +	fclose(fp);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void restore_cache(void) {
+</I>&gt;<i> +	FILE *fp;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +	char *endp;
+</I>&gt;<i> +	char *line = 0;
+</I>&gt;<i> +	size_t sz = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!s.cachefile)
+</I>&gt;<i> +		return;
+</I>&gt;<i> +	fp = fopen(s.cachefile, &quot;r&quot;);
+</I>&gt;<i> +	if (!fp) {
+</I>&gt;<i> +		if (ENOENT == errno)
+</I>&gt;<i> +			return;
+</I>&gt;<i> +		error(1, errno, &quot;fopen %s, r&quot;, s.cachefile);
+</I>&gt;<i> +	}
+</I>&gt;<i> +	while (!feof(fp)) {
+</I>&gt;<i> +		ret = getline(&amp;line, &amp;sz, fp);
+</I>&gt;<i> +		if (ret &lt;= 0)
+</I>&gt;<i> +			continue;
+</I>&gt;<i> +		if (line[0] == '#')
+</I>&gt;<i> +			continue;
+</I>&gt;<i> +		ret = strtoul(line, &amp;endp, 0);
+</I>&gt;<i> +		if ((endp &gt; line) &amp;&amp; (ret &gt;= 0) &amp;&amp; (ret &lt;= J1939_IDLE_ADDR)) {
+</I>&gt;<i> +			s.current_sa = ret;
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +	fclose(fp);
+</I>&gt;<i> +	if (line)
+</I>&gt;<i> +		free(line);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* main */
+</I>&gt;<i> +int main(int argc, char *argv[])
+</I>&gt;<i> +{
+</I>&gt;<i> +	int ret, sock, pgn, sa, opt;
+</I>&gt;<i> +	socklen_t slen;
+</I>&gt;<i> +	uint8_t dat[9];
+</I>&gt;<i> +	struct sockaddr_can saddr;
+</I>&gt;<i> +	uint64_t cmd_name;
+</I>&gt;<i> +
+</I>&gt;<i> +#ifdef _GNU_SOURCE
+</I>&gt;<i> +	program_invocation_name = program_invocation_short_name;
+</I>&gt;<i> +#endif
+</I>&gt;<i> +	/* argument parsing */
+</I>&gt;<i> +	while ((opt = getopt_long(argc, argv, optstring, long_opts, NULL)) != -1)
+</I>&gt;<i> +	switch (opt) {
+</I>&gt;<i> +	case 'v':
+</I>&gt;<i> +		++s.verbose;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 'c':
+</I>&gt;<i> +		s.cachefile = optarg;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 'r':
+</I>&gt;<i> +		s.ranges = optarg;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 'a':
+</I>&gt;<i> +		s.current_sa = strtoul(optarg, 0, 0);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 'p':
+</I>&gt;<i> +#ifdef _GNU_SOURCE
+</I>&gt;<i> +		asprintf(&amp;program_invocation_name, &quot;%s.%s&quot;, program_invocation_short_name, optarg);
+</I>&gt;<i> +#else
+</I>&gt;<i> +		error(0, 0, &quot;compile with -D_GNU_SOURCE to use -p&quot;);
+</I>&gt;<i> +#endif
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	default:
+</I>&gt;<i> +		fputs(help_msg, stderr);
+</I>&gt;<i> +		exit(1);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (argv[optind])
+</I>&gt;<i> +		s.name = strtoull(argv[optind++], 0, 16);
+</I>&gt;<i> +	if (argv[optind])
+</I>&gt;<i> +		s.intf = argv[optind++];
+</I>&gt;<i> +
+</I>&gt;<i> +	/* args done */
+</I>&gt;<i> +
+</I>&gt;<i> +	restore_cache();
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = parse_range(s.ranges);
+</I>&gt;<i> +	if (!ret)
+</I>&gt;<i> +		error(1, 0, &quot;no addresses in range&quot;);
+</I>&gt;<i> +	
+</I>&gt;<i> +	if ((s.current_sa &lt; J1939_IDLE_ADDR) &amp;&amp; !(addr[s.current_sa].flags &amp; F_USE)) {
+</I>&gt;<i> +		if (s.verbose)
+</I>&gt;<i> +			error(0, 0, &quot;forget saved address 0x%02x&quot;, s.current_sa);
+</I>&gt;<i> +		s.current_sa = J1939_IDLE_ADDR;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (s.verbose)
+</I>&gt;<i> +		error(0, 0, &quot;ready for %s:%016llx&quot;, s.intf, (long long)s.name);
+</I>&gt;<i> +	if (!s.intf || !s.name)
+</I>&gt;<i> +		error(1, 0, &quot;bad arguments&quot;);
+</I>&gt;<i> +	ret = sock = open_socket(s.intf, s.name);
+</I>&gt;<i> +
+</I>&gt;<i> +	install_signal(SIGTERM);
+</I>&gt;<i> +	install_signal(SIGINT);
+</I>&gt;<i> +	install_signal(SIGALRM);
+</I>&gt;<i> +	install_signal(SIGUSR1);
+</I>&gt;<i> +	install_signal(SIGUSR2);
+</I>&gt;<i> +
+</I>&gt;<i> +	while (!s.sig_term) {
+</I>&gt;<i> +		if (s.sig_usr1) {
+</I>&gt;<i> +			s.sig_usr1 = 0;
+</I>&gt;<i> +			dump_status();
+</I>&gt;<i> +		}
+</I>&gt;<i> +		switch (s.state) {
+</I>&gt;<i> +		case STATE_INITIAL:
+</I>&gt;<i> +			ret = request_addresses(sock);
+</I>&gt;<i> +			if (ret &lt; 0)
+</I>&gt;<i> +				error(1, errno, &quot;could not sent initial request&quot;);
+</I>&gt;<i> +			s.state = STATE_REQ_SENT;
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		case STATE_REQ_PENDING:
+</I>&gt;<i> +			if (!s.sig_alrm)
+</I>&gt;<i> +				break;
+</I>&gt;<i> +			s.sig_alrm = 0;
+</I>&gt;<i> +			/* claim addr */
+</I>&gt;<i> +			sa = choose_new_sa(s.name, s.current_sa);
+</I>&gt;<i> +			if (sa == J1939_IDLE_ADDR)
+</I>&gt;<i> +				error(1, 0, &quot;no free address to use&quot;);
+</I>&gt;<i> +			ret = claim_address(sock, s.name, sa);
+</I>&gt;<i> +			if (ret &lt; 0)
+</I>&gt;<i> +				schedule_itimer(50);
+</I>&gt;<i> +			s.state = STATE_OPERATIONAL;
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		case STATE_OPERATIONAL:
+</I>&gt;<i> +			if (s.sig_alrm) {
+</I>&gt;<i> +				s.sig_alrm = 0;
+</I>&gt;<i> +				ret = repeat_address(sock, s.name);
+</I>&gt;<i> +				if (ret &lt; 0)
+</I>&gt;<i> +					schedule_itimer(50);
+</I>&gt;<i> +			}
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		slen = sizeof(saddr);
+</I>&gt;<i> +		ret = recvfrom(sock, dat, sizeof(dat), 0, (void *)&amp;saddr, &amp;slen);
+</I>&gt;<i> +		if (ret &lt; 0) {
+</I>&gt;<i> +			if (EINTR == errno)
+</I>&gt;<i> +				continue;
+</I>&gt;<i> +			error(1, errno, &quot;recvfrom()&quot;);
+</I>&gt;<i> +		}
+</I>&gt;<i> +		switch (saddr.can_addr.j1939.pgn) {
+</I>&gt;<i> +		case 0x0ea00:
+</I>&gt;<i> +			if (ret &lt; 3)
+</I>&gt;<i> +				break;
+</I>&gt;<i> +			pgn = dat[0] + (dat[1] &lt;&lt; 8) + ((dat[2] &amp; 0x03) &lt;&lt; 16);
+</I>&gt;<i> +			if (pgn != 0x0ee00)
+</I>&gt;<i> +				/* not interested */
+</I>&gt;<i> +				break;
+</I>&gt;<i> +			if (s.state == STATE_REQ_SENT) {
+</I>&gt;<i> +				if (s.verbose)
+</I>&gt;<i> +					error(0, 0, &quot;request sent, pending for 1250 ms&quot;);
+</I>&gt;<i> +				schedule_itimer(1250);
+</I>&gt;<i> +				s.state = STATE_REQ_PENDING;
+</I>&gt;<i> +			} else if (s.state == STATE_OPERATIONAL) {
+</I>&gt;<i> +				ret = claim_address(sock, s.name, s.current_sa);
+</I>&gt;<i> +				if (ret &lt; 0)
+</I>&gt;<i> +					schedule_itimer(50);
+</I>&gt;<i> +			}
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		case 0x0ee00:
+</I>&gt;<i> +			if (saddr.can_addr.j1939.addr &gt;= J1939_IDLE_ADDR) {
+</I>&gt;<i> +				sa = lookup_name(saddr.can_addr.j1939.name);
+</I>&gt;<i> +				if (sa &lt; J1939_IDLE_ADDR)
+</I>&gt;<i> +					addr[sa].name = 0;
+</I>&gt;<i> +				break;
+</I>&gt;<i> +			}
+</I>&gt;<i> +			sa = lookup_name(saddr.can_addr.j1939.name);
+</I>&gt;<i> +			if ((sa != saddr.can_addr.j1939.addr) &amp;&amp; (sa &lt; J1939_IDLE_ADDR))
+</I>&gt;<i> +				/* update cache */
+</I>&gt;<i> +				addr[sa].name = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +			/* shortcut */
+</I>&gt;<i> +			sa = saddr.can_addr.j1939.addr;
+</I>&gt;<i> +			addr[sa].name = saddr.can_addr.j1939.name;
+</I>&gt;<i> +			addr[sa].flags |= F_SEEN;
+</I>&gt;<i> +
+</I>&gt;<i> +			if (s.name == saddr.can_addr.j1939.name) {
+</I>&gt;<i> +				/* ourselve, disable itimer */
+</I>&gt;<i> +				s.current_sa = sa;
+</I>&gt;<i> +				if (s.verbose)
+</I>&gt;<i> +					error(0, 0, &quot;claimed 0x%02x&quot;, sa);
+</I>&gt;<i> +			} else if (sa == s.current_sa) {
+</I>&gt;<i> +				if (s.verbose)
+</I>&gt;<i> +					error(0, 0, &quot;address collision for 0x%02x&quot;, sa);
+</I>&gt;<i> +				if (s.name &gt; saddr.can_addr.j1939.name) {
+</I>&gt;<i> +					sa = choose_new_sa(s.name, sa);
+</I>&gt;<i> +					if (sa == J1939_IDLE_ADDR) {
+</I>&gt;<i> +						error(0, 0, &quot;no address left&quot;);
+</I>&gt;<i> +						/* put J1939_IDLE_ADDR in cache file */
+</I>&gt;<i> +						s.current_sa = sa;
+</I>&gt;<i> +						goto done;
+</I>&gt;<i> +					}
+</I>&gt;<i> +				}
+</I>&gt;<i> +				ret = claim_address(sock, s.name, sa);
+</I>&gt;<i> +				if (ret &lt; 0)
+</I>&gt;<i> +					schedule_itimer(50);
+</I>&gt;<i> +			}
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		case 0x0fed8:
+</I>&gt;<i> +			if (!host_is_little_endian())
+</I>&gt;<i> +				bswap(dat, 8);
+</I>&gt;<i> +			memcpy(&amp;cmd_name, dat, 8);
+</I>&gt;<i> +			if (cmd_name == s.name) {
+</I>&gt;<i> +				ret = claim_address(sock, s.name, dat[8]);
+</I>&gt;<i> +				if (ret &lt; 0)
+</I>&gt;<i> +					schedule_itimer(50);
+</I>&gt;<i> +			}
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +done:
+</I>&gt;<i> +	if (s.verbose)
+</I>&gt;<i> +		error(0, 0, &quot;shutdown&quot;);
+</I>&gt;<i> +	claim_address(sock, s.name, J1939_IDLE_ADDR);
+</I>&gt;<i> +	save_cache();
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> 
+</I>&gt;<i> Property changes on: can-utils/jacd.c
+</I>&gt;<i> ___________________________________________________________________
+</I>&gt;<i> Name: svn:eol-style
+</I>&gt;<i>    + native
+</I>&gt;<i> 
+</I>&gt;<i> Index: can-utils/GNUmakefile.am
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- can-utils/GNUmakefile.am	(revision 1240)
+</I>&gt;<i> +++ can-utils/GNUmakefile.am	(working copy)
+</I>&gt;<i> @@ -52,6 +52,21 @@
+</I>&gt;<i>  	isotptun
+</I>&gt;<i>  endif
+</I>&gt;<i>  
+</I>&gt;<i> +if CONFIG_J1939
+</I>&gt;<i> +bin_PROGRAMS += \
+</I>&gt;<i> +	jacd \
+</I>&gt;<i> +	jsr \
+</I>&gt;<i> +	jspy
+</I>&gt;<i> +
+</I>&gt;<i> +jacd_LDADD = libj1939.la
+</I>&gt;<i> +jsr_LDADD = libj1939.la
+</I>&gt;<i> +jspy_LDADD = libj1939.la
+</I>&gt;<i> +
+</I>&gt;<i> +noinst_LTLIBRARIES += libj1939.la
+</I>&gt;<i> +
+</I>&gt;<i> +libj1939_la_SOURCES = libj1939.c
+</I>&gt;<i> +endif
+</I>&gt;<i> +
+</I>&gt;<i>  EXTRA_DIST = \
+</I>&gt;<i>  	autogen.sh
+</I>&gt;<i>  
+</I>&gt;<i> Index: can-utils/libj1939.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- can-utils/libj1939.c	(revision 0)
+</I>&gt;<i> +++ can-utils/libj1939.c	(revision 0)
+</I>&gt;<i> @@ -0,0 +1,201 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Copyright (c) 2011 EIA Electronics
+</I>&gt;<i> + *
+</I>&gt;<i> + * Authors:
+</I>&gt;<i> + * Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is free software; you can redistribute it and/or modify
+</I>&gt;<i> + * it under the terms of the version 2 of the GNU General Public License
+</I>&gt;<i> + * as published by the Free Software Foundation
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;string.h&gt;
+</I>&gt;<i> +#include &lt;stdio.h&gt;
+</I>&gt;<i> +#include &lt;stdlib.h&gt;
+</I>&gt;<i> +#include &lt;errno.h&gt;
+</I>&gt;<i> +#include &lt;inttypes.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;error.h&gt;
+</I>&gt;<i> +#include &lt;unistd.h&gt;
+</I>&gt;<i> +#include &lt;fcntl.h&gt;
+</I>&gt;<i> +#include &lt;net/if.h&gt;
+</I>&gt;<i> +#include &lt;sys/ioctl.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &quot;libj1939.h&quot;
+</I>&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;<i> +struct ifname {
+</I>&gt;<i> +	struct ifname *next;;
+</I>&gt;<i> +	int ifindex;
+</I>&gt;<i> +	char name[2];
+</I>&gt;<i> +};
+</I>&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;<i> +static struct {
+</I>&gt;<i> +	int sock;
+</I>&gt;<i> +	struct ifname *names;
+</I>&gt;<i> +} s = {
+</I>&gt;<i> +	.sock = -1,
+</I>&gt;<i> +};
+</I>&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;<i> +__attribute__((destructor)) void libj1939_cleanup(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct ifname *nam;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (s.sock &gt;= 0)
+</I>&gt;<i> +		close(s.sock);
+</I>&gt;<i> +	s.sock = -1;
+</I>&gt;<i> +
+</I>&gt;<i> +	while (s.names) {
+</I>&gt;<i> +		nam = s.names;
+</I>&gt;<i> +		s.names = nam-&gt;next;
+</I>&gt;<i> +		free(nam);
+</I>&gt;<i> +	}
+</I>&gt;<i> +}
+</I>&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;<i> +static void verify_sock(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	if (s.sock &gt;= 0)
+</I>&gt;<i> +		return;
+</I>&gt;<i> +	s.sock = socket(PF_CAN, SOCK_DGRAM, CAN_J1939);
+</I>&gt;<i> +	if (s.sock &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;sock(can, dgram, j1939)&quot;);
+</I>&gt;<i> +	fcntl(s.sock, F_SETFD, fcntl(s.sock, F_GETFD) | FD_CLOEXEC);
+</I>&gt;<i> +}
+</I>&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;<i> +static struct ifname *libj1939_add_ifnam(int ifindex, const char *str)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct ifname *nam;
+</I>&gt;<i> +	nam = malloc(sizeof(*nam) + strlen(str));
+</I>&gt;<i> +	memset(nam, 0, sizeof(*nam));
+</I>calloc?
+&gt;<i> +	nam-&gt;ifindex = ifindex;
+</I>&gt;<i> +	strcpy(nam-&gt;name, str);
+</I>&gt;<i> +	nam-&gt;next = s.names;
+</I>&gt;<i> +	s.names = nam;
+</I>&gt;<i> +	return nam;
+</I>&gt;<i> +}
+</I>&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;<i> +const char *libj1939_ifnam(int ifindex)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	const struct ifname *lp;
+</I>&gt;<i> +	struct ifname *nam;
+</I>&gt;<i> +	struct ifreq ifr;
+</I>&gt;<i> +
+</I>&gt;<i> +	for (lp = s.names; lp; lp = lp-&gt;next) {
+</I>&gt;<i> +		if (lp-&gt;ifindex == ifindex)
+</I>&gt;<i> +			return lp-&gt;name;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	/* find out this new ifindex */
+</I>&gt;<i> +	verify_sock();
+</I>&gt;<i> +	ifr.ifr_ifindex = ifindex;
+</I>&gt;<i> +	ret = ioctl(s.sock, SIOCGIFNAME, &amp;ifr);
+</I>&gt;<i> +	if (ret &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;get ifname(%u)&quot;, ifindex);
+</I>&gt;<i> +	nam = libj1939_add_ifnam(ifindex, ifr.ifr_name);
+</I>&gt;<i> +	return nam ? nam-&gt;name : 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;<i> +int libj1939_ifindex(const char *str)
+</I>&gt;<i> +{
+</I>&gt;<i> +	const struct ifname *lp;
+</I>&gt;<i> +	struct ifname *nam;
+</I>&gt;<i> +	char *endp;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +	struct ifreq ifr;
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = strtol(str, &amp;endp, 0);
+</I>&gt;<i> +	if (!*endp)
+</I>&gt;<i> +		// did some good parse
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	for (lp = s.names; lp; lp = lp-&gt;next) {
+</I>&gt;<i> +		if (!strcmp(lp-&gt;name, str))
+</I>&gt;<i> +			return lp-&gt;ifindex;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	/* find out this new ifindex */
+</I>&gt;<i> +	verify_sock();
+</I>&gt;<i> +	strncpy(ifr.ifr_name, str, sizeof(ifr.ifr_name));
+</I>&gt;<i> +	ret = ioctl(s.sock, SIOCGIFINDEX, &amp;ifr);
+</I>&gt;<i> +	if (ret &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;get ifindex(%s)&quot;, str);
+</I>&gt;<i> +	nam = libj1939_add_ifnam(ifr.ifr_ifindex, str);
+</I>&gt;<i> +	return nam ? nam-&gt;ifindex : 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;<i> +//
+</I>&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;<i> +int libj1939_str2addr(const char *str, char **endp, struct sockaddr_can *can)
+</I>&gt;<i> +{
+</I>&gt;<i> +	char *p;
+</I>&gt;<i> +	const char *pstr;
+</I>&gt;<i> +	uint64_t tmp64;
+</I>&gt;<i> +	unsigned long tmp;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!endp)
+</I>&gt;<i> +		endp = &p;
+</I>&gt;<i> +	memset(can, 0, sizeof(*can));
+</I>&gt;<i> +	can-&gt;can_addr.j1939.name = J1939_NO_NAME;
+</I>&gt;<i> +	can-&gt;can_addr.j1939.addr = J1939_NO_ADDR;
+</I>&gt;<i> +	can-&gt;can_addr.j1939.pgn = J1939_NO_PGN;
+</I>&gt;<i> +
+</I>&gt;<i> +	pstr = strchr(str, ':');
+</I>&gt;<i> +	if (pstr) {
+</I>&gt;<i> +		char tmp[IFNAMSIZ];
+</I>&gt;<i> +		if ((pstr - str) &gt;= IFNAMSIZ)
+</I>&gt;<i> +			return -1;
+</I>&gt;<i> +		strncpy(tmp, str, pstr - str);
+</I>&gt;<i> +		tmp[pstr - str] = 0;
+</I>&gt;<i> +		can-&gt;can_ifindex = libj1939_ifindex(tmp);
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (pstr)
+</I>&gt;<i> +		++pstr;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		pstr = str;
+</I>&gt;<i> +
+</I>&gt;<i> +
+</I>&gt;<i> +	tmp64 = strtoull(pstr, endp, 16);
+</I>&gt;<i> +	if (*endp &lt;= pstr)
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +	if ((*endp - pstr) == 2)
+</I>&gt;<i> +		can-&gt;can_addr.j1939.addr = tmp64;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		can-&gt;can_addr.j1939.name = tmp64;
+</I>&gt;<i> +	if (!**endp)
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	str = *endp +1;
+</I>&gt;<i> +	tmp = strtoul(str, endp, 16);
+</I>&gt;<i> +	if (*endp &gt; str)
+</I>&gt;<i> +		can-&gt;can_addr.j1939.pgn = tmp;
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;<i> +const char *libj1939_addr2str(const struct sockaddr_can *can)
+</I>&gt;<i> +{
+</I>&gt;<i> +	char *str;
+</I>&gt;<i> +	static char buf[128];
+</I>&gt;<i> +
+</I>&gt;<i> +	str = buf;
+</I>&gt;<i> +	if (can-&gt;can_ifindex) {
+</I>&gt;<i> +		const char *ifname;
+</I>&gt;<i> +		ifname = libj1939_ifnam(can-&gt;can_ifindex);
+</I>&gt;<i> +		if (!ifname)
+</I>&gt;<i> +			str += sprintf(str, &quot;#%i:&quot;, can-&gt;can_ifindex);
+</I>&gt;<i> +		else
+</I>&gt;<i> +			str += sprintf(str, &quot;%s:&quot;, ifname);
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (can-&gt;can_addr.j1939.name) {
+</I>&gt;<i> +		str += sprintf(str, &quot;%016llx&quot;, (unsigned long long)can-&gt;can_addr.j1939.name);
+</I>&gt;<i> +		if (can-&gt;can_addr.j1939.pgn == 0x0ee00)
+</I>&gt;<i> +			str += sprintf(str, &quot;.%02x&quot;, can-&gt;can_addr.j1939.addr);
+</I>&gt;<i> +	} else if (can-&gt;can_addr.j1939.addr &lt;= 0xfe)
+</I>&gt;<i> +		str += sprintf(str, &quot;%02x&quot;, can-&gt;can_addr.j1939.addr);
+</I>&gt;<i> +	else
+</I>&gt;<i> +		str += sprintf(str, &quot;-&quot;);
+</I>&gt;<i> +	if (can-&gt;can_addr.j1939.pgn &lt;= 0x3ffff)
+</I>&gt;<i> +		str += sprintf(str, &quot;,%05x&quot;, can-&gt;can_addr.j1939.pgn);
+</I>&gt;<i> +
+</I>&gt;<i> +	return buf;
+</I>&gt;<i> +}
+</I>&gt;<i> +//-----------------------------------------------------------------------------
+</I>&gt;<i> +
+</I>&gt;<i> 
+</I>&gt;<i> Property changes on: can-utils/libj1939.c
+</I>&gt;<i> ___________________________________________________________________
+</I>&gt;<i> Name: svn:eol-style
+</I>&gt;<i>    + native
+</I>&gt;<i> 
+</I>&gt;<i> Index: can-utils/libj1939.h
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- can-utils/libj1939.h	(revision 0)
+</I>&gt;<i> +++ can-utils/libj1939.h	(revision 0)
+</I>&gt;<i> @@ -0,0 +1,28 @@
+</I>&gt;<i> +#include &lt;sys/socket.h&gt;
+</I>&gt;<i> +#include &lt;linux/can.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/j1939.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#ifndef J1939_LIB_H
+</I>&gt;<i> +#define J1939_LIB_H
+</I>&gt;<i> +
+</I>&gt;<i> +#ifdef __cplusplus
+</I>&gt;<i> +extern &quot;C&quot; {
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +extern int libj1939_ifindex(const char *ifname);
+</I>&gt;<i> +extern const char *libj1939_ifnam(int ifindex);
+</I>&gt;<i> +/*
+</I>&gt;<i> + * cleanup held resources
+</I>&gt;<i> + * this is a __attribute__((destructor)), so not calling this
+</I>&gt;<i> + * is ok too.
+</I>&gt;<i> + */
+</I>&gt;<i> +extern void libj1939_cleanup(void);
+</I>&gt;<i> +
+</I>&gt;<i> +extern int libj1939_str2addr(const char *str, char **endp, struct sockaddr_can *can);
+</I>&gt;<i> +extern const char *libj1939_addr2str(const struct sockaddr_can *can);
+</I>&gt;<i> +
+</I>&gt;<i> +#ifdef __cplusplus
+</I>&gt;<i> +}
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +#endif
+</I>&gt;<i> 
+</I>&gt;<i> Property changes on: can-utils/libj1939.h
+</I>&gt;<i> ___________________________________________________________________
+</I>&gt;<i> Name: svn:eol-style
+</I>&gt;<i>    + native
+</I>&gt;<i> 
+</I>&gt;<i> Index: can-utils/configure.ac
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- can-utils/configure.ac	(revision 1240)
+</I>&gt;<i> +++ can-utils/configure.ac	(working copy)
+</I>&gt;<i> @@ -108,6 +108,7 @@
+</I>&gt;<i>  AC_CHECK_HEADERS([ \
+</I>&gt;<i>  	linux/can/gw.h \
+</I>&gt;<i>  	linux/can/isotp.h \
+</I>&gt;<i> +	linux/can/j1939.h \
+</I>&gt;<i>  	],[],[],
+</I>&gt;<i>  [
+</I>&gt;<i>  #ifdef HAVE_SYS_SOCKET_H
+</I>&gt;<i> @@ -117,6 +118,7 @@
+</I>&gt;<i>  
+</I>&gt;<i>  AM_CONDITIONAL(CONFIG_GW, [test &quot;${ac_cv_header_linux_can_gw_h}&quot; = &quot;yes&quot;])
+</I>&gt;<i>  AM_CONDITIONAL(CONFIG_ISOTP, [test &quot;${ac_cv_header_linux_can_isotp_h}&quot; = &quot;yes&quot;])
+</I>&gt;<i> +AM_CONDITIONAL(CONFIG_J1939, [test &quot;${ac_cv_header_linux_can_j1939_h}&quot; = &quot;yes&quot;])
+</I>&gt;<i>  
+</I>&gt;<i>  
+</I>&gt;<i>  AC_CHECK_DECL(SO_RXQ_OVFL,,
+</I>&gt;<i> Index: can-utils/jspy.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- can-utils/jspy.c	(revision 0)
+</I>&gt;<i> +++ can-utils/jspy.c	(revision 0)
+</I>&gt;<i> @@ -0,0 +1,297 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Copyright (c) 2011 EIA Electronics
+</I>&gt;<i> + *
+</I>&gt;<i> + * Authors:
+</I>&gt;<i> + * Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is free software; you can redistribute it and/or modify
+</I>&gt;<i> + * it under the terms of the version 2 of the GNU General Public License
+</I>&gt;<i> + * as published by the Free Software Foundation
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;string.h&gt;
+</I>&gt;<i> +#include &lt;time.h&gt;
+</I>&gt;<i> +#include &lt;stdlib.h&gt;
+</I>&gt;<i> +#include &lt;stdio.h&gt;
+</I>&gt;<i> +#include &lt;errno.h&gt;
+</I>&gt;<i> +#include &lt;inttypes.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;unistd.h&gt;
+</I>&gt;<i> +#include &lt;getopt.h&gt;
+</I>&gt;<i> +#include &lt;error.h&gt;
+</I>&gt;<i> +#include &lt;sys/socket.h&gt;
+</I>&gt;<i> +#include &lt;sys/ioctl.h&gt;
+</I>&gt;<i> +#include &lt;sys/time.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &quot;libj1939.h&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * getopt
+</I>&gt;<i> + */
+</I>&gt;<i> +static const char help_msg[] =
+</I>&gt;<i> +	&quot;jspy: An SAE J1939 spy utility&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;Usage: jspy [OPTION...] [[IFACE:][NAME|SA][,PGN]]&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;\n&quot;
+</I>&gt;<i> +	&quot;  -v, --verbose		Increase verbosity&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;  -P, --promisc		Run in promiscuous mode&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;			(= receive traffic not for this ECU)&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;  -b, --block=SIZE	Use a receive buffer of SIZE (default 1024)&quot; &quot;\n&quot;
+</I>&gt;<i> +	&quot;  -t, --time[=a|d|z|A]	Show time: (a)bsolute, (d)elta, (z)ero, (A)bsolute w date&quot; &quot;\n&quot;
+</I>&gt;<i> +	;
+</I>&gt;<i> +
+</I>&gt;<i> +#ifdef _GNU_SOURCE
+</I>&gt;<i> +static struct option long_opts[] = {
+</I>&gt;<i> +	{ &quot;help&quot;, no_argument, NULL, '?', },
+</I>&gt;<i> +	{ &quot;verbose&quot;, no_argument, NULL, 'v', },
+</I>&gt;<i> +
+</I>&gt;<i> +	{ &quot;promisc&quot;, no_argument, NULL, 'P', },
+</I>&gt;<i> +	{ &quot;block&quot;, required_argument, NULL, 'b', },
+</I>&gt;<i> +	{ &quot;time&quot;, optional_argument, NULL, 't', },
+</I>&gt;<i> +	{ },
+</I>&gt;<i> +};
+</I>&gt;<i> +#else
+</I>&gt;<i> +#define getopt_long(argc, argv, optstring, longopts, longindex) \
+</I>&gt;<i> +	getopt((argc), (argv), (optstring))
+</I>&gt;<i> +#endif
+</I>&gt;<i> +static const char optstring[] = &quot;vPb:t::?&quot;;
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * static variables
+</I>&gt;<i> + */
+</I>&gt;<i> +static struct {
+</I>&gt;<i> +	int verbose;
+</I>&gt;<i> +	struct sockaddr_can addr;
+</I>&gt;<i> +	int promisc;
+</I>&gt;<i> +	int time;
+</I>&gt;<i> +	int pkt_len;
+</I>&gt;<i> +} s = {
+</I>&gt;<i> +	.pkt_len = 1024,
+</I>&gt;<i> +	.addr.can_addr.j1939 = {
+</I>&gt;<i> +		.name = J1939_NO_NAME,
+</I>&gt;<i> +		.addr = J1939_NO_ADDR,
+</I>&gt;<i> +		.pgn = J1939_NO_PGN,
+</I>&gt;<i> +	},
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * usefull buffers
+</I>&gt;<i> + */
+</I>&gt;<i> +static const int ival_0 = 0;
+</I>&gt;<i> +static const int ival_1 = 1;
+</I>&gt;<i> +
+</I>&gt;<i> +static char ctrlmsg[
+</I>&gt;<i> +	  CMSG_SPACE(sizeof(struct timeval))
+</I>&gt;<i> +	+ CMSG_SPACE(sizeof(uint8_t)) /* dest addr */
+</I>&gt;<i> +	+ CMSG_SPACE(sizeof(uint64_t)) /* dest name */
+</I>&gt;<i> +	+ CMSG_SPACE(sizeof(uint8_t)) /* priority */
+</I>&gt;<i> +	];
+</I>&gt;<i> +static struct iovec iov;
+</I>&gt;<i> +static struct msghdr msg;
+</I>&gt;<i> +static struct cmsghdr *cmsg;
+</I>&gt;<i> +static uint8_t *buf;
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * program
+</I>&gt;<i> + */
+</I>&gt;<i> +int main(int argc, char** argv)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int ret, sock, j, opt;
+</I>&gt;<i> +	unsigned int len;
+</I>&gt;<i> +	struct timeval tref, tdut, ttmp;
+</I>&gt;<i> +	struct sockaddr_can src;
+</I>&gt;<i> +	struct j1939_filter filt;
+</I>&gt;<i> +	int filter = 0;
+</I>&gt;<i> +	uint8_t priority, dst_addr;
+</I>&gt;<i> +	uint64_t dst_name;
+</I>&gt;<i> +	long recvflags;
+</I>&gt;<i> +
+</I>&gt;<i> +#ifdef _GNU_SOURCE
+</I>&gt;<i> +	program_invocation_name = program_invocation_short_name;
+</I>&gt;<i> +#endif
+</I>&gt;<i> +	/* argument parsing */
+</I>&gt;<i> +	while ((opt = getopt_long(argc, argv, optstring, long_opts, NULL)) != -1)
+</I>&gt;<i> +	switch (opt) {
+</I>&gt;<i> +	case 'v':
+</I>&gt;<i> +		++s.verbose;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 'b':
+</I>&gt;<i> +		s.pkt_len = strtoul(optarg, 0, 0);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 'P':
+</I>&gt;<i> +		++s.promisc;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 't':
+</I>&gt;<i> +		if (optarg) {
+</I>&gt;<i> +			if (!strchr(&quot;adzA&quot;, optarg[0]))
+</I>&gt;<i> +				error(1, 0, &quot;unknown time option '%c'&quot;, optarg[0]);
+</I>&gt;<i> +			s.time = optarg[0];
+</I>&gt;<i> +		} else {
+</I>&gt;<i> +			s.time = 'z';
+</I>&gt;<i> +		}
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	default:
+</I>&gt;<i> +		fputs(help_msg, stderr);
+</I>&gt;<i> +		exit(1);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (argv[optind]) {
+</I>&gt;<i> +		ret = libj1939_str2addr(optarg, 0, &amp;s.addr);
+</I>&gt;<i> +		if (ret &lt; 0)
+</I>&gt;<i> +			error(0, 0, &quot;bad URI %s&quot;, optarg);
+</I>&gt;<i> +			return 1;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	buf = malloc(s.pkt_len);
+</I>&gt;<i> +	if (!buf)
+</I>&gt;<i> +		error(1, errno, &quot;malloc %u&quot;, s.pkt_len);
+</I>&gt;<i> +
+</I>&gt;<i> +	// parse args
+</I>&gt;<i> +	sock = socket(PF_CAN, SOCK_DGRAM, CAN_J1939);
+</I>&gt;<i> +	if(sock &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;socket(can, dgram, j1939)&quot;);
+</I>&gt;<i> +
+</I>&gt;<i> +	memset(&amp;filt, 0, sizeof(filt));
+</I>&gt;<i> +	if (s.addr.can_addr.j1939.name) {
+</I>&gt;<i> +		filt.name = s.addr.can_addr.j1939.name;
+</I>&gt;<i> +		filt.name_mask = ~0ULL;
+</I>&gt;<i> +		++filter;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (s.addr.can_addr.j1939.addr &lt; 0xff) {
+</I>&gt;<i> +		filt.addr = s.addr.can_addr.j1939.addr;
+</I>&gt;<i> +		filt.addr_mask = ~0;
+</I>&gt;<i> +		++filter;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (s.addr.can_addr.j1939.pgn &lt;= 0x3ffff) {
+</I>&gt;<i> +		filt.pgn = s.addr.can_addr.j1939.pgn;
+</I>&gt;<i> +		filt.pgn_mask = ~0;
+</I>&gt;<i> +		++filter;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (filter) {
+</I>&gt;<i> +		ret = setsockopt(sock, SOL_CAN_J1939, SO_J1939_FILTER, &amp;filt, sizeof(filt));
+</I>&gt;<i> +		if (ret &lt; 0)
+</I>&gt;<i> +			error(1, errno, &quot;setsockopt filter&quot;);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (s.promisc) {
+</I>&gt;<i> +		ret = setsockopt(sock, SOL_CAN_J1939, SO_J1939_PROMISC, &amp;ival_1, sizeof(ival_1));
+</I>&gt;<i> +		if (ret &lt; 0)
+</I>&gt;<i> +			error(1, errno, &quot;setsockopt promisc&quot;);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (s.time) {
+</I>&gt;<i> +		ret = setsockopt(sock, SOL_SOCKET, SO_TIMESTAMP, &amp;ival_1, sizeof(ival_1));
+</I>&gt;<i> +		if (ret &lt; 0)
+</I>&gt;<i> +			error(1, errno, &quot;setsockopt timestamp&quot;);
+</I>&gt;<i> +	}
+</I>&gt;<i> +	ret = setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &amp;s.pkt_len, sizeof(s.pkt_len));
+</I>&gt;<i> +		if (ret &lt; 0)
+</I>&gt;<i> +			error(1, errno, &quot;setsockopt rcvbuf %u&quot;, s.pkt_len);
+</I>&gt;<i> +
+</I>&gt;<i> +	// bind(): to default, only ifindex is used.
+</I>&gt;<i> +	memset(&amp;src, 0, sizeof(src));
+</I>&gt;<i> +	src.can_ifindex = s.addr.can_ifindex;
+</I>&gt;<i> +	src.can_family = AF_CAN;
+</I>&gt;<i> +	src.can_addr.j1939.name = J1939_NO_NAME;
+</I>&gt;<i> +	src.can_addr.j1939.addr = J1939_NO_ADDR;
+</I>&gt;<i> +	src.can_addr.j1939.pgn = J1939_NO_PGN;
+</I>&gt;<i> +	ret = bind(sock, (void *)&amp;src, sizeof(src));
+</I>&gt;<i> +	if (ret &lt; 0)
+</I>&gt;<i> +		error(1, errno, &quot;bind(%s)&quot;, argv[1]);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* these settings are static and can be held out of the hot path */
+</I>&gt;<i> +	iov.iov_base = &amp;buf[0];
+</I>&gt;<i> +	msg.msg_name = &src;
+</I>&gt;<i> +	msg.msg_iov = &iov;
+</I>&gt;<i> +	msg.msg_iovlen = 1;
+</I>&gt;<i> +	msg.msg_control = &ctrlmsg;
+</I>&gt;<i> +
+</I>&gt;<i> +	memset(&amp;tref, 0, sizeof(tref));
+</I>&gt;<i> +	if (s.verbose)
+</I>&gt;<i> +		error(0, 0, &quot;listening&quot;);
+</I>&gt;<i> +	while (1) {
+</I>&gt;<i> +		/* these settings may be modified by recvmsg() */
+</I>&gt;<i> +		iov.iov_len = s.pkt_len;
+</I>&gt;<i> +		msg.msg_namelen = sizeof(src);
+</I>&gt;<i> +		msg.msg_controllen = sizeof(ctrlmsg);  
+</I>&gt;<i> +		msg.msg_flags = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +		ret = recvmsg(sock, &amp;msg, 0);
+</I>&gt;<i> +		//ret = recvfrom(buf, s.pkt_len, 0, (void *)&amp;addr, &amp;len);
+</I>remove?
+&gt;<i> +		if (ret &lt; 0) {
+</I>&gt;<i> +			error(0, errno, &quot;recvmsg(ifindex %i)&quot;, s.addr.can_ifindex);
+</I>&gt;<i> +			if (ENETDOWN == errno)
+</I>&gt;<i> +				continue;
+</I>&gt;<i> +			exit(1);
+</I>&gt;<i> +		}
+</I>&gt;<i> +		len = ret;
+</I>&gt;<i> +		recvflags = 0;
+</I>&gt;<i> +		dst_addr = 0;
+</I>&gt;<i> +		priority = 0;
+</I>&gt;<i> +		for (cmsg = CMSG_FIRSTHDR(&amp;msg); cmsg; cmsg = CMSG_NXTHDR(&amp;msg,cmsg)) {
+</I>&gt;<i> +			switch (cmsg-&gt;cmsg_level) {
+</I>&gt;<i> +			case SOL_SOCKET:
+</I>&gt;<i> +				if (cmsg-&gt;cmsg_type == SCM_TIMESTAMP) {
+</I>&gt;<i> +					memcpy(&amp;tdut, CMSG_DATA(cmsg), sizeof(tdut));
+</I>&gt;<i> +					recvflags |= 1 &lt;&lt; cmsg-&gt;cmsg_type;
+</I>&gt;<i> +				}
+</I>&gt;<i> +				break;
+</I>&gt;<i> +			case SOL_CAN_J1939:
+</I>&gt;<i> +				recvflags |= 1 &lt;&lt; cmsg-&gt;cmsg_type;
+</I>&gt;<i> +				if (cmsg-&gt;cmsg_type == SCM_J1939_DEST_ADDR)
+</I>&gt;<i> +					dst_addr = *CMSG_DATA(cmsg);
+</I>&gt;<i> +				else if (cmsg-&gt;cmsg_type == SCM_J1939_DEST_NAME)
+</I>&gt;<i> +					memcpy(&amp;dst_name, CMSG_DATA(cmsg), cmsg-&gt;cmsg_len - CMSG_LEN(0));
+</I>&gt;<i> +				else if (cmsg-&gt;cmsg_type == SCM_J1939_PRIO)
+</I>&gt;<i> +					priority = *CMSG_DATA(cmsg);
+</I>&gt;<i> +				break;
+</I>&gt;<i> +			}
+</I>&gt;<i> +
+</I>&gt;<i> +		}
+</I>&gt;<i> +		if (recvflags &amp; (1 &lt;&lt; SCM_TIMESTAMP)) {
+</I>&gt;<i> +			if ('z' == s.time) {
+</I>&gt;<i> +				if (!tref.tv_sec)
+</I>&gt;<i> +					tref = tdut;
+</I>&gt;<i> +				timersub(&amp;tdut, &amp;tref, &amp;ttmp);
+</I>&gt;<i> +				tdut = ttmp;
+</I>&gt;<i> +				goto abs_time;
+</I>&gt;<i> +			} else if ('d' == s.time) {
+</I>&gt;<i> +				timersub(&amp;tdut, &amp;tref, &amp;ttmp);
+</I>&gt;<i> +				tref = tdut;
+</I>&gt;<i> +				tdut = ttmp;
+</I>&gt;<i> +				goto abs_time;
+</I>&gt;<i> +			} else if ('a' == s.time) {
+</I>&gt;<i> +				abs_time:
+</I>&gt;<i> +				printf(&quot;(%lu.%04lu)&quot;, tdut.tv_sec, tdut.tv_usec / 100);
+</I>&gt;<i> +			} else if ('A' == s.time) {
+</I>&gt;<i> +				struct tm tm;
+</I>&gt;<i> +				tm = *localtime(&amp;tdut.tv_sec);
+</I>&gt;<i> +				printf(&quot;(%04u%02u%02uT%02u%02u%02u.%04lu)&quot;,
+</I>&gt;<i> +					tm.tm_year +1900, tm.tm_mon +1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec,
+</I>&gt;<i> +					tdut.tv_usec/100);
+</I>&gt;<i> +			}
+</I>&gt;<i> +		}
+</I>&gt;<i> +		printf(&quot; %s &quot;, libj1939_addr2str(&amp;src));
+</I>&gt;<i> +		if (recvflags &amp; (1 &lt;&lt; SCM_J1939_DEST_NAME))
+</I>&gt;<i> +			printf(&quot;%016llx &quot;, (unsigned long long)dst_name);
+</I>&gt;<i> +		else if (recvflags &amp; (1 &lt;&lt; SCM_J1939_DEST_ADDR))
+</I>&gt;<i> +			printf(&quot;%02x &quot;, dst_addr); 
+</I>&gt;<i> +		else
+</I>&gt;<i> +			printf(&quot;- &quot;);
+</I>&gt;<i> +		printf(&quot;!%u &quot;, priority);
+</I>&gt;<i> +
+</I>&gt;<i> +		printf(&quot;[%i%s]&quot;, len, (msg.msg_flags &amp; MSG_TRUNC) ? &quot;...&quot; : &quot;&quot;);
+</I>&gt;<i> +		for (j = 0; j &lt; len; ) {
+</I>&gt;<i> +			int end = j +4;
+</I>&gt;<i> +			if (end &gt; len)
+</I>&gt;<i> +				end = len;
+</I>&gt;<i> +			printf(&quot; &quot;);
+</I>&gt;<i> +			for (; j &lt; end; ++j)
+</I>&gt;<i> +				printf(&quot;%02x&quot;, buf[j]);
+</I>&gt;<i> +		}
+</I>&gt;<i> +		printf(&quot;\n&quot;);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	free(buf);
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> 
+</I>&gt;<i> Property changes on: can-utils/jspy.c
+</I>&gt;<i> ___________________________________________________________________
+</I>&gt;<i> Name: svn:eol-style
+</I>&gt;<i>    + native
+</I>&gt;<i> 
+</I>&gt;<i> Index: can-utils/Makefile
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- can-utils/Makefile	(revision 1240)
+</I>&gt;<i> +++ can-utils/Makefile	(working copy)
+</I>&gt;<i> @@ -56,26 +56,36 @@
+</I>&gt;<i>  PROGRAMS_ISOTP = isotpdump isotprecv isotpsend isotpsniffer isotptun isotpserver
+</I>&gt;<i>  PROGRAMS_CANGW = cangw
+</I>&gt;<i>  PROGRAMS_SLCAN = slcan_attach slcand
+</I>&gt;<i> +PROGRAMS_J1939 = jacd jspy jsr
+</I>&gt;<i>  PROGRAMS = can-calc-bit-timing candump cansniffer cansend canplayer cangen canbusload\
+</I>&gt;<i>  	   log2long log2asc asc2log\
+</I>&gt;<i>  	   canlogserver bcmserver\
+</I>&gt;<i>  	   $(PROGRAMS_ISOTP)\
+</I>&gt;<i>  	   $(PROGRAMS_CANGW)\
+</I>&gt;<i>  	   $(PROGRAMS_SLCAN)\
+</I>&gt;<i> +	   $(PROGRAMS_J1939)\
+</I>&gt;<i>  	   slcanpty canfdtest
+</I>&gt;<i>  
+</I>&gt;<i> -all: $(PROGRAMS)
+</I>&gt;<i> +LIBRARIES = libj1939.a
+</I>&gt;<i>  
+</I>&gt;<i> +all: $(PROGRAMS) $(LIBRARIES)
+</I>&gt;<i> +
+</I>&gt;<i>  clean:
+</I>&gt;<i>  	rm -f $(PROGRAMS) *.o
+</I>&gt;<i>  
+</I>&gt;<i>  install:
+</I>&gt;<i>  	mkdir -p $(DESTDIR)$(PREFIX)/bin
+</I>&gt;<i>  	cp -f $(PROGRAMS) $(DESTDIR)$(PREFIX)/bin
+</I>&gt;<i> +	mkdir -p $(DESTDIR)$(PREFIX)/lib
+</I>&gt;<i> +	cp -f $(LIBRARIES) $(DESTDIR)$(PREFIX)/lib
+</I>&gt;<i>  
+</I>&gt;<i> +
+</I>&gt;<i>  distclean:
+</I>&gt;<i> -	rm -f $(PROGRAMS) *.o *~
+</I>&gt;<i> +	rm -f $(PROGRAMS) $(LIBRARIES) *.o *~
+</I>&gt;<i>  
+</I>&gt;<i> +libj1939.a: libj1939.o
+</I>&gt;<i> +	ar crs $@ $&lt;
+</I>&gt;<i> +
+</I>&gt;<i>  cansend.o:	lib.h
+</I>&gt;<i>  cangen.o:	lib.h
+</I>&gt;<i>  candump.o:	lib.h
+</I>&gt;<i> @@ -94,3 +104,7 @@
+</I>&gt;<i>  log2long:	log2long.o	lib.o
+</I>&gt;<i>  log2asc:	log2asc.o	lib.o
+</I>&gt;<i>  asc2log:	asc2log.o	lib.o
+</I>&gt;<i> +
+</I>&gt;<i> +jspy: libj1939.a
+</I>&gt;<i> +jsr: libj1939.a
+</I>&gt;<i> +
+</I>
+Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20110428/cf2099fa/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20110428/cf2099fa/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005678.html">[PATCH v2] add j1939 utils
+</A></li>
+	<LI>Next message: <A HREF="005680.html">[PATCH v2] add j1939 utils
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5679">[ date ]</a>
+              <a href="thread.html#5679">[ thread ]</a>
+              <a href="subject.html#5679">[ subject ]</a>
+              <a href="author.html#5679">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

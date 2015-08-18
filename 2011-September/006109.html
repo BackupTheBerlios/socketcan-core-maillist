@@ -1,0 +1,470 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2] EMS CPC-Card driver reworked for kernel 3.x
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20EMS%20CPC-Card%20driver%20reworked%20for%20kernel%203.x&In-Reply-To=%3Cj5hidp%249il%241%40dough.gmane.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006085.html">
+   <LINK REL="Next"  HREF="006112.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2] EMS CPC-Card driver reworked for kernel 3.x</H1>
+    <B>Markus Plessing</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20EMS%20CPC-Card%20driver%20reworked%20for%20kernel%203.x&In-Reply-To=%3Cj5hidp%249il%241%40dough.gmane.org%3E"
+       TITLE="[PATCH v2] EMS CPC-Card driver reworked for kernel 3.x">plessing at ems-wuensche.com
+       </A><BR>
+    <I>Fri Sep 23 11:10:17 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006085.html">[PATCH v2] EMS CPC-Card driver reworked for kernel 3.x
+</A></li>
+        <LI>Next message: <A HREF="006112.html">[PATCH v2] EMS CPC-Card driver reworked for kernel 3.x
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6109">[ date ]</a>
+              <a href="thread.html#6109">[ thread ]</a>
+              <a href="subject.html#6109">[ subject ]</a>
+              <a href="author.html#6109">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Oliver,
+
+looks quite good for me - more comments inline.
+
+Am 14.09.2011 15:01, schrieb Oliver Hartkopp:
+&gt;<i> On 09/13/11 09:56, Marc Kleine-Budde wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> On 09/12/2011 08:44 PM, Oliver Hartkopp wrote:
+</I>&gt;<i>
+</I>&gt;&gt;&gt;<i> +static irqreturn_t ems_pcmcia_interrupt(int irq, void *dev_id)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct ems_pcmcia_card *card = dev_id;
+</I>&gt;&gt;&gt;<i> +	struct net_device *dev;
+</I>&gt;&gt;&gt;<i> +	irqreturn_t retval = IRQ_NONE;
+</I>&gt;&gt;&gt;<i> +	int i, again;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* Card not present */
+</I>&gt;&gt;&gt;<i> +	if (readw(card-&gt;base_addr) != 0xAA55)
+</I>&gt;&gt;&gt;<i> +		return IRQ_HANDLED;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> this looks fishy. Is it possible, that there is no card here? Why return
+</I>&gt;&gt;<i> IRQ_HANDLED in this case?
+</I>&gt;&gt;<i>
+</I>&gt;<i> This has been introduced to handle PCMCIA card ejects under heavy load.
+</I>&gt;<i> Probably IRQ_NONE could be returned here also - but if we come to this point
+</I>&gt;<i> everything is removed anyway.
+</I>&gt;<i>
+</I>
+This is right, the CPC-Card may be removed unsave and on heavy load 
+there may be unhandled interrupts. The IRQ_HANDLED is not mandatory 
+here, I think this refers to our experience in embedded development 
+where the interrupt flag has to be cleared (handled) even on error.
+
+It's up to you what you think what's the best return value here.
+
+&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	do {
+</I>&gt;&gt;&gt;<i> +		again = 0;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +		/* Check interrupt for each channel */
+</I>&gt;&gt;&gt;<i> +		for (i = 0; i&lt;  EMS_PCMCIA_MAX_CHAN; i++) {
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If I understand the code correct, you can use card-&gt;channels...
+</I>&gt;&gt;<i>
+</I>
+Yes, card-&gt;channels should be used here (still the define in v3)...
+
+&gt;&gt;&gt;<i> +			dev = card-&gt;net_dev[i];
+</I>&gt;&gt;&gt;<i> +			if (!dev)
+</I>&gt;&gt;&gt;<i> +				continue;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> ...and drop the if (!dev) here.
+</I>
+&gt;<i>
+</I>&gt;<i> I don't know if all the initialization stuff in ems_pcmcia_add_card() and the
+</I>&gt;<i> interrupt handler is completely irq-save.
+</I>
+I am also unsure. If it is irq-save, the if(!dev) can be dropped.
+
+&gt;<i> Therefore i would keep this untouched - especially as EMS_PCMCIA_MAX_CHAN is 2
+</I>&gt;<i> and not 20 ...
+</I>
+To be more precise. The CPC-Card has never been sold with only one 
+channel. But there is a theoretical possibility for a faulty transeiver 
+(This seems the case for one internal card here) ... So in almost all 
+cases there will be 2 channels.
+
+&gt;<i> Maybe Markus or Sebastian would like to change it.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +			if (sja1000_interrupt(irq, dev) == IRQ_HANDLED)
+</I>&gt;&gt;&gt;<i> +				again = 1;
+</I>&gt;&gt;&gt;<i> +		}
+</I>&gt;&gt;&gt;<i> +		/* At least one channel handled the interrupt */
+</I>&gt;&gt;&gt;<i> +		if (again)
+</I>&gt;&gt;&gt;<i> +			retval = IRQ_HANDLED;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	} while (again);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	return retval;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +/*
+</I>&gt;&gt;&gt;<i> + * Check if a CAN controller is present at the specified location
+</I>&gt;&gt;&gt;<i> + * by trying to set 'em into the PeliCAN mode
+</I>&gt;&gt;&gt;<i> + */
+</I>&gt;&gt;&gt;<i> +static inline int ems_pcmcia_check_chan(struct sja1000_priv *priv)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	/* Make sure SJA1000 is in reset mode */
+</I>&gt;&gt;&gt;<i> +	ems_pcmcia_write_reg(priv, REG_MOD, 1);
+</I>&gt;&gt;&gt;<i> +	ems_pcmcia_write_reg(priv, REG_CDR, CDR_PELICAN);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* read reset-values */
+</I>&gt;&gt;&gt;<i> +	if (ems_pcmcia_read_reg(priv, REG_CDR) == CDR_PELICAN)
+</I>&gt;&gt;&gt;<i> +		return 1;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	return 0;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static void ems_pcmcia_del_card(struct pcmcia_device *pdev)
+</I>&gt;&gt;&gt;<i> +{car
+</I>&gt;&gt;&gt;<i> +	struct ems_pcmcia_card *card = pdev-&gt;priv;
+</I>&gt;&gt;&gt;<i> +	struct net_device *dev;
+</I>&gt;&gt;&gt;<i> +	int i;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (!card)
+</I>&gt;&gt;&gt;<i> +		return;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> can this happen?
+</I>&gt;<i>
+</I>&gt;<i> Don't know.
+</I>
+As pdev-&gt;priv is set in ems_pcmcia_add_card it should not be NULL here 
+and ems_pcmcia_del_card is not be called if ems_pcmcia_add_card returns 
+with -ENOMEM. So, if my assumptions are right here, this will not happen.
+
+&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	free_irq(pdev-&gt;irq, card);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	for (i = 0; i&lt;  card-&gt;channels; i++) {
+</I>&gt;&gt;&gt;<i> +		dev = card-&gt;net_dev[i];
+</I>&gt;&gt;&gt;<i> +		if (!dev)
+</I>&gt;&gt;&gt;<i> +			continue;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> can this happen?
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> See above comment about the card setup.
+</I>&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +		printk(KERN_INFO &quot;%s: removing %s on channel #%d\n&quot;,
+</I>&gt;&gt;&gt;<i> +		       DRV_NAME, dev-&gt;name, i);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> here you have a pcmcia_device, so you can use:
+</I>&gt;&gt;<i> dev_info(&amp;pdev-&gt;dev, &quot;&quot;);
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> This looks a bit broken then:
+</I>&gt;<i>
+</I>&gt;<i> can0: removing can0 on channel #1
+</I>&gt;<i>
+</I>&gt;<i> Now it is
+</I>&gt;<i>
+</I>&gt;<i> ems_pcmcia: removing can0 on channel #1
+</I>
+Yes, the driver name as output creator is much clearer than the name of 
+the net_device, I think.
+
+&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +		unregister_sja1000dev(dev);
+</I>&gt;&gt;&gt;<i> +		free_sja1000dev(dev);
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	writeb(EMS_CMD_UMAP, card-&gt;base_addr);
+</I>&gt;&gt;&gt;<i> +	iounmap(card-&gt;base_addr);
+</I>&gt;&gt;&gt;<i> +	kfree(card);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	pdev-&gt;priv = NULL;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +/*
+</I>&gt;&gt;&gt;<i> + * Probe PCI device for EMS CAN signature and register each available
+</I>&gt;&gt;&gt;<i> + * CAN channel to SJA1000 Socket-CAN subsystem.
+</I>&gt;&gt;&gt;<i> + */
+</I>&gt;&gt;&gt;<i> +static int __devinit ems_pcmcia_add_card(struct pcmcia_device *pdev,
+</I>&gt;&gt;&gt;<i> +					 unsigned long base)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct sja1000_priv *priv;
+</I>&gt;&gt;&gt;<i> +	struct net_device *dev;
+</I>&gt;&gt;&gt;<i> +	struct ems_pcmcia_card *card;
+</I>&gt;&gt;&gt;<i> +	int err, i;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* Allocating card structures to hold addresses, ... */
+</I>&gt;&gt;&gt;<i> +	card = kzalloc(sizeof(struct ems_pcmcia_card), GFP_KERNEL);
+</I>&gt;&gt;&gt;<i> +	if (!card) {
+</I>&gt;&gt;&gt;<i> +		printk(KERN_ERR &quot;%s: unable to allocate memory\n&quot;, DRV_NAME);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> dev_err()
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Is there a&amp;pdev-&gt;dev ?? IMHO no.
+</I>
+No, if I understood this correct pdev-&gt;dev is initialized later and set 
+to the net_device allocated with alloc_sja1000dev(0) ...
+
+&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +		return -ENOMEM;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	pdev-&gt;priv = card;
+</I>&gt;&gt;&gt;<i> +	card-&gt;channels = 0;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	card-&gt;base_addr = ioremap(base, EMS_PCMCIA_MEM_SIZE);
+</I>&gt;&gt;&gt;<i> +	if (!card-&gt;base_addr) {
+</I>&gt;&gt;&gt;<i> +		err = -ENOMEM;
+</I>&gt;&gt;&gt;<i> +		goto failure_cleanup;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* Check for unique EMS CAN signature */
+</I>&gt;&gt;&gt;<i> +	if (readw(card-&gt;base_addr) != 0xAA55) {
+</I>&gt;&gt;&gt;<i> +		printk(KERN_ERR &quot;%s: No EMS CPC Card hardware found.\n&quot;,
+</I>&gt;&gt;&gt;<i> +		       DRV_NAME);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> dev_err();
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +		err = -ENODEV;
+</I>&gt;&gt;&gt;<i> +		goto failure_cleanup;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* Request board reset */
+</I>&gt;&gt;&gt;<i> +	writeb(EMS_CMD_RESET, card-&gt;base_addr);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* Make sure CAN controllers are mapped into card's memory space */
+</I>&gt;&gt;&gt;<i> +	writeb(EMS_CMD_MAP, card-&gt;base_addr);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* Detect available channels */
+</I>&gt;&gt;&gt;<i> +	for (i = 0; i&lt;  EMS_PCMCIA_MAX_CHAN; i++) {
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> i&lt;  ARRAY_SIZE(card-&gt;net_dev)
+</I>&gt;<i>
+</I>&gt;<i> Does not look more readable to me.
+</I>&gt;<i>
+</I>
+Why calculating the size with sizeof when we can use the constant which 
+has been used to define the array size? Well, if the check 
+&quot;__must_be_array&quot;, which is done by ARRAY_SIZE, is mandatory, ok.
+
+&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +		dev = alloc_sja1000dev(0);
+</I>&gt;&gt;&gt;<i> +		if (!dev) {
+</I>&gt;&gt;&gt;<i> +			err = -ENOMEM;
+</I>&gt;&gt;&gt;<i> +			goto failure_cleanup;
+</I>&gt;&gt;&gt;<i> +		}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +		card-&gt;net_dev[i] = dev;
+</I>&gt;&gt;&gt;<i> +		priv = netdev_priv(dev);
+</I>&gt;&gt;&gt;<i> +		priv-&gt;priv = card;
+</I>&gt;&gt;&gt;<i> +		SET_NETDEV_DEV(dev,&amp;pdev-&gt;dev);
+</I>
+pdev-&gt;dev is initialized here, isn't it?
+
+&gt;&gt;&gt;<i> +		priv-&gt;irq_flags = IRQF_SHARED;
+</I>&gt;&gt;&gt;<i> +		dev-&gt;irq = pdev-&gt;irq;
+</I>&gt;&gt;&gt;<i> +		priv-&gt;reg_base = card-&gt;base_addr + EMS_PCMCIA_CAN_BASE_OFFSET +
+</I>&gt;&gt;&gt;<i> +			(i * EMS_PCMCIA_CAN_CTRL_SIZE);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +		/* Check if channel is present */
+</I>&gt;&gt;&gt;<i> +		if (ems_pcmcia_check_chan(priv)) {
+</I>&gt;&gt;&gt;<i> +			priv-&gt;read_reg  = ems_pcmcia_read_reg;
+</I>&gt;&gt;&gt;<i> +			priv-&gt;write_reg = ems_pcmcia_write_reg;
+</I>&gt;&gt;&gt;<i> +			priv-&gt;can.clock.freq = EMS_PCMCIA_CAN_CLOCK;
+</I>&gt;&gt;&gt;<i> +			priv-&gt;ocr = EMS_PCMCIA_OCR;
+</I>&gt;&gt;&gt;<i> +			priv-&gt;cdr = EMS_PCMCIA_CDR;
+</I>&gt;&gt;&gt;<i> +			priv-&gt;flags |= SJA1000_CUSTOM_IRQ_HANDLER;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +			/* Register SJA1000 device */
+</I>&gt;&gt;&gt;<i> +			err = register_sja1000dev(dev);
+</I>&gt;&gt;&gt;<i> +			if (err) {
+</I>&gt;&gt;&gt;<i> +				printk(KERN_INFO &quot;%s: registering device &quot;
+</I>&gt;&gt;&gt;<i> +				       &quot;failed (err=%d)\n&quot;, DRV_NAME, err);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> dev_err (not info)
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Yes. Will change in final post.
+</I>&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +				free_sja1000dev(dev);
+</I>&gt;&gt;&gt;<i> +				goto failure_cleanup;
+</I>&gt;&gt;&gt;<i> +			}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +			card-&gt;channels++;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +			printk(KERN_INFO &quot;%s: registered %s on channel &quot;
+</I>&gt;&gt;&gt;<i> +			       &quot;#%d at 0x%p, irq %d\n&quot;, DRV_NAME, dev-&gt;name,
+</I>&gt;&gt;&gt;<i> +			       i, priv-&gt;reg_base, dev-&gt;irq);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> dev_info
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +		} else
+</I>&gt;&gt;&gt;<i> +			free_sja1000dev(dev);
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	err = request_irq(dev-&gt;irq,&amp;ems_pcmcia_interrupt, IRQF_SHARED,
+</I>&gt;&gt;&gt;<i> +			  DRV_NAME, card);
+</I>&gt;&gt;&gt;<i> +	if (err) {
+</I>&gt;&gt;&gt;<i> +		printk(KERN_INFO &quot;Registering device failed (err=%d)\n&quot;, err);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> dev_err (not info)
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Will change in next post.
+</I>&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +		goto failure_cleanup;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	return 0;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +failure_cleanup:
+</I>&gt;&gt;&gt;<i> +	printk(KERN_ERR &quot;Error: %d. Cleaning Up.\n&quot;, err);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> dev_err()
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +	ems_pcmcia_del_card(pdev);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	return err;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +/*
+</I>&gt;&gt;&gt;<i> + * Setup PCMCIA socket and probe for EMS CPC-CARD
+</I>&gt;&gt;&gt;<i> + */
+</I>&gt;&gt;&gt;<i> +static int __devinit ems_pcmcia_probe(struct pcmcia_device *dev)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	int csval;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* General socket configuration */
+</I>&gt;&gt;&gt;<i> +	dev-&gt;config_flags |= CONF_ENABLE_IRQ;
+</I>&gt;&gt;&gt;<i> +	dev-&gt;config_index = 1;
+</I>&gt;&gt;&gt;<i> +	dev-&gt;config_regs = PRESENT_OPTION;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* The io structure describes IO port mapping */
+</I>&gt;&gt;&gt;<i> +	dev-&gt;resource[0]-&gt;end = 16;
+</I>&gt;&gt;&gt;<i> +	dev-&gt;resource[0]-&gt;flags |= IO_DATA_PATH_WIDTH_8;
+</I>&gt;&gt;&gt;<i> +	dev-&gt;resource[1]-&gt;end = 16;
+</I>&gt;&gt;&gt;<i> +	dev-&gt;resource[1]-&gt;flags |= IO_DATA_PATH_WIDTH_16;
+</I>&gt;&gt;&gt;<i> +	dev-&gt;io_lines = 5;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* Allocate a memory window */
+</I>&gt;&gt;&gt;<i> +	dev-&gt;resource[2]-&gt;flags =
+</I>&gt;&gt;&gt;<i> +		(WIN_DATA_WIDTH_8 | WIN_MEMORY_TYPE_CM | WIN_ENABLE);
+</I>&gt;&gt;&gt;<i> +	dev-&gt;resource[2]-&gt;start = dev-&gt;resource[2]-&gt;end = 0;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	csval = pcmcia_request_window(dev, dev-&gt;resource[2], 0);
+</I>&gt;&gt;&gt;<i> +	if (csval) {
+</I>&gt;&gt;&gt;<i> +		dev_err(&amp;dev-&gt;dev, &quot;pcmcia_request_window failed (err=%d)\n&quot;,
+</I>&gt;&gt;&gt;<i> +			csval);
+</I>&gt;&gt;&gt;<i> +		return 0;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	csval = pcmcia_map_mem_page(dev, dev-&gt;resource[2], dev-&gt;config_base);
+</I>&gt;&gt;&gt;<i> +	if (csval) {
+</I>&gt;&gt;&gt;<i> +		dev_err(&amp;dev-&gt;dev, &quot;pcmcia_map_mem_page failed (err=%d)\n&quot;,
+</I>&gt;&gt;&gt;<i> +			csval);
+</I>&gt;&gt;&gt;<i> +		return 0;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	csval = pcmcia_enable_device(dev);
+</I>&gt;&gt;&gt;<i> +	if (csval) {
+</I>&gt;&gt;&gt;<i> +		dev_err(&amp;dev-&gt;dev, &quot;pcmcia_enable_device failed (err=%d)\n&quot;,
+</I>&gt;&gt;&gt;<i> +			csval);
+</I>&gt;&gt;&gt;<i> +		return 0;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	ems_pcmcia_add_card(dev, dev-&gt;resource[2]-&gt;start);
+</I>&gt;&gt;&gt;<i> +	return 0;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +/*
+</I>&gt;&gt;&gt;<i> + * Release claimed resources
+</I>&gt;&gt;&gt;<i> + */
+</I>&gt;&gt;&gt;<i> +static void ems_pcmcia_remove(struct pcmcia_device *dev)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	ems_pcmcia_del_card(dev);
+</I>&gt;&gt;&gt;<i> +	pcmcia_disable_device(dev);
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static struct pcmcia_driver ems_pcmcia_driver = {
+</I>&gt;&gt;&gt;<i> +	.name = DRV_NAME,
+</I>&gt;&gt;&gt;<i> +	.probe = ems_pcmcia_probe,
+</I>&gt;&gt;&gt;<i> +	.remove = ems_pcmcia_remove,
+</I>&gt;&gt;&gt;<i> +	.id_table = ems_pcmcia_tbl,
+</I>&gt;&gt;&gt;<i> +};
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static int __init ems_pcmcia_init(void)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	return pcmcia_register_driver(&amp;ems_pcmcia_driver);
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +module_init(ems_pcmcia_init);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static void __exit ems_pcmcia_exit(void)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	pcmcia_unregister_driver(&amp;ems_pcmcia_driver);
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +module_exit(ems_pcmcia_exit);
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> cheers, Marc
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Finally i'm still unsure about the dev_??? stuff. Maybe it's best, we let the
+</I>&gt;<i> Markus/Sebastian look over the code fist.
+</I>
+ From my point of view, this decision is up to the real kernel driver 
+developers out there ;-)
+
+&gt;<i>
+</I>&gt;<i> Thanks for the review!
+</I>&gt;<i>
+</I>&gt;<i> Cheers, Oliver
+</I>
+Thanks for reworking :)
+
+Best regards,
+
+Markus
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006085.html">[PATCH v2] EMS CPC-Card driver reworked for kernel 3.x
+</A></li>
+	<LI>Next message: <A HREF="006112.html">[PATCH v2] EMS CPC-Card driver reworked for kernel 3.x
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6109">[ date ]</a>
+              <a href="thread.html#6109">[ thread ]</a>
+              <a href="subject.html#6109">[ subject ]</a>
+              <a href="author.html#6109">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

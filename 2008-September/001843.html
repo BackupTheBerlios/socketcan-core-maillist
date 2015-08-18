@@ -1,0 +1,221 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 1/4]  dev: new interface for setting bit-timing	parameters
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%201/4%5D%20%20dev%3A%20new%20interface%20for%20setting%20bit-timing%0A%09parameters&In-Reply-To=%3C20080917154230.GA13265%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001846.html">
+   <LINK REL="Next"  HREF="001844.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 1/4]  dev: new interface for setting bit-timing	parameters</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%201/4%5D%20%20dev%3A%20new%20interface%20for%20setting%20bit-timing%0A%09parameters&In-Reply-To=%3C20080917154230.GA13265%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH v2 1/4]  dev: new interface for setting bit-timing	parameters">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed Sep 17 17:42:31 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001846.html">[PATCH v2 1/4] dev: new interface for setting	bit-timing	parameters
+</A></li>
+        <LI>Next message: <A HREF="001844.html">[PATCH v2 1/4]  dev: new interface for setting bit-timing	parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1843">[ date ]</a>
+              <a href="thread.html#1843">[ thread ]</a>
+              <a href="subject.html#1843">[ subject ]</a>
+              <a href="author.html#1843">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang,
+
+I came to the point actually using the sysfs interface.
+I appreciate your effort to have included sample_point support.
+Actually using the sample_point control was getting strange. You mainly
+intercepted the sysfs setting for bitrate, which does work.
+The problem I see dealing with the various bittiming parameters is 
+that there are quite some interactions between different parameters. 
+So, I started coding.
+I had to experiment with different approaches before getting this one
+right. 
+I ended up with a system that differentiates between
+modifying 'easy mode' and 'expert mode' bittiming parameters.
+
+Although your code did work fine when not touching the sample_point too
+much, the patch below keeps working while playing heavily with both 
+sample_point &amp; bitrate.
+
+It acts by keeping track of the last applied set of bittiming parameters
+given to the driver.
+
+I believe it's an improvement :-)
+
+Kurt
+---
+ kernel/2.6/drivers/net/can/dev.c   |   22 +++++++++++++++-------
+ kernel/2.6/drivers/net/can/sysfs.c |   23 ++++++++++++++---------
+ kernel/2.6/include/linux/can/dev.h |    2 ++
+ 3 files changed, 31 insertions(+), 16 deletions(-)
+
+Index: wg/kernel/2.6/drivers/net/can/dev.c
+===================================================================
+--- wg.orig/kernel/2.6/drivers/net/can/dev.c	2008-09-17 16:23:37.000000000 +0200
++++ wg/kernel/2.6/drivers/net/can/dev.c	2008-09-17 17:04:36.000000000 +0200
+@@ -132,6 +132,9 @@
+   bt-&gt;sjw = 1;
+   bt-&gt;brp = best_brp;
+ 
++	/* re-calculate sample point */
++	bt-&gt;sample_point = can_sample_point(bt);
++
+   if (best_error) {
+      error = best_error * 1000;
+      error /= bt-&gt;bitrate;
+@@ -148,7 +151,7 @@
+      (bt-&gt;prop_seg + bt-&gt;phase_seg1 + bt-&gt;phase_seg2 + 1);
+ }
+ 
+-int can_fixup_bittiming(struct net_device *dev)
++static int can_fixup_bittiming(struct net_device *dev)
+ {
+   struct can_priv *priv = netdev_priv(dev);
+   struct can_bittiming *bt = &amp;priv-&gt;bittiming;
+@@ -181,6 +184,7 @@
+   alltseg = bt-&gt;prop_seg + bt-&gt;phase_seg1 + bt-&gt;phase_seg2 + 1;
+   bitrate = bt-&gt;clock / (bt-&gt;brp * alltseg);
+   bt-&gt;bitrate = bitrate;
++	bt-&gt;sample_point = can_sample_point(bt);
+ 
+   return 0;
+ }
+@@ -192,17 +196,17 @@
+ 
+   /* Check if the CAN device needs bit-timing parameters */
+   if (priv-&gt;do_set_bittiming) {
+-
+-		/* Check if bit-timing parameters have already been set */
+-		if (priv-&gt;bittiming.tq &amp;&amp; priv-&gt;bittiming.bitrate)
+-			return 0;
+-
+      /* Check if bit-timing parameters have been pre-defined */
+      if (!priv-&gt;bittiming.tq &amp;&amp; !priv-&gt;bittiming.bitrate)
+         return -EINVAL;
+ 
++		/* Have bittiming params changed */
++		if (0 == memcmp(&amp;priv-&gt;bt_prev, &amp;priv-&gt;bittiming
++					, sizeof(priv-&gt;bt_prev)))
++			return 0;
++
+      /* Non-expert mode? Check if the bitrate has been pre-defined */
+-		if (!priv-&gt;bittiming.tq)
++		if (!priv-&gt;bt_changes_expert)
+         /* Determine bit-timing parameters */
+         err = can_calc_bittiming(dev);
+      else
+@@ -215,6 +219,10 @@
+      err = priv-&gt;do_set_bittiming(dev, &amp;priv-&gt;bittiming);
+      if (err)
+         return err;
++		/* take copy for next time */
++		memcpy(&amp;priv-&gt;bt_prev, &amp;priv-&gt;bittiming
++				, sizeof(priv-&gt;bt_prev));
++		priv-&gt;bt_changes_expert = 0;
+   }
+   return 0;
+ }
+Index: wg/kernel/2.6/drivers/net/can/sysfs.c
+===================================================================
+--- wg.orig/kernel/2.6/drivers/net/can/sysfs.c	2008-09-17 16:23:36.000000000 +0200
++++ wg/kernel/2.6/drivers/net/can/sysfs.c	2008-09-17 16:59:05.000000000 +0200
+@@ -282,7 +282,7 @@
+   struct can_priv *priv = netdev_priv(dev);
+   struct can_bittiming *bt = &amp;priv-&gt;bittiming;
+   ssize_t ret = -EINVAL;
+-	u32 *ptr, val;
++	u32 *ptr;
+ 
+   WARN_ON(offset &gt;= sizeof(struct can_bittiming) ||
+      offset % sizeof(u32) != 0);
+@@ -290,12 +290,7 @@
+   read_lock(&amp;dev_base_lock);
+   if (dev_isalive(dev)) {
+      ptr = (u32 *)(((u8 *)bt) + offset);
+-		if (ptr == &amp;bt-&gt;sample_point &amp;&amp;
+-		    priv-&gt;state != CAN_STATE_STOPPED)
+-			val = can_sample_point(bt);
+-		else
+-			val = *ptr;
+-		ret = sprintf(buf, &quot;%d\n&quot;, val);
++		ret = sprintf(buf, &quot;%d\n&quot;, *ptr);
+   }
+   read_unlock(&amp;dev_base_lock);
+   return ret;
+@@ -327,10 +322,20 @@
+   rtnl_lock();
+   if (dev_isalive(dev)) {
+      *ptr = (u32)new;
+-		if (ptr == &amp;bt-&gt;bitrate)
++		if ((ptr == &amp;bt-&gt;bitrate)||
++		    (ptr == &amp;bt-&gt;sample_point)) {
++			priv-&gt;bt_changes_expert = 0;
+         bt-&gt;tq = 0;
+-		else
++			bt-&gt;brp = 0;
++			bt-&gt;sjw = 0;
++			bt-&gt;prop_seg = 0;
++			bt-&gt;phase_seg1 = 0;
++			bt-&gt;phase_seg2 = 0;
++		} else {
++			priv-&gt;bt_changes_expert = 1;
+         bt-&gt;bitrate = 0;
++			bt-&gt;sample_point = 0;
++		}
+      ret = count;
+   }
+   rtnl_unlock();
+Index: wg/kernel/2.6/include/linux/can/dev.h
+===================================================================
+--- wg.orig/kernel/2.6/include/linux/can/dev.h	2008-09-17 16:22:07.000000000 +0200
++++ wg/kernel/2.6/include/linux/can/dev.h	2008-09-17 16:23:11.000000000 +0200
+@@ -96,6 +96,8 @@
+   struct can_device_stats can_stats;
+ 
+   struct can_bittiming bittiming;
++	struct can_bittiming bt_prev;
++	int bt_changes_expert;
+   struct can_bittiming_const *bittiming_const;
+ 
+   spinlock_t irq_lock;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001846.html">[PATCH v2 1/4] dev: new interface for setting	bit-timing	parameters
+</A></li>
+	<LI>Next message: <A HREF="001844.html">[PATCH v2 1/4]  dev: new interface for setting bit-timing	parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1843">[ date ]</a>
+              <a href="thread.html#1843">[ thread ]</a>
+              <a href="subject.html#1843">[ subject ]</a>
+              <a href="author.html#1843">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

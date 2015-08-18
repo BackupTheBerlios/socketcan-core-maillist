@@ -1,0 +1,190 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> struct sockaddr_can for j1939
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20100225151913.GB318%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004035.html">
+   <LINK REL="Next"  HREF="004124.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>struct sockaddr_can for j1939</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20100225151913.GB318%40e-circ.dyndns.org%3E"
+       TITLE="struct sockaddr_can for j1939">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Thu Feb 25 16:19:13 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004035.html">struct can_addr extensions
+</A></li>
+        <LI>Next message: <A HREF="004124.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4122">[ date ]</a>
+              <a href="thread.html#4122">[ thread ]</a>
+              <a href="subject.html#4122">[ subject ]</a>
+              <a href="author.html#4122">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver, 
+
+On Mon, Feb 15, 2010 at 11:03:09AM +0100, Oliver Hartkopp wrote:
+&gt;<i> Kurt Van Dijck wrote:
+</I>&gt;<i> &gt; On Sat, Feb 13, 2010 at 05:32:52PM +0100, Oliver Hartkopp wrote:
+</I>
+&gt;<i> Bloch, J. How to Design a Good API and Why it Matters. Oct. 2005.
+</I>&gt;<i> <A HREF="http://lcsd05.cs.tamu.edu/slides/keynote.pdf">http://lcsd05.cs.tamu.edu/slides/keynote.pdf</A>
+</I>I did go through it (mainly skipped the 'class design')
+&gt;<i> 
+</I>I'll try to summarize the core points of what we are implementing now:
+knowing my communication skills, I'll forget some :-).
+
+* j1939 divides the can_id into several fields.
+  dp, reserved, pf serve the same purpose, and are grouped into 'pgn'
+  sa is a seperate field
+  ps is special one: it can be destination address, or it can be part of
+  the pgn.
+  priority (3bits) is to be ignored for incoming messages.
+* a struct sockaddr_can (I attached before) with all 'header' info,
+   so the packet data is the only data.
+  necessary members: sa(8), da(8), pgn(18), priority(3)
+* bind() will assign local address.
+* connect() assigns destination address.
+* recvfrom() will put all info in the sockaddr_can.
+* sendto() will use the sockaddr_can for header info (SA, DA, PGN, ...)
+
+* bind, connect &amp; sendto all influence the final outgoing packet. IMO,
+   it is as designed with regard to the socket API.
+
+* We want to extend the j1939 bus into the
+  linux kernel, so different sockets can be logically different
+  entities, just as can_raw does for can.
+  A major point of attention is that we also want to be able to have
+  different sockets cooperate to form 1 logical entity on the bus, where
+  a logical entity means '1 source address'.
+  This way, we can seperate common funcionalities, found in many logical
+  entities (such as error reporting, version reporting) and
+  core functionality in different processes.
+  Therefore, bind allows to share the same SA.
+
+* A filtering similar to CAN is applied, but on PGN &amp; SA level.
+
+Up to here, we need a layout similar to:
+struct sockaddr_can {
+   ...
+   union {
+      struct {
+         uint8_t sa, da;
+         uint8_t priority;
+         uint32_t pgn;
+      } j1939;
+   } can_addr;
+};
+
+where not all fields are necessarily used in all api calls.
+note that this does go further than only implementing the transport
+protocol, but the transport protocols do not need extensions for their
+own! In our current implementation, just doing sendto() with more than 8
+bytes data result in a transport protocol session setup, transparently.
+Note that the transport protocol in j1939 uses 2 pgns, but such thing
+should still be described with (SA, DA, PGN, PRIORITY).
+
+After reading the relevant man pages &amp; looking at the sockaddr_can
+above, the only debate I see is wether to set SA from connect(), and DA
+from bind(). That the only documenting up to here.
+
+When you say 'redundant parts', I can suggest
+that sa &amp; da do not necessarily be in the same structure. uint8_t addr
+would be sufficient too. in bind(), it means SA, in connect() it means
+DA, etc, etc.
+For getting the precise DA in recvfrom, a getsockopt could be used
+(similar to timestamps).
+struct sockaddr_can {
+   ...
+   union {
+      struct {
+         uint8_t addr;
+         uint8_t priority;
+         uint32_t pgn;
+      } j1939;
+   } can_addr;
+};
+
+At the next level, j1939 describes a dynamic addressing scheme (the
+above is working fine with static addresses only). That's especially
+used a lot in agriculture (our main market).
+At that point, SA &amp; DA are not persistent anymore, but the 8byte name
+is.
+We intent not to let kernel code participate in this dynamic addressing,
+but let the kernel code follow the actions on the bus. Since a single
+instance must decide which name an SA belongs to &amp; vice versa, the
+kernel is the perfect place.
+To participate in dynamic addressing, userspace code is needed.
+But userspace programs cooperating to a single entity on the bus, must
+not both participate in managing dynamic addresses. That's where the
+uint64_t came up in the sockaddr_can. This name is used by kernel code
+to find the current SA according to the 8byte name.
+This setup results in 1 extra process managing the SA of a particular 8byte
+name, and all others operating on that name level.
+
+the sa &amp; da members in the structure are therefore rarely used in
+transmissions from userspace, but keep being relevant to track the
+dynamic addressing on the bus.
+Setting the 8byte name via setsockopt would violate the explanation for
+bind(), which _sets the local address_, and corrupts the use of
+recvfrom(), as the SA could have changed in the meanwhile.
+Therefore, we found 'uint64_t name' being a member of sockaddr_can, just
+for sake of reusing existing API's.
+Generally speaking, the use of 8byte name overrides the use of 1byte SA.
+Since 0 is an invalid name, it would mean to use the 1byte SA (and no
+      dynamic addressing).
+struct sockaddr_can {
+   ...
+   union {
+      struct {
+         uint64_t name;
+         uint8_t addr;
+         uint8_t priority;
+         uint32_t pgn;
+      } j1939;
+   } can_addr;
+};
+
+
+Now, I think this looks long enough for first iteration :-)
+I'm interested to see what could get stripped.
+
+Kurt
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004035.html">struct can_addr extensions
+</A></li>
+	<LI>Next message: <A HREF="004124.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4122">[ date ]</a>
+              <a href="thread.html#4122">[ thread ]</a>
+              <a href="subject.html#4122">[ subject ]</a>
+              <a href="author.html#4122">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

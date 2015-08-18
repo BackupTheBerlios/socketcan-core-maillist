@@ -1,0 +1,147 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> New LTP test for CAN packet flow
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20New%20LTP%20test%20for%20CAN%20packet%20flow&In-Reply-To=%3C4C72BC94.1090608%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004547.html">
+   <LINK REL="Next"  HREF="004580.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>New LTP test for CAN packet flow</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20New%20LTP%20test%20for%20CAN%20packet%20flow&In-Reply-To=%3C4C72BC94.1090608%40hartkopp.net%3E"
+       TITLE="New LTP test for CAN packet flow">socketcan at hartkopp.net
+       </A><BR>
+    <I>Mon Aug 23 20:23:16 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004547.html">[MeeGo-Dev][PATCH] Topcliff: Update PCH_CAN driver to 2.6.35
+</A></li>
+        <LI>Next message: <A HREF="004580.html">[LTP] New LTP test for CAN packet flow
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4554">[ date ]</a>
+              <a href="thread.html#4554">[ thread ]</a>
+              <a href="subject.html#4554">[ subject ]</a>
+              <a href="author.html#4554">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Dear Subrata,
+
+long time - no update ;-)
+
+But now i created a test that's able to detect a corrupt CAN frame flow inside
+the Kernel. So far the correct IFF_ECHO functionality has been accidentally
+removed by netdev patches two times.
+
+The latest fix was here:
+
+<A HREF="http://git.kernel.org/?p=linux/kernel/git/davem/net-2.6.git;a=commitdiff;h=cff0d6e6edac7672b3f915bb4fb59f279243b7f9">http://git.kernel.org/?p=linux/kernel/git/davem/net-2.6.git;a=commitdiff;h=cff0d6e6edac7672b3f915bb4fb59f279243b7f9</A>
+
+To perform the local echo of CAN frames, the reference to the originating sock
+struct has to be passed to the netdevice without orphan of the socketbuffer.
+
+The new test tool 'tst-rcv-own-msgs' can check the correct packet flow by
+creating two can-raw sockets.
+
+To extend your test-script in
+
+    network/can/filter-tests/run_ltp-can_tests.sh
+
+the modprobe of the vcan driver needs an additional parameter 'echo=1', which
+configures the driver to perform the CAN frame echo on driver level.
+
+This 'echo=1' setting does not have any impact to the filtertest performed in
+your script.
+
+The new tool 'tst-rcv-own-msgs' can be found in the same directory in the
+SocketCAN SVN where the current 'tst-filter-server' and 'tst-filter-master'
+tools are located too.
+
+I'll send the latest fix (see above) to the stable tree, as 2.6.35.3 currently
+still *has* this problem.
+
+On 2.6.35.3 you can see 'tst-rcv-own-msgs' ...
+
+   - work correctly when echo=0
+   - will fail when echo=1
+
+On 2.6.36-rc1 'tst-rcv-own-msgs' runs successfully regardless of the 'echo'
+setting of the vcan driver.
+
+Please give me feedback, if there are still open questions.
+
+Many thanks for your work &amp; best regards,
+Oliver
+
+
+---
+
+Load vcan module with commandline parameter echo=1 :
+
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">root at host</A>:~# modprobe vcan echo=1
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">root at host</A>:~# ip link add dev vcan0 type vcan
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">root at host</A>:~# ip link set vcan0 up
+
+---
+
+When the test is successful, it looks like this:
+
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">user at host</A>:~$ socketcan/trunk/test/tst-rcv-own-msgs vcan0
+Starting PF_CAN frame flow test.
+checking socket default settings ... ok.
+check loopback 0 recv_own_msgs 0 ... ok.
+check loopback 0 recv_own_msgs 1 ... ok.
+check loopback 1 recv_own_msgs 0 ... ok.
+check loopback 1 recv_own_msgs 1 ... ok.
+PF_CAN frame flow test was successful.
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">user at host</A>:~$ echo $?
+0
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">user at host</A>:~$
+
+---
+
+When the test fails, it looks like this:
+
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">user at host</A>:~$ socketcan/trunk/test/tst-rcv-own-msgs vcan0
+Starting PF_CAN frame flow test.
+checking socket default settings ... failure!
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">user at host</A>:~$ echo $?
+1
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">user at host</A>:~$
+
+---
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004547.html">[MeeGo-Dev][PATCH] Topcliff: Update PCH_CAN driver to 2.6.35
+</A></li>
+	<LI>Next message: <A HREF="004580.html">[LTP] New LTP test for CAN packet flow
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4554">[ date ]</a>
+              <a href="thread.html#4554">[ thread ]</a>
+              <a href="subject.html#4554">[ subject ]</a>
+              <a href="author.html#4554">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,108 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next] can: sja1000: fix network statistics update
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%5D%20can%3A%20sja1000%3A%20fix%20network%20statistics%20update&In-Reply-To=%3C4A9D3DE5.40309%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002955.html">
+   <LINK REL="Next"  HREF="002957.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next] can: sja1000: fix network statistics update</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%5D%20can%3A%20sja1000%3A%20fix%20network%20statistics%20update&In-Reply-To=%3C4A9D3DE5.40309%40grandegger.com%3E"
+       TITLE="[PATCH net-next] can: sja1000: fix network statistics update">wg at grandegger.com
+       </A><BR>
+    <I>Tue Sep  1 17:29:41 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002955.html">[PATCH net-next] can: add can_free_echo_skb() for upcoming drivers
+</A></li>
+        <LI>Next message: <A HREF="002957.html">[PATCH] CAN: Add support for binary protocol to slcan
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2956">[ date ]</a>
+              <a href="thread.html#2956">[ thread ]</a>
+              <a href="subject.html#2956">[ subject ]</a>
+              <a href="author.html#2956">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The member &quot;tx_bytes&quot; of &quot;struct net_device_stats&quot; should be
+incremented when the interrupt is done and an &quot;arbitration
+lost error&quot; is a TX error and the statistics should be updated
+accordingly.
+
+Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+ drivers/net/can/sja1000/sja1000.c |    5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+Index: net-next-2.6/drivers/net/can/sja1000/sja1000.c
+===================================================================
+--- net-next-2.6.orig/drivers/net/can/sja1000/sja1000.c
++++ net-next-2.6/drivers/net/can/sja1000/sja1000.c
+@@ -242,7 +242,6 @@ static netdev_tx_t sja1000_start_xmit(st
+ 					    struct net_device *dev)
+ {
+ 	struct sja1000_priv *priv = netdev_priv(dev);
+-	struct net_device_stats *stats = &amp;dev-&gt;stats;
+ 	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+ 	uint8_t fi;
+ 	uint8_t dlc;
+@@ -276,7 +275,6 @@ static netdev_tx_t sja1000_start_xmit(st
+ 	for (i = 0; i &lt; dlc; i++)
+ 		priv-&gt;write_reg(priv, dreg++, cf-&gt;data[i]);
+ 
+-	stats-&gt;tx_bytes += dlc;
+ 	dev-&gt;trans_start = jiffies;
+ 
+ 	can_put_echo_skb(skb, dev, 0);
+@@ -428,7 +426,7 @@ static int sja1000_err(struct net_device
+ 		dev_dbg(dev-&gt;dev.parent, &quot;arbitration lost interrupt\n&quot;);
+ 		alc = priv-&gt;read_reg(priv, REG_ALC);
+ 		priv-&gt;can.can_stats.arbitration_lost++;
+-		stats-&gt;rx_errors++;
++		stats-&gt;tx_errors++;
+ 		cf-&gt;can_id |= CAN_ERR_LOSTARB;
+ 		cf-&gt;data[0] = alc &amp; 0x1f;
+ 	}
+@@ -486,6 +484,7 @@ irqreturn_t sja1000_interrupt(int irq, v
+ 
+ 		if (isrc &amp; IRQ_TI) {
+ 			/* transmission complete interrupt */
++		  	stats-&gt;tx_bytes += priv-&gt;read_reg(priv, REG_FI) &amp; 0xf;
+ 			stats-&gt;tx_packets++;
+ 			can_get_echo_skb(dev, 0);
+ 			netif_wake_queue(dev);
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002955.html">[PATCH net-next] can: add can_free_echo_skb() for upcoming drivers
+</A></li>
+	<LI>Next message: <A HREF="002957.html">[PATCH] CAN: Add support for binary protocol to slcan
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2956">[ date ]</a>
+              <a href="thread.html#2956">[ thread ]</a>
+              <a href="subject.html#2956">[ subject ]</a>
+              <a href="author.html#2956">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,336 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6] can: Unify droping of invalid tx skbs and netdev	stats
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%5D%20can%3A%20Unify%20droping%20of%20invalid%20tx%20skbs%20and%20netdev%0A%09stats&In-Reply-To=%3C4B477BB7.2030108%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003793.html">
+   <LINK REL="Next"  HREF="003811.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6] can: Unify droping of invalid tx skbs and netdev	stats</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%5D%20can%3A%20Unify%20droping%20of%20invalid%20tx%20skbs%20and%20netdev%0A%09stats&In-Reply-To=%3C4B477BB7.2030108%40hartkopp.net%3E"
+       TITLE="[PATCH net-next-2.6] can: Unify droping of invalid tx skbs and netdev	stats">socketcan at hartkopp.net
+       </A><BR>
+    <I>Fri Jan  8 19:38:47 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003793.html">[PATCH net-next v4 0/3] can: mscan-mpc5xxx: add support for the	Freescale MPC512x
+</A></li>
+        <LI>Next message: <A HREF="003811.html">[PATCH net-next-2.6] can: Unify droping of invalid tx skbs and	netdev	stats
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3797">[ date ]</a>
+              <a href="thread.html#3797">[ thread ]</a>
+              <a href="subject.html#3797">[ subject ]</a>
+              <a href="author.html#3797">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>To prevent the CAN drivers to operate on invalid socketbuffers the skbs are
+now checked and silently dropped at the xmit-function consistently.
+
+Also the netdev stats are consistently using the CAN data length code (dlc)
+for [rx|tx]_bytes now.
+
+Signed-off-by: Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">oliver at hartkopp.net</A>&gt;
+
+---
+
+diff --git a/drivers/net/can/at91_can.c b/drivers/net/can/at91_can.c
+index 166cc7e..95567be 100644
+--- a/drivers/net/can/at91_can.c
++++ b/drivers/net/can/at91_can.c
+@@ -336,18 +336,24 @@ static void at91_chip_stop(struct net_device *dev, enum can_state state)
+  */
+ static netdev_tx_t at91_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ {
+ 	struct at91_priv *priv = netdev_priv(dev);
+ 	struct net_device_stats *stats = &amp;dev-&gt;stats;
+ 	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+ 	unsigned int mb, prio;
+ 	u32 reg_mid, reg_mcr;
+ 
++	if (skb-&gt;len != sizeof(*cf) || cf-&gt;can_dlc &gt; 8) {
++		kfree_skb(skb);
++		dev-&gt;stats.tx_dropped++;
++		return NETDEV_TX_OK;
++	}
++
+ 	mb = get_tx_next_mb(priv);
+ 	prio = get_tx_next_prio(priv);
+ 
+ 	if (unlikely(!(at91_read(priv, AT91_MSR(mb)) &amp; AT91_MSR_MRDY))) {
+ 		netif_stop_queue(dev);
+ 
+ 		dev_err(dev-&gt;dev.parent,
+ 			&quot;BUG! TX buffer full when queue awake!\n&quot;);
+ 		return NETDEV_TX_BUSY;
+diff --git a/drivers/net/can/bfin_can.c b/drivers/net/can/bfin_can.c
+index 0ec1524..f8f8b47 100644
+--- a/drivers/net/can/bfin_can.c
++++ b/drivers/net/can/bfin_can.c
+@@ -312,18 +312,24 @@ static int bfin_can_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	struct bfin_can_priv *priv = netdev_priv(dev);
+ 	struct bfin_can_regs __iomem *reg = priv-&gt;membase;
+ 	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+ 	u8 dlc = cf-&gt;can_dlc;
+ 	canid_t id = cf-&gt;can_id;
+ 	u8 *data = cf-&gt;data;
+ 	u16 val;
+ 	int i;
+ 
++	if (skb-&gt;len != sizeof(*cf) || cf-&gt;can_dlc &gt; 8) {
++		kfree_skb(skb);
++		dev-&gt;stats.tx_dropped++;
++		return NETDEV_TX_OK;
++	}
++
+ 	netif_stop_queue(dev);
+ 
+ 	/* fill id */
+ 	if (id &amp; CAN_EFF_FLAG) {
+ 		bfin_write16(&amp;reg-&gt;chl[TRANSMIT_CHL].id0, id);
+ 		if (id &amp; CAN_RTR_FLAG)
+ 			writew(((id &amp; 0x1FFF0000) &gt;&gt; 16) | IDE | AME | RTR,
+ 					&amp;reg-&gt;chl[TRANSMIT_CHL].id1);
+ 		else
+diff --git a/drivers/net/can/mcp251x.c b/drivers/net/can/mcp251x.c
+index 9c5a153..9b8f782 100644
+--- a/drivers/net/can/mcp251x.c
++++ b/drivers/net/can/mcp251x.c
+@@ -481,28 +481,28 @@ static void mcp251x_hw_wakeup(struct spi_device *spi)
+ 	if (!wait_for_completion_timeout(&amp;priv-&gt;awake, HZ))
+ 		dev_err(&amp;spi-&gt;dev, &quot;MCP251x didn't wake-up\n&quot;);
+ }
+ 
+ static netdev_tx_t mcp251x_hard_start_xmit(struct sk_buff *skb,
+ 					   struct net_device *net)
+ {
+ 	struct mcp251x_priv *priv = netdev_priv(net);
+ 	struct spi_device *spi = priv-&gt;spi;
++	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+ 
+ 	if (priv-&gt;tx_skb || priv-&gt;tx_len) {
+ 		dev_warn(&amp;spi-&gt;dev, &quot;hard_xmit called while tx busy\n&quot;);
+ 		netif_stop_queue(net);
+ 		return NETDEV_TX_BUSY;
+ 	}
+ 
+-	if (skb-&gt;len != sizeof(struct can_frame)) {
+-		dev_err(&amp;spi-&gt;dev, &quot;dropping packet - bad length\n&quot;);
+-		dev_kfree_skb(skb);
++	if (skb-&gt;len != sizeof(*cf) || cf-&gt;can_dlc &gt; 8) {
++		kfree_skb(skb);
+ 		net-&gt;stats.tx_dropped++;
+ 		return NETDEV_TX_OK;
+ 	}
+ 
+ 	netif_stop_queue(net);
+ 	priv-&gt;tx_skb = skb;
+ 	net-&gt;trans_start = jiffies;
+ 	queue_work(priv-&gt;wq, &amp;priv-&gt;tx_work);
+ 
+diff --git a/drivers/net/can/sja1000/sja1000.c b/drivers/net/can/sja1000/sja1000.c
+index 542a4f7..7979d48 100644
+--- a/drivers/net/can/sja1000/sja1000.c
++++ b/drivers/net/can/sja1000/sja1000.c
+@@ -243,18 +243,24 @@ static netdev_tx_t sja1000_start_xmit(struct sk_buff *skb,
+ {
+ 	struct sja1000_priv *priv = netdev_priv(dev);
+ 	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+ 	uint8_t fi;
+ 	uint8_t dlc;
+ 	canid_t id;
+ 	uint8_t dreg;
+ 	int i;
+ 
++	if (skb-&gt;len != sizeof(*cf) || cf-&gt;can_dlc &gt; 8) {
++		kfree_skb(skb);
++		dev-&gt;stats.tx_dropped++;
++		return NETDEV_TX_OK;
++	}
++
+ 	netif_stop_queue(dev);
+ 
+ 	fi = dlc = cf-&gt;can_dlc;
+ 	id = cf-&gt;can_id;
+ 
+ 	if (id &amp; CAN_RTR_FLAG)
+ 		fi |= FI_RTR;
+ 
+ 	if (id &amp; CAN_EFF_FLAG) {
+diff --git a/drivers/net/can/ti_hecc.c b/drivers/net/can/ti_hecc.c
+index 5c993c2..e80be1d 100644
+--- a/drivers/net/can/ti_hecc.c
++++ b/drivers/net/can/ti_hecc.c
+@@ -471,33 +471,38 @@ static int ti_hecc_do_set_mode(struct net_device *ndev, enum can_mode mode)
+  * value roll-over happens.
+  */
+ static netdev_tx_t ti_hecc_xmit(struct sk_buff *skb, struct net_device *ndev)
+ {
+ 	struct ti_hecc_priv *priv = netdev_priv(ndev);
+ 	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+ 	u32 mbxno, mbx_mask, data;
+ 	unsigned long flags;
+ 
++	if (skb-&gt;len != sizeof(*cf) || cf-&gt;can_dlc &gt; 8) {
++		kfree_skb(skb);
++		ndev-&gt;stats.tx_dropped++;
++		return NETDEV_TX_OK;
++	}
++
+ 	mbxno = get_tx_head_mb(priv);
+ 	mbx_mask = BIT(mbxno);
+ 	spin_lock_irqsave(&amp;priv-&gt;mbx_lock, flags);
+ 	if (unlikely(hecc_read(priv, HECC_CANME) &amp; mbx_mask)) {
+ 		spin_unlock_irqrestore(&amp;priv-&gt;mbx_lock, flags);
+ 		netif_stop_queue(ndev);
+ 		dev_err(priv-&gt;ndev-&gt;dev.parent,
+ 			&quot;BUG: TX mbx not ready tx_head=%08X, tx_tail=%08X\n&quot;,
+ 			priv-&gt;tx_head, priv-&gt;tx_tail);
+ 		return NETDEV_TX_BUSY;
+ 	}
+ 	spin_unlock_irqrestore(&amp;priv-&gt;mbx_lock, flags);
+ 
+ 	/* Prepare mailbox for transmission */
+-	data = min_t(u8, cf-&gt;can_dlc, 8);
+ 	if (cf-&gt;can_id &amp; CAN_RTR_FLAG) /* Remote transmission request */
+ 		data |= HECC_CANMCF_RTR;
+ 	data |= get_tx_head_prio(priv) &lt;&lt; 8;
+ 	hecc_write_mbx(priv, mbxno, HECC_CANMCF, data);
+ 
+ 	if (cf-&gt;can_id &amp; CAN_EFF_FLAG) /* Extended frame format */
+ 		data = (cf-&gt;can_id &amp; CAN_EFF_MASK) | HECC_CANMID_IDE;
+ 	else /* Standard frame format */
+ 		data = (cf-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 18;
+diff --git a/drivers/net/can/usb/ems_usb.c b/drivers/net/can/usb/ems_usb.c
+index efbb05c..f1c8fd7 100644
+--- a/drivers/net/can/usb/ems_usb.c
++++ b/drivers/net/can/usb/ems_usb.c
+@@ -761,18 +761,24 @@ static netdev_tx_t ems_usb_start_xmit(struct sk_buff *skb, struct net_device *ne
+ 	struct net_device_stats *stats = &amp;netdev-&gt;stats;
+ 	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+ 	struct ems_cpc_msg *msg;
+ 	struct urb *urb;
+ 	u8 *buf;
+ 	int i, err;
+ 	size_t size = CPC_HEADER_SIZE + CPC_MSG_HEADER_LEN
+ 			+ sizeof(struct cpc_can_msg);
+ 
++	if (skb-&gt;len != sizeof(*cf) || cf-&gt;can_dlc &gt; 8) {
++		kfree_skb(skb);
++		stats-&gt;tx_dropped++;
++		return NETDEV_TX_OK;
++	}
++
+ 	/* create a URB, and a buffer for it, and copy the data to the URB */
+ 	urb = usb_alloc_urb(0, GFP_ATOMIC);
+ 	if (!urb) {
+ 		dev_err(netdev-&gt;dev.parent, &quot;No memory left for URBs\n&quot;);
+ 		goto nomem;
+ 	}
+ 
+ 	buf = usb_buffer_alloc(dev-&gt;udev, size, GFP_ATOMIC, &amp;urb-&gt;transfer_dma);
+ 	if (!buf) {
+diff --git a/drivers/net/can/vcan.c b/drivers/net/can/vcan.c
+index 80ac563..d6af5fa 100644
+--- a/drivers/net/can/vcan.c
++++ b/drivers/net/can/vcan.c
+@@ -64,52 +64,60 @@ MODULE_AUTHOR(&quot;Urs Thuermann &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">urs.thuermann at volkswagen.de</A>&gt;&quot;);
+  */
+ 
+ static int echo; /* echo testing. Default: 0 (Off) */
+ module_param(echo, bool, S_IRUGO);
+ MODULE_PARM_DESC(echo, &quot;Echo sent frames (for testing). Default: 0 (Off)&quot;);
+ 
+ 
+ static void vcan_rx(struct sk_buff *skb, struct net_device *dev)
+ {
++	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+ 	struct net_device_stats *stats = &amp;dev-&gt;stats;
+ 
+ 	stats-&gt;rx_packets++;
+-	stats-&gt;rx_bytes += skb-&gt;len;
++	stats-&gt;rx_bytes += cf-&gt;can_dlc;
+ 
+ 	skb-&gt;protocol  = htons(ETH_P_CAN);
+ 	skb-&gt;pkt_type  = PACKET_BROADCAST;
+ 	skb-&gt;dev       = dev;
+ 	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+ 
+ 	netif_rx_ni(skb);
+ }
+ 
+ static netdev_tx_t vcan_tx(struct sk_buff *skb, struct net_device *dev)
+ {
++	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+ 	struct net_device_stats *stats = &amp;dev-&gt;stats;
+ 	int loop;
+ 
++	if (skb-&gt;len != sizeof(*cf) || cf-&gt;can_dlc &gt; 8) {
++		kfree_skb(skb);
++		stats-&gt;tx_dropped++;
++		return NETDEV_TX_OK;
++	}
++
+ 	stats-&gt;tx_packets++;
+-	stats-&gt;tx_bytes += skb-&gt;len;
++	stats-&gt;tx_bytes += cf-&gt;can_dlc;
+ 
+ 	/* set flag whether this packet has to be looped back */
+ 	loop = skb-&gt;pkt_type == PACKET_LOOPBACK;
+ 
+ 	if (!echo) {
+ 		/* no echo handling available inside this driver */
+ 
+ 		if (loop) {
+ 			/*
+ 			 * only count the packets here, because the
+ 			 * CAN core already did the echo for us
+ 			 */
+ 			stats-&gt;rx_packets++;
+-			stats-&gt;rx_bytes += skb-&gt;len;
++			stats-&gt;rx_bytes += cf-&gt;can_dlc;
+ 		}
+ 		kfree_skb(skb);
+ 		return NETDEV_TX_OK;
+ 	}
+ 
+ 	/* perform standard echo handling for CAN network interfaces */
+ 
+ 	if (loop) {
+ 		struct sock *srcsk = skb-&gt;sk;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003793.html">[PATCH net-next v4 0/3] can: mscan-mpc5xxx: add support for the	Freescale MPC512x
+</A></li>
+	<LI>Next message: <A HREF="003811.html">[PATCH net-next-2.6] can: Unify droping of invalid tx skbs and	netdev	stats
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3797">[ date ]</a>
+              <a href="thread.html#3797">[ thread ]</a>
+              <a href="subject.html#3797">[ subject ]</a>
+              <a href="author.html#3797">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,135 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [libsocketcan] add can_get_device_stats()
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5Blibsocketcan%5D%20add%20can_get_device_stats%28%29&In-Reply-To=%3C4E96CAFB.6030209%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006178.html">
+   <LINK REL="Next"  HREF="006182.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[libsocketcan] add can_get_device_stats()</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5Blibsocketcan%5D%20add%20can_get_device_stats%28%29&In-Reply-To=%3C4E96CAFB.6030209%40pengutronix.de%3E"
+       TITLE="[libsocketcan] add can_get_device_stats()">mkl at pengutronix.de
+       </A><BR>
+    <I>Thu Oct 13 13:26:51 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006178.html">[libsocketcan] add can_get_device_stats()
+</A></li>
+        <LI>Next message: <A HREF="006182.html">[libsocketcan] add can_get_device_stats()
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6179">[ date ]</a>
+              <a href="thread.html#6179">[ thread ]</a>
+              <a href="subject.html#6179">[ subject ]</a>
+              <a href="author.html#6179">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 10/13/2011 01:02 PM, Kurt Van Dijck wrote:
+&gt;<i> On Thu, Oct 13, 2011 at 11:24:59AM +0200, Marc Kleine-Budde wrote:
+</I>&gt;&gt;<i> On 10/12/2011 02:55 PM, Kurt Van Dijck wrote:
+</I>&gt;&gt;&gt;<i> Not sure where exactly to put this.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> When using libsocketcan on <A HREF="git://git.pengutronix.de/git/tools/libsocketcan.git,">git://git.pengutronix.de/git/tools/libsocketcan.git,</A>
+</I>&gt;&gt;&gt;<i> I kind of missed a method to fetch the can device statistics.
+</I>&gt;&gt;&gt;<i> This patch adds that functionality.
+</I>&gt;&gt;&gt;<i> I think this is the proper library to put such function.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+</I>&gt;&gt;&gt;<i> ---
+</I>&gt;&gt;&gt;<i> diff --git a/include/libsocketcan.h b/include/libsocketcan.h
+</I>&gt;&gt;&gt;<i> index 10c012c..6098d6a 100644
+</I>&gt;&gt;&gt;<i> --- a/include/libsocketcan.h
+</I>&gt;&gt;&gt;<i> +++ b/include/libsocketcan.h
+</I>&gt;&gt;&gt;<i> @@ -45,5 +45,6 @@ int can_get_state(const char *name, int *state);
+</I>&gt;&gt;&gt;<i>  int can_get_clock(const char *name, struct can_clock *clock);
+</I>&gt;&gt;&gt;<i>  int can_get_bittiming_const(const char *name, struct can_bittiming_const *btc);
+</I>&gt;&gt;&gt;<i>  int can_get_berr_counter(const char *name, struct can_berr_counter *bc);
+</I>&gt;&gt;&gt;<i> +int can_get_device_stats(const char *name, struct can_device_stats *cds);
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i>  #endif
+</I>&gt;&gt;&gt;<i> diff --git a/src/libsocketcan.c b/src/libsocketcan.c
+</I>&gt;&gt;&gt;<i> index 2ac3f2a..34d3875 100644
+</I>&gt;&gt;&gt;<i> --- a/src/libsocketcan.c
+</I>&gt;&gt;&gt;<i> +++ b/src/libsocketcan.c
+</I>&gt;&gt;&gt;<i> @@ -53,6 +53,7 @@
+</I>&gt;&gt;&gt;<i>  #define GET_CLOCK 5
+</I>&gt;&gt;&gt;<i>  #define GET_BITTIMING_CONST 6
+</I>&gt;&gt;&gt;<i>  #define GET_BERR_COUNTER 7
+</I>&gt;&gt;&gt;<i> +#define GET_XSTATS 8
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i>  struct get_req {
+</I>&gt;&gt;&gt;<i>  	struct nlmsghdr n;
+</I>&gt;&gt;&gt;<i> @@ -386,6 +387,17 @@ static int do_get_nl_link(int fd, __u8 acquire, const char *name, void *res)
+</I>&gt;&gt;&gt;<i>  		else
+</I>&gt;&gt;&gt;<i>  			continue;
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> +		if (acquire == GET_XSTATS) {
+</I>&gt;&gt;&gt;<i> +			if (!linkinfo[IFLA_INFO_XSTATS])
+</I>&gt;&gt;&gt;<i> +				fprintf(stderr, &quot;no can statistics found\n&quot;);
+</I>
+what about &quot;return -1;&quot; here?
+
+&gt;&gt;&gt;<i> +			else {
+</I>&gt;&gt;&gt;<i> +				memcpy(res, RTA_DATA(linkinfo[IFLA_INFO_XSTATS]),
+</I>&gt;&gt;&gt;<i> +						sizeof(struct can_device_stats));
+</I>&gt;&gt;&gt;<i> +				ret = 0;
+</I>&gt;&gt;&gt;<i> +			}
+</I>&gt;&gt;&gt;<i> +			continue;
+</I>&gt;&gt;&gt;<i> +		}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> is it possible to put GET_XSTATS to the bit switch statement below?
+</I>&gt;<i> That would cross the check on linkinfo[IFLA_INFO_DATA], which is
+</I>&gt;<i> irrelevant for GET_XSTATS, since you need linkinfo[IFLA_INFO_XSTATS] ...
+</I>
+I see, IMHO it doesn't make the code better if we squeeze the GET_XSTATS
+into the swich/case.
+
+Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20111013/87f37689/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20111013/87f37689/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006178.html">[libsocketcan] add can_get_device_stats()
+</A></li>
+	<LI>Next message: <A HREF="006182.html">[libsocketcan] add can_get_device_stats()
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6179">[ date ]</a>
+              <a href="thread.html#6179">[ thread ]</a>
+              <a href="subject.html#6179">[ subject ]</a>
+              <a href="author.html#6179">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

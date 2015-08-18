@@ -1,0 +1,136 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> SH7203 / RCANTL1 driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SH7203%20/%20RCANTL1%20driver&In-Reply-To=%3C49A2B0BD.8030403%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002352.html">
+   <LINK REL="Next"  HREF="002354.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>SH7203 / RCANTL1 driver</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SH7203%20/%20RCANTL1%20driver&In-Reply-To=%3C49A2B0BD.8030403%40grandegger.com%3E"
+       TITLE="SH7203 / RCANTL1 driver">wg at grandegger.com
+       </A><BR>
+    <I>Mon Feb 23 15:20:45 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002352.html">SH7203 / RCANTL1 driver
+</A></li>
+        <LI>Next message: <A HREF="002354.html">SH7203 / RCANTL1 driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2353">[ date ]</a>
+              <a href="thread.html#2353">[ thread ]</a>
+              <a href="subject.html#2353">[ subject ]</a>
+              <a href="author.html#2353">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Kieran,
+
+Kieran Bingham wrote:
+&gt;<i> Hi Guys,
+</I>&gt;<i> 
+</I>&gt;<i> Nearly finished plumbing away at my SocketCAN Rcnatl driver for
+</I>&gt;<i> renesas can controller on the SH7203RSK
+</I>&gt;<i> 
+</I>&gt;<i> At the moment I have hardcoded the Bittimings, but I have working tx /
+</I>&gt;<i> rx interrupts etc...
+</I>&gt;<i> 
+</I>&gt;<i> I've been reading how you guys are looking at how to set the
+</I>&gt;<i> configurations and discussions on how we should allow user
+</I>&gt;<i> configuration - but what is it currently ?
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> At the moment in my rcantl1_open, I have the folowing segment
+</I>&gt;<i> 
+</I>&gt;<i> 	/* determine and set bittime */
+</I>&gt;<i> 	err = can_set_bittiming(dev);
+</I>&gt;<i> 	if (err)
+</I>&gt;<i> 	{
+</I>&gt;<i> 		dev_err(ND2D(dev), &quot;Manually setting bittiming to 20kb/s\n&quot;);
+</I>&gt;<i> 		/* Setup 20kbps baud rate for 16MHz Peripheral CLK */
+</I>&gt;<i> 		/* TSG1 = 0xf : PRSEG + PHSEG1 = 16 time quanta,
+</I>&gt;<i> 		 *	TSG2 = 0x7 : PHSEG2 = 8 time quanta
+</I>&gt;<i> 		 */
+</I>&gt;<i> 		priv-&gt;write_reg(dev, RCANTL1_BCR1, 0xF721);
+</I>&gt;<i> 		priv-&gt;write_reg(dev, RCANTL1_BCR0, 0x0020);
+</I>&gt;<i> 
+</I>&gt;<i> 	}
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> ~ # ifconfig can0 up
+</I>&gt;<i> rcantl1 rcantl1.0: error on can_set_bittiming(dev) = -22 (0xffffffea)
+</I>&gt;<i> rcantl1 rcantl1.0: Manually setting bittiming to 20kb/s
+</I>&gt;<i> rcantl1 rcantl1.0: Registered IRQ's 234 - &gt; 238
+</I>&gt;<i> 
+</I>&gt;<i> and following can_set_bittiming gets to
+</I>&gt;<i> 	/* Check if bit-timing parameters have been pre-defined */
+</I>&gt;<i> 	if (!priv-&gt;bittiming.tq &amp;&amp; !priv-&gt;bittiming.bitrate)
+</I>&gt;<i> 		return -EINVAL;
+</I>&gt;<i> 
+</I>&gt;<i> But I can't see where in the sja driver the priv-&gt;bittiming.tq are
+</I>&gt;<i> set, or what the correct thing for me to do here is.
+</I>
+Usually, you set the bitrate before starting the device by writing to
+the file
+
+  echo 125000 &gt; /sys/class/net/can0/can_bittiming/bitrate
+
+But the driver needs to support it. In your driver something similar to:
+
+  static struct can_bittiming_const sja1000_bittiming_const = {
+	.tseg1_min = 1,
+	.tseg1_max = 16,
+	.tseg2_min = 1,
+	.tseg2_max = 8,
+	.sjw_max = 4,
+	.brp_min = 1,
+	.brp_max = 64,
+	.brp_inc = 1,
+  };
+
+and provide a callback for setting the bit-timing registers from
+the calculated or defined values bt-&gt;brp, bt-&gt;prop_seg, bt-&gt;phase_seg1,
+bt-&gt;phase_seg2 and bt-&gt;sjw:
+
+  static int sja1000_set_bittiming(struct net_device *dev)
+  {
+  }
+
+That should also work for your CAN controller pretty well.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002352.html">SH7203 / RCANTL1 driver
+</A></li>
+	<LI>Next message: <A HREF="002354.html">SH7203 / RCANTL1 driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2353">[ date ]</a>
+              <a href="thread.html#2353">[ thread ]</a>
+              <a href="subject.html#2353">[ subject ]</a>
+              <a href="author.html#2353">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

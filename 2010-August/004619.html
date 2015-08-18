@@ -1,0 +1,154 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 3/4] drivers/net/can/mscan/mpc5xxx_can.c: Add of_node_put	to avoid memory leak
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/4%5D%20drivers/net/can/mscan/mpc5xxx_can.c%3A%20Add%20of_node_put%0A%09to%20avoid%20memory%20leak&In-Reply-To=%3CPine.LNX.4.64.1008311943280.2668%40ask.diku.dk%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004617.html">
+   <LINK REL="Next"  HREF="004593.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 3/4] drivers/net/can/mscan/mpc5xxx_can.c: Add of_node_put	to avoid memory leak</H1>
+    <B>Julia Lawall</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/4%5D%20drivers/net/can/mscan/mpc5xxx_can.c%3A%20Add%20of_node_put%0A%09to%20avoid%20memory%20leak&In-Reply-To=%3CPine.LNX.4.64.1008311943280.2668%40ask.diku.dk%3E"
+       TITLE="[PATCH 3/4] drivers/net/can/mscan/mpc5xxx_can.c: Add of_node_put	to avoid memory leak">julia at diku.dk
+       </A><BR>
+    <I>Tue Aug 31 19:44:00 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004617.html">[PATCH 3/4] drivers/net/can/mscan/mpc5xxx_can.c: Add of_node_put	to avoid memory leak
+</A></li>
+        <LI>Next message: <A HREF="004593.html">[PATCH 3/4] drivers/net/can/mscan/mpc5xxx_can.c: Add	of_node_put to avoid memory leak
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4619">[ date ]</a>
+              <a href="thread.html#4619">[ thread ]</a>
+              <a href="subject.html#4619">[ subject ]</a>
+              <a href="author.html#4619">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Add a call to of_node_put in the error handling code following a call to
+of_find_matching_node.
+
+This patch also moves the existing call to of_node_put after the call to
+iounmap in the error handling code, to make it possible to jump to
+of_node_put without doing iounmap.  These appear to be disjoint operations,
+so the ordering doesn't matter.
+
+This patch furthermore changes the -ENODEV result in the error handling
+code for of_find_matching_node to a return of 0, as found in the error
+handling code for of_iomap, because the return type of the function is
+unsigned.
+
+The semantic match that finds this problem is as follows:
+(<A HREF="http://coccinelle.lip6.fr/">http://coccinelle.lip6.fr/</A>)
+
+// &lt;smpl&gt;
+@r exists@
+local idexpression x;
+expression E,E1,E2;
+statement S;
+@@
+
+*x = 
+(of_find_node_by_path
+|<i>of_find_node_by_name
+</I>|<i>of_find_node_by_phandle
+</I>|<i>of_get_parent
+</I>|<i>of_get_next_parent
+</I>|<i>of_get_next_child
+</I>|<i>of_find_compatible_node
+</I>|<i>of_match_node
+</I>|<i>of_find_node_by_type
+</I>|<i>of_find_node_with_property
+</I>|<i>of_find_matching_node
+</I>|<i>of_parse_phandle
+</I>)(...);
+...
+if (x == NULL) S
+&lt;... when != x = E
+*if (...) {
+  ... when != of_node_put(x)
+      when != if (...) { ... of_node_put(x); ... }
+(
+  return &lt;+...x...+&gt;;
+|<i>
+</I>*  return ...;
+)
+}
+...&gt;
+(
+E2 = x;
+|<i>
+</I>of_node_put(x);
+)
+// &lt;/smpl&gt;
+
+Signed-off-by: Julia Lawall &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">julia at diku.dk</A>&gt;
+
+---
+ drivers/net/can/mscan/mpc5xxx_can.c |    8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/can/mscan/mpc5xxx_can.c b/drivers/net/can/mscan/mpc5xxx_can.c
+--- a/drivers/net/can/mscan/mpc5xxx_can.c
++++ b/drivers/net/can/mscan/mpc5xxx_can.c
+@@ -143,12 +143,12 @@ static u32 __devinit mpc512x_can_get_clock(struct platform_device *ofdev,
+ 	np_clock = of_find_matching_node(NULL, mpc512x_clock_ids);
+ 	if (!np_clock) {
+ 		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't find clock node\n&quot;);
+-		return -ENODEV;
++		return 0;
+ 	}
+ 	clockctl = of_iomap(np_clock, 0);
+ 	if (!clockctl) {
+ 		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't map clock registers\n&quot;);
+-		return 0;
++		goto exit_put;
+ 	}
+ 
+ 	/* Determine the MSCAN device index from the physical address */
+@@ -233,9 +233,9 @@ static u32 __devinit mpc512x_can_get_clock(struct platform_device *ofdev,
+ 		clocksrc == 1 ? &quot;ref_clk&quot; : &quot;sys_clk&quot;, clockdiv);
+ 
+ exit_unmap:
+-	of_node_put(np_clock);
+ 	iounmap(clockctl);
+-
++exit_put:
++	of_node_put(np_clock);
+ 	return freq;
+ }
+ #else /* !CONFIG_PPC_MPC512x */
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004617.html">[PATCH 3/4] drivers/net/can/mscan/mpc5xxx_can.c: Add of_node_put	to avoid memory leak
+</A></li>
+	<LI>Next message: <A HREF="004593.html">[PATCH 3/4] drivers/net/can/mscan/mpc5xxx_can.c: Add	of_node_put to avoid memory leak
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4619">[ date ]</a>
+              <a href="thread.html#4619">[ thread ]</a>
+              <a href="subject.html#4619">[ subject ]</a>
+              <a href="author.html#4619">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

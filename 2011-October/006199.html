@@ -1,0 +1,352 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH RFC] [libsocketcan]: Read all data from socket in	do_get_nl_link
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20RFC%5D%20%5Blibsocketcan%5D%3A%20Read%20all%20data%20from%20socket%20in%0A%09do_get_nl_link&In-Reply-To=%3C1319031158-32511-1-git-send-email-alexander.stein%40systec-electronic.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006198.html">
+   <LINK REL="Next"  HREF="006200.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH RFC] [libsocketcan]: Read all data from socket in	do_get_nl_link</H1>
+    <B>Alexander Stein</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20RFC%5D%20%5Blibsocketcan%5D%3A%20Read%20all%20data%20from%20socket%20in%0A%09do_get_nl_link&In-Reply-To=%3C1319031158-32511-1-git-send-email-alexander.stein%40systec-electronic.com%3E"
+       TITLE="[PATCH RFC] [libsocketcan]: Read all data from socket in	do_get_nl_link">alexander.stein at systec-electronic.com
+       </A><BR>
+    <I>Wed Oct 19 15:32:38 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006198.html">[PATCH v13 0/6] flexcan: Add support for powerpc flexcan	(freescale p1010)
+</A></li>
+        <LI>Next message: <A HREF="006200.html">[PATCH RFC] [libsocketcan]: Read all data from socket in	do_get_nl_link
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6199">[ date ]</a>
+              <a href="thread.html#6199">[ thread ]</a>
+              <a href="subject.html#6199">[ subject ]</a>
+              <a href="author.html#6199">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>recvmsg might not return all interface data at once. Use a non-blocking
+socket and read several times until there is no more data.
+
+Signed-off-by: Alexander Stein &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">alexander.stein at systec-electronic.com</A>&gt;
+---
+Not sure where exactly to put this.
+
+src/libsocketcan.c |  247 +++++++++++++++++++++++++++-------------------------
+ 1 files changed, 130 insertions(+), 117 deletions(-)
+
+diff --git a/src/libsocketcan.c b/src/libsocketcan.c
+index 2ac3f2a..dcdece0 100644
+--- a/src/libsocketcan.c
++++ b/src/libsocketcan.c
+@@ -257,6 +257,7 @@ static int open_nl_sock()
+ 	int fd;
+ 	int sndbuf = 32768;
+ 	int rcvbuf = 32768;
++	int flags;
+ 	unsigned int addr_len;
+ 	struct sockaddr_nl local;
+ 
+@@ -269,6 +270,10 @@ static int open_nl_sock()
+ 	setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&amp;sndbuf, sizeof(sndbuf));
+ 
+ 	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void *)&amp;rcvbuf, sizeof(rcvbuf));
++	
++	if (-1 == (flags = fcntl(fd, F_GETFL, 0)))
++		flags = 0;
++	fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+ 
+ 	memset(&amp;local, 0, sizeof(local));
+ 	local.nl_family = AF_NETLINK;
+@@ -348,130 +353,138 @@ static int do_get_nl_link(int fd, __u8 acquire, const char *name, void *res)
+ 		return ret;
+ 	}
+ 
+-	if ((msglen = recvmsg(fd, &amp;msg, 0)) &lt;= 0) {
+-		perror(&quot;Receive error&quot;);
+-		return ret;
+-	}
+-	size_t u_msglen = (size_t) msglen;
+-	/* Check to see if the buffers in msg get truncated */
+-	if (msg.msg_namelen != sizeof(peer) ||
+-	    (msg.msg_flags &amp; (MSG_TRUNC | MSG_CTRUNC))) {
+-		fprintf(stderr, &quot;Uhoh... truncated message.\n&quot;);
+-		return ret;
+-	}
+-
+-	for (nl_msg = (struct nlmsghdr *)nlbuf;
+-	     NLMSG_OK(nl_msg, u_msglen);
+-	     nl_msg = NLMSG_NEXT(nl_msg, u_msglen)) {
+-		int type = nl_msg-&gt;nlmsg_type;
+-		int len;
+-		if (type != RTM_NEWLINK)
+-			continue;
+-
+-		struct ifinfomsg *ifi = NLMSG_DATA(nl_msg);
+-		struct rtattr *tb[IFLA_MAX + 1];
+-
+-		len =
+-		    nl_msg-&gt;nlmsg_len - NLMSG_LENGTH(sizeof(struct ifaddrmsg));
+-		parse_rtattr(tb, IFLA_MAX, IFLA_RTA(ifi), len);
+-
+-		if (strncmp
+-		    ((char *)RTA_DATA(tb[IFLA_IFNAME]), name,
+-		     sizeof(name)) != 0)
+-			continue;
+-
+-		if (tb[IFLA_LINKINFO])
+-			parse_rtattr_nested(linkinfo,
+-					    IFLA_INFO_MAX, tb[IFLA_LINKINFO]);
+-		else
+-			continue;
+-
+-		if (!linkinfo[IFLA_INFO_DATA]) {
+-			fprintf(stderr, &quot;no link data found\n&quot;);
++	while ((msglen = recvmsg(fd, &amp;msg, 0)) &gt; 0) {
++		size_t u_msglen = (size_t) msglen;
++		/* Check to see if the buffers in msg get truncated */
++		if (msg.msg_namelen != sizeof(peer) ||
++		    (msg.msg_flags &amp; (MSG_TRUNC | MSG_CTRUNC))) {
++			fprintf(stderr, &quot;Uhoh... truncated message.\n&quot;);
+ 			return ret;
+ 		}
+ 
+-		parse_rtattr_nested(can_attr, IFLA_CAN_MAX,
+-				    linkinfo[IFLA_INFO_DATA]);
+-
+-		switch (acquire) {
+-		case GET_STATE:
+-			if (can_attr[IFLA_CAN_STATE]) {
+-				*((int *)res) = *((__u32 *)
+-						  RTA_DATA(can_attr
+-							   [IFLA_CAN_STATE]));
+-				ret = 0;
+-			} else {
+-				fprintf(stderr, &quot;no state data found\n&quot;);
++		for (nl_msg = (struct nlmsghdr *)nlbuf;
++		    NLMSG_OK(nl_msg, u_msglen);
++		    nl_msg = NLMSG_NEXT(nl_msg, u_msglen)) {
++			int type = nl_msg-&gt;nlmsg_type;
++			int len;
++			printf(&quot;message type: %d\n&quot;, type);
++			if (type != RTM_NEWLINK)
++				continue;
++
++			struct ifinfomsg *ifi = NLMSG_DATA(nl_msg);
++			struct rtattr *tb[IFLA_MAX + 1];
++
++			printf(&quot;nl_msg-&gt;nlmsg_len: %d\n&quot;, nl_msg-&gt;nlmsg_len);
++			len =
++			    nl_msg-&gt;nlmsg_len - NLMSG_LENGTH(sizeof(struct ifaddrmsg));
++			parse_rtattr(tb, IFLA_MAX, IFLA_RTA(ifi), len);
++
++			printf(&quot;do we want interface: %s\n&quot;, (char *)RTA_DATA(tb[IFLA_IFNAME]));
++			if (strncmp
++			    ((char *)RTA_DATA(tb[IFLA_IFNAME]), name,
++			    sizeof(name)) != 0)
++				continue;
++
++			if (tb[IFLA_LINKINFO])
++				parse_rtattr_nested(linkinfo,
++						    IFLA_INFO_MAX, tb[IFLA_LINKINFO]);
++			else
++				continue;
++
++			if (!linkinfo[IFLA_INFO_DATA]) {
++				fprintf(stderr, &quot;no link data found\n&quot;);
++				return ret;
+ 			}
+ 
+-			break;
+-		case GET_RESTART_MS:
+-			if (can_attr[IFLA_CAN_RESTART_MS]) {
+-				*((__u32 *) res) = *((__u32 *)
+-						     RTA_DATA(can_attr
+-							      [IFLA_CAN_RESTART_MS]));
+-				ret = 0;
+-			} else
+-				fprintf(stderr, &quot;no restart_ms data found\n&quot;);
+-
+-			break;
+-		case GET_BITTIMING:
+-			if (can_attr[IFLA_CAN_BITTIMING]) {
+-				memcpy(res,
+-				       RTA_DATA(can_attr[IFLA_CAN_BITTIMING]),
+-				       sizeof(struct can_bittiming));
+-				ret = 0;
+-			} else
+-				fprintf(stderr, &quot;no bittiming data found\n&quot;);
+-
+-			break;
+-		case GET_CTRLMODE:
+-			if (can_attr[IFLA_CAN_CTRLMODE]) {
+-				memcpy(res,
+-				       RTA_DATA(can_attr[IFLA_CAN_CTRLMODE]),
+-				       sizeof(struct can_ctrlmode));
+-				ret = 0;
+-			} else
+-				fprintf(stderr, &quot;no ctrlmode data found\n&quot;);
+-
+-			break;
+-		case GET_CLOCK:
+-			if (can_attr[IFLA_CAN_CLOCK]) {
+-				memcpy(res,
+-				       RTA_DATA(can_attr[IFLA_CAN_CLOCK]),
+-				       sizeof(struct can_clock));
+-				ret = 0;
+-			} else
+-				fprintf(stderr,
+-					&quot;no clock parameter data found\n&quot;);
+-
+-			break;
+-		case GET_BITTIMING_CONST:
+-			if (can_attr[IFLA_CAN_BITTIMING_CONST]) {
+-				memcpy(res,
+-				       RTA_DATA(can_attr[IFLA_CAN_BITTIMING_CONST]),
+-				       sizeof(struct can_bittiming_const));
+-				ret = 0;
+-			} else
+-				fprintf(stderr, &quot;no bittiming_const data found\n&quot;);
+-
+-			break;
+-		case GET_BERR_COUNTER:
+-			if (can_attr[IFLA_CAN_BERR_COUNTER]) {
+-				memcpy(res,
+-				       RTA_DATA(can_attr[IFLA_CAN_BERR_COUNTER]),
+-				       sizeof(struct can_berr_counter));
+-				ret = 0;
+-			} else
+-				fprintf(stderr, &quot;no berr_counter data found\n&quot;);
+-
+-			break;
++			parse_rtattr_nested(can_attr, IFLA_CAN_MAX,
++					    linkinfo[IFLA_INFO_DATA]);
++
++			switch (acquire) {
++			case GET_STATE:
++				if (can_attr[IFLA_CAN_STATE]) {
++					*((int *)res) = *((__u32 *)
++							  RTA_DATA(can_attr
++								  [IFLA_CAN_STATE]));
++					printf(&quot;state: %d\n&quot;, *((__u32 *)
++							  RTA_DATA(can_attr
++								  [IFLA_CAN_STATE])));
++					ret = 0;
++				} else {
++					fprintf(stderr, &quot;no state data found\n&quot;);
++				}
+ 
+-		default:
+-			fprintf(stderr, &quot;unknown acquire mode\n&quot;);
++				break;
++			case GET_RESTART_MS:
++				if (can_attr[IFLA_CAN_RESTART_MS]) {
++					*((__u32 *) res) = *((__u32 *)
++							    RTA_DATA(can_attr
++								      [IFLA_CAN_RESTART_MS]));
++					ret = 0;
++				} else
++					fprintf(stderr, &quot;no restart_ms data found\n&quot;);
++
++				break;
++			case GET_BITTIMING:
++				if (can_attr[IFLA_CAN_BITTIMING]) {
++					memcpy(res,
++					      RTA_DATA(can_attr[IFLA_CAN_BITTIMING]),
++					      sizeof(struct can_bittiming));
++					ret = 0;
++				} else
++					fprintf(stderr, &quot;no bittiming data found\n&quot;);
++
++				break;
++			case GET_CTRLMODE:
++				if (can_attr[IFLA_CAN_CTRLMODE]) {
++					memcpy(res,
++					      RTA_DATA(can_attr[IFLA_CAN_CTRLMODE]),
++					      sizeof(struct can_ctrlmode));
++					ret = 0;
++				} else
++					fprintf(stderr, &quot;no ctrlmode data found\n&quot;);
++
++				break;
++			case GET_CLOCK:
++				if (can_attr[IFLA_CAN_CLOCK]) {
++					memcpy(res,
++					      RTA_DATA(can_attr[IFLA_CAN_CLOCK]),
++					      sizeof(struct can_clock));
++					ret = 0;
++				} else
++					fprintf(stderr,
++						&quot;no clock parameter data found\n&quot;);
++
++				break;
++			case GET_BITTIMING_CONST:
++				if (can_attr[IFLA_CAN_BITTIMING_CONST]) {
++					memcpy(res,
++					      RTA_DATA(can_attr[IFLA_CAN_BITTIMING_CONST]),
++					      sizeof(struct can_bittiming_const));
++					ret = 0;
++				} else
++					fprintf(stderr, &quot;no bittiming_const data found\n&quot;);
++
++				break;
++			case GET_BERR_COUNTER:
++				if (can_attr[IFLA_CAN_BERR_COUNTER]) {
++					memcpy(res,
++					      RTA_DATA(can_attr[IFLA_CAN_BERR_COUNTER]),
++					      sizeof(struct can_berr_counter));
++					ret = 0;
++				} else
++					fprintf(stderr, &quot;no berr_counter data found\n&quot;);
++
++				break;
++
++			default:
++				fprintf(stderr, &quot;unknown acquire mode\n&quot;);
++			}
+ 		}
+ 	}
++	if ((msglen &lt;= 0) &amp;&amp; (errno != EAGAIN)) {
++		perror(&quot;Receive error&quot;);
++	}
++
+ 	return ret;
+ }
+ 
+-- 
+1.7.3.4
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006198.html">[PATCH v13 0/6] flexcan: Add support for powerpc flexcan	(freescale p1010)
+</A></li>
+	<LI>Next message: <A HREF="006200.html">[PATCH RFC] [libsocketcan]: Read all data from socket in	do_get_nl_link
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6199">[ date ]</a>
+              <a href="thread.html#6199">[ thread ]</a>
+              <a href="subject.html#6199">[ subject ]</a>
+              <a href="author.html#6199">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

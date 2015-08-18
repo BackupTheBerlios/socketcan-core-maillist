@@ -1,0 +1,156 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC v1] can: add support for Janz CAN board
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20v1%5D%20can%3A%20add%20support%20for%20Janz%20CAN%20board&In-Reply-To=%3C4B72A211.3090600%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004017.html">
+   <LINK REL="Next"  HREF="004001.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC v1] can: add support for Janz CAN board</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20v1%5D%20can%3A%20add%20support%20for%20Janz%20CAN%20board&In-Reply-To=%3C4B72A211.3090600%40grandegger.com%3E"
+       TITLE="[RFC v1] can: add support for Janz CAN board">wg at grandegger.com
+       </A><BR>
+    <I>Wed Feb 10 13:09:53 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004017.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+        <LI>Next message: <A HREF="004001.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4000">[ date ]</a>
+              <a href="thread.html#4000">[ thread ]</a>
+              <a href="subject.html#4000">[ subject ]</a>
+              <a href="author.html#4000">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ira W. Snyder wrote:
+&gt;<i> Hello all,
+</I>&gt;<i> 
+</I>&gt;<i> I posted last week asking about a driver for boards running on a PLX
+</I>&gt;<i> chip. It turns out that these are passive boards. I have been looking
+</I>&gt;<i> for a driver for the Janz CMOD-IO board CAN interfaces.
+</I>&gt;<i> 
+</I>&gt;<i> I finally found the datasheets and took the time to write a driver. This
+</I>&gt;<i> board is an intelligent CAN interface: it has onboard microprocessors to
+</I>&gt;<i> help process CAN traffic.
+</I>&gt;<i> 
+</I>&gt;<i> This is a very rough first try at a CAN driver. I'm sure it still has
+</I>&gt;<i> problems, and I would appreciate if you can take a look and help me add
+</I>&gt;<i> what is needed. I'm am not extremely knowledgeable about the CAN bus.
+</I>
+You are welcome. I think the esd_pci331 drive should answer most of your
+ questions.
+
+&gt;<i> The things that are known to be wrong:
+</I>&gt;<i> 
+</I>&gt;<i> - bus-on / bus-off handling
+</I>&gt;<i> 
+</I>&gt;<i> I did this straight in the network device open()/stop() methods. I don't
+</I>&gt;<i> handle the condition where we get too many bus errors and the bus goes
+</I>&gt;<i> into bus-off state. What should I be doing here?
+</I>
+Search for &quot;can_bus_off&quot; in esd_pci331.c. The controller (hardware) goes
+bus-off if to much errors occurred and it's necessary to handle that
+event in the driver and report it to the apps. Yon can only recover from
+ a bus-off initiating a so called bus-off recovery, which is done via
+esd331_set_mode(CAN_MODE_START).
+
+&gt;<i> - state changes, bit timing, etc.
+</I>
+Search for &quot;alloc_can_err_skb&quot; and &quot;CAN_ERR&quot; in esd_pci331.c. We report
+CAN error state changes and errors via so called CAN error messages,
+which the apps can receive on request.
+
+&gt;<i> I'm not at all sure how this is supposed to work. Perhaps someone that
+</I>&gt;<i> knows CAN bus better that I do can help.
+</I>&gt;<i> 
+</I>&gt;<i> - CAN bus termination
+</I>&gt;<i> 
+</I>&gt;<i> This board supports optionally terminating the CAN bus. In order to test
+</I>&gt;<i> this driver, I connected both CAN modules on a single board together. To
+</I>&gt;<i> get this to work, I needed to turn on termination on both modules.
+</I>&gt;<i> 
+</I>&gt;<i> Is this wrong? Is there a way to enable/disable termination via the &quot;ip&quot;
+</I>&gt;<i> tool?
+</I>
+No, that's specific to this driver and could be implemented via SysFS,
+as Kurt suggested.
+
+&gt;<i> - module probing
+</I>&gt;<i> 
+</I>&gt;<i> This board is really a MODULbus carrier board, into which plugs 4
+</I>&gt;<i> daughterboards. These can be CAN modules, or others. On my board, I have
+</I>&gt;<i> 2x CAN modules and 1x TTL GPIO module. I need support for both of these
+</I>&gt;<i> for my application. For the time being, I *did not* add support for the
+</I>&gt;<i> TTL module. That will come once the CAN part is finished.
+</I>
+The modules are connected to the PCI bus, I assume. The TTL module
+should be handled by a dedicated driver.
+
+&gt;<i> Also, there is no way I am aware of to determine what type of board is
+</I>&gt;<i> plugged into which MODULbus slot on the carrier board. My CAN modules
+</I>&gt;<i> support identification, but the TTL module does not.
+</I>&gt;<i> 
+</I>&gt;<i> I hard-coded the module layout into the driver itself. This is
+</I>&gt;<i> sufficient for my purposes, but probably is not sufficient for mainline
+</I>&gt;<i> Linux :'(. Any ideas or suggestions?
+</I>
+This information could be provide via module parameter, for example.
+
+&gt;<i> Any review will be much appreciated!
+</I>
+Puh, that's a lot of untested code. Some general comments/questions:
+
+- You use NAPI and a work-queue. Why do you need both?
+
+- I do not see how you control the flow of TX messages? To be more
+  precise, I do not find netif_stop_queue() in your xmit path.
+
+- You can use the standard bit-timing calculation. See how it's done in
+  sja1000/sja1000.c. Search for sja1000_bittiming_const and
+  sja1000_set_bittiming.
+
+- You do not handle echo skb's. Search for can_get_echo_skb() and
+  can_put_echo_skb() for local loopback.
+
+As I see it, this code does not run or even compile yet... too early for
+a full review.
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004017.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+	<LI>Next message: <A HREF="004001.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4000">[ date ]</a>
+              <a href="thread.html#4000">[ thread ]</a>
+              <a href="subject.html#4000">[ subject ]</a>
+              <a href="author.html#4000">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

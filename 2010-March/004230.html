@@ -1,0 +1,285 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 1/3] mfd: add support for Janz CMOD-IO PCI MODULbus	Carrier Board
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-March/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%201/3%5D%20mfd%3A%20add%20support%20for%20Janz%20CMOD-IO%20PCI%20MODULbus%0A%09Carrier%20Board&In-Reply-To=%3C20100319182209.GD13672%40ovro.caltech.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004229.html">
+   <LINK REL="Next"  HREF="004205.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 1/3] mfd: add support for Janz CMOD-IO PCI MODULbus	Carrier Board</H1>
+    <B>Ira W. Snyder</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%201/3%5D%20mfd%3A%20add%20support%20for%20Janz%20CMOD-IO%20PCI%20MODULbus%0A%09Carrier%20Board&In-Reply-To=%3C20100319182209.GD13672%40ovro.caltech.edu%3E"
+       TITLE="[PATCH 1/3] mfd: add support for Janz CMOD-IO PCI MODULbus	Carrier Board">iws at ovro.caltech.edu
+       </A><BR>
+    <I>Fri Mar 19 19:22:09 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004229.html">[PATCH 1/3] mfd: add support for Janz CMOD-IO PCI MODULbus	Carrier Board
+</A></li>
+        <LI>Next message: <A HREF="004205.html">[PATCH 2/3] can: add support for Janz VMOD-ICAN3 Intelligent CAN	module
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4230">[ date ]</a>
+              <a href="thread.html#4230">[ thread ]</a>
+              <a href="subject.html#4230">[ subject ]</a>
+              <a href="author.html#4230">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Fri, Mar 19, 2010 at 05:38:51PM +0100, Samuel Ortiz wrote:
+&gt;<i> Hi Ira,
+</I>&gt;<i> 
+</I>&gt;<i> Some comments below:
+</I>&gt;<i> 
+</I>&gt;<i> On Thu, Mar 18, 2010 at 09:38:42AM -0700, Ira W. Snyder wrote:
+</I>&gt;<i> &gt; +/* Module Parameters */
+</I>&gt;<i> &gt; +static unsigned int num_modules = CMODIO_MAX_MODULES;
+</I>&gt;<i> &gt; +static unsigned char *modules[CMODIO_MAX_MODULES] = {
+</I>&gt;<i> &gt; +	&quot;janz-ican3&quot;,
+</I>&gt;<i> &gt; +	&quot;janz-ican3&quot;,
+</I>&gt;<i> &gt; +	&quot;&quot;,
+</I>&gt;<i> &gt; +	&quot;janz-ttl&quot;,
+</I>&gt;<i> &gt; +};
+</I>&gt;<i> That's not very nice, but I honestly dont know how to make it less ugly...
+</I>&gt;<i> At least this should be all left blank by default, as Wolfgang hinted.
+</I>&gt;<i> 
+</I>
+Agreed, I've made the change in my tree.
+
+&gt;<i> &gt; +/*
+</I>&gt;<i> &gt; + * Subdevice Support
+</I>&gt;<i> &gt; + */
+</I>&gt;<i> Please use the mfd-core API for building and registering platform sub devices.
+</I>&gt;<i> The pieces of code below should shrink significantly.
+</I>&gt;<i> 
+</I>
+Using this framework, how is it possible to create  the devices that I
+do down below. For each subdevice, I need three resources:
+
+1) MODULbus registers -- PCI BAR3 + (0x200 * module_num)
+2) PLX Control Registers -- PCI BAR4
+3) IRQ
+
+Specifically, the way IORESOURCE_MEM resources are copied seems wrong.
+They start at the base address of only one resource and use the offsets
+provided in the struct mfd_cell. See the if-statement at
+drivers/mfd/mfd-core.c line 48.
+
+I need two use two different parent resources. The mfd_add_devices()
+function doesn't support this.
+
+&gt;<i> &gt; +static int cmodio_remove_subdev(struct device *dev, void *data)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	platform_device_unregister(to_platform_device(dev));
+</I>&gt;<i> &gt; +	return 0;
+</I>&gt;<i> &gt; +}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +static void cmodio_subdev_release(struct device *dev)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	kfree(to_platform_device(dev));
+</I>&gt;<i> &gt; +}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +static struct platform_device *cmodio_create_subdev(struct cmodio_device *priv,
+</I>&gt;<i> &gt; +						    char *name,
+</I>&gt;<i> &gt; +						    unsigned int res_count,
+</I>&gt;<i> &gt; +						    unsigned int pdata_size)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	struct platform_device *pdev;
+</I>&gt;<i> &gt; +	size_t res_size;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	res_size = sizeof(struct resource) * res_count;
+</I>&gt;<i> &gt; +	pdev = kzalloc(sizeof(*pdev) + res_size + pdata_size, GFP_KERNEL);
+</I>&gt;<i> &gt; +	if (!pdev)
+</I>&gt;<i> &gt; +		return NULL;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	pdev-&gt;dev.release = cmodio_subdev_release;
+</I>&gt;<i> &gt; +	pdev-&gt;dev.parent = &amp;priv-&gt;pdev-&gt;dev;
+</I>&gt;<i> &gt; +	pdev-&gt;name = name;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	if (res_count) {
+</I>&gt;<i> &gt; +		pdev-&gt;resource = (struct resource *)(pdev + 1);
+</I>&gt;<i> &gt; +		pdev-&gt;num_resources = res_count;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	if (pdata_size)
+</I>&gt;<i> &gt; +		pdev-&gt;dev.platform_data = (void *)(pdev + 1) + res_size;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	return pdev;
+</I>&gt;<i> &gt; +}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +/* Create a memory resource for a subdevice */
+</I>&gt;<i> &gt; +static void cmodio_create_mem(struct resource *parent, struct resource *res,
+</I>&gt;<i> &gt; +			      resource_size_t offset, resource_size_t size)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	res-&gt;flags = IORESOURCE_MEM;
+</I>&gt;<i> &gt; +	res-&gt;parent = parent;
+</I>&gt;<i> &gt; +	res-&gt;start = parent-&gt;start + offset;
+</I>&gt;<i> &gt; +	res-&gt;end = parent-&gt;start + offset + size - 1;
+</I>&gt;<i> &gt; +}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +/* Create an IRQ resource for a subdevice */
+</I>&gt;<i> &gt; +static void cmodio_create_irq(struct resource *res, unsigned int irq)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	res-&gt;flags = IORESOURCE_IRQ;
+</I>&gt;<i> &gt; +	res-&gt;parent = NULL;
+</I>&gt;<i> &gt; +	res-&gt;start = irq;
+</I>&gt;<i> &gt; +	res-&gt;end = irq;
+</I>&gt;<i> &gt; +}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +static int __devinit cmodio_probe_subdevice(struct cmodio_device *priv,
+</I>&gt;<i> &gt; +					    char *name, unsigned int modno)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	struct janz_platform_data *pdata;
+</I>&gt;<i> &gt; +	struct platform_device *pdev;
+</I>&gt;<i> &gt; +	resource_size_t offset, size;
+</I>&gt;<i> &gt; +	struct pci_dev *pci;
+</I>&gt;<i> &gt; +	int ret;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	pci = priv-&gt;pdev;
+</I>&gt;<i> &gt; +	pdev = cmodio_create_subdev(priv, name, 3, sizeof(*pdata));
+</I>&gt;<i> &gt; +	if (!pdev) {
+</I>&gt;<i> &gt; +		dev_err(&amp;pci-&gt;dev, &quot;MODULbus slot %d alloc failed\n&quot;, modno);
+</I>&gt;<i> &gt; +		ret = -ENOMEM;
+</I>&gt;<i> &gt; +		goto out_return;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	pdata = pdev-&gt;dev.platform_data;
+</I>&gt;<i> &gt; +	pdata-&gt;modno = modno;
+</I>&gt;<i> &gt; +	pdev-&gt;id = priv-&gt;subdev_id++;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/* MODULbus registers -- PCI BAR3 is big-endian MODULbus access */
+</I>&gt;<i> &gt; +	offset = CMODIO_MODULBUS_SIZE * modno;
+</I>&gt;<i> &gt; +	size = CMODIO_MODULBUS_SIZE;
+</I>&gt;<i> &gt; +	cmodio_create_mem(&amp;pci-&gt;resource[3], &amp;pdev-&gt;resource[0], offset, size);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/* PLX Control Registers -- PCI BAR4 is interrupt and other registers */
+</I>&gt;<i> &gt; +	offset = 0;
+</I>&gt;<i> &gt; +	size = resource_size(&amp;pci-&gt;resource[4]);
+</I>&gt;<i> &gt; +	cmodio_create_mem(&amp;pci-&gt;resource[4], &amp;pdev-&gt;resource[1], offset, size);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/* IRQ */
+</I>&gt;<i> &gt; +	cmodio_create_irq(&amp;pdev-&gt;resource[2], pci-&gt;irq);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/* Register the device */
+</I>&gt;<i> &gt; +	ret = platform_device_register(pdev);
+</I>&gt;<i> &gt; +	if (ret) {
+</I>&gt;<i> &gt; +		dev_err(&amp;pci-&gt;dev, &quot;MODULbus slot %d register failed\n&quot;, modno);
+</I>&gt;<i> &gt; +		goto out_free;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	return 0;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +out_free:
+</I>&gt;<i> &gt; +	cmodio_subdev_release(&amp;pdev-&gt;dev);
+</I>&gt;<i> &gt; +out_return:
+</I>&gt;<i> &gt; +	return ret;
+</I>&gt;<i> &gt; +}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +/* Probe each submodule using kernel parameters */
+</I>&gt;<i> &gt; +static int __devinit cmodio_probe_submodules(struct cmodio_device *priv)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	char *name;
+</I>&gt;<i> &gt; +	int i;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	for (i = 0; i &lt; num_modules; i++) {
+</I>&gt;<i> &gt; +		name = modules[i];
+</I>&gt;<i> &gt; +		if (!strcmp(name, &quot;&quot;))
+</I>&gt;<i> &gt; +			continue;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +		dev_dbg(&amp;priv-&gt;pdev-&gt;dev, &quot;MODULbus %d: name %s\n&quot;, i, name);
+</I>&gt;<i> &gt; +		cmodio_probe_subdevice(priv, name, i);
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	return 0;
+</I>&gt;<i> &gt; +}
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> &gt; +/*
+</I>&gt;<i> &gt; + * PCI Driver
+</I>&gt;<i> &gt; + */
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +static int __devinit cmodio_pci_probe(struct pci_dev *dev,
+</I>&gt;<i> &gt; +				      const struct pci_device_id *id)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	struct cmodio_device *priv;
+</I>&gt;<i> &gt; +	int ret;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+</I>&gt;<i> &gt; +	if (!priv) {
+</I>&gt;<i> &gt; +		dev_err(&amp;dev-&gt;dev, &quot;unable to allocate private data\n&quot;);
+</I>&gt;<i> &gt; +		ret = -ENOMEM;
+</I>&gt;<i> &gt; +		goto out_return;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	pci_set_drvdata(dev, priv);
+</I>&gt;<i> &gt; +	priv-&gt;pdev = dev;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/* Hardware Initialization */
+</I>&gt;<i> &gt; +	ret = pci_enable_device(dev);
+</I>&gt;<i> &gt; +	if (ret) {
+</I>&gt;<i> &gt; +		dev_err(&amp;dev-&gt;dev, &quot;unable to enable device\n&quot;);
+</I>&gt;<i> &gt; +		goto out_free_priv;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	pci_set_master(dev);
+</I>&gt;<i> &gt; +	ret = pci_request_regions(dev, DRV_NAME);
+</I>&gt;<i> &gt; +	if (ret) {
+</I>&gt;<i> &gt; +		dev_err(&amp;dev-&gt;dev, &quot;unable to request regions\n&quot;);
+</I>&gt;<i> &gt; +		goto out_pci_disable_device;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/* Onboard configuration registers */
+</I>&gt;<i> &gt; +	priv-&gt;ctrl = pci_ioremap_bar(dev, 4);
+</I>&gt;<i> Why 4 ?
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>
+Because that is how the device works ;) There is a comment up above that
+describes them as the &quot;PLX control registers&quot;. Are you suggesting that I
+add a comment here too?
+
+I think lots of other PCI devices just use hard-coded numbers here.
+They're device specific. You won't be able to program for the device at
+all if you don't know the meaning of each PCI BAR.
+
+&gt;<i> &gt; +#define PCI_VENDOR_ID_JANZ		0x13c3
+</I>&gt;<i> That probably belongs to pci_ids.h
+</I>&gt;<i> 
+</I>
+Should I add a patch to the series for this?
+
+Thanks,
+Ira
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004229.html">[PATCH 1/3] mfd: add support for Janz CMOD-IO PCI MODULbus	Carrier Board
+</A></li>
+	<LI>Next message: <A HREF="004205.html">[PATCH 2/3] can: add support for Janz VMOD-ICAN3 Intelligent CAN	module
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4230">[ date ]</a>
+              <a href="thread.html#4230">[ thread ]</a>
+              <a href="subject.html#4230">[ subject ]</a>
+              <a href="author.html#4230">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

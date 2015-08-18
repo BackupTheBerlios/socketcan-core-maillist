@@ -1,0 +1,186 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%202/3%5D%20can%3A%20mscan-mpc5xxx%3A%20add%20support%20for%20the%0A%09MPC521x%20processor&In-Reply-To=%3C4B421CDB.4010902%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003737.html">
+   <LINK REL="Next"  HREF="003740.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%202/3%5D%20can%3A%20mscan-mpc5xxx%3A%20add%20support%20for%20the%0A%09MPC521x%20processor&In-Reply-To=%3C4B421CDB.4010902%40grandegger.com%3E"
+       TITLE="[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor">wg at grandegger.com
+       </A><BR>
+    <I>Mon Jan  4 17:52:43 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003737.html">[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor
+</A></li>
+        <LI>Next message: <A HREF="003740.html">[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3738">[ date ]</a>
+              <a href="thread.html#3738">[ thread ]</a>
+              <a href="subject.html#3738">[ subject ]</a>
+              <a href="author.html#3738">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Wolfram,
+
+Wolfram Sang wrote:
+&gt;<i> Hello Wolfgang,
+</I>&gt;<i> 
+</I>&gt;<i> first the good news: Your patches also work with our MPC5121-board.
+</I>
+Nice. Just for curiosity, what clock and frequency does it select on
+your board? It should be listed when the driver is loaded.
+
+&gt;&gt;&gt;&gt;<i> +#else /* !CONFIG_PPC_MPC5200 */
+</I>&gt;&gt;&gt;&gt;<i> +static u32 __devinit mpc52xx_can_get_clock(struct of_device *ofdev,
+</I>&gt;&gt;&gt;&gt;<i> +					   const char *clock_name,
+</I>&gt;&gt;&gt;&gt;<i> +					   int *mscan_clksrc)
+</I>&gt;&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;&gt;<i> +	return 0;
+</I>&gt;&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;&gt;<i> +#endif /* CONFIG_PPC_MPC5200 */
+</I>&gt;&gt;&gt;<i> Hmmm, I don't really like those empty functions. I once used the data-field of
+</I>&gt;&gt;&gt;<i> struct of_device_id, which carried a function pointer to a specific
+</I>&gt;&gt;&gt;<i> init-function for the matched device. What do you think about such an approach?
+</I>&gt;&gt;<i> Often the problem is that the function will not compile on the other MPC
+</I>&gt;&gt;<i> arch. This is not true here. So, the main reason for the #ifdefs is
+</I>&gt;&gt;<i> space saving. Your approach will not help in both cases.
+</I>&gt;<i> 
+</I>&gt;<i> My idea was: it might be nice to save both #else-branches and the if-clause in
+</I>&gt;<i> probe() which calls this get_clock() or the other (and then another in case
+</I>&gt;<i> there will be a new mpc5xyz-user in the future). And replace it with some
+</I>&gt;<i> mpc5xxx_custom_init() which is taken from of_device_id-&gt;data. No big issue,
+</I>&gt;<i> though; no show-stopper.
+</I>
+You mean like in the i2c-mpc driver:
+
+<A HREF="http://lxr.linux.no/#linux+v2.6.32/drivers/i2c/busses/i2c-mpc.c#L585">http://lxr.linux.no/#linux+v2.6.32/drivers/i2c/busses/i2c-mpc.c#L585</A>
+
+No problem, if I handle the regs property inside the mpc5121-specific
+function. The #ifdef's are for *space saving*. If nobody else than me
+cares, I will remove them.
+
+&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;&gt;<i> +#ifdef CONFIG_PPC_MPC512x
+</I>&gt;&gt;&gt;&gt;<i> +struct mpc512x_clockctl {
+</I>&gt;&gt;&gt;&gt;<i> +	u32 spmr;		/* System PLL Mode Reg */
+</I>&gt;&gt;&gt;&gt;<i> +	u32 sccr[2];		/* System Clk Ctrl Reg 1 &amp; 2 */
+</I>&gt;&gt;&gt;&gt;<i> +	u32 scfr1;		/* System Clk Freq Reg 1 */
+</I>&gt;&gt;&gt;&gt;<i> +	u32 scfr2;		/* System Clk Freq Reg 2 */
+</I>&gt;&gt;&gt;&gt;<i> +	u32 reserved;
+</I>&gt;&gt;&gt;&gt;<i> +	u32 bcr;		/* Bread Crumb Reg */
+</I>&gt;&gt;&gt;&gt;<i> +	u32 pccr[12];		/* PSC Clk Ctrl Reg 0-11 */
+</I>&gt;&gt;&gt;&gt;<i> +	u32 spccr;		/* SPDIF Clk Ctrl Reg */
+</I>&gt;&gt;&gt;&gt;<i> +	u32 cccr;		/* CFM Clk Ctrl Reg */
+</I>&gt;&gt;&gt;&gt;<i> +	u32 dccr;		/* DIU Clk Cnfg Reg */
+</I>&gt;&gt;&gt;&gt;<i> +	u32 mccr[4];		/* MSCAN Clk Ctrl Reg 1-3 */
+</I>&gt;&gt;&gt;&gt;<i> +};
+</I>&gt;<i> 
+</I>&gt;<i> I wonder if this (and the occurence in clock.c) should be factored out and
+</I>&gt;<i> moved to asm/mpc5xxx.h?
+</I>
+I was thinking about that as well but mpc5xxx.h seems not (yet) to be a
+popular place to store mpc5xxx related definitions.
+
+&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;&gt;<i> +static struct of_device_id mpc512x_clock_ids[] __devinitdata = {
+</I>&gt;&gt;&gt;&gt;<i> +	{ .compatible = &quot;fsl,mpc5121-clock&quot;, },
+</I>&gt;&gt;&gt;&gt;<i> +	{}
+</I>&gt;&gt;&gt;&gt;<i> +};
+</I>&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;&gt;<i> +static u32  __devinit mpc512x_can_get_clock(struct of_device *ofdev,
+</I>&gt;&gt;&gt;&gt;<i> +					    const char *clock_name,
+</I>&gt;&gt;&gt;&gt;<i> +					    int *mscan_clksrc,
+</I>&gt;&gt;&gt;&gt;<i> +					    ssize_t mscan_addr)
+</I>&gt;&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;&gt;<i> +	struct mpc512x_clockctl __iomem *clockctl;
+</I>&gt;&gt;&gt;&gt;<i> +	struct device_node *np_clock;
+</I>&gt;&gt;&gt;&gt;<i> +	struct clk *sys_clk, *ref_clk;
+</I>&gt;&gt;&gt;&gt;<i> +	int plen, clockidx, clocksrc = -1;
+</I>&gt;&gt;&gt;&gt;<i> +	u32 sys_freq, val, clockdiv = 1, freq = 0;
+</I>&gt;&gt;&gt;&gt;<i> +	const u32 *pval;
+</I>&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;&gt;<i> +	np_clock = of_find_matching_node(NULL, mpc512x_clock_ids);
+</I>&gt;&gt;&gt;&gt;<i> +	if (!np_clock) {
+</I>&gt;&gt;&gt;&gt;<i> +		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't find clock node\n&quot;);
+</I>&gt;&gt;&gt;&gt;<i> +		return -ENODEV;
+</I>&gt;&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;&gt;<i> +	clockctl = of_iomap(np_clock, 0);
+</I>&gt;&gt;&gt;&gt;<i> +	if (!clockctl) {
+</I>&gt;&gt;&gt;&gt;<i> +		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't map clock registers\n&quot;);
+</I>&gt;&gt;&gt;&gt;<i> +		return 0;
+</I>&gt;&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;&gt;<i> +	/* Determine the MSCAN device index from the physical address */
+</I>&gt;&gt;&gt;&gt;<i> +	clockidx = (mscan_addr &amp; 0x80) ? 1 : 0;
+</I>&gt;&gt;&gt;&gt;<i> +	if (mscan_addr &amp; 0x2000)
+</I>&gt;&gt;&gt;&gt;<i> +		clockidx += 2;
+</I>&gt;&gt;&gt;<i> The PSCs use 'cell-index', here we use mscan_addr to derive the index. This is
+</I>&gt;&gt;&gt;<i> not consistent, but should be IMHO. Now, which is the preferred way? I think
+</I>&gt;&gt;&gt;<i> I'd go for 'cell-index', as other processors might have mscan_addr shuffled.
+</I>&gt;&gt;&gt;<i> Also, we could use 'of_iomap' again in the probe_routine.
+</I>&gt;&gt;<i> I understood that &quot;cell-index&quot; is deprecated and it has been removed
+</I>&gt;&gt;<i> from many nodes. That's why I used the address to derive the index.
+</I>&gt;<i> 
+</I>&gt;<i> Well, the arguments in your other mail make sense to me, so keep it this way.
+</I>&gt;<i> As not only the index-issue, but also the clock-handling is different for the
+</I>&gt;<i> PSCs, it is at least consistently inconsistent :D
+</I>
+OK.
+
+&gt;<i> One further note: I couldn't spot any code handling Rev1 of the MPC5121? Do you
+</I>&gt;<i> plan to add such code? If not, we should at least put a comment that it is
+</I>&gt;<i> missing. The binding documentation should be updated as well, as you can't use
+</I>&gt;<i> all options on such revisions.
+</I>
+Do we have rev1 support in the mainline kernel? I also understood that
+there are only a few devel boards out there with v1 CPUs. If necessary,
+this could be fixed later on demand. But it should be documented, e.g.
+in the KConfig and dts bindings doc, of course.
+
+Did you have a chance to test bus-off recovery? I just realized one
+issue if the device is stopped while in bus-off.
+
+Will come up with a v2 patch soon...
+
+Thanks,
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003737.html">[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor
+</A></li>
+	<LI>Next message: <A HREF="003740.html">[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3738">[ date ]</a>
+              <a href="thread.html#3738">[ thread ]</a>
+              <a href="subject.html#3738">[ subject ]</a>
+              <a href="author.html#3738">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

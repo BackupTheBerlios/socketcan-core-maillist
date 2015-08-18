@@ -1,0 +1,204 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH/RFC] enable device dev_dbg with CONFIG_CAN_DEBUG_DEVICES
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH/RFC%5D%20enable%20device%20dev_dbg%20with%20CONFIG_CAN_DEBUG_DEVICES&In-Reply-To=%3C49909FC0.3050005%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002269.html">
+   <LINK REL="Next"  HREF="002266.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH/RFC] enable device dev_dbg with CONFIG_CAN_DEBUG_DEVICES</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH/RFC%5D%20enable%20device%20dev_dbg%20with%20CONFIG_CAN_DEBUG_DEVICES&In-Reply-To=%3C49909FC0.3050005%40grandegger.com%3E"
+       TITLE="[PATCH/RFC] enable device dev_dbg with CONFIG_CAN_DEBUG_DEVICES">wg at grandegger.com
+       </A><BR>
+    <I>Mon Feb  9 22:27:28 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002269.html">device drivers section for kernel inclusion
+</A></li>
+        <LI>Next message: <A HREF="002266.html">[PATCH/RFC] enable device dev_dbg with CONFIG_CAN_DEBUG_DEVICES
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2265">[ date ]</a>
+              <a href="thread.html#2265">[ thread ]</a>
+              <a href="subject.html#2265">[ subject ]</a>
+              <a href="author.html#2265">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The following patch allows to enable CAN device debug messages via
+CONFIG_CAN_DEBUG_DEVICES and adds some useful dev_dbg() to dev.c,
+sja1000.c and mscan.c, from my point of view.
+
+As you might have realized, the MSCAN driver used dev_dbg() the heavy
+way, e.g. printing messages for each message sent and received. I think
+that's only useful for development.
+
+What do you think?
+
+Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+ drivers/net/can/Makefile          |    4 ++++
+ drivers/net/can/dev.c             |    4 ++++
+ drivers/net/can/mscan/Makefile    |    4 ++++
+ drivers/net/can/mscan/mscan.c     |   10 +---------
+ drivers/net/can/sja1000/Makefile  |    4 ++++
+ drivers/net/can/sja1000/sja1000.c |    2 +-
+ 6 files changed, 18 insertions(+), 10 deletions(-)
+
+Index: 2.6/drivers/net/can/Makefile
+===================================================================
+--- 2.6.orig/drivers/net/can/Makefile
++++ 2.6/drivers/net/can/Makefile
+@@ -44,4 +44,8 @@ obj-$(CONFIG_CAN_MSCAN_OLD)	+= old/mscan
+ obj-$(CONFIG_CAN_CCAN_OLD)	+= old/ccan/
+ obj-$(CONFIG_CAN_MCP251X)	+= mcp251x.o
+ 
++ifeq ($(CONFIG_CAN_DEBUG_DEVICES),y)
++EXTRA_CFLAGS += -DDEBUG
++endif
++
+ endif
+Index: 2.6/drivers/net/can/dev.c
+===================================================================
+--- 2.6.orig/drivers/net/can/dev.c
++++ 2.6/drivers/net/can/dev.c
+@@ -448,6 +448,8 @@ int can_restart_now(struct net_device *d
+ 	struct can_frame *cf;
+ 	int err;
+ 
++	dev_dbg(ND2D(dev), &quot;restart device\n&quot;);
++
+ 	if (netif_carrier_ok(dev))
+ 		netif_carrier_off(dev);
+ 
+@@ -507,6 +509,8 @@ void can_bus_off(struct net_device *dev)
+ {
+ 	struct can_priv *priv = netdev_priv(dev);
+ 
++	dev_dbg(ND2D(dev), &quot;bus-off state entered\n&quot;);
++
+ 	netif_carrier_off(dev);
+ 
+ 	if (priv-&gt;restart_ms &gt; 0 &amp;&amp; !priv-&gt;timer.expires) {
+Index: 2.6/drivers/net/can/mscan/mscan.c
+===================================================================
+--- 2.6.orig/drivers/net/can/mscan/mscan.c
++++ 2.6/drivers/net/can/mscan/mscan.c
+@@ -232,7 +232,6 @@ static int mscan_start_xmit(struct sk_bu
+ 	if (frame-&gt;can_dlc &gt; 8)
+ 		return -EINVAL;
+ 
+-	dev_dbg(ND2D(dev), &quot;%s\n&quot;, __func__);
+ 	out_8(&amp;regs-&gt;cantier, 0);
+ 
+ 	i = ~priv-&gt;tx_active &amp; MSCAN_TXE;
+@@ -258,8 +257,6 @@ static int mscan_start_xmit(struct sk_bu
+ 	rtr = frame-&gt;can_id &amp; CAN_RTR_FLAG;
+ 
+ 	if (frame-&gt;can_id &amp; CAN_EFF_FLAG) {
+-		dev_dbg(ND2D(dev), &quot;sending extended frame\n&quot;);
+-
+ 		can_id = (frame-&gt;can_id &amp; CAN_EFF_MASK) &lt;&lt; 1;
+ 		if (rtr)
+ 			can_id |= 1;
+@@ -268,7 +265,6 @@ static int mscan_start_xmit(struct sk_bu
+ 		can_id &gt;&gt;= 16;
+ 		can_id = (can_id &amp; 0x7) | ((can_id &lt;&lt; 2) &amp; 0xffe0) | (3 &lt;&lt; 3);
+ 	} else {
+-		dev_dbg(ND2D(dev), &quot;sending standard frame\n&quot;);
+ 		can_id = (frame-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 5;
+ 		if (rtr)
+ 			can_id |= 1 &lt;&lt; 4;
+@@ -396,10 +392,6 @@ static int mscan_rx_poll(struct net_devi
+ 				}
+ 			}
+ 
+-			dev_dbg(ND2D(dev),
+-				&quot;received pkt: id: %u dlc: %u data: &quot;,
+-				frame-&gt;can_id, frame-&gt;can_dlc);
+-
+ 			out_8(&amp;regs-&gt;canrflg, MSCAN_RXF);
+ 			dev-&gt;last_rx = jiffies;
+ 			stats-&gt;rx_packets++;
+@@ -597,7 +589,7 @@ static int mscan_do_set_bittiming(struct
+ 		BTR1_SET_TSEG2(bt-&gt;phase_seg2) |
+ 		BTR1_SET_SAM(priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES));
+ 
+-	dev_info(ND2D(dev), &quot;BTR0=0x%02x BTR1=0x%02x\n&quot;, btr0, btr1);
++	dev_dbg(ND2D(dev), &quot;setting BTR0=0x%02x BTR1=0x%02x\n&quot;, btr0, btr1);
+ 
+ 	out_8(&amp;regs-&gt;canbtr0, btr0);
+ 	out_8(&amp;regs-&gt;canbtr1, btr1);
+Index: 2.6/drivers/net/can/sja1000/sja1000.c
+===================================================================
+--- 2.6.orig/drivers/net/can/sja1000/sja1000.c
++++ 2.6/drivers/net/can/sja1000/sja1000.c
+@@ -239,7 +239,7 @@ static int sja1000_set_bittiming(struct 
+ 		(((bt-&gt;phase_seg2 - 1) &amp; 0x7) &lt;&lt; 4) |
+ 	  ((priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES) &lt;&lt; 7);
+ 
+-	dev_info(ND2D(dev), &quot;setting BTR0=0x%02x BTR1=0x%02x\n&quot;, btr0, btr1);
++	dev_dbg(ND2D(dev), &quot;setting BTR0=0x%02x BTR1=0x%02x\n&quot;, btr0, btr1);
+ 
+ 	priv-&gt;write_reg(dev, REG_BTR0, btr0);
+ 	priv-&gt;write_reg(dev, REG_BTR1, btr1);
+Index: 2.6/drivers/net/can/mscan/Makefile
+===================================================================
+--- 2.6.orig/drivers/net/can/mscan/Makefile
++++ 2.6/drivers/net/can/mscan/Makefile
+@@ -19,4 +19,8 @@ obj-$(CONFIG_CAN_MPC52XX)	+= mscan-mpc52
+ 
+ mscan-mpc52xx-objs	:= mscan.o mpc52xx_can.o
+ 
++ifeq ($(CONFIG_CAN_DEBUG_DEVICES),y)
++EXTRA_CFLAGS += -DDEBUG
++endif
++
+ endif
+Index: 2.6/drivers/net/can/sja1000/Makefile
+===================================================================
+--- 2.6.orig/drivers/net/can/sja1000/Makefile
++++ 2.6/drivers/net/can/sja1000/Makefile
+@@ -25,4 +25,8 @@ obj-$(CONFIG_CAN_PEAK_PCI) += peak_pci.o
+ obj-$(CONFIG_CAN_PIPCAN) += pipcan.o
+ obj-$(CONFIG_CAN_KVASER_PCI) += kvaser_pci.o
+ 
++ifeq ($(CONFIG_CAN_DEBUG_DEVICES),y)
++EXTRA_CFLAGS += -DDEBUG
++endif
++
+ endif
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002269.html">device drivers section for kernel inclusion
+</A></li>
+	<LI>Next message: <A HREF="002266.html">[PATCH/RFC] enable device dev_dbg with CONFIG_CAN_DEBUG_DEVICES
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2265">[ date ]</a>
+              <a href="thread.html#2265">[ thread ]</a>
+              <a href="subject.html#2265">[ subject ]</a>
+              <a href="author.html#2265">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

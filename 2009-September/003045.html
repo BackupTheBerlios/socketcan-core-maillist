@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7 CAN	interfaces
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v3%5D%20ems_usb%3A%20CAN/USB%20driver%20for%20EMS%20CPC-USB/ARM7%20CAN%0A%09interfaces&In-Reply-To=%3C20090910134920.GD8517%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003043.html">
+   <LINK REL="Next"  HREF="003046.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7 CAN	interfaces</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v3%5D%20ems_usb%3A%20CAN/USB%20driver%20for%20EMS%20CPC-USB/ARM7%20CAN%0A%09interfaces&In-Reply-To=%3C20090910134920.GD8517%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7 CAN	interfaces">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Thu Sep 10 15:49:20 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003043.html">[PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7	CAN	interfaces
+</A></li>
+        <LI>Next message: <A HREF="003046.html">[PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7	CAN	interfaces
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3045">[ date ]</a>
+              <a href="thread.html#3045">[ thread ]</a>
+              <a href="subject.html#3045">[ subject ]</a>
+              <a href="author.html#3045">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, Sep 10, 2009 at 02:29:37PM +0200, Wolfgang Grandegger wrote:
+[...]
+&gt;<i> &gt;&gt;&gt; Index: include/linux/can/dev.h
+</I>&gt;<i> &gt;&gt;&gt; ===================================================================
+</I>&gt;<i> &gt;&gt;&gt; --- include/linux/can/dev.h	(Revision 1048)
+</I>&gt;<i> &gt;&gt;&gt; +++ include/linux/can/dev.h	(Arbeitskopie)
+</I>&gt;<i> &gt;&gt;&gt; @@ -32,7 +32,7 @@
+</I>&gt;<i> &gt;&gt;&gt;  /*
+</I>&gt;<i> &gt;&gt;&gt;   * CAN common private data
+</I>&gt;<i> &gt;&gt;&gt;   */
+</I>&gt;<i> &gt;&gt;&gt; -#define CAN_ECHO_SKB_MAX  4
+</I>&gt;<i> &gt;&gt;&gt; +#define CAN_ECHO_SKB_MAX  10
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;  struct can_priv {
+</I>&gt;<i> &gt;&gt;&gt;  #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+</I>&gt;<i> &gt;&gt;&gt; Index: include/socketcan/can/dev.h
+</I>&gt;<i> &gt;&gt;&gt; ===================================================================
+</I>&gt;<i> &gt;&gt;&gt; --- include/socketcan/can/dev.h	(Revision 1048)
+</I>&gt;<i> &gt;&gt;&gt; +++ include/socketcan/can/dev.h	(Arbeitskopie)
+</I>&gt;<i> &gt;&gt;&gt; @@ -32,7 +32,7 @@
+</I>&gt;<i> &gt;&gt;&gt;  /*
+</I>&gt;<i> &gt;&gt;&gt;   * CAN common private data
+</I>&gt;<i> &gt;&gt;&gt;   */
+</I>&gt;<i> &gt;&gt;&gt; -#define CAN_ECHO_SKB_MAX  4
+</I>&gt;<i> &gt;&gt;&gt; +#define CAN_ECHO_SKB_MAX  10
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;  struct can_priv {
+</I>&gt;<i> &gt;&gt;&gt;  #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+</I>&gt;<i> &gt;&gt; For the moment I want to keep the old settings. We need to discuss how
+</I>&gt;<i> &gt;&gt; to handle this in a generic way. Either by increasing it to 8, let's
+</I>&gt;<i> &gt;&gt; say, or by providing a kernel config. Other opinions?
+</I>&gt;<i> &gt; with regard to CAN_ECHO_SKB_MAX, I had the same problem in the softing
+</I>&gt;<i> &gt; driver.
+</I>&gt;<i> &gt; would some interface like this:
+</I>&gt;<i> [...]
+</I>&gt;<i> &gt; +struct net_device *alloc_candev(int sizeof_priv, int echo_skb_max);
+</I>&gt;<i> 
+</I>&gt;<i> This is a good solution if we want the driver to set the number of echo
+</I>&gt;<i> skb's. I would actually put the echo_skbs at the end of the
+</I>&gt;<i> netdev_priv(). Would it also be useful that the user decides via kernel
+</I>&gt;<i> configuration option?
+</I>1) 'behind netdev_priv'
+so a layout in memory:
+[[can_priv]driver_priv][echo_skb[]]
+this is possible, not breaking things. But still, you'd need a pointer
+in from within can_priv, as the exact size of the priv is lost after the
+constructor. so, it justs saves the heap overhead.
+It must then be allocated during alloc_candev(), and requires an extra
+argument. I'm not sure how easily such change gets accepted in mainline.
+
+2) 'kernel config option'
+I assume that every device will have the same echo_skb_max then?
+
+Before choosing a value, a user needs to be informed very well, but I
+can imagine that a user does not even understand the consequences, ie. I
+have difficulties understanding the relation between echo_skb_max &amp; URB
+traffic in a driver _I didn't write_. How would I choose a good value?
+
+IMO, such things are very driver specific, and thus better put const in
+the driver. But this requires a variable echo_skb_max from can_priv
+scope. That why I put both echo_skb &amp; echo_skb_max as members.
+This addressess the problematic choice of a static echo_skb_max that
+would otherwise be left to the end user.
+
+Please mind this does not address how to malloc such things (ie. after
+netdev_priv, or seperate block in heap).
+
+Kurt
+
+&gt;<i> 
+</I>&gt;<i> Wolfgang.
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003043.html">[PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7	CAN	interfaces
+</A></li>
+	<LI>Next message: <A HREF="003046.html">[PATCH v3] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7	CAN	interfaces
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3045">[ date ]</a>
+              <a href="thread.html#3045">[ thread ]</a>
+              <a href="subject.html#3045">[ subject ]</a>
+              <a href="author.html#3045">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

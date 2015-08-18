@@ -1,0 +1,163 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2] at91_can
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20at91_can&In-Reply-To=%3C4AA9EA37.60609%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003052.html">
+   <LINK REL="Next"  HREF="003054.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2] at91_can</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20at91_can&In-Reply-To=%3C4AA9EA37.60609%40hartkopp.net%3E"
+       TITLE="[PATCH v2] at91_can">socketcan at hartkopp.net
+       </A><BR>
+    <I>Fri Sep 11 08:12:07 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003052.html">[PATCH v2] at91_can
+</A></li>
+        <LI>Next message: <A HREF="003054.html">[PATCH v2] at91_can
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3053">[ date ]</a>
+              <a href="thread.html#3053">[ thread ]</a>
+              <a href="subject.html#3053">[ subject ]</a>
+              <a href="author.html#3053">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Marc Kleine-Budde wrote:
+
+&gt;<i> here &quot;./strip-src -m -i -v 2.6.31&quot; version of the at91 driver,
+</I>
+
+&gt;<i> The driver with NAPI receiving messages with a length of 1 on a 1 Mbit
+</I>&gt;<i> link without swapping the messages (tested with pengutronix cansequence).
+</I>&gt;<i> However if I add some &quot;ping -f&quot; load the driver keeps working (tested
+</I>&gt;<i> with looking at the data bytes in the driver), but the userspace doesn't
+</I>&gt;<i> get enough cpu cycles so AFAICS the pacakges must be dropped in the
+</I>&gt;<i> network layer.
+</I>
+You may try to increase the socket receivce buffer which helped us in a real
+world project, when logging 5 CAN busses in a vehicle ...
+
+In the candump tool there is a commandline option '-r &lt;size&gt;' for that, which
+makes:
+
+                if (setsockopt(s[i], SOL_SOCKET, SO_RCVBUF,
+                               &amp;rcvbuf_size, sizeof(rcvbuf_size)) &lt; 0) {
+                        perror(&quot;setsockopt SO_RCVBUF&quot;);
+                        exit(1);
+                }
+
+We did not had any drops after this change, as the userspace app finally got
+enough CPU time and pulled big chunks of can_frames from the receiving socket.
+
+
+&gt;<i> 
+</I>&gt;<i> Even on the 1 Mbit link the total number IRQs isn't reduced by NAPI
+</I>&gt;<i> (less than 1%). But with NAPI I can enable the Acknowledgement Error
+</I>&gt;<i> even on 1 Mbit, and the system doesn't lock up. It generated ~15K Int/s.
+</I>&gt;<i> 
+</I>&gt;<i> Adding again &quot;ping -f&quot; load, the CAN interrupts drop to ~11K Int/s,
+</I>&gt;<i> the Ethernet causes only ~7K Int/s.
+</I>
+
+The max. (theoretical) frame rate is 21.276 frames/s when we take a
+minimum length frame (47 bits) this is 47usecs on 1MBit/s.
+
+IMO in real environments you'll get something between 2000 - 5000 frames/s.
+
+And for that reason we need to check how much effort we should spend on this
+topic and how other people e.g. dealing with Gigabit Ethernet controllers work
+on this.
+
+See:
+
+Intel Corporation: Interrupt Moderation Using Intel? GbE Controllers
+<A HREF="http://download.intel.com/design/network/applnots/ap450.pdf.">http://download.intel.com/design/network/applnots/ap450.pdf.</A>
+
+Btw. i really appreciate the NAPI stuff.
+
+&gt;<i> 
+</I>&gt;<i> Maybe we can think of some really &quot;slow&quot; polling for such interrupts.
+</I>&gt;<i> IIRC the SJA1000 has the same problem.
+</I>&gt;<i> 
+</I>&gt;<i> Here's the driver, comments welcome. There are some functions, that
+</I>&gt;<i> might be moved out of the driver into can/dev.c (alloc_can*frame).
+</I>
+(..)
+
+&gt;<i> +
+</I>&gt;<i> +static struct sk_buff *
+</I>&gt;<i> +alloc_can_frame(struct net_device *dev, struct can_frame **cf)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct sk_buff *skb;
+</I>&gt;<i> +
+</I>&gt;<i> +	skb = netdev_alloc_skb(dev, sizeof(struct can_frame));
+</I>&gt;<i> +	if (unlikely(!skb))
+</I>&gt;<i> +		return NULL;
+</I>&gt;<i> +
+</I>&gt;<i> +	skb-&gt;protocol = htons(ETH_P_CAN);
+</I>&gt;<i> +	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+</I>&gt;<i> +	*cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+</I>&gt;<i> +
+</I>&gt;<i> +	return skb;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +
+</I>&gt;<i> +static struct sk_buff *
+</I>&gt;<i> +alloc_can_err_frame(struct net_device *dev, struct can_frame **cf)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct sk_buff *skb;
+</I>&gt;<i> +
+</I>&gt;<i> +	skb = alloc_can_frame(dev, cf);
+</I>&gt;<i> +	if (unlikely(!skb))
+</I>&gt;<i> +		return NULL;
+</I>&gt;<i> +
+</I>&gt;<i> +	memset(*cf, 0, sizeof(struct can_frame));
+</I>&gt;<i> +	(*cf)-&gt;can_id = CAN_ERR_FLAG;
+</I>&gt;<i> +	(*cf)-&gt;can_dlc = CAN_ERR_DLC;
+</I>&gt;<i> +
+</I>&gt;<i> +	return skb;
+</I>&gt;<i> +}
+</I>
+Good idea to bring in some of theses convenience functions.
+But i would prefer creating some static inline definitions in dev.h
+Some EXPORT_SYMBOL_GPL() seems too heavy wight for that.
+
+Regards,
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003052.html">[PATCH v2] at91_can
+</A></li>
+	<LI>Next message: <A HREF="003054.html">[PATCH v2] at91_can
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3053">[ date ]</a>
+              <a href="thread.html#3053">[ thread ]</a>
+              <a href="subject.html#3053">[ subject ]</a>
+              <a href="author.html#3053">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

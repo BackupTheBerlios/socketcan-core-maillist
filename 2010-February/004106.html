@@ -1,0 +1,239 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 0/2] add support for Janz MODULbus devices
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/2%5D%20add%20support%20for%20Janz%20MODULbus%20devices&In-Reply-To=%3C4B85791F.3080205%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004105.html">
+   <LINK REL="Next"  HREF="004107.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 0/2] add support for Janz MODULbus devices</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/2%5D%20add%20support%20for%20Janz%20MODULbus%20devices&In-Reply-To=%3C4B85791F.3080205%40pengutronix.de%3E"
+       TITLE="[PATCH 0/2] add support for Janz MODULbus devices">mkl at pengutronix.de
+       </A><BR>
+    <I>Wed Feb 24 20:08:15 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004105.html">[PATCH 0/2] add support for Janz MODULbus devices
+</A></li>
+        <LI>Next message: <A HREF="004107.html">[PATCH 0/2] add support for Janz MODULbus devices
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4106">[ date ]</a>
+              <a href="thread.html#4106">[ thread ]</a>
+              <a href="subject.html#4106">[ subject ]</a>
+              <a href="author.html#4106">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ira W. Snyder wrote:
+
+[...]
+
+&gt;&gt;&gt;&gt;<i> But we want so solve the TX problem. You only have to stop the
+</I>&gt;&gt;&gt;&gt;<i> netif_queue if you TX ring is full. Then you have to deal with calling
+</I>&gt;&gt;&gt;&gt;<i> netif_wake_queue() eventually. But we obviously don't want to poll.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> The solution might be to look at the TX queue in the interrupt handler
+</I>&gt;&gt;&gt;&gt;<i> and/or the NAPI loop. And now we get back to my first question. If the
+</I>&gt;&gt;&gt;&gt;<i> controller does a loopback in hardware, i.e. you receive a frame for
+</I>&gt;&gt;&gt;&gt;<i> each frame send, you don't need to poll the TX queue length.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> If you receive a CAN frame it might be on of your's, which means the TX
+</I>&gt;&gt;&gt;&gt;<i> queue might have at least room for one frame. In pseudo code it might
+</I>&gt;&gt;&gt;&gt;<i> look like this:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> xmit()
+</I>&gt;&gt;&gt;&gt;<i> {
+</I>&gt;&gt;&gt;&gt;<i> 	send_frame_to_hardware();
+</I>&gt;&gt;&gt;&gt;<i> 	if (tx_ring_full) {
+</I>&gt;&gt;&gt;&gt;<i> 		netif_stop_queue();
+</I>&gt;&gt;&gt;&gt;<i> 		priv-&gt;flags |= TX_RING_FULL;
+</I>&gt;&gt;&gt;&gt;<i> 	}
+</I>&gt;&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> irq() and netif_poll()
+</I>&gt;&gt;&gt;&gt;<i> {
+</I>&gt;&gt;&gt;&gt;<i> 	if (priv-&gt;flags &amp; TX_RING_FULL) {
+</I>&gt;&gt;&gt;&gt;<i> 		if (room_in_ring()) {
+</I>&gt;&gt;&gt;&gt;<i> 			priv-&gt;flags &amp;= ~TX_RING_FULL;
+</I>&gt;&gt;&gt;&gt;<i> 			netif_wake_queue();
+</I>&gt;&gt;&gt;&gt;<i> 		}
+</I>&gt;&gt;&gt;&gt;<i> 	}
+</I>&gt;&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> Should be implemented race-free, i.e. you might have to use atomic_*
+</I>&gt;&gt;&gt;&gt;<i> operations and/or don't use a shared flag variable.
+</I>&gt;&gt;&gt;<i> Cool, that should work. netif_queue_stopped() could be used instead of
+</I>&gt;&gt;&gt;<i> the TX_RING_FULL flag.
+</I>&gt;&gt;<i> right...good point
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I should have looked at my own driver :)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If room_in_ring() is cheap, it boils down to:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> irq() and netif_poll()
+</I>&gt;&gt;&gt;&gt;<i> {
+</I>&gt;&gt;&gt;&gt;<i> 	if (room_in_ring()) {
+</I>&gt;&gt;&gt;&gt;<i> 		netif_wake_queue();
+</I>&gt;&gt;&gt;&gt;<i> }
+</I>&gt;&gt;<i> Otherwise:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> irq() and netif_poll()
+</I>&gt;&gt;&gt;&gt;<i> {
+</I>&gt;&gt;&gt;&gt;<i> 	if (netif_queue_stopped() &amp;&amp; room_in_ring()) {
+</I>&gt;&gt;&gt;&gt;<i> 		netif_wake_queue();
+</I>&gt;&gt;&gt;&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> Hmm, this *almost* works. Running &quot;cangen -g 0 can0&quot; quickly gets the
+</I>&gt;<i> queue into a hung state, though.
+</I>
+what is a &quot;hung state&quot;?
+
+&gt;<i> I added printk() to the sites where I stop/wake the queue. It is always
+</I>&gt;<i> woken up correctly, but cangen always exits with &quot;write: No buffer space
+</I>&gt;<i> available&quot; after a few stop/wake cycles. Immediately running cangen
+</I>&gt;<i> again works for a few more stop/wake cycles.
+</I>
+let's look the the cangen source if there's propper error handling...
+<A HREF="http://svn.berlios.de/viewvc/socketcan/trunk/can-utils/cangen.c?revision=787&amp;view=markup">http://svn.berlios.de/viewvc/socketcan/trunk/can-utils/cangen.c?revision=787&amp;view=markup</A>
+nope, there isn't
+
+There's the option &quot;-i&quot; to ignore ENOBUFS, which is....we don't want to
+do that....
+
+Better improbe the source: (from the pengutronix' canutils...)
+
+again:
+        len = write(s, &amp;frame, sizeof(frame));
+        if (len == -1) {
+                switch (errno) {
+                case ENOBUFS: {
+                        int err;
+                        struct pollfd fds[] = {
+                                {
+                                        .fd     = s,
+                                        .events = POLLOUT,
+                                },
+                        };
+
+                        err = poll(fds, 1, 1000);
+                        if (err == -1 &amp;&amp; errno != -EINTR) {
+                                perror(&quot;poll()&quot;);
+                                exit(EXIT_FAILURE);
+                        } else if (err == 0) {
+				printf(&quot;a timeout occured\n&quot;);
+				exit(EXIT_FAILURE);
+			}
+                }
+                case EINTR:     /* fallthrough */
+                        goto again;
+                default:
+                        perror(&quot;write&quot;);
+                        exit(EXIT_FAILURE);
+                }
+        }
+
+If you hit a timeout, which means you cannot send packages for 1000 ms,
+your send queue probably didn't wake up...
+
+&gt;<i> 
+</I>&gt;<i> Here is the output of ifconfig:
+</I>&gt;<i> can0      Link encap:UNSPEC  HWaddr 00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00  
+</I>&gt;<i>           UP RUNNING NOARP  MTU:16  Metric:1
+</I>&gt;<i>           RX packets:1902 errors:0 dropped:0 overruns:0 frame:0
+</I>&gt;<i>           TX packets:1902 errors:0 dropped:0 overruns:0 carrier:0
+</I>&gt;<i>           collisions:0 txqueuelen:10 
+</I>&gt;<i>           RX bytes:10767 (10.5 KiB)  TX bytes:10767 (10.5 KiB)
+</I>&gt;<i>           Interrupt:22 
+</I>&gt;<i> 
+</I>&gt;<i> can1      Link encap:UNSPEC  HWaddr 00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00  
+</I>&gt;<i>           UP RUNNING NOARP  MTU:16  Metric:1
+</I>&gt;<i>           RX packets:1902 errors:0 dropped:0 overruns:0 frame:0
+</I>&gt;<i>           TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+</I>&gt;<i>           collisions:0 txqueuelen:10 
+</I>&gt;<i>           RX bytes:10767 (10.5 KiB)  TX bytes:0 (0.0 b)
+</I>&gt;<i>           Interrupt:22 
+</I>&gt;<i> 
+</I>&gt;<i> I'm stopping the queue correctly: the xmit() routine never complains that it
+</I>&gt;<i> tried to transmit but had no buffer space. You'll see that we didn't drop any
+</I>&gt;<i> packets in this run. In another run, we did drop packets. It is like the
+</I>&gt;<i> firmware didn't echo the packets back to me. Also note that the TX of
+</I>&gt;<i> can0 always matches the RX of can1. They're cabled together, so this is
+</I>&gt;<i> expected.
+</I>
+Hmm...it looks like this.
+
+Double check your RX path, so that you don't loose any frames in
+software. Is it possible that the RX and TX collide in your driver
+and/or in hardware?
+
+Another improvement for the cangen utility is to exit after a certain
+number of messages. So you can match the number of generated frames with
+the rx/tx counters of the CAN cards and interrupts (cat /proc/interrupts)
+
+&gt;<i> can0      Link encap:UNSPEC  HWaddr 00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00  
+</I>&gt;<i>           UP RUNNING NOARP  MTU:16  Metric:1
+</I>&gt;<i>           RX packets:461 errors:0 dropped:0 overruns:0 frame:0
+</I>&gt;<i>           TX packets:608 errors:0 dropped:0 overruns:0 carrier:0
+</I>&gt;<i>           collisions:0 txqueuelen:10 
+</I>&gt;<i>           RX bytes:2616 (2.5 KiB)  TX bytes:3434 (3.3 KiB)
+</I>&gt;<i>           Interrupt:22 
+</I>&gt;<i> 
+</I>&gt;<i> can1      Link encap:UNSPEC  HWaddr 00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00  
+</I>&gt;<i>           UP RUNNING NOARP  MTU:16  Metric:1
+</I>&gt;<i>           RX packets:608 errors:0 dropped:0 overruns:0 frame:0
+</I>&gt;<i>           TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+</I>&gt;<i>           collisions:0 txqueuelen:10 
+</I>&gt;<i>           RX bytes:3434 (3.3 KiB)  TX bytes:0 (0.0 b)
+</I>&gt;<i>           Interrupt:22 
+</I>&gt;<i> 
+</I>&gt;<i> Any ideas what I am doing wrong?
+</I>
+cheers, Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 260 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20100224/b87d7a4b/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20100224/b87d7a4b/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004105.html">[PATCH 0/2] add support for Janz MODULbus devices
+</A></li>
+	<LI>Next message: <A HREF="004107.html">[PATCH 0/2] add support for Janz MODULbus devices
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4106">[ date ]</a>
+              <a href="thread.html#4106">[ thread ]</a>
+              <a href="subject.html#4106">[ subject ]</a>
+              <a href="author.html#4106">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

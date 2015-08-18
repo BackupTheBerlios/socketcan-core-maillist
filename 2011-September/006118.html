@@ -1,0 +1,189 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next v2] candev: allow SJW user setting for bittiming	calculation
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%20v2%5D%20candev%3A%20allow%20SJW%20user%20setting%20for%20bittiming%0A%09calculation&In-Reply-To=%3C4E7D8537.8010302%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006111.html">
+   <LINK REL="Next"  HREF="006121.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next v2] candev: allow SJW user setting for bittiming	calculation</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%20v2%5D%20candev%3A%20allow%20SJW%20user%20setting%20for%20bittiming%0A%09calculation&In-Reply-To=%3C4E7D8537.8010302%40grandegger.com%3E"
+       TITLE="[PATCH net-next v2] candev: allow SJW user setting for bittiming	calculation">wg at grandegger.com
+       </A><BR>
+    <I>Sat Sep 24 09:22:31 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006111.html">[PATCH net-next v2] candev: allow SJW user setting for bittiming	calculation
+</A></li>
+        <LI>Next message: <A HREF="006121.html">[PATCH net-next v2] candev: allow SJW user setting for bittiming	calculation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6118">[ date ]</a>
+              <a href="thread.html#6118">[ thread ]</a>
+              <a href="subject.html#6118">[ subject ]</a>
+              <a href="author.html#6118">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Pavel,
+
+On 09/23/2011 11:32 AM, Pavel Pisa wrote:
+&gt;<i> Hello Oliver and Wolfgang,
+</I>&gt;<i> 
+</I>&gt;<i> On Friday 23 September 2011 09:24:20 Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> Hi Oliver,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> On 09/22/2011 09:41 PM, Oliver Hartkopp wrote:
+</I>&gt;&gt;<i> Then let us set it to 4 (maximum), by default. But other documents
+</I>&gt;&gt;<i> recommend a value of 1.
+</I>&gt;<i> 
+</I>&gt;<i> I am not expert for CAN timing nor I have time to go through
+</I>&gt;<i> documentation at this moment. But I hope that I have some
+</I>&gt;<i> sense/experience  for electronic and dynamic systems
+</I>&gt;<i> and we have done more designs utilizing CAN at university
+</I>&gt;<i> and at our company.
+</I>&gt;<i> 
+</I>&gt;<i> So there are some thought about SJW based on my experience.
+</I>&gt;<i> There could be some inaccuracies, if you want better
+</I>&gt;<i> analysis, I need time for that.
+</I>&gt;<i> 
+</I>&gt;<i> 1) The CAN needs fast local roundrip time for correct operation
+</I>&gt;<i> of dominant/recessive arbitration.
+</I>&gt;<i> The time is sum of propagation from CAN controller chip,
+</I>&gt;<i> propagation delay of optocoupler or other galvanic isolation,
+</I>&gt;<i> slew rate and delay in Tx circuitry of transceiver, charging
+</I>&gt;<i> the wire, Rx part of receiver, optocoupler, controller
+</I>&gt;<i> Rx filtering and Rx,Tx logic level comparator.
+</I>&gt;<i> Iw we count necessity to synchronize this between multiple
+</I>&gt;<i> CAN nodes then whole roundtrip time has to be smaller than
+</I>&gt;<i> 50-80% of single bit bit time quantum.
+</I>&gt;<i> 
+</I>&gt;<i> 2) From the noise and stabilization of voltage on the wire
+</I>&gt;<i> the sampling point should be in the middle of bit pulse
+</I>&gt;<i> delayed by round-trip delay from 1. This is 50% of bit
+</I>&gt;<i> time (i.e. dependent on bitrate) + round trip delay (dependent
+</I>&gt;<i> on delay in controller and concrete board circuitry).
+</I>&gt;<i> 
+</I>&gt;<i> 3) But sampling point has to allow to decide about collision
+</I>&gt;<i> before next bit Tx is started =&gt; it cannot be moved after
+</I>&gt;<i> end of the given Tx bit time interval.
+</I>&gt;<i> 
+</I>&gt;<i> 4) It is necessary to synchronize bit timing in all
+</I>&gt;<i> CAN controllers during arbitration (ID sending) phase.
+</I>&gt;<i> The first sync is done after receiving of the first
+</I>&gt;<i> edge on the wire. It can be other node start of Tx
+</I>&gt;<i> or our own Tx dominant level. Controller shifts its Tx
+</I>&gt;<i> timing such way, that start of the next Tx bit interval
+</I>&gt;<i> should result in Rx transition at the end the sensed
+</I>&gt;<i> Rx bit. I.e. it counts only TSEG2 til next bit start.
+</I>&gt;<i> 
+</I>&gt;<i> 5) There are some more things to consider if triple
+</I>&gt;<i> sampling and filtering is enabled to suppress noise
+</I>&gt;<i> on wire. It can be used only, if time quantum clocks
+</I>&gt;<i> are fast enough to fit this sampling interval between
+</I>&gt;<i> stabilization of delayed Rx logic level and end of Tx bit
+</I>&gt;<i> time interval.
+</I>&gt;<i> 
+</I>&gt;<i> 6) If the clock frequencies of all nodes CAN controllers
+</I>&gt;<i> are guaranteed to be same, then no more synchronization
+</I>&gt;<i> is necessary during message Tx/Rx (SJW=0). But that assumption
+</I>&gt;<i> does not hold. That is why bitstuffing is used and guarantees
+</I>&gt;<i> that there is at least one logic level transition (edge)
+</I>&gt;<i> after each 6 bit time. If there is zero roundtrip propagation
+</I>&gt;<i> delay and sampling in 50% of bit time interval then
+</I>&gt;<i> maximal skew/frequency difference of the clocks could be
+</I>&gt;<i> 
+</I>&gt;<i>   (1+1/6*50%) - 1 i.e. 8%
+</I>&gt;<i> 
+</I>&gt;<i> This means, that SJW bigger than 8% of whole bit time
+</I>&gt;<i> would not help to synchronize bitrate difference, because
+</I>&gt;<i> for such case setup cannot work anyway. Propagation delay
+</I>&gt;<i> is not zero then there is even less time left for sampling
+</I>&gt;<i> point shift which would not cause incorrect bit data
+</I>&gt;<i> detection so reasonable maximum is probably lower.
+</I>&gt;<i> 
+</I>&gt;<i> I expect that for reasonable precise setup of bitrate
+</I>&gt;<i> when exact ratio is found and crystal based oscillators
+</I>&gt;<i> there is the best option small SJW i.e. 1 or for very
+</I>&gt;<i> fast TQ clock equivalent of 1% - 2% of bittime.
+</I>&gt;<i> For nonexact ratio or low quality clocks sources,
+</I>&gt;<i> bigger SJW values make sense. But big value has other
+</I>&gt;<i> disadvantage. If there is bigger jitter in Tx/Rx delays
+</I>&gt;<i> or clocks then it is propagated back to bit timing
+</I>&gt;<i> and stability of system composed from multiple nodes
+</I>&gt;<i> could be questionable. There is even bigger interval
+</I>&gt;<i> where noise pulse could cause lost of the synchronization.
+</I>&gt;<i> 
+</I>&gt;<i> On base of above analysis, I think that blindly set SJW
+</I>&gt;<i> on maximum is not good idea. It should be at least limited
+</I>&gt;<i> to 5% of bit time. 
+</I>&gt;<i> 
+</I>&gt;<i> Because bit timing calculation is not what everybody
+</I>&gt;<i> want to do again and again, the actual code tries
+</I>&gt;<i> to hide differences of CAN controllers and provide
+</I>&gt;<i> at least partially understandable knobs to user
+</I>&gt;<i> with parameters independent on concrete setup low level
+</I>&gt;<i> details to allow set bitrate for usual Joe user.
+</I>&gt;<i> The basic parameters are chosen such way, that user need
+</I>&gt;<i> not to care about actual TQ clock and selecting prescaller,
+</I>&gt;<i> that is why sampling point is in percent of bittime.
+</I>&gt;<i> SJW is more problematic, but may it be use of 2 or 5%
+</I>&gt;<i> of bittime by default with assurance that zero is
+</I>&gt;<i> replaced by one, would serve to most people pleasure.
+</I>&gt;<i> May it be, that 0.1 of percent should be used as unit
+</I>&gt;<i> for external parameter too.
+</I>&gt;<i> 
+</I>&gt;<i> I hope that actual calculation works reasonably well.
+</I>&gt;<i> But if it should be enhanced, then it would worth
+</I>&gt;<i> to add additional parameter except crystal/controller
+</I>&gt;<i> clock source freqency to the concrete boards drivers.
+</I>&gt;<i> It should be measured round-trip delay of given/used
+</I>&gt;<i> transceiver/optocouplers combination. This would
+</I>&gt;<i> allow to have sampling point setup yet more independent
+</I>&gt;<i> on given HW and same value could be used for different
+</I>&gt;<i> bitrates. But there is still unknown parameter
+</I>&gt;<i> capacity/length of connected wires so there is still
+</I>&gt;<i> something left to user consideration.
+</I>
+Thanks for your detailed explanation. It clearly shows that adjusting
+SJW is non-trivial and nothing a normal CAN user should deal with. When
+adjusting SJW, do you also need to tweek other bit-timing parameters,
+e.g. tq? I mean, would &quot;ip link set can0 type can bitrate x
+sampling-point y sjw z&quot; work for your setup or do you need to use the
+expert mode setting via &quot;ip link set can0 type can tq ...&quot; anyway?
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006111.html">[PATCH net-next v2] candev: allow SJW user setting for bittiming	calculation
+</A></li>
+	<LI>Next message: <A HREF="006121.html">[PATCH net-next v2] candev: allow SJW user setting for bittiming	calculation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6118">[ date ]</a>
+              <a href="thread.html#6118">[ thread ]</a>
+              <a href="subject.html#6118">[ subject ]</a>
+              <a href="author.html#6118">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

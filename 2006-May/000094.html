@@ -1,0 +1,140 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-core] CAN Errorframe handling implemented
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20CAN%20Errorframe%20handling%20implemented&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855DAE%40vwagwox00010.vw.vwg%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000093.html">
+   <LINK REL="Next"  HREF="000095.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-core] CAN Errorframe handling implemented</H1>
+    <B>Hartkopp, Oliver (K-GEFE/E)</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20CAN%20Errorframe%20handling%20implemented&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855DAE%40vwagwox00010.vw.vwg%3E"
+       TITLE="[Socketcan-core] CAN Errorframe handling implemented">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Thu May 11 18:26:28 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000093.html">[Socketcan-core] Re:  [RFC] Restructured kernel/2.6 subtree
+</A></li>
+        <LI>Next message: <A HREF="000095.html">[Socketcan-core] Roadmap
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#94">[ date ]</a>
+              <a href="thread.html#94">[ thread ]</a>
+              <a href="subject.html#94">[ subject ]</a>
+              <a href="author.html#94">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Folks,
+
+i just added the Error Frame support. If you want to see the changes: diff
+between Revision 8 and 9. The diff is quite small (which is caused by the
+excellent software structure ;-))
+
+Doing the implementation and discussing with colleagues i moved the maskable
+CAN error classes from data[0] to the can_id. There is more space for future
+extensions and the payload data[] now holds really only additional
+information for the possible errors.
+See the new can_error.h in
+<A HREF="http://svn.berlios.de/svnroot/repos/socketcan/trunk/kernel/2.6/include/linux">http://svn.berlios.de/svnroot/repos/socketcan/trunk/kernel/2.6/include/linux</A>
+/can/can_error.h
+
+In the new file 
+<A HREF="http://svn.berlios.de/svnroot/repos/socketcan/trunk/test/tst-err.c">http://svn.berlios.de/svnroot/repos/socketcan/trunk/test/tst-err.c</A>
+you can see, how to get and work on CAN error frames.
+
+Hopefully in the next week i can make my sja1000 driver up to date with the
+error frames. I just tested it with a patched PEAK driver and it looked like
+this in the interrupt handler:
+
+----8&lt;------snip!------
+
+irqreturn_t sja1000_irqhandler(int irq, void *dev_id, struct pt_regs *regs)
+{
+(..)
+static struct can_frame ef; /* error frame */
+(..)
+
+  while ((j--) &amp;&amp; (status = dev-&gt;readreg(dev, INTERRUPT_STATUS)))
+(..)
+    if (status &amp; BUS_ERROR_INTERRUPT)
+    {
+      ef.can_id |= CAN_ERR_BUSOFF_NETDEV;
+    }
+
+    if (status &amp; DATA_OVERRUN_INTERRUPT)
+    {
+      // handle data overrun
+      ef.can_id  |= CAN_ERR_CRTL;
+      ef.data[1] |= CAN_ERR_CRTL_RX_OVERFLOW;
+      dev-&gt;writereg(dev, COMMAND, CLEAR_DATA_OVERRUN);  
+      wmb();
+    } 
+(..)
+
+  if (ef.can_id) {
+    struct net_device *ndev = dev-&gt;netdev;
+    struct sk_buff    *skb;
+    struct can_frame  *cf;
+
+    skb = dev_alloc_skb(sizeof(struct can_frame));
+
+    if (skb != NULL)
+    {
+      skb-&gt;dev = ndev;
+      skb-&gt;protocol = htons(ETH_P_CAN);
+
+      cf = (struct can_frame*)skb_put(skb, sizeof(struct can_frame));
+      cf-&gt;can_id    = ef.can_id | CAN_ERR_FLAG;
+      cf-&gt;can_dlc   = CAN_ERR_DLC;
+      memcpy(cf-&gt;data, ef.data, 8); 
+      memset(&amp;ef, 0, sizeof(ef));
+
+      netif_rx(skb);
+    }
+  }
+ 
+  return IRQ_RETVAL(ret);
+}
+
+----8&lt;------snip!------
+
+That's it from me for now.
+
+Best regards,
+
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000093.html">[Socketcan-core] Re:  [RFC] Restructured kernel/2.6 subtree
+</A></li>
+	<LI>Next message: <A HREF="000095.html">[Socketcan-core] Roadmap
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#94">[ date ]</a>
+              <a href="thread.html#94">[ thread ]</a>
+              <a href="subject.html#94">[ subject ]</a>
+              <a href="author.html#94">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

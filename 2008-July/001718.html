@@ -1,0 +1,253 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Again bit time settings
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Again%20bit%20time%20settings&In-Reply-To=%3C20080720232303.GD3201%40local%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001717.html">
+   <LINK REL="Next"  HREF="001719.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Again bit time settings</H1>
+    <B>Hans J. Koch</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Again%20bit%20time%20settings&In-Reply-To=%3C20080720232303.GD3201%40local%3E"
+       TITLE="Again bit time settings">hjk at linutronix.de
+       </A><BR>
+    <I>Mon Jul 21 01:23:03 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001717.html">Again bit time settings
+</A></li>
+        <LI>Next message: <A HREF="001719.html">Again bit time settings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1718">[ date ]</a>
+              <a href="thread.html#1718">[ thread ]</a>
+              <a href="subject.html#1718">[ subject ]</a>
+              <a href="author.html#1718">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Sat, Jul 19, 2008 at 11:31:54AM +0200, Wolfgang Grandegger wrote:
+&gt;<i> Hi Oliver,
+</I>&gt;<i> 
+</I>&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;<i> [...snip...]
+</I>&gt;<i> &gt; Hi all,
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; thanks for picking up the topic again. Meanwhile i really got confused
+</I>&gt;<i> &gt; about all the discussions but this HW independed value setting is
+</I>&gt;<i> &gt; definitely the right approach. As there are also opinions to supply an
+</I>&gt;<i> &gt; 'easy' non-expert can_birate setting inside the kernel, i tried to put
+</I>&gt;<i> &gt; all this into a PDF (and an Open Office presentation), i have attached
+</I>&gt;<i> &gt; to this mail. IMO we may also skip the Kernel internal bitrate
+</I>&gt;<i> &gt; calculation function(s) ...
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Does this fit to your needs and expectations?
+</I>&gt;<i> &gt; Feel free to modify the Open Office presentation and re-post it.
+</I>&gt;<i> 
+</I>&gt;<i> I do not find an Open Office document very handy. Let's code speak :-).
+</I>&gt;<i> I have attached a patch implementing the *direct* setting of the
+</I>&gt;<i> bit-timing parameters using the hardware *independent* format for
+</I>&gt;<i> SJA1000 and MSCAN. For the non-expert mode, built-in tables are provided 
+</I>&gt;<i> using the same format. Here is a brief explanation how it's supposed to
+</I>&gt;<i> work:
+</I>&gt;<i> 
+</I>&gt;<i> o For setting the bit-timing parameters, the following files are
+</I>&gt;<i>   created in /sys/class/net/can*/:
+</I>&gt;<i> 
+</I>&gt;<i>     can_controller
+</I>&gt;<i>     can_bitrate
+</I>&gt;<i>     can_tq
+</I>&gt;<i>     can_prop_seg
+</I>&gt;<i>     can_phase_seg1
+</I>&gt;<i>     can_phase_seg2
+</I>&gt;<i>     can_sjw
+</I>&gt;<i>     can_sam
+</I>
+can_sam is not hardware independent, and not needed. The sja1000 driver
+can decide how to set this. If userspace should be able to set it, we
+need a &quot;capability&quot; sysfs attribute, and sja1000 could set a flag like
+&quot;HAS_SPECIAL_LOWSPEED_HANDLING&quot;. Then can_sam could be replaced by a
+generic can_enable_lowspeed_handling attribute. That's hardware
+independent. Drivers that don't have such a thing simply don't set that
+capability flag. That's what WLAN drivers do.
+
+&gt;<i> 
+</I>&gt;<i>   &quot;can_contoller&quot; will show the name of the CAN controller, which could be
+</I>&gt;<i>   used by a canconfig tool calculating and even setting proper
+</I>&gt;<i>   bit-timing parameters.
+</I>
+Sorry, but we should really avoid that. It's real crap if I have to
+write code like
+
+if (chip == sja1000) {
+  ...
+}
+else if (chip == at91sam9263) {
+  ...
+}
+else if (chip == ...) {
+  ...
+}
+
+If you find code like this in a userspace library the kernel interface
+is simply _broken_.
+
+&gt;<i> 
+</I>&gt;<i> o The bit-timing can *either* be defined by writing to can_bitrate
+</I>&gt;<i>   (non-experts mode) *or* to the other can_tq, can_prop_seg, etc. files
+</I>&gt;<i>   (experts mode).
+</I>
+OK, althoug I don't like that &quot;expert&quot; vs &quot;non-expert&quot; terms. A kernel
+subsystem has _one_ interface that offers certain possibilities. Whether
+it's used by experts or fools is of little concern to us.
+
+&gt;<i> 
+</I>&gt;<i> o The actual interpretation and setting of the bit-timing registers is
+</I>&gt;<i>   done when the CAN network device gets opened/started:
+</I>&gt;<i> 
+</I>&gt;<i>     static int sja1000_open(struct net_device *dev)
+</I>&gt;<i>     {
+</I>&gt;<i>         ...
+</I>&gt;<i>         /* determine and set bit-timing parameters */
+</I>&gt;<i>         err = can_set_bittime(dev);
+</I>&gt;<i>         if (err)
+</I>&gt;<i>             return err;
+</I>
+OK.
+
+&gt;<i> 
+</I>&gt;<i> o Here is the (almost) self-explanatory code of can_set_bittime():
+</I>&gt;<i> 
+</I>&gt;<i>     int can_set_bittime(struct net_device *dev)
+</I>&gt;<i>     {
+</I>&gt;<i>         struct can_priv *priv = netdev_priv(dev);
+</I>&gt;<i>         int err;
+</I>&gt;<i>     
+</I>&gt;<i>         /* Check is the CAN device needs bit-timing parameters */
+</I>&gt;<i>         if (priv-&gt;do_set_bittime) {
+</I>&gt;<i>     
+</I>&gt;<i>             /* Check if bit-timing parameters have already been set */
+</I>&gt;<i>             if (priv-&gt;bittime.tq &amp;&amp; priv-&gt;bittime.bitrate)
+</I>&gt;<i>                 return 0;
+</I>&gt;<i>     
+</I>&gt;<i>             /* Check if bit-timing parameters have been pre-defined */
+</I>&gt;<i>             if (!priv-&gt;bittime.tq &amp;&amp; !priv-&gt;bittime.bitrate)
+</I>&gt;<i>                 return -EINVAL;
+</I>&gt;<i>     
+</I>&gt;<i>             /* Non-expert mode? Check if the bitrate has been
+</I>&gt;<i>                pre-defined */
+</I>&gt;<i>             if (!priv-&gt;bittime.tq) {
+</I>&gt;<i>                 /* Find bit-timing parameters in built-in table */
+</I>&gt;<i>                 err = can_find_bittime(dev, &amp;priv-&gt;bittime);
+</I>&gt;<i>                 if (err)
+</I>&gt;<i>                     return err;
+</I>&gt;<i>             }
+</I>&gt;<i>     
+</I>&gt;<i>             /* Check bit-timing parameters and calculate proper brp */
+</I>&gt;<i>             err = can_fixup_bittime(dev, &amp;priv-&gt;bittime);
+</I>&gt;<i>             if (err)
+</I>&gt;<i>                 return err;
+</I>&gt;<i>     
+</I>&gt;<i>             /* Finally, set the bit-timing registers */
+</I>&gt;<i>             err = priv-&gt;do_set_bittime(dev, &amp;priv-&gt;bittime);
+</I>&gt;<i>             if (err)
+</I>&gt;<i>                 return err;
+</I>&gt;<i>         }
+</I>&gt;<i>         return 0;
+</I>&gt;<i>     }
+</I>
+Looks good at first sight.
+
+&gt;<i> 
+</I>&gt;<i> o Each CAN controller has to provide built-in tables for the non-experts
+</I>&gt;<i>   mode defining CIA recommended bit-timing parameters for the CAN clock
+</I>&gt;<i>   frequencies used and the common bitrates:
+</I>
+Why? For a driver, it's easy enough to calculate these values on the
+fly, given the clock and the desired bitrate.
+
+&gt;<i> 
+</I>&gt;<i>     $ cat drivers/net/can/sja1000/sja1000.c
+</I>&gt;<i>     ...
+</I>&gt;<i>     /*
+</I>&gt;<i>      * Bit-timing parameters for 8000000 Hz
+</I>&gt;<i>      * bitrate, tq, prop_seg, phase_seg1, phase_seg2, sjw, sam, brp
+</I>&gt;<i>      */
+</I>&gt;<i>     static struct can_bittime sja1000_bittime_8mhz[] = {
+</I>&gt;<i>             {1000000, 125, 0, 5, 2, 1, 0, 1},
+</I>&gt;<i>             {800000, 125, 0, 7, 2, 1, 0, 1},
+</I>&gt;<i>             {500000, 125, 0, 13, 2, 1, 0, 1},
+</I>&gt;<i>             {250000, 250, 0, 13, 2, 1, 0, 2},
+</I>&gt;<i>             {125000, 500, 0, 13, 2, 1, 0, 4},
+</I>&gt;<i>             {100000, 625, 0, 13, 2, 1, 0, 5},
+</I>&gt;<i>             {50000, 1250, 0, 13, 2, 1, 0, 10},
+</I>&gt;<i>             {20000, 3125, 0, 13, 2, 1, 0, 25},
+</I>&gt;<i>             {10000, 6250, 0, 13, 2, 1, 0, 50},
+</I>&gt;<i>             {0, }
+</I>&gt;<i>     };
+</I>&gt;<i>     ...
+</I>&gt;<i>   
+</I>&gt;<i>     int register_sja1000dev(struct net_device *dev)
+</I>&gt;<i>     {
+</I>&gt;<i>         ...
+</I>&gt;<i>         /* assign proper bit-timing table */
+</I>&gt;<i>         if (!priv-&gt;can.bittime_table) {
+</I>&gt;<i>         switch (priv-&gt;can.can_sys_clock) {
+</I>&gt;<i>         case 8000000:
+</I>&gt;<i>             priv-&gt;can.bittime_table = sja1000_bittime_8mhz;
+</I>&gt;<i>             break;
+</I>&gt;<i>         case 12000000:
+</I>&gt;<i>             priv-&gt;can.bittime_table = sja1000_bittime_12mhz;
+</I>&gt;<i>             break;
+</I>&gt;<i>         default:
+</I>&gt;<i>             dev_warn(ND2D(dev),
+</I>&gt;<i>                      &quot;no bit-timing table found for %d Hz\n&quot;,
+</I>&gt;<i>                      priv-&gt;can.can_sys_clock);
+</I>&gt;<i>             break;
+</I>&gt;<i>         }
+</I>&gt;<i>     }
+</I>&gt;<i> 
+</I>&gt;<i>   This shows the dark side of that method. While for the SJA1000, two
+</I>&gt;<i>   tables (for 8 and 12MHz) are likely enough, other CAN controllers,
+</I>&gt;<i>   especially the embedded once, may require much more, like the MSCAN.
+</I>
+Yes, so let's don't use tables in drivers. A driver _knows_ the special
+hardware dependent capabilities of the chip it handles, and it's a
+driver's task to convert these into a hardware independent userspace
+interface.
+
+Thanks,
+Hans
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001717.html">Again bit time settings
+</A></li>
+	<LI>Next message: <A HREF="001719.html">Again bit time settings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1718">[ date ]</a>
+              <a href="thread.html#1718">[ thread ]</a>
+              <a href="subject.html#1718">[ subject ]</a>
+              <a href="author.html#1718">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

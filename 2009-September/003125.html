@@ -1,0 +1,828 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2] CAN: Add support for binary protocol to slcan
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20CAN%3A%20Add%20support%20for%20binary%20protocol%20to%20slcan&In-Reply-To=%3C4AB0E580.7040001%40googlemail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003098.html">
+   <LINK REL="Next"  HREF="003126.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2] CAN: Add support for binary protocol to slcan</H1>
+    <B>Maximilian Falkenstein</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20CAN%3A%20Add%20support%20for%20binary%20protocol%20to%20slcan&In-Reply-To=%3C4AB0E580.7040001%40googlemail.com%3E"
+       TITLE="[PATCH v2] CAN: Add support for binary protocol to slcan">maxf59964 at googlemail.com
+       </A><BR>
+    <I>Wed Sep 16 15:17:52 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003098.html">[PATCH v2] CAN: Add support for binary protocol to slcan
+</A></li>
+        <LI>Next message: <A HREF="003126.html">[PATCH v2] CAN: Add support for binary protocol to slcan
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3125">[ date ]</a>
+              <a href="thread.html#3125">[ thread ]</a>
+              <a href="subject.html#3125">[ subject ]</a>
+              <a href="author.html#3125">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> Did you run checkpatch.pl, at least? That's what I get:
+</I>&gt;<i> 
+</I>&gt;<i>   ERROR: Missing Signed-off-by: line(s)
+</I>&gt;<i> 
+</I>&gt;<i>   total: 8 errors, 54 warnings, 727 lines checked
+</I>&gt;<i> 
+</I>&gt;<i> Please fix and resubmit.
+</I>Yes, I've run checkpatch.pl, but because I didn't need this line till now I
+ignored this error.
+
+&gt;<i> &gt; +/* MAX number of packets to put *
+</I>&gt;<i> &gt; + * into the device buffer, can  *
+</I>&gt;<i> &gt; + * also be overridden			*/
+</I>&gt;<i> This should look like this:
+</I>&gt;<i> /*
+</I>&gt;<i>  * MAX number of packets to put into the device buffer, can
+</I>&gt;<i>  * also be overridden.
+</I>&gt;<i>  */
+</I>&gt;<i> You get this wrong in several spots.
+</I>Fixed.
+
+
+
+Signed-off-by: Maximilian Falkenstein &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">maxf59964 at googlemail.com</A>&gt;
+Index: kernel/2.6/drivers/net/can/slcan.c
+===================================================================
+--- kernel/2.6/drivers/net/can/slcan.c	(Revision 1054)
++++ kernel/2.6/drivers/net/can/slcan.c	(Arbeitskopie)
+@@ -11,6 +11,7 @@
+  * slip.c Authors  : Laurence Culhane &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">loz at holmes.demon.co.uk</A>&gt;
+  *                   Fred N. van Kempen &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">waltje at uwalt.nl.mugnet.org</A>&gt;
+  * slcan.c Author  : Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">oliver.hartkopp at volkswagen.de</A>&gt;
++ *                   Maximilian Falkenstein &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">maxf59964 at googlemail.com</A>&gt;
+  *
+  * Copyright (c) 2007-2009 Volkswagen Group Electronic Research
+  *
+@@ -75,8 +76,10 @@
+ 
+ #include &lt;socketcan/can.h&gt;
+ 
++#if 0
+ #include &lt;socketcan/can/version.h&gt; /* for RCSID. Removed by mkpatch script */
+ RCSID(&quot;$Id$&quot;);
++#endif
+ 
+ static __initdata const char banner[] =
+ 	KERN_INFO &quot;slcan: serial line CAN interface driver\n&quot;;
+@@ -132,12 +135,27 @@
+ module_param(maxdev, int, 0);
+ MODULE_PARM_DESC(maxdev, &quot;Maximum number of slcan interfaces&quot;);
+ 
+-/* maximum rx buffer len: extended CAN frame with timestamp */
++/* 
++ * MAX number of packets to put
++ * into the device buffer, can
++ * also be overridden
++ */
++static int maxack = 2;
++module_param(maxack, int, 0);
++MODULE_PARM_DESC(maxack, &quot;Maximum number of packets to put into the \
++		device buffer, be _VERY_ careful with this!&quot;);
++
++/* maximum rx buffer len: extended CAN frame with timestamp in ASCII format */
+ #define SLC_MTU (sizeof(&quot;T1111222281122334455667788EA5F\r&quot;)+1)
+ 
+ struct slcan {
+ 	int			magic;
+ 
++	/* We need some extra vars for binary mode! */
++	int dnum; /* How many data bytes do we except to receive */
++	int to_ack; /* How many packets have we put into the device buffer? */
++	int rec_rcount; /* special rcount for recovery purposes */
++
+ 	/* Various fields. */
+ 	struct tty_struct	*tty;		/* ptr to TTY structure	     */
+ 	struct net_device	*dev;		/* easy for intr handling    */
+@@ -158,7 +176,19 @@
+ 	unsigned long		flags;		/* Flag values/ mode etc     */
+ #define SLF_INUSE		0		/* Channel in use            */
+ #define SLF_ERROR		1               /* Parity, etc. error        */
++#define SLF_BINENC		2 /* Do we use binary encapsulation? */
++#define SLF_EFRAME		3 /* Is the frame we are currently receiving extended */
++#define SLF_RESP		4 /* Is the next byte a response to a command */
+ 
++/* 
++ * true, if we've paused the transmission of packets because
++ * the hardware hasn't answered (yet).
++ */
++#define SLF_PAUSED		5
++
++#define SLF_LOST_SYNC	6 /* true, if we don't know what's going on... */
++#define SLF_FRAME_CANDIDAT 7 /* What we're receiving looks like a frame... */
++
+ 	unsigned char		leased;
+ 	dev_t			line;
+ 	pid_t			pid;
+@@ -166,7 +196,6 @@
+ 
+ static struct net_device **slcan_devs;
+ 
+-
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+ /* Netdevice get statistics request */
+ static struct net_device_stats *slc_get_stats(struct net_device *dev)
+@@ -210,6 +239,16 @@
+  * T12ABCDEF2AA55 : extended can_id 0x12ABCDEF, can_dlc 2, data 0xAA 0x55
+  * r1230 : can_id 0x123, can_dlc 0, no data, remote transmission request
+  *
++ * NEW: We also have a binary encapsulation. It's very similar to the ASCII
++ * one, except that we don't user \r \n and don't convert to ASCII. The return
++ * value is also different! As the lib on controller doesn't differ between
++ * RTR and normal frame with 0 databytes, we don't differ between 'R' and 'T',
++ * too.
++ *
++ * Examples(Binary):
++ * t 0x01 0x23 0x00 : like t1230, can_id 0x123, can_dlc 0, no data
++ * T 0x12 0xAB 0xCD 0xEF 0x03 0xAA 0x55 : extended can_id 0x12ABCDEF,
++ *                                        can_dlc 2,data 0xAA 0x55
+  */
+ 
+  /************************************************************************
+@@ -245,50 +284,84 @@
+ 	unsigned long ultmp;
+ 	char cmd = sl-&gt;rbuff[0];
+ 
+-	if ((cmd != 't') &amp;&amp; (cmd != 'T') &amp;&amp; (cmd != 'r') &amp;&amp; (cmd != 'R'))
+-		return;
++	if (!test_bit(SLF_BINENC, &amp;sl-&gt;flags)) {
++		if ((cmd != 't') &amp;&amp; (cmd != 'T') &amp;&amp; (cmd != 'r') &amp;&amp; (cmd != 'R'))
++			return;
+ 
+-	if (cmd &amp; 0x20) /* tiny chars 'r' 't' =&gt; standard frame format */
+-		dlc_pos = 4; /* dlc position tiiid */
+-	else
+-		dlc_pos = 9; /* dlc position Tiiiiiiiid */
++		if (cmd &amp; 0x20) /* tiny chars 'r' 't' =&gt; standard frame format */
++			dlc_pos = 4; /* dlc position tiiid */
++		else
++			dlc_pos = 9; /* dlc position Tiiiiiiiid */
+ 
+-	if (!((sl-&gt;rbuff[dlc_pos] &gt;= '0') &amp;&amp; (sl-&gt;rbuff[dlc_pos] &lt; '9')))
+-		return;
++		if (!((sl-&gt;rbuff[dlc_pos] &gt;= '0') &amp;&amp; (sl-&gt;rbuff[dlc_pos] &lt; '9')))
++			return;
+ 
+-	cf.can_dlc = sl-&gt;rbuff[dlc_pos] - '0'; /* get can_dlc from ASCII val */
++		cf.can_dlc = sl-&gt;rbuff[dlc_pos] - '0'; /* get can_dlc from ASCII val */
+ 
+-	sl-&gt;rbuff[dlc_pos] = 0; /* terminate can_id string */
++		sl-&gt;rbuff[dlc_pos] = 0; /* terminate can_id string */
+ 
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,25)
+-	ultmp = simple_strtoul(sl-&gt;rbuff+1, NULL, 16);
++		ultmp = simple_strtoul(sl-&gt;rbuff+1, NULL, 16);
+ #else
+-	if (strict_strtoul(sl-&gt;rbuff+1, 16, &amp;ultmp))
+-		return;
++		if (strict_strtoul(sl-&gt;rbuff + 1, 16, &amp;ultmp))
++			return;
+ #endif
+-	cf.can_id = ultmp;
++		cf.can_id = ultmp;
+ 
+-	if (!(cmd &amp; 0x20)) /* NO tiny chars =&gt; extended frame format */
+-		cf.can_id |= CAN_EFF_FLAG;
++		if (!(cmd &amp; 0x20)) /* NO tiny chars =&gt; extended frame format */
++			cf.can_id |= CAN_EFF_FLAG;
+ 
+-	if ((cmd | 0x20) == 'r') /* RTR frame */
+-		cf.can_id |= CAN_RTR_FLAG;
++		if ((cmd | 0x20) == 'r') /* RTR frame */
++			cf.can_id |= CAN_RTR_FLAG;
+ 
+-	*(u64 *) (&amp;cf.data) = 0; /* clear payload */
++		*(u64 *) (&amp;cf.data) = 0; /* clear payload */
+ 
+-	for (i = 0, dlc_pos++; i &lt; cf.can_dlc; i++) {
+-
+-		tmp = asc2nibble(sl-&gt;rbuff[dlc_pos++]);
+-		if (tmp &gt; 0x0F)
++		for (i = 0, dlc_pos++; i &lt; cf.can_dlc; i++) {
++			tmp = asc2nibble(sl-&gt;rbuff[dlc_pos++]);
++			if (tmp &gt; 0x0F)
++				return;
++			cf.data[i] = (tmp &lt;&lt; 4);
++			tmp = asc2nibble(sl-&gt;rbuff[dlc_pos++]);
++			if (tmp &gt; 0x0F)
++				return;
++			cf.data[i] |= tmp;
++		}
++	} else {
++		/* Binary */
++		if (cmd == 't') {
++			/* Normal can frame */
++			cf.can_id = (sl-&gt;rbuff[1] &lt;&lt; 8) | sl-&gt;rbuff[2];
++			cf.can_dlc = sl-&gt;rbuff[3];
++			if (cf.can_dlc &gt; 8) {
++				printk(KERN_WARNING &quot;slcan: Frame with lenght above 8, \
++						dropping!&quot;);
++				stats-&gt;rx_dropped++;
++				stats-&gt;rx_errors++;
++				return;
++			}
++			for (i = 0; i &lt; cf.can_dlc; i++)
++				cf.data[i] = sl-&gt;rbuff[4 + i];
++		} else if (cmd == 'T') {
++			/* Extended can frame */
++			cf.can_id = (sl-&gt;rbuff[1] &lt;&lt; 24) | (sl-&gt;rbuff[2] &lt;&lt; 16)
++					| (sl-&gt;rbuff[3] &lt;&lt; 8) | sl-&gt;rbuff[4];
++			cf.can_dlc = sl-&gt;rbuff[5];
++			if (cf.can_dlc &gt; 8) {
++				printk(KERN_WARNING &quot;slcan: Frame with lenght above 8, \
++						dropping!&quot;);
++				stats-&gt;rx_dropped++;
++				stats-&gt;rx_errors++;
++				return;
++			}
++			for (i = 0; i &lt; cf.can_dlc; i++)
++				cf.data[i] = sl-&gt;rbuff[6 + i];
++		} else {
++			printk(KERN_WARNING &quot;slcan: Got unknown can frame from device!&quot;);
++			stats-&gt;rx_errors++;
+ 			return;
+-		cf.data[i] = (tmp &lt;&lt; 4);
+-		tmp = asc2nibble(sl-&gt;rbuff[dlc_pos++]);
+-		if (tmp &gt; 0x0F)
+-			return;
+-		cf.data[i] |= tmp;
++		}
+ 	}
+ 
+-
+ 	skb = dev_alloc_skb(sizeof(struct can_frame));
+ 	if (!skb)
+ 		return;
+@@ -314,24 +387,211 @@
+ #else
+ 	struct net_device_stats *stats = &amp;sl-&gt;dev-&gt;stats;
+ #endif
++	int i;
++	unsigned char nrbuff[SLC_MTU];
+ 
+-	if ((s == '\r') || (s == '\a')) { /* CR or BEL ends the pdu */
+-		if (!test_and_clear_bit(SLF_ERROR, &amp;sl-&gt;flags) &amp;&amp;
+-		    (sl-&gt;rcount &gt; 4))  {
++	if (!test_bit(SLF_BINENC, &amp;sl-&gt;flags)) {
++		/* ASCII */
++		if ((s == '\r') || (s == '\a')) { /* CR or BEL ends the pdu */
++			if (!test_and_clear_bit(SLF_ERROR, &amp;sl-&gt;flags) &amp;&amp;
++			  (sl-&gt;rcount &gt; 4)) {
++				slc_bump(sl);
++			}
++			sl-&gt;rcount = 0;
++		} else {
++			if (!test_bit(SLF_ERROR, &amp;sl-&gt;flags)) {
++				if (sl-&gt;rcount &lt; SLC_MTU) {
++					sl-&gt;rbuff[sl-&gt;rcount++] = s;
++					return;
++				} else {
++					stats-&gt;rx_over_errors++;
++					set_bit(SLF_ERROR, &amp;sl-&gt;flags);
++				}
++			}
++		}
++	} else {
++		/* BINARY */
++		if (test_bit(SLF_LOST_SYNC, &amp;sl-&gt;flags)) {
++			/* OK, complicated things first(error recovery)... */
++			sl-&gt;rbuff[sl-&gt;rec_rcount] = s;
++			sl-&gt;rec_rcount++;
++
++			if (test_bit(SLF_FRAME_CANDIDAT, &amp;sl-&gt;flags)) {
++				if (!test_bit(SLF_RESP, &amp;sl-&gt;flags)) {
++					int offset = sl-&gt;rec_rcount - sl-&gt;rcount;
++					sl-&gt;rcount++;
++					if ((sl-&gt;rcount == 2 &amp;&amp; !test_bit(SLF_EFRAME, &amp;sl-&gt;flags))
++							| (sl-&gt;rcount == 4 &amp;&amp; test_bit(SLF_EFRAME,
++									&amp;sl-&gt;flags))) {
++						/* We've recived the last bit of the CAN id */
++						if (test_bit(SLF_EFRAME, &amp;sl-&gt;flags)
++								&amp;&amp; (((sl-&gt;rbuff[offset + 1] &lt;&lt; 24)
++										| (sl-&gt;rbuff[offset + 2] &lt;&lt; 16)
++										| (sl-&gt;rbuff[offset + 3] &lt;&lt; 8)
++										| sl-&gt;rbuff[offset + 4]) &gt; 0x1FFFFFFF)
++										| !test_bit(SLF_EFRAME, &amp;sl-&gt;flags)
++								&amp;&amp; ((sl-&gt;rbuff[offset + 1] &lt;&lt; 8)
++										| sl-&gt;rbuff[offset + 2]) &gt; 0x7FF) {
++							/* Invalid ID */
++							goto invalid;
++						}
++					} else if ((sl-&gt;rcount == 5 &amp;&amp; test_bit(SLF_EFRAME,
++							&amp;sl-&gt;flags)) | ((sl-&gt;rcount == 3) &amp;&amp; !test_bit(
++							SLF_EFRAME, &amp;sl-&gt;flags))) {
++						if (s &gt; 8) /* Invalid dlc */
++							goto invalid;
++						else if (s == 0) {
++							goto rec_out_decaps;
++						} else {
++							sl-&gt;dnum = s;
++							return;
++						}
++					} else if (sl-&gt;dnum &gt; 0) {
++						sl-&gt;dnum--;
++						if (sl-&gt;dnum == 0) {
++							/* Decaps */
++							goto rec_out_decaps;
++						}
++					}
++				} else {
++					if (s &amp; 0xf0) {
++						if (s != 0xf9) {
++							/*0xf9 means OK, everything different means error */
++							printk(KERN_WARNING &quot;%s: Command failed, retval: \
++									%X\n&quot;, sl-&gt;dev-&gt;name, s);
++							stats-&gt;tx_errors++;
++							stats-&gt;tx_dropped++;
++						}
++						sl-&gt;to_ack--;
++						if (test_bit(SLF_PAUSED, &amp;sl-&gt;flags) &amp;&amp; (sl-&gt;to_ack
++								&lt; maxack)) {
++							/* 
++							 * The device buffer is large enough for at least
++							 * one more packet, so let's wake the quere
++							 */
++							clear_bit(SLF_PAUSED, &amp;sl-&gt;flags);
++							netif_wake_queue(sl-&gt;dev);
++						}
++						clear_bit(SLF_RESP, &amp;sl-&gt;flags);
++						sl-&gt;rcount = 0;
++						sl-&gt;rec_rcount = 0;
++						clear_bit(SLF_FRAME_CANDIDAT, &amp;sl-&gt;flags);
++						clear_bit(SLF_LOST_SYNC, &amp;sl-&gt;flags);
++						return;
++					} else
++						goto invalid;
++				}
++			}
++			if (sl-&gt;rec_rcount == SLC_MTU) {
++				printk(KERN_WARNING &quot;%s: Buffer full, but still havn't \
++						received a valid packet!\n&quot;, sl-&gt;dev-&gt;name);
++				sl-&gt;rcount = 0;
++				clear_bit(SLF_FRAME_CANDIDAT, &amp;sl-&gt;flags);
++			}
++			if ((s == 't') | (s == 'T') | (s == 0xe0)) {
++				set_bit(SLF_FRAME_CANDIDAT, &amp;sl-&gt;flags);
++				if (s == 't')
++					clear_bit(SLF_EFRAME, &amp;sl-&gt;flags);
++				if (s == 'T')
++					set_bit(SLF_EFRAME, &amp;sl-&gt;flags);
++				if (s == 0xe0)
++					set_bit(SLF_RESP, &amp;sl-&gt;flags);
++				sl-&gt;rcount = 0;
++			}
++			return;
++
++invalid:    clear_bit(SLF_FRAME_CANDIDAT, &amp;sl-&gt;flags);
++			return;
++
++rec_out_decaps:
++			/* Modify buffer so that we can call slc_bump */
++			for (i = 0; i &lt;= sl-&gt;rcount; i++)
++				nrbuff[i] = sl-&gt;rbuff[sl-&gt;rec_rcount - sl-&gt;rcount - 1 + i];
++			memcpy(sl-&gt;rbuff, nrbuff, sl-&gt;rcount + 1);
+ 			slc_bump(sl);
++			sl-&gt;rcount = 0;
++			sl-&gt;rec_rcount = 0;
++			clear_bit(SLF_FRAME_CANDIDAT, &amp;sl-&gt;flags);
++			clear_bit(SLF_LOST_SYNC, &amp;sl-&gt;flags);
++			return;
+ 		}
+-		sl-&gt;rcount = 0;
+-	} else {
+-		if (!test_bit(SLF_ERROR, &amp;sl-&gt;flags))  {
+-			if (sl-&gt;rcount &lt; SLC_MTU)  {
+-				sl-&gt;rbuff[sl-&gt;rcount++] = s;
++
++		if (test_bit(SLF_RESP, &amp;sl-&gt;flags)) {
++			if (s != 0xf9) {
++				/* 0xf9 means OK, everything different means error */
++				printk(KERN_WARNING &quot;%s: Command failed, retval: %X\n&quot;,
++				  sl-&gt;dev-&gt;name, s);
++				stats-&gt;tx_errors++;
++				stats-&gt;tx_dropped++;
++			}
++			sl-&gt;to_ack--;
++			if (test_bit(SLF_PAUSED, &amp;sl-&gt;flags) &amp;&amp; (sl-&gt;to_ack &lt; maxack)) {
++				/*
++				 * The device buffer is large enough for at least one
++				 * more packet, so let's wake the quere
++				 */
++				clear_bit(SLF_PAUSED, &amp;sl-&gt;flags);
++				netif_wake_queue(sl-&gt;dev);
++			}
++			clear_bit(SLF_RESP, &amp;sl-&gt;flags);
++			sl-&gt;rcount = 0;
++			return;
++		}
++
++		if (sl-&gt;rcount == 0) {
++			/* 
++			 * What's coming next: a can frame, an extended can frame, or an
++			 * ack/nack?
++			 */
++			if (s == 't') {
++				clear_bit(SLF_EFRAME, &amp;sl-&gt;flags);
++				goto out_write;
++			} else if (s == 'T') {
++				set_bit(SLF_EFRAME, &amp;sl-&gt;flags);
++				goto out_write;
++			} else if (s == 0xe0) {
++				/* ACK/NACK */
++				set_bit(SLF_RESP, &amp;sl-&gt;flags);
++			} else {
++				printk(KERN_WARNING &quot;slcan (dev: %s): Unknown packet(head: \
++						0x%X), entering lost sync mode!\n&quot;, sl-&gt;dev-&gt;name, s);
++				stats-&gt;rx_errors++;
++				sl-&gt;rec_rcount = 0;
++				sl-&gt;rcount = 0;
++				sl-&gt;rec_rcount = 0;
++				set_bit(SLF_LOST_SYNC, &amp;sl-&gt;flags);
+ 				return;
+-			} else {
+-				stats-&gt;rx_over_errors++;
+-				set_bit(SLF_ERROR, &amp;sl-&gt;flags);
+ 			}
++		} else if ((test_bit(SLF_EFRAME, &amp;sl-&gt;flags) &amp;&amp; sl-&gt;rcount == 5)
++				| ((!test_bit(SLF_EFRAME, &amp;sl-&gt;flags)) &amp;&amp; sl-&gt;rcount == 3)) {
++			/* Now we're receiving the payload lenght */
++			if (s == 0) {
++				/* Oh, cool, a RTR; we can decapsulate it immediately */
++				sl-&gt;rbuff[sl-&gt;rcount] = s;
++				goto out_decaps;
++			}
++			sl-&gt;dnum = s;
++			goto out_write;
++		} else {
++			/* More data */
++			sl-&gt;rbuff[sl-&gt;rcount] = s;
++			sl-&gt;rcount++;
++			sl-&gt;dnum--;
++			if (sl-&gt;dnum == 0)
++				goto out_decaps;
+ 		}
+ 	}
++	return;
++
++out_write:
++	sl-&gt;rbuff[sl-&gt;rcount] = s;
++	sl-&gt;rcount++;
++	return;
++
++out_decaps:
++	slc_bump(sl);
++	sl-&gt;rcount = 0;
++	return;
+ }
+ 
+  /************************************************************************
+@@ -349,41 +609,101 @@
+ 	int actual, idx, i;
+ 	char cmd;
+ 
+-	if (cf-&gt;can_id &amp; CAN_RTR_FLAG)
+-		cmd = 'R'; /* becomes 'r' in standard frame format */
+-	else
+-		cmd = 'T'; /* becomes 't' in standard frame format */
++	if (test_bit(SLF_BINENC, &amp;sl-&gt;flags)) {
++		uint32_t id = cf-&gt;can_id &amp; CAN_EFF_MASK;
++		uint8_t lof = 0;
++		if (cf-&gt;can_id &amp; CAN_EFF_FLAG) {
++			sl-&gt;xbuff[0] = 'T'; /* Send */
++			sl-&gt;xbuff[1] = (uint8_t)(id &gt;&gt; 24);
++			sl-&gt;xbuff[2] = (uint8_t)(id &gt;&gt; 16);
++			sl-&gt;xbuff[3] = (uint8_t)(id &gt;&gt; 8);
++			sl-&gt;xbuff[4] = (uint8_t) id;
++			lof = 4;
++		} else {
++			sl-&gt;xbuff[0] = 't'; /* Send */
++			sl-&gt;xbuff[1] = (uint8_t)(id &gt;&gt; 8);
++			sl-&gt;xbuff[2] = (uint8_t) id;
++			lof = 2;
++		}
++		sl-&gt;xbuff[lof + 1] = cf-&gt;can_dlc;
++		/* Stringterm (Reordered for C90 compatibility) */
++		sl-&gt;xbuff[lof + 2 + cf-&gt;can_dlc] = 0x00;
+ 
+-	if (cf-&gt;can_id &amp; CAN_EFF_FLAG)
+-		sprintf(sl-&gt;xbuff, &quot;%c%08X%d&quot;, cmd,
+-			cf-&gt;can_id &amp; CAN_EFF_MASK, cf-&gt;can_dlc);
+-	else
+-		sprintf(sl-&gt;xbuff, &quot;%c%03X%d&quot;, cmd | 0x20,
+-			cf-&gt;can_id &amp; CAN_SFF_MASK, cf-&gt;can_dlc);
++		for (i = 0; i &lt; cf-&gt;can_dlc; i++)
++			sl-&gt;xbuff[lof + 2 + i] = cf-&gt;data[i];
+ 
+-	idx = strlen(sl-&gt;xbuff);
++		/*
++		 * We're going to put another packet into the device's buffer,
++		 * let's tell the receiving side that we're sending something
++		 * that's going to get a CMD_RESP
++		 */
++		sl-&gt;to_ack++;
+ 
+-	for (i = 0; i &lt; cf-&gt;can_dlc; i++)
+-		sprintf(&amp;sl-&gt;xbuff[idx + 2*i], &quot;%02X&quot;, cf-&gt;data[i]);
++		/*
++		 * Flow control: The device may be busy, but able to receive
++		 * data (interrupt driven, at least in my firmware), but it
++		 * can't handle an infinite amount of data, so we have to
++		 * stop and wait for response after some packets...
++		 */
++		if (sl-&gt;to_ack &gt;= maxack)
++			set_bit(SLF_PAUSED, &amp;sl-&gt;flags);
+ 
+-	DBG(&quot;ASCII frame = '%s'\n&quot;, sl-&gt;xbuff);
++		/*
++		 * Order of next two lines is *very* important.
++		 * When we are sending a little amount of data,
++		 * the transfer may be completed inside driver.write()
++		 * routine, because it's running with interrupts enabled.
++		 * In this case we *never* got WRITE_WAKEUP event,
++		 * if we did not request it before write operation.
++		 *       14 Oct 1994  Dmitry Gorodchanin.
++		 */
++		sl-&gt;tty-&gt;flags |= (1 &lt;&lt; TTY_DO_WRITE_WAKEUP);
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,26)
++		actual = sl-&gt;tty-&gt;driver-&gt;write(sl-&gt;tty, sl-&gt;xbuff, (cf-&gt;can_id &amp;
++		  CAN_EFF_FLAG ? 6 : 4)+cf-&gt;can_dlc);
++#else
++		actual = sl-&gt;tty-&gt;ops-&gt;write(sl-&gt;tty, sl-&gt;xbuff, (cf-&gt;can_id
++				&amp; CAN_EFF_FLAG ? 6 : 4) + cf-&gt;can_dlc);
++#endif
+ 
+-	strcat(sl-&gt;xbuff, &quot;\r&quot;); /* add terminating character */
++	} else {
++		if (cf-&gt;can_id &amp; CAN_RTR_FLAG)
++			cmd = 'R'; /* becomes 'r' in standard frame format */
++		else
++			cmd = 'T'; /* becomes 't' in standard frame format */
+ 
+-	/* Order of next two lines is *very* important.
+-	 * When we are sending a little amount of data,
+-	 * the transfer may be completed inside driver.write()
+-	 * routine, because it's running with interrupts enabled.
+-	 * In this case we *never* got WRITE_WAKEUP event,
+-	 * if we did not request it before write operation.
+-	 *       14 Oct 1994  Dmitry Gorodchanin.
+-	 */
+-	sl-&gt;tty-&gt;flags |= (1 &lt;&lt; TTY_DO_WRITE_WAKEUP);
++		if (cf-&gt;can_id &amp; CAN_EFF_FLAG)
++			sprintf(sl-&gt;xbuff, &quot;%c%08X%d&quot;, cmd, cf-&gt;can_id &amp; CAN_EFF_MASK,
++					cf-&gt;can_dlc);
++		else
++			sprintf(sl-&gt;xbuff, &quot;%c%03X%d&quot;, cmd | 0x20, cf-&gt;can_id
++					&amp; CAN_SFF_MASK, cf-&gt;can_dlc);
++
++		idx = strlen(sl-&gt;xbuff);
++
++		for (i = 0; i &lt; cf-&gt;can_dlc; i++)
++			sprintf(&amp;sl-&gt;xbuff[idx + 2 * i], &quot;%02X&quot;, cf-&gt;data[i]);
++
++		DBG(&quot;ASCII frame = '%s'\n&quot;, sl-&gt;xbuff);
++
++		strcat(sl-&gt;xbuff, &quot;\r&quot;); /* add terminating character */
++
++		/*
++		 * Order of next two lines is *very* important.
++		 * When we are sending a little amount of data,
++		 * the transfer may be completed inside driver.write()
++		 * routine, because it's running with interrupts enabled.
++		 * In this case we *never* got WRITE_WAKEUP event,
++		 * if we did not request it before write operation.
++		 *       14 Oct 1994  Dmitry Gorodchanin.
++		 */
++		sl-&gt;tty-&gt;flags |= (1 &lt;&lt; TTY_DO_WRITE_WAKEUP);
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,26)
+-	actual = sl-&gt;tty-&gt;driver-&gt;write(sl-&gt;tty, sl-&gt;xbuff, strlen(sl-&gt;xbuff));
++		actual = sl-&gt;tty-&gt;driver-&gt;write(sl-&gt;tty, sl-&gt;xbuff, strlen(sl-&gt;xbuff));
+ #else
+-	actual = sl-&gt;tty-&gt;ops-&gt;write(sl-&gt;tty, sl-&gt;xbuff, strlen(sl-&gt;xbuff));
++		actual = sl-&gt;tty-&gt;ops-&gt;write(sl-&gt;tty, sl-&gt;xbuff, strlen(sl-&gt;xbuff));
+ #endif
++	}
+ #ifdef SLC_CHECK_TRANSMIT
+ 	sl-&gt;dev-&gt;trans_start = jiffies;
+ #endif
+@@ -415,7 +735,14 @@
+ 		 * transmission of another packet */
+ 		stats-&gt;tx_packets++;
+ 		tty-&gt;flags &amp;= ~(1 &lt;&lt; TTY_DO_WRITE_WAKEUP);
+-		netif_wake_queue(sl-&gt;dev);
++
++		/*
++		 * Maybe the device isn't ready, lets check before
++		 * we try to send the next packet
++		 */
++		if (!(test_bit(SLF_BINENC, &amp;sl-&gt;flags) &amp;&amp; test_bit(SLF_PAUSED,
++				&amp;sl-&gt;flags)))
++			netif_wake_queue(sl-&gt;dev);
+ 		return;
+ 	}
+ 
+@@ -462,7 +789,6 @@
+ 	spin_unlock(&amp;sl-&gt;lock);
+ }
+ 
+-
+ /******************************************
+  *   Routines looking at netdevice side.
+  ******************************************/
+@@ -496,7 +822,6 @@
+ 	return 0;
+ }
+ 
+-
+ /* Netdevice UP -&gt; DOWN routine */
+ static int slc_close(struct net_device *dev)
+ {
+@@ -523,7 +848,7 @@
+ 	if (sl-&gt;tty == NULL)
+ 		return -ENODEV;
+ 
+-	sl-&gt;flags &amp;= (1 &lt;&lt; SLF_INUSE);
++	sl-&gt;flags &amp;= (1 &lt;&lt; SLF_INUSE) | (1 &lt;&lt; SLF_BINENC);
+ 	netif_start_queue(dev);
+ 	return 0;
+ }
+@@ -591,7 +916,6 @@
+  * be re-entered while running but other ldisc functions may be called
+  * in parallel
+  */
+-
+ static void slcan_receive_buf(struct tty_struct *tty,
+ 			      const unsigned char *cp, char *fp, int count)
+ {
+@@ -643,7 +967,6 @@
+ 	}
+ }
+ 
+-
+ /* Find a free SLCAN channel, and link in this `tty' line. */
+ static struct slcan *slc_alloc(dev_t line)
+ {
+@@ -737,6 +1060,7 @@
+ 	/* Initialize channel control data */
+ 	sl-&gt;magic       = SLCAN_MAGIC;
+ 	sl-&gt;dev	      	= dev;
++	sl-&gt;to_ack	= 0;
+ 	spin_lock_init(&amp;sl-&gt;lock);
+ 	slcan_devs[i] = dev;
+ 
+@@ -752,7 +1076,6 @@
+  *
+  * Called in process context serialized from other ldisc calls.
+  */
+-
+ static int slcan_open(struct tty_struct *tty)
+ {
+ 	struct slcan *sl;
+@@ -885,6 +1208,21 @@
+ 		return -EINVAL;
+ 
+ 	switch (cmd) {
++	case SIOCGIFENCAP:
++		/* Do we use binary encapsulation? */
++		return test_bit(SLF_BINENC, &amp;sl-&gt;flags);
++	case SIOCSIFENCAP:
++		/* Let's modify our encapsulation! */
++		if (arg &gt; 0) {
++			set_bit(SLF_BINENC, &amp;sl-&gt;flags);
++			printk(KERN_INFO &quot;slcan: Now using binary encapsulation on device \
++					%s!&quot;, sl-&gt;dev-&gt;name);
++		} else {
++			clear_bit(SLF_BINENC, &amp;sl-&gt;flags);
++			printk(KERN_INFO &quot;slcan: Now using ASCII encapsulation on device \
++					%s!&quot;, sl-&gt;dev-&gt;name);
++		}
++		return 0;
+ 	case SIOCGIFNAME:
+ 		tmp = strlen(sl-&gt;dev-&gt;name) + 1;
+ 		if (copy_to_user((void __user *)arg, sl-&gt;dev-&gt;name, tmp))
+@@ -938,6 +1276,9 @@
+ 	if (maxdev &lt; 4)
+ 		maxdev = 4; /* Sanity */
+ 
++	if (maxack &lt; 1)
++		maxack = 1; /* Dito */
++
+ 	printk(banner);
+ 	printk(KERN_INFO &quot;slcan: %d dynamic interface channels.\n&quot;, maxdev);
+ 
+@@ -1019,3 +1360,4 @@
+ 
+ module_init(slcan_init);
+ module_exit(slcan_exit);
++
+Index: can-utils/slcan_attach.c
+===================================================================
+--- can-utils/slcan_attach.c	(Revision 1054)
++++ can-utils/slcan_attach.c	(Arbeitskopie)
+@@ -45,14 +45,19 @@
+  *
+  */
+ 
+-#include &lt;stdio.h&gt;
++#include &lt;termios.h&gt;
++#include &lt;unistd.h&gt;
++#include &lt;fcntl.h&gt;
++#include &lt;stdint.h&gt;
+ #include &lt;stdlib.h&gt;
+ #include &lt;string.h&gt;
+-#include &lt;fcntl.h&gt;
+-#include &lt;unistd.h&gt;
++#include &lt;stdio.h&gt;
+ #include &lt;getopt.h&gt;
+ #include &lt;sys/ioctl.h&gt;
++#include &lt;sys/select.h&gt;
++#include &lt;sys/file.h&gt;
+ 
++#define BUFFERSIZE 20
+ #define LDISC_N_SLCAN 17 /* default slcan line discipline since Kernel 2.6.25 */
+ 
+ void print_usage(char *prg)
+@@ -64,6 +69,7 @@
+ 	fprintf(stderr, &quot;         -b &lt;btr&gt;   (set bit time register value)\n&quot;);
+ 	fprintf(stderr, &quot;         -d         (only detach line discipline)\n&quot;);
+ 	fprintf(stderr, &quot;         -w         (attach - wait for keypess - detach)\n&quot;);
++	fprintf(stderr, &quot;         -B         (use binary mode)\n&quot;);
+ 	fprintf(stderr, &quot;\nExamples:\n&quot;);
+ 	fprintf(stderr, &quot;slcan_attach -w -o -s6 -c /dev/ttyS1\n&quot;);
+ 	fprintf(stderr, &quot;slcan_attach /dev/ttyS1\n&quot;);
+@@ -80,18 +86,23 @@
+ 	int waitkey = 0;
+ 	int send_open = 0;
+ 	int send_close = 0;
++	int binary = 0;
+ 	char *speed = NULL;
+ 	char *btr = NULL;
+ 	char buf[10];
+ 	char *tty;
+ 	int opt;
+ 
+-	while ((opt = getopt(argc, argv, &quot;l:dwocs:b:?&quot;)) != -1) {
++	while ((opt = getopt(argc, argv, &quot;l:dwBocs:b:?&quot;)) != -1) {
+ 		switch (opt) {
+ 		case 'l':
+ 			fprintf(stderr, &quot;Ignored option '-l'\n&quot;);
+ 			break;
+ 
++		case 'B':
++			binary = 1;
++			break;
++
+ 		case 'd':
+ 			detach = 1;
+ 			break;
+@@ -157,6 +168,10 @@
+ 		if (ioctl (fd, TIOCSETD, &amp;ldisc) &lt; 0) {
+ 			perror(&quot;ioctl&quot;);
+ 			exit(1);
++		} else {
++			if (binary)
++				if (ioctl(fd, SIOCSIFENCAP, 1) != 0)
++					perror(&quot;ioctl2&quot;);
+ 		}
+ 	}
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003098.html">[PATCH v2] CAN: Add support for binary protocol to slcan
+</A></li>
+	<LI>Next message: <A HREF="003126.html">[PATCH v2] CAN: Add support for binary protocol to slcan
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3125">[ date ]</a>
+              <a href="thread.html#3125">[ thread ]</a>
+              <a href="subject.html#3125">[ subject ]</a>
+              <a href="author.html#3125">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

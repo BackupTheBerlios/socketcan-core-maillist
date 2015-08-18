@@ -1,0 +1,183 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCHv2] can: ti hecc module : add platform specific	initialization callback.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCHv2%5D%20can%3A%20ti%20hecc%20module%20%3A%20add%20platform%20specific%0A%09initialization%20callback.&In-Reply-To=%3C4B86BAB8.8090603%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004127.html">
+   <LINK REL="Next"  HREF="004142.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCHv2] can: ti hecc module : add platform specific	initialization callback.</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCHv2%5D%20can%3A%20ti%20hecc%20module%20%3A%20add%20platform%20specific%0A%09initialization%20callback.&In-Reply-To=%3C4B86BAB8.8090603%40pengutronix.de%3E"
+       TITLE="[PATCHv2] can: ti hecc module : add platform specific	initialization callback.">mkl at pengutronix.de
+       </A><BR>
+    <I>Thu Feb 25 19:00:24 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004127.html">[PATCHv2] can: ti hecc module : add platform specific initialization	callback.
+</A></li>
+        <LI>Next message: <A HREF="004142.html">[PATCHv2] can: ti hecc module : add platform specific	initialization callback.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4129">[ date ]</a>
+              <a href="thread.html#4129">[ thread ]</a>
+              <a href="subject.html#4129">[ subject ]</a>
+              <a href="author.html#4129">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Sriramakrishnan wrote:
+&gt;<i> CAN module on AM3517 requires programming of IO expander as part
+</I>&gt;<i> of init sequence - to enable CAN PHY. Added platform specific
+</I>&gt;<i> callback to handle phy control(switch on /off).
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Sriramakrishnan &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">srk at ti.com</A>&gt;
+</I>
+looks good, just minor nitpicking inline
+
+Cheers, Marc
+
+&gt;<i> ---
+</I>&gt;<i> Modified as per review comments received.
+</I>&gt;<i> 
+</I>&gt;<i>  drivers/net/can/ti_hecc.c            |   15 ++++++++++++++-
+</I>&gt;<i>  include/linux/can/platform/ti_hecc.h |    3 ++-
+</I>&gt;<i>  2 files changed, 16 insertions(+), 2 deletions(-)
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/ti_hecc.c b/drivers/net/can/ti_hecc.c
+</I>&gt;<i> index df27d82..871a3fe 100644
+</I>&gt;<i> --- a/drivers/net/can/ti_hecc.c
+</I>&gt;<i> +++ b/drivers/net/can/ti_hecc.c
+</I>&gt;<i> @@ -28,9 +28,11 @@
+</I>&gt;<i>   *         .mbx_offset             = 0x2000,
+</I>&gt;<i>   *         .int_line               = 0,
+</I>&gt;<i>   *         .revision               = 1,
+</I>&gt;<i> + *         .transceiver_switch     = hecc_phy_control,
+</I>&gt;<i>   * };
+</I>&gt;<i>   *
+</I>&gt;<i> - * Please see include/can/platform/ti_hecc.h for description of above fields
+</I>&gt;<i> + * Please see include/linux/can/platform/ti_hecc.h for description of
+</I>&gt;<i> + * above fields.
+</I>&gt;<i>   *
+</I>&gt;<i>   */
+</I>&gt;<i>  
+</I>&gt;<i> @@ -220,6 +222,7 @@ struct ti_hecc_priv {
+</I>&gt;<i>  	u32 tx_head;
+</I>&gt;<i>  	u32 tx_tail;
+</I>&gt;<i>  	u32 rx_next;
+</I>&gt;<i> +	void (*transceiver_switch)(int);
+</I>&gt;<i>  };
+</I>&gt;<i>  
+</I>&gt;<i>  static inline int get_tx_head_mb(struct ti_hecc_priv *priv)
+</I>&gt;<i> @@ -317,6 +320,13 @@ static int ti_hecc_set_btc(struct ti_hecc_priv *priv)
+</I>&gt;<i>  	return 0;
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> +static void ti_hecc_transceiver_switch(const struct ti_hecc_priv *priv,
+</I>&gt;<i> +					int on)
+</I>&gt;<i> +{
+</I>&gt;<i> +	if (priv-&gt;transceiver_switch)
+</I>&gt;<i> +		priv-&gt;transceiver_switch(on);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i>  static void ti_hecc_reset(struct net_device *ndev)
+</I>&gt;<i>  {
+</I>&gt;<i>  	u32 cnt;
+</I>&gt;<i> @@ -824,6 +834,7 @@ static int ti_hecc_open(struct net_device *ndev)
+</I>&gt;<i>  		return err;
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i> +	ti_hecc_transceiver_switch(priv, 1);
+</I>&gt;<i>  	ti_hecc_start(ndev);
+</I>&gt;<i>  	napi_enable(&amp;priv-&gt;napi);
+</I>&gt;<i>  	netif_start_queue(ndev);
+</I>&gt;<i> @@ -840,6 +851,7 @@ static int ti_hecc_close(struct net_device *ndev)
+</I>&gt;<i>  	ti_hecc_stop(ndev);
+</I>&gt;<i>  	free_irq(ndev-&gt;irq, ndev);
+</I>&gt;<i>  	close_candev(ndev);
+</I>&gt;<i> +	ti_hecc_transceiver_switch(priv, 0);
+</I>
+nitpick: it's not symetric to the _start function.
+
+&gt;<i>  
+</I>&gt;<i>  	return 0;
+</I>&gt;<i>  }
+</I>&gt;<i> @@ -901,6 +913,7 @@ static int ti_hecc_probe(struct platform_device *pdev)
+</I>&gt;<i>  	priv-&gt;hecc_ram_offset = pdata-&gt;hecc_ram_offset;
+</I>&gt;<i>  	priv-&gt;mbx_offset = pdata-&gt;mbx_offset;
+</I>&gt;<i>  	priv-&gt;int_line = pdata-&gt;int_line;
+</I>&gt;<i> +	priv-&gt;transceiver_switch = pdata-&gt;transceiver_switch;
+</I>&gt;<i>  
+</I>&gt;<i>  	priv-&gt;can.bittiming_const = &amp;ti_hecc_bittiming_const;
+</I>&gt;<i>  	priv-&gt;can.do_set_mode = ti_hecc_do_set_mode;
+</I>&gt;<i> diff --git a/include/linux/can/platform/ti_hecc.h b/include/linux/can/platform/ti_hecc.h
+</I>&gt;<i> index 4688c7b..825bc6a 100644
+</I>&gt;<i> --- a/include/linux/can/platform/ti_hecc.h
+</I>&gt;<i> +++ b/include/linux/can/platform/ti_hecc.h
+</I>&gt;<i> @@ -23,6 +23,7 @@
+</I>&gt;<i>   * @mbx_offset:		Mailbox RAM offset
+</I>&gt;<i>   * @int_line:		Interrupt line to use - 0 or 1
+</I>&gt;<i>   * @version:		version for future use
+</I>&gt;<i> + * @transceiver_switch  platform specific callback fn for transceiver control
+</I>                         ^^
+nitpick:
+these are spaces, but the other lines use tabs
+
+&gt;<i>   *
+</I>&gt;<i>   * Platform data structure to get all platform specific settings.
+</I>&gt;<i>   * this structure also accounts the fact that the IP may have different
+</I>&gt;<i> @@ -35,6 +36,6 @@ struct ti_hecc_platform_data {
+</I>&gt;<i>  	u32 mbx_offset;
+</I>&gt;<i>  	u32 int_line;
+</I>&gt;<i>  	u32 version;
+</I>&gt;<i> +	void (*transceiver_switch) (int);
+</I>&gt;<i>  };
+</I>&gt;<i>  
+</I>&gt;<i> -
+</I>
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 260 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20100225/fe372689/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20100225/fe372689/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004127.html">[PATCHv2] can: ti hecc module : add platform specific initialization	callback.
+</A></li>
+	<LI>Next message: <A HREF="004142.html">[PATCHv2] can: ti hecc module : add platform specific	initialization callback.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4129">[ date ]</a>
+              <a href="thread.html#4129">[ thread ]</a>
+              <a href="subject.html#4129">[ subject ]</a>
+              <a href="author.html#4129">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

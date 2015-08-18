@@ -1,0 +1,145 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-core] Release critical problems (Was:  cleanups, t weaks and bugfixes for net/can/*.c)
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Release%20critical%20problems%20%28Was%3A%20%20cleanups%2C%20t%0A%20weaks%20and%20bugfixes%20for%20net/can/%2A.c%29&In-Reply-To=%3C4486D967.3030507%40varma-el.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000167.html">
+   <LINK REL="Next"  HREF="000170.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-core] Release critical problems (Was:  cleanups, t weaks and bugfixes for net/can/*.c)</H1>
+    <B>Andrey Volkov</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Release%20critical%20problems%20%28Was%3A%20%20cleanups%2C%20t%0A%20weaks%20and%20bugfixes%20for%20net/can/%2A.c%29&In-Reply-To=%3C4486D967.3030507%40varma-el.com%3E"
+       TITLE="[Socketcan-core] Release critical problems (Was:  cleanups, t weaks and bugfixes for net/can/*.c)">avolkov at varma-el.com
+       </A><BR>
+    <I>Wed Jun  7 15:49:27 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000167.html">[Socketcan-core] Release critical problems (Was:  cleanups, t	weaks and bugfixes for net/can/*.c)
+</A></li>
+        <LI>Next message: <A HREF="000170.html">[Socketcan-core] Is there any English documentation available
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#169">[ date ]</a>
+              <a href="thread.html#169">[ thread ]</a>
+              <a href="subject.html#169">[ subject ]</a>
+              <a href="author.html#169">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hartkopp, Oliver (K-GEFE/E) wrote:
+&gt;<i> Hi Andrey,
+</I>&gt;<i> 
+</I>&gt;&gt;<i> 1) Hardware filters.
+</I>&gt;&gt;<i>    Problem: All known controllers allow to set up ACM/ACC only
+</I>&gt;&gt;<i>    in reset mode. It conducts to loss of incoming packets.
+</I>&gt;&gt;<i>    But without this filters, we risks be overloaded by
+</I>&gt;&gt;<i>    interrupts (as ex.: in worst case RX interrupts frequency
+</I>&gt;&gt;<i>    on 125 Kbit/s speed is ~2500/sec)
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> i was trying to get a discussion on hardware-filters and there had been some
+</I>&gt;<i> ideas from Wolfgang (the last posting was on 2006-05-30). It is a problem to
+</I>&gt;<i> cover hardware-dependend filters and CAN-transceivers and Wolfgang suggested
+</I>&gt;<i> some kind of 'Capabilities' ioctl().
+</I>&gt;<i> 
+</I>&gt;&gt;<i>From my point of view, i would suggest the Filters (to be extended), i
+</I>&gt;<i> described in can_ioctl.h and the &quot;Capabilities &amp; Filters&quot; thread. Maybe you
+</I>&gt;<i> also have an opinion on this topic.
+</I>I remember Wolfgang suggestions, but problem, IMHO, mainly in lost
+packets when user will try to change filters through SIOCSCANCTRLMODE
+when controller in ACTIVE state (generally same problem
+will arise if he/she will try to change speed too).
+Currently I see next solutions:
+ 1) Accepting that when user application(s) change filters,
+    while controller in ACTIVE state, some incoming packets on _another_
+    sockets may be lost.
+ 2) Disable such things while controller in ACTIVE state, but then all
+    sockets layers must be ready to handle START/STOP events ASAP and in
+    any state.
+
+&gt;<i> 
+</I>&gt;&gt;<i> 2) PHY.
+</I>&gt;&gt;<i>    Problem: Some CAN physical layer transceivers could have
+</I>&gt;&gt;<i>    some &quot;brain&quot; (most common is a control of pulse rising rate).
+</I>&gt;&gt;<i>    So some common API to control such drivers should be written too.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> As documented in the can_error.h there are several possibilities that can
+</I>&gt;<i> occur on transceiver-level. On the other hand it is a good solution to have
+</I>&gt;<i> a CAN-controller (and it's CAN-bus) in the state START, STOP and SLEEP as
+</I>&gt;<i> defined in can_ioctl.h.
+</I>&gt;<i> 
+</I>&gt;<i> Therefore i /might/ be a reasonable idea to create a hardware-dependend
+</I>&gt;<i> can-driver that knows how to control the transceivers on this specific
+</I>&gt;<i> hardware either. Mostly the Transceiver-Modes can be set via (schematic
+</I>&gt;<i> specific) GPIO-pins which is definitely hardware dependend.
+</I>&gt;<i> 
+</I>&gt;<i> So maybe the kernel-modules should be:
+</I>&gt;<i> 
+</I>&gt;<i> sja1000-isa.ko
+</I>&gt;<i> sja1000-myhw.ko
+</I>&gt;<i> ...
+</I>NOOO, I've in mind only some set of callbacks in can_device, or may be
+better new device object (can_phy) filled in by platform/board specific
+driver. So, as example, handler of set baudrate ioctl will look like:
+    ..........
+case SIOCSCANBAUDRATE:
+  if(can-&gt;phy)
+    can-&gt;phy.do_set_bittime(....)
+  can-&gt;do_set_bittime(....)
+    ..........
+
+&gt;<i> 
+</I>&gt;<i> where the transceivers are controlled correctly by hardwaredependend
+</I>&gt;<i> GPIO-pins.
+</I>For a GPIO based devices exist platform data/platform drivers
+(check i2c/spi/rtc drivers).
+
+&gt;<i> 
+</I>&gt;<i> I assume we will become mad, when we try to cover any f*cking
+</I>&gt;<i> (transceiver)hardware derivate with one driver and one ioctl()-interface.
+</I>No, I think that each (family of) transceiver(s)
+must have itself driver.
+
+&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> Socketcan-core mailing list
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> <A HREF="http://lists.berlios.de/mailman/listinfo/socketcan-core">http://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>&gt;<i> 
+</I>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000167.html">[Socketcan-core] Release critical problems (Was:  cleanups, t	weaks and bugfixes for net/can/*.c)
+</A></li>
+	<LI>Next message: <A HREF="000170.html">[Socketcan-core] Is there any English documentation available
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#169">[ date ]</a>
+              <a href="thread.html#169">[ thread ]</a>
+              <a href="subject.html#169">[ subject ]</a>
+              <a href="author.html#169">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

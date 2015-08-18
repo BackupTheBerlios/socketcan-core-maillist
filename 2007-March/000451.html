@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Xenomai-core] RT-Socket-CAN bus error rate and latencies
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-March/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BXenomai-core%5D%20RT-Socket-CAN%20bus%20error%20rate%20and%20latencies&In-Reply-To=%3C46003635.2020509%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000450.html">
+   <LINK REL="Next"  HREF="000452.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Xenomai-core] RT-Socket-CAN bus error rate and latencies</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BXenomai-core%5D%20RT-Socket-CAN%20bus%20error%20rate%20and%20latencies&In-Reply-To=%3C46003635.2020509%40grandegger.com%3E"
+       TITLE="[Xenomai-core] RT-Socket-CAN bus error rate and latencies">wg at grandegger.com
+       </A><BR>
+    <I>Tue Mar 20 20:29:57 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000450.html">[Xenomai-core] RT-Socket-CAN bus error rate and latencies
+</A></li>
+        <LI>Next message: <A HREF="000452.html">RT-Socket-CAN bus error rate and latencies
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#451">[ date ]</a>
+              <a href="thread.html#451">[ thread ]</a>
+              <a href="subject.html#451">[ subject ]</a>
+              <a href="author.html#451">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Jan Kiszka wrote:
+&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> Hello,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> on the Xenomai mailing list the topic &quot;bus error flooding&quot; popped up
+</I>&gt;&gt;<i> again. Various users reported trouble due to high bus error rates and
+</I>&gt;&gt;<i> bad impact on latencies. Some discussion is going on on how to avoid
+</I>&gt;&gt;<i> such flooding. I have already implemented &quot;on-demand&quot; bus error
+</I>&gt;&gt;<i> interrupts. Bus error interrupts are then only enabled when at least one
+</I>&gt;&gt;<i> socket is listening on bus errors. But flooding can still occur and we
+</I>&gt;&gt;<i> are thinking about a better way of downscaling or temporarily disabling
+</I>&gt;&gt;<i> them. Socket-CAN currently restarts the controller after 200 bus errors.
+</I>&gt;&gt;<i> My preferred solution for RT-Socket-CAN currently is to stop the CAN
+</I>&gt;&gt;<i> controller after a kernel configurable amount of successive bus errors.
+</I>&gt;&gt;<i> More clever ideas and comments are welcome?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> To have some input, I have measured the bus error rate with the PEAK
+</I>&gt;&gt;<i> PCAN PCI card on my Icecube MPC5200 eval-board doing rtcansend without
+</I>&gt;&gt;<i> cable connected. Here are the results for the various baud-rates:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>    125 KB/s  1926 BEI/s
+</I>&gt;&gt;<i>    250 KB/s  3925 BEI/s
+</I>&gt;&gt;<i>    500 KB/s  7856 BEI/s
+</I>&gt;&gt;<i>   1000 KB/s 15700 BEI/s
+</I>&gt;<i> 
+</I>&gt;<i> So bus errors come in at a rate comparable to shortest possible frames
+</I>&gt;<i> at maximum speed, right? That's an IRQ load you can live with - if you
+</I>&gt;<i> plan to load your CAN bus at 100% anyway. But if you don't...
+</I>
+Yes, it looks like.
+
+&gt;&gt;<i> The latency measured with &quot;latency&quot; from the testsuite reported an
+</I>&gt;&gt;<i> increase of the latency with load from 67 to 95us almost independently
+</I>&gt;&gt;<i> of the baud-rate. Sending messages with 8 byte payload from MSCAN to
+</I>&gt;&gt;<i> SJA1000 on the same node as fast as possible increased the latency up to
+</I>&gt;&gt;<i> 103us. This measurement did not include delivery of messages to sockets
+</I>&gt;&gt;<i> (actually no socket was listening).
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Some dump of /proc/xenomai/stat would be interesting (system load in
+</I>&gt;<i> both cases).
+</I>
+OK, here for bus error flooding at 1MB/s:
+
+bash-2.05b# cat /proc/xenomai/stat
+CPU  PID    MSW        CSW        PF    STAT       %CPU  NAME
+   0  0      0          9781211    0     00500080   74.0  ROOT
+   0  27199  130        264        0     00300182    0.0  display-27197
+   0  27200  0          260166     0     00300184    8.1  sampling-27197
+   0  0      0          29325916   0     00000000   14.5  IRQ0: SJA1000
+   0  0      0          0          0     00000000    0.0  IRQ0: SJA1000
+   0  0      0          1000002    0     00000000    0.0  IRQ55: MSCAN
+   0  0      0          0          0     00000000    0.0  IRQ56: MSCAN
+   0  0      0          9685429    0     00000000    3.0  IRQ256: [timer]
+
+and here for &quot;rtcansend -d 0 -l 1000000 rtcan0 1 2 3 4 5 6 7&quot;:
+
+bash-2.05b# cat /proc/xenomai/stat
+CPU  PID    MSW        CSW        PF    STAT       %CPU  NAME
+   0  0      0          10377571   0     00500080   51.5  ROOT
+   0  27199  336        816        0     00300182    0.0  display-27197
+   0  27200  0          672738     0     00300184    5.8  sampling-27197
+   0  29526  0          291678     0     00300182   23.6  rtcansend-29526
+   0  0      0          30863047   0     00000000    9.7  IRQ0: SJA1000
+   0  0      0          0          0     00000000    0.0  IRQ0: SJA1000
+   0  0      0          1242608    0     00000000    6.5  IRQ55: MSCAN
+   0  0      0          0          0     00000000    0.0  IRQ56: MSCAN
+   0  0      0          10115159   0     00000000    2.1  IRQ256: [timer]
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000450.html">[Xenomai-core] RT-Socket-CAN bus error rate and latencies
+</A></li>
+	<LI>Next message: <A HREF="000452.html">RT-Socket-CAN bus error rate and latencies
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#451">[ date ]</a>
+              <a href="thread.html#451">[ thread ]</a>
+              <a href="subject.html#451">[ subject ]</a>
+              <a href="author.html#451">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

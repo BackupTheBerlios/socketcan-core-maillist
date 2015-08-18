@@ -1,0 +1,140 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> MSCAN driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20MSCAN%20driver&In-Reply-To=%3C4B10215B.9030801%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003564.html">
+   <LINK REL="Next"  HREF="003569.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>MSCAN driver</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20MSCAN%20driver&In-Reply-To=%3C4B10215B.9030801%40grandegger.com%3E"
+       TITLE="MSCAN driver">wg at grandegger.com
+       </A><BR>
+    <I>Fri Nov 27 19:58:35 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003564.html">MSCAN driver
+</A></li>
+        <LI>Next message: <A HREF="003569.html">MSCAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3565">[ date ]</a>
+              <a href="thread.html#3565">[ thread ]</a>
+              <a href="subject.html#3565">[ subject ]</a>
+              <a href="author.html#3565">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi G&#252;nter,
+
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Guenter.Ebermann at elektrobit.com</A> wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> I am the maintainer of a MPC5200 port of eCos at Elektrobit.
+</I>&gt;<i> I found a race-condition in the implementation of our MSCAN
+</I>&gt;<i> CAN-driver and it seems your driver has the same problem
+</I>&gt;<i> (I reviewed your code for reference reasons):
+</I>&gt;<i> <A HREF="http://git.kernel.org/?p=linux/kernel/git/davem/net-next-2.6.git;a=blob_plain;f=drivers/net/can/mscan/mscan.c;hb=HEAD">http://git.kernel.org/?p=linux/kernel/git/davem/net-next-2.6.git;a=blob_plain;f=drivers/net/can/mscan/mscan.c;hb=HEAD</A>
+</I>&gt;<i> 
+</I>&gt;<i> I first contacted Wolfram Sang personally and he pointed me
+</I>&gt;<i> to the right sources and to this mailing list.
+</I>
+Thanks for double checking the Socket-CAN driver.
+
+&gt;<i> Problem is:
+</I>&gt;<i> MSCAN has three Tx-Buffers. But only one buffer-interface.
+</I>&gt;<i> So to select one buffer you must use a buffer selection (cantbsel)
+</I>&gt;<i> register.
+</I>&gt;<i> 
+</I>&gt;<i> Your driver implementation selects the buffer in the 
+</I>&gt;<i> mscan_start_xmit() function and then fills the buffer with
+</I>&gt;<i> payload.
+</I>&gt;<i> 
+</I>&gt;<i> But in the ISR mscan_isr() the buffer is also selected
+</I>&gt;<i> to maintain the tx-stats.
+</I>&gt;<i> 
+</I>&gt;<i> Race-condition occurs if mscan_isr() interrupts mscan_start_xmit()
+</I>&gt;<i> after it selects a buffer by writing to the tbsel register.
+</I>&gt;<i> After ISR returns mscan_start_xmit will continue to write payload
+</I>&gt;<i> into the wrong buffer.
+</I>
+TX interrupts are disabled in mscan_start_xmit() while accessing the
+tbsel register and writing the payload:
+
+static netdev_tx_t mscan_start_xmit(struct sk_buff *skb, ...)
+{
+	out_8(&amp;regs-&gt;cantier, 0);
+	...
+	out_8(&amp;regs-&gt;cantier, priv-&gt;tx_active);
+
+	return NETDEV_TX_OK;
+}
+
+&gt;<i> A second race condition occurs with the cantier register.
+</I>&gt;<i> The documentation says its an interrupt-enable register.
+</I>&gt;<i> But in-fact it is a sort of acknowledgement register which
+</I>&gt;<i> is accessed in both ISR and xmit function with load-and-store
+</I>&gt;<i> operations.
+</I>
+I don't see that problem yet in the MSCAN Socketcan driver.
+
+&gt;<i> The fix in my eCos driver was to lock the ISR from occuring during
+</I>&gt;<i> cantbsel and cantier register are accessed inside the transmit function.
+</I>&gt;<i> 
+</I>&gt;<i> If you need a reference-implementation I can send you my
+</I>&gt;<i> implementation of the MSCAN driver for eCos operating system.
+</I>&gt;<i> It differs with your implementation because it is able to
+</I>&gt;<i> abort buffers whenever a Can-Message arrives at the Tx-API
+</I>&gt;<i> with has higher priority than the messages currently in the
+</I>&gt;<i> buffers (to avoid starvation on the bus).
+</I>&gt;<i> 
+</I>&gt;<i> Perhaps the following lines could be  written simpler
+</I>&gt;<i> in function mscan_isr():
+</I>&gt;<i> 
+</I>&gt;<i>    cantier = in_8(&amp;regs-&gt;cantier) &amp; MSCAN_TXE;
+</I>&gt;<i>    cantflg = in_8(&amp;regs-&gt;cantflg) &amp; cantier;
+</I>&gt;<i> 
+</I>&gt;<i>    if (cantier &amp;&amp; cantflg) {
+</I>&gt;<i>       ...
+</I>&gt;<i> Instead of this i would write (its the same):
+</I>&gt;<i>    if (cantflg) {
+</I>
+This will break the synchronization with mscan_start_xmit(), because the
+ISR can be entered by to RX or error interrupts as well.
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003564.html">MSCAN driver
+</A></li>
+	<LI>Next message: <A HREF="003569.html">MSCAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3565">[ date ]</a>
+              <a href="thread.html#3565">[ thread ]</a>
+              <a href="subject.html#3565">[ subject ]</a>
+              <a href="author.html#3565">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

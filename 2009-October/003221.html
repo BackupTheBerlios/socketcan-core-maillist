@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] can: provide library functions for skb allocation
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20can%3A%20provide%20library%20functions%20for%20skb%20allocation&In-Reply-To=%3C4ACB6B41.7010109%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003220.html">
+   <LINK REL="Next"  HREF="003224.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] can: provide library functions for skb allocation</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20can%3A%20provide%20library%20functions%20for%20skb%20allocation&In-Reply-To=%3C4ACB6B41.7010109%40pengutronix.de%3E"
+       TITLE="[PATCH] can: provide library functions for skb allocation">mkl at pengutronix.de
+       </A><BR>
+    <I>Tue Oct  6 18:07:29 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003220.html">[PATCH] can: provide library functions for skb allocation
+</A></li>
+        <LI>Next message: <A HREF="003224.html">[PATCH] can: provide library functions for skb allocation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3221">[ date ]</a>
+              <a href="thread.html#3221">[ thread ]</a>
+              <a href="subject.html#3221">[ subject ]</a>
+              <a href="author.html#3221">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+Oliver Hartkopp wrote:
+&gt;<i> Marc Kleine-Budde wrote:
+</I>&gt;&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;&gt;&gt;<i> +	*cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+</I>&gt;&gt;&gt;<i> This could be also the place, where we could memset the struct can_frame to
+</I>&gt;&gt;&gt;<i> zero, right?
+</I>&gt;&gt;&gt;<i> Maybe we should do it here and leave it in alloc_can_err_skb() ...
+</I>&gt;&gt;<i> In my at91 driver I don't need the memset, because I unconditionally
+</I>&gt;&gt;<i> read the two 32 bit registers and write it into the -&gt;data of the can_frame.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;&gt;&gt;<i> +	return skb;
+</I>&gt;&gt;&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;&gt;&gt;<i> +EXPORT_SYMBOL_GPL(alloc_can_skb);
+</I>&gt;&gt;&gt;&gt;&gt;<i> +struct sk_buff *alloc_can_err_skb(struct net_device *dev, struct can_frame **cf)
+</I>&gt;&gt;&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;&gt;&gt;<i> +	struct sk_buff *skb;
+</I>&gt;&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;&gt;&gt;<i> +	skb = alloc_can_skb(dev, cf);
+</I>&gt;&gt;&gt;&gt;&gt;<i> +	if (unlikely(!skb))
+</I>&gt;&gt;&gt;&gt;&gt;<i> +		return NULL;
+</I>&gt;&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;&gt;&gt;<i> +	memset(*cf, 0, sizeof(struct can_frame));
+</I>&gt;&gt;&gt;<i> here :-)
+</I>&gt;&gt;<i> Here we need zeroed -&gt;data
+</I>&gt;<i> 
+</I>&gt;<i> Ok, but if we think about some improvement, i would suggest to zero only the 8
+</I>&gt;<i> bytes data[] and leave the rest as-is.
+</I>&gt;<i> 
+</I>&gt;<i> Maybe by setting the u64 casted data[] to zero.
+</I>
+yes, but we might still leak the 3 padding bytes...
+
+&gt;&gt;&gt;&gt;&gt;<i> +	(*cf)-&gt;can_id = CAN_ERR_FLAG;
+</I>&gt;&gt;&gt;&gt;&gt;<i> +	(*cf)-&gt;can_dlc = CAN_ERR_DLC;
+</I>&gt;<i> 
+</I>&gt;<i> As you can see, the can_id and the can_dlc is written anyway.
+</I>
+&gt;<i> When data[] is uninitialized, we expose 8-11 Bytes of uninitialized contiguous
+</I>&gt;<i> data to the userspace, when can_dlc=0 - i don't know if this is relevant.
+</I>
+In the can error frame use case we need data[] to be zero, because
+usually bits are or'ed into the data[].
+
+When looking at the normal rx path the driver might not need it....(as
+the at91), unconditionally cleaning everything might make other drivers
+simpler.
+
+I doubt that we can measure the performance impact if we generally
+memset the whole can frame, for both error and normal frames. So make it
+clean ;)
+
+cheers, Marc
+
+- --
+Pengutronix e.K.                         | Marc Kleine-Budde           |
+Linux Solutions for Science and Industry | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund                 | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686         | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.9 (GNU/Linux)
+Comment: Using GnuPG with Mozilla - <A HREF="http://enigmail.mozdev.org">http://enigmail.mozdev.org</A>
+
+iEYEARECAAYFAkrLa0EACgkQjTAFq1RaXHOg2gCffGX9dMGnrMckXSpliURN7Jf1
+4cQAoIuV1E8p9S/HHrMMzVN+pyHGEZzx
+=gEHv
+-----END PGP SIGNATURE-----
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003220.html">[PATCH] can: provide library functions for skb allocation
+</A></li>
+	<LI>Next message: <A HREF="003224.html">[PATCH] can: provide library functions for skb allocation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3221">[ date ]</a>
+              <a href="thread.html#3221">[ thread ]</a>
+              <a href="subject.html#3221">[ subject ]</a>
+              <a href="author.html#3221">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

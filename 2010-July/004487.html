@@ -1,0 +1,283 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC PATCH] can: improved CAN error state handling
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20PATCH%5D%20can%3A%20improved%20CAN%20error%20state%20handling&In-Reply-To=%3C4C4C4ED2.2020205%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004486.html">
+   <LINK REL="Next"  HREF="004488.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC PATCH] can: improved CAN error state handling</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20PATCH%5D%20can%3A%20improved%20CAN%20error%20state%20handling&In-Reply-To=%3C4C4C4ED2.2020205%40pengutronix.de%3E"
+       TITLE="[RFC PATCH] can: improved CAN error state handling">mkl at pengutronix.de
+       </A><BR>
+    <I>Sun Jul 25 16:48:50 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004486.html">[RFC PATCH] can: improved CAN error state handling
+</A></li>
+        <LI>Next message: <A HREF="004488.html">[RFC PATCH] can: improved CAN error state handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4487">[ date ]</a>
+              <a href="thread.html#4487">[ thread ]</a>
+              <a href="subject.html#4487">[ subject ]</a>
+              <a href="author.html#4487">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger wrote:
+&gt;<i> On 07/25/2010 03:35 PM, Marc Kleine-Budde wrote:
+</I>&gt;&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;<i> I found some time to work on this issue.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> So far we only report CAN error state changes to the worse:
+</I>&gt;&gt;&gt;<i> &quot;error-active -&gt; error-warning -&gt; error-passive -&gt; bus-off&quot;, but not
+</I>&gt;&gt;&gt;<i> &quot;bus-off -&gt; error-active&quot; or &quot;error-passive -&gt; error-warning -&gt;
+</I>&gt;&gt;&gt;<i> error-active&quot;. There have been request from other users to correct
+</I>&gt;&gt;&gt;<i> this behavior.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> This patch reports any state change reported by the SJA1000 and
+</I>&gt;&gt;&gt;<i> MSCAN-MPC5200 controller. It introduces &quot;CAN_ERR_CRTL_ACTIVE&quot; to
+</I>&gt;&gt;&gt;<i> signal state changes to error active. Furthermore, the SJA1000
+</I>&gt;&gt;&gt;<i> triggers now the bus-off recovery procedure when restarted. So far,
+</I>&gt;&gt;&gt;<i> the controller was *stopped* and then restarted. I did two tests to
+</I>&gt;&gt;&gt;<i> analyze the state changes behavior:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> 1. First I forced the controller into the error-passive by sending
+</I>&gt;&gt;&gt;<i>    a message (with cansend) without cable connected (*). Then I
+</I>&gt;&gt;&gt;<i>    reconnected the cable (**) and continued to send messages (with
+</I>&gt;&gt;&gt;<i>    cangen) (***) until the error active state is reached:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    On SJA1000:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    # candump any,0:0,#FFFFFFFF
+</I>&gt;&gt;&gt;<i>    (*)
+</I>&gt;&gt;&gt;<i>    can0  20000004  [8] 00 08 00 00 00 00 60 00   ERROR-WARNING
+</I>&gt;&gt;&gt;<i>    can0  20000004  [8] 00 20 00 00 00 00 80 00   ERROR-PASSIVE
+</I>&gt;&gt;&gt;<i>    (**)
+</I>&gt;&gt;&gt;<i>    can0  123  [4] DE AD BE EF
+</I>&gt;&gt;&gt;<i>    (***)
+</I>&gt;&gt;&gt;<i>    can0  42A  [1] 00
+</I>&gt;&gt;&gt;<i>    ...
+</I>&gt;&gt;&gt;<i>    can0  42A  [1] 07
+</I>&gt;&gt;&gt;<i>    can0  20000004  [8] 00 08 00 00 00 00 7F 00   ERROR-WARNING
+</I>&gt;&gt;<i> Is it possible to tell apart whether the driver goes from passive to
+</I>&gt;&gt;<i> warning or from active to warning? Without the need to have a state
+</I>&gt;&gt;<i> machine in userspace, too?
+</I>&gt;<i> 
+</I>&gt;<i> Yes, I realized that side effect as well. The user must monitor state
+</I>&gt;<i> changes to understand if the state gets worse or better. We could use an
+</I>&gt;<i> error bit to indicate state improvements.
+</I>
+I like that idea! From naive point of view, in the userspace I want
+information that I can interpret stateless (i.e. without the need for a
+statemachine == history).
+
+&gt;&gt;<i> Looking at the tx/rx error level might be an option, but I've seen that
+</I>&gt;&gt;<i> the level can rise very quickly.
+</I>&gt;<i> 
+</I>&gt;<i> Be aware that the tx/rx error counters are *not* readable on all CAN
+</I>&gt;<i> controllers.
+</I>
+Right....
+
+&gt;&gt;&gt;<i>    can0  42A  [1] 08
+</I>&gt;&gt;&gt;<i>    ...
+</I>&gt;&gt;&gt;<i>    can0  42A  [1] 27
+</I>&gt;&gt;&gt;<i>    can0  20000004  [8] 00 40 00 00 00 00 5F 00   ERROR-ACTIVE
+</I>&gt;&gt;&gt;<i>                                           \-- tx-err !!!
+</I>&gt;&gt;&gt;<i>    On MSCAN:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    # candump any,0:0,#FFFFFFFF
+</I>&gt;&gt;&gt;<i>    (*)
+</I>&gt;&gt;&gt;<i>    can2  20000004  [8] 00 08 00 00 00 00 00 00   ERROR-WARNING
+</I>&gt;&gt;&gt;<i>    can2  20000004  [8] 00 20 00 00 00 00 00 00   ERROR-PASSIVE
+</I>&gt;&gt;&gt;<i>    (**)
+</I>&gt;&gt;&gt;<i>    can2  123  [4] DE AD BE EF
+</I>&gt;&gt;&gt;<i>    can2  20000004  [8] 00 08 00 00 00 00 00 00   ERROR-WARNING
+</I>&gt;&gt;&gt;<i>    (***)
+</I>&gt;&gt;&gt;<i>    can2  42A  [1] 00
+</I>&gt;&gt;&gt;<i>    can2  42A  [1] 01
+</I>&gt;&gt;&gt;<i>    ...
+</I>&gt;&gt;&gt;<i>    can2  42A  [1] 1E
+</I>&gt;&gt;&gt;<i>    can2  42A  [1] 1F
+</I>&gt;&gt;&gt;<i>    can2  20000004  [8] 00 40 00 00 00 00 00 00   ERROR-ACTIVE
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    As you can see, the state change to error-active is signaled
+</I>&gt;&gt;&gt;<i>    differently. The MSCAN seems not to respect the specs :-(.
+</I>&gt;&gt;<i> Do you mean the fact that error active is signalled with tx err == 0?
+</I>&gt;<i> 
+</I>&gt;<i> Yes, the SJA1000 triggers an interrupt to signal error active when the
+</I>&gt;<i> error counter goes below 96.
+</I>
+Okay.
+
+&gt;&gt;<i> From the patch below you only changed the part of the driver that runs
+</I>&gt;&gt;<i> if a change of state is detected &quot;(old_state != priv-&gt;can.state)&quot;.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Maybe it's a problem in the driver, that calculated the new state wrong.
+</I>&gt;&gt;<i> Maybe due to a problem with the hardware. (I don't know the driver nor
+</I>&gt;&gt;<i> the hardware).
+</I>&gt;<i> 
+</I>&gt;<i> I monitored the interrupt generation as well:
+</I>&gt;<i> 
+</I>&gt;<i> [ 1234.089446] mpc5xxx_can f0000900.can: error interrupt (canrflg=0x44)
+</I>&gt;<i> [ 1234.092228] mpc5xxx_can f0000900.can: error interrupt (canrflg=0x48)
+</I>&gt;<i> [ 1240.960487] mpc5xxx_can f0000900.can: error interrupt (canrflg=0x44)
+</I>&gt;<i> [ 1352.336647] mpc5xxx_can f0000900.can: error interrupt (canrflg=0x40)
+</I>&gt;<i> 
+</I>&gt;<i> The last interrupt comes that late, even if the state is misinterpreted.
+</I>&gt;<i> Note also that the MSCAN has a dedicated state field for TX and RX.
+</I>&gt;<i> Therefore the state is defined without a state machine in software.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> Looking at you patches below I want to rise my old proposal again. I
+</I>&gt;&gt;<i> think we should move the state machine that assembles and sends the
+</I>&gt;&gt;<i> error frames into a common function. Each driver just needs to have a
+</I>&gt;&gt;<i> proper function that calculates the current state and then call the
+</I>&gt;&gt;<i> state handling state machine.
+</I>&gt;<i> 
+</I>&gt;<i> The error handling code is already quite large and complex, especially
+</I>&gt;<i> for the purpose it serves. Any common function improving that situation
+</I>&gt;<i> would be nice. But unfortunately, we rely on the hardware :-(.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i>    When time permits, I will also try the MSCAN of the MPC5121.
+</I>&gt;&gt;&gt;<i> 2. I forced the controller into bus-off by short-circuiting
+</I>&gt;&gt;&gt;<i>    the low and hi lines and sending a message (*), Then I
+</I>&gt;&gt;&gt;<i>    restarted the controller manually with
+</I>&gt;&gt;&gt;<i>    &quot;ip link set can0 type can restart&quot; (**):
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    On SJA1000:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    # ./candump -t d any,0:0,#FFFFFFFF
+</I>&gt;&gt;&gt;<i>    (*)
+</I>&gt;&gt;&gt;<i>    can0  20000004  [8] 00 08 00 00 00 00 88 00   ERROR-WARNING
+</I>&gt;&gt;&gt;<i>    can0  20000004  [8] 00 20 00 00 00 00 88 00   ERROR-PASSIVE
+</I>&gt;&gt;&gt;<i>    can0  20000044  [8] 00 00 00 00 00 00 7F 00   BUS-OFF
+</I>&gt;&gt;&gt;<i>    (**)
+</I>&gt;&gt;&gt;<i>    can0  20000100  [8] 00 00 00 00 00 00 00 00   RESTARTED
+</I>&gt;&gt;&gt;<i>    can0  20000004  [8] 00 40 00 00 00 00 00 00   ERROR-ACTIVE
+</I>&gt;&gt;&gt;<i>                                           \-- tx-err !!!
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    On MSCAN:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    # ./candump -t d any,0:0,#FFFFFFFF
+</I>&gt;&gt;&gt;<i>    (*)
+</I>&gt;&gt;&gt;<i>    can2  20000004  [8] 00 08 00 00 00 00 00 00   ERROR-WARNING
+</I>&gt;&gt;&gt;<i>    can2  20000040  [8] 00 00 00 00 00 00 00 00   BUS-OFF
+</I>&gt;&gt;&gt;<i>    (**)
+</I>&gt;&gt;&gt;<i>    can2  20000100  [8] 00 00 00 00 00 00 00 00   RESTARTED
+</I>&gt;&gt;&gt;<i>    can2  20000004  [8] 00 40 00 00 00 00 00 00   ERROR-ACTIVE
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    The MSCAN seems not to signal the ERROR-PASSIVE state before
+</I>&gt;&gt;&gt;<i>    going bus-off.
+</I>&gt;&gt;<i> I think the signalling of ERROR-PASSIVE depends on multiple things:
+</I>&gt;&gt;<i> - the current bitrate.
+</I>&gt;&gt;<i>   I think this doesn't count so much in this short circuit test.
+</I>&gt;&gt;<i> - the CAN hardware itself: does it signal this &quot;in-the-middle-passive&quot;
+</I>&gt;&gt;<i>   interrupt
+</I>&gt;&gt;<i> - overall speed and load of your system:
+</I>&gt;&gt;<i>   reaction time on interrupts,
+</I>&gt;&gt;<i>   is your system fast enough to handle these two back-to-back interrupts
+</I>&gt;&gt;<i>   as two single events
+</I>&gt;&gt;<i> - driver design, i.e.
+</I>&gt;&gt;<i> - is the state change signalled from the hard-irq or from napi:
+</I>&gt;&gt;<i>   the second interrupt may occur somewhere between hardirq and napi,
+</I>&gt;&gt;<i>   so napi just sees bus off
+</I>&gt;&gt;<i> - design of the error state machine:
+</I>&gt;&gt;<i>   in the at91 and flexcan I always send a warning interrupt if going
+</I>&gt;&gt;<i>   from active to passive.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The last point is another argument for a common state machine.
+</I>&gt;<i> 
+</I>&gt;<i> Well, yes, a common state handling function would be nice, but as the
+</I>&gt;<i> hardware is not really smart, a simple state machine is not enough. It's
+</I>&gt;<i> not just reading the current state and check if it has changed. Have a
+</I>&gt;<i> look to the SJA1000 and MSCAN driver, e.g.:
+</I>&gt;<i> 
+</I>&gt;<i>         if (isrc &amp; IRQ_EPI) {
+</I>&gt;<i>                 /* error passive interrupt */
+</I>&gt;<i>                 dev_dbg(dev-&gt;dev.parent, &quot;error passive interrupt\n&quot;,
+</I>&gt;<i>                         status);
+</I>&gt;<i>                 if (status &amp; SR_ES) {
+</I>&gt;<i>                         if (priv-&gt;can.state == CAN_STATE_ERROR_WARNING)
+</I>&gt;<i>                                 state = CAN_STATE_ERROR_PASSIVE;
+</I>&gt;<i>                         else
+</I>&gt;<i>                                 state = CAN_STATE_ERROR_WARNING;
+</I>&gt;<i>                 } else {
+</I>&gt;<i>                         state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;<i>                 }
+</I>&gt;<i>         }
+</I>
+That what I was proposing. The individual can driver implements a
+function to determine the current state and then calls the common error
+frame fillout function.
+
+&gt;<i> No need for another state machine. But a common function is still useful
+</I>&gt;<i> to fill an error frame for the state change, of course. I will try to
+</I>&gt;<i> come up with a proposal soon.
+</I>
+I think there's need for (another) state machine, let me try to explain.
+
+In the interrupt or napi handler each driver determines the current can
+state.
+This can vary from a simple: read register and translate into
+CAN_STATE_*, to a more complex function like you've written above. This
+functions can even have fixups for strange hardware, like the MSCAN: The
+mscan may think it's still in error warning, but we know tx/rx error
+level below 96 means error active.
+
+If the can state has changed the driver calls the
+&quot;fill-out-error-frame-function&quot;. This function will take care of strange
+hardware again. E.g. if the can state changes from error passive to
+error active the function can generate the missing to-error-warning
+meesage. (If this is wanted). The same goes for the
+state-is-getting-worse messages.
+
+cheers, Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 260 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20100725/9d71a163/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20100725/9d71a163/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004486.html">[RFC PATCH] can: improved CAN error state handling
+</A></li>
+	<LI>Next message: <A HREF="004488.html">[RFC PATCH] can: improved CAN error state handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4487">[ date ]</a>
+              <a href="thread.html#4487">[ thread ]</a>
+              <a href="subject.html#4487">[ subject ]</a>
+              <a href="author.html#4487">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

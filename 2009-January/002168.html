@@ -1,0 +1,283 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] dev: add register_candev() and unregister_candev()
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20dev%3A%20add%20register_candev%28%29%20and%20unregister_candev%28%29&In-Reply-To=%3C49743828.8020400%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002155.html">
+   <LINK REL="Next"  HREF="002169.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] dev: add register_candev() and unregister_candev()</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20dev%3A%20add%20register_candev%28%29%20and%20unregister_candev%28%29&In-Reply-To=%3C49743828.8020400%40grandegger.com%3E"
+       TITLE="[PATCH] dev: add register_candev() and unregister_candev()">wg at grandegger.com
+       </A><BR>
+    <I>Mon Jan 19 09:22:00 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002155.html">RFC: can_dev_lib_magic
+</A></li>
+        <LI>Next message: <A HREF="002169.html">[PATCH] dev: add register_candev() and unregister_candev()
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2168">[ date ]</a>
+              <a href="thread.html#2168">[ thread ]</a>
+              <a href="subject.html#2168">[ subject ]</a>
+              <a href="author.html#2168">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Not all CAN devices are using the CAN device interface, like vcan or
+slcan. Providing &quot;struct can_priv&quot; and SYSFS files for them seems
+overkill. Because it's awkward to identify devices using the CAN
+device interface in the netdev notifier callback, the functions
+register_candev() and unregister_candev() have been introduced. All
+devices using the CAN device interface should call them instead of
+register_netdev() and unregister_netdev().
+
+Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+ kernel/2.6/drivers/net/can/dev.c                  |   68 ++++++++--------------
+ kernel/2.6/drivers/net/can/mcp251x.c              |    4 -
+ kernel/2.6/drivers/net/can/mscan/mscan.c          |    4 -
+ kernel/2.6/drivers/net/can/sja1000/sja1000.c      |    4 -
+ kernel/2.6/drivers/net/can/softing/softing_main.c |    6 -
+ kernel/2.6/include/linux/can/dev.h                |    2 
+ 6 files changed, 36 insertions(+), 52 deletions(-)
+
+Index: trunk/kernel/2.6/drivers/net/can/dev.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/dev.c
++++ trunk/kernel/2.6/drivers/net/can/dev.c
+@@ -289,6 +289,30 @@ void free_candev(struct net_device *dev)
+ }
+ EXPORT_SYMBOL(free_candev);
+ 
++int register_candev(struct net_device *dev)
++{
++	int err;
++
++	err = register_netdev(dev);
++	if (err)
++		return err;
++
++#ifdef CONFIG_SYSFS
++	can_create_sysfs(dev);
++#endif
++	return 0;
++}
++EXPORT_SYMBOL(register_candev);
++
++void unregister_candev(struct net_device *dev)
++{
++#ifdef CONFIG_SYSFS
++	can_remove_sysfs(dev);
++#endif
++	unregister_netdev(dev);
++}
++EXPORT_SYMBOL(unregister_candev);
++
+ /*
+  * Local echo of CAN messages
+  *
+@@ -471,57 +495,15 @@ void can_close_cleanup(struct net_device
+ }
+ EXPORT_SYMBOL(can_close_cleanup);
+ 
+-static int can_netdev_notifier_call(struct notifier_block *nb,
+-				    unsigned long state,
+-				    void *ndev)
+-{
+-	struct net_device *dev = ndev;
+-
+-	if (dev-&gt;type != ARPHRD_CAN)
+-		return 0;
+-
+-#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,24)
+-	/* omit virtual CAN software network devices */
+-	if (dev-&gt;rtnl_link_ops) {
+-		const struct rtnl_link_ops *ops = dev-&gt;rtnl_link_ops;
+-		if (!strcmp(ops-&gt;kind, &quot;vcan&quot;))
+-			return 0;
+-	}
+-#else
+-	/* software CAN devices like 'vcan' do not have private data */
+-	if (!dev-&gt;priv)
+-		return 0;
+-#endif
+-
+-	switch (state) {
+-	case NETDEV_REGISTER:
+-#ifdef CONFIG_SYSFS
+-		can_create_sysfs(dev);
+-#endif
+-		break;
+-	case NETDEV_UNREGISTER:
+-#ifdef CONFIG_SYSFS
+-		can_remove_sysfs(dev);
+-#endif
+-		break;
+-	}
+-	return 0;
+-}
+-
+-static struct notifier_block can_netdev_notifier = {
+-	.notifier_call = can_netdev_notifier_call,
+-};
+-
+ static __init int can_dev_init(void)
+ {
+ 	printk(KERN_INFO MOD_DESC &quot;\n&quot;);
+ 
+-	return register_netdevice_notifier(&amp;can_netdev_notifier);
++	return 0;
+ }
+ module_init(can_dev_init);
+ 
+ static __exit void can_dev_exit(void)
+ {
+-	unregister_netdevice_notifier(&amp;can_netdev_notifier);
+ }
+ module_exit(can_dev_exit);
+Index: trunk/kernel/2.6/drivers/net/can/mcp251x.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/mcp251x.c
++++ trunk/kernel/2.6/drivers/net/can/mcp251x.c
+@@ -1111,7 +1111,7 @@ static int __devinit mcp251x_can_probe(s
+ 	if (pdata-&gt;transceiver_enable)
+ 		pdata-&gt;transceiver_enable(0);
+ 
+-	ret = register_netdev(net);
++	ret = register_candev(net);
+ 	if (ret &gt;= 0) {
+ 		dev_info(&amp;spi-&gt;dev, &quot;probed\n&quot;);
+ 		return ret;
+@@ -1155,7 +1155,7 @@ static int __devexit mcp251x_can_remove(
+ 		kfree(priv-&gt;spi_rx_buf);
+ 	}
+ 
+-	unregister_netdev(net);
++	unregister_candev(net);
+ 	free_candev(net);
+ 
+ 	if (pdata-&gt;power_enable)
+Index: trunk/kernel/2.6/drivers/net/can/mscan/mscan.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/mscan/mscan.c
++++ trunk/kernel/2.6/drivers/net/can/mscan/mscan.c
+@@ -719,7 +719,7 @@ int register_mscandev(struct net_device 
+ 
+ 	mscan_set_mode(dev, MSCAN_INIT_MODE);
+ 
+-	return register_netdev(dev);
++	return register_candev(dev);
+ }
+ EXPORT_SYMBOL(register_mscandev);
+ 
+@@ -728,7 +728,7 @@ void unregister_mscandev(struct net_devi
+ 	struct mscan_regs *regs = (struct mscan_regs *)dev-&gt;base_addr;
+ 	mscan_set_mode(dev, MSCAN_INIT_MODE);
+ 	out_8(&amp;regs-&gt;canctl1, in_8(&amp;regs-&gt;canctl1) &amp; ~MSCAN_CANE);
+-	unregister_netdev(dev);
++	unregister_candev(dev);
+ }
+ EXPORT_SYMBOL(unregister_mscandev);
+ 
+Index: trunk/kernel/2.6/drivers/net/can/softing/softing_main.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/softing/softing_main.c
++++ trunk/kernel/2.6/drivers/net/can/softing/softing_main.c
+@@ -900,7 +900,7 @@ static int reg_netdev(struct softing_pri
+ {
+ 	int ret;
+ 	netif_carrier_off(priv-&gt;netdev);
+-	ret = register_netdev(priv-&gt;netdev);
++	ret = register_candev(priv-&gt;netdev);
+ 	if (ret) {
+ 		mod_alert(&quot;%s, register failed&quot;, priv-&gt;card-&gt;id.name);
+ 		goto reg_failed;
+@@ -912,7 +912,7 @@ static int reg_netdev(struct softing_pri
+ 	}
+ 	return 0;
+ sysfs_failed:
+-	unregister_netdev(priv-&gt;netdev);
++	unregister_candev(priv-&gt;netdev);
+ reg_failed:
+ 	return EINVAL;
+ }
+@@ -920,7 +920,7 @@ reg_failed:
+ static void unreg_netdev(struct softing_priv *priv)
+ {
+ 	rm_netdev_sysfs(priv);
+-	unregister_netdev(priv-&gt;netdev);
++	unregister_candev(priv-&gt;netdev);
+ }
+ 
+ void rm_softing(struct softing *card)
+Index: trunk/kernel/2.6/drivers/net/can/sja1000/sja1000.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/sja1000/sja1000.c
++++ trunk/kernel/2.6/drivers/net/can/sja1000/sja1000.c
+@@ -782,7 +782,7 @@ int register_sja1000dev(struct net_devic
+ 	priv-&gt;can.do_set_mode = sja1000_set_mode;
+ 	priv-&gt;dev = dev;
+ 
+-	err = register_netdev(dev);
++	err = register_candev(dev);
+ 	if (err) {
+ 		printk(KERN_INFO
+ 		       &quot;%s: registering netdev failed\n&quot;, DRV_NAME);
+@@ -799,7 +799,7 @@ EXPORT_SYMBOL(register_sja1000dev);
+ void unregister_sja1000dev(struct net_device *dev)
+ {
+ 	set_reset_mode(dev);
+-	unregister_netdev(dev);
++	unregister_candev(dev);
+ }
+ EXPORT_SYMBOL(unregister_sja1000dev);
+ 
+Index: trunk/kernel/2.6/include/linux/can/dev.h
+===================================================================
+--- trunk.orig/kernel/2.6/include/linux/can/dev.h
++++ trunk/kernel/2.6/include/linux/can/dev.h
+@@ -133,6 +133,8 @@ struct net_device_stats *can_get_stats(s
+ 
+ struct net_device *alloc_candev(int sizeof_priv);
+ void free_candev(struct net_device *dev);
++int register_candev(struct net_device *dev);
++void unregister_candev(struct net_device *dev);
+ 
+ int can_set_bittiming(struct net_device *dev);
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002155.html">RFC: can_dev_lib_magic
+</A></li>
+	<LI>Next message: <A HREF="002169.html">[PATCH] dev: add register_candev() and unregister_candev()
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2168">[ date ]</a>
+              <a href="thread.html#2168">[ thread ]</a>
+              <a href="subject.html#2168">[ subject ]</a>
+              <a href="author.html#2168">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

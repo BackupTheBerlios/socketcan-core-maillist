@@ -1,0 +1,1228 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC PATCH 2/4 RESEND] Bosch CCAN driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20PATCH%202/4%20RESEND%5D%20Bosch%20CCAN%20driver&In-Reply-To=%3C4C7CC50E.1010908%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004579.html">
+   <LINK REL="Next"  HREF="004583.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC PATCH 2/4 RESEND] Bosch CCAN driver</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20PATCH%202/4%20RESEND%5D%20Bosch%20CCAN%20driver&In-Reply-To=%3C4C7CC50E.1010908%40grandegger.com%3E"
+       TITLE="[RFC PATCH 2/4 RESEND] Bosch CCAN driver">wg at grandegger.com
+       </A><BR>
+    <I>Tue Aug 31 11:02:06 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004579.html">[RFC PATCH 2/4 RESEND] Bosch CCAN driver
+</A></li>
+        <LI>Next message: <A HREF="004583.html">[RFC PATCH 2/4 RESEND] Bosch CCAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4582">[ date ]</a>
+              <a href="thread.html#4582">[ thread ]</a>
+              <a href="subject.html#4582">[ subject ]</a>
+              <a href="author.html#4582">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 08/26/2010 07:28 AM, Bhupesh SHARMA wrote:
+&gt;<i> Please ignore the patch 2/4 Bosch CCAN driver sent earlier.
+</I>&gt;<i> This resend contains the correct handling of BRP extension register.
+</I>&gt;<i> 
+</I>&gt;<i> Bosch CCAN controller is a Full-CAN implementation which is compliant to CAN protocol version 2.0 part A and B.
+</I>&gt;<i> Bosch CCAN user manual can be obtained from:
+</I>&gt;<i> <A HREF="http://www.semiconductors.bosch.de/pdf/Users_Manual_C_CAN.pdf">http://www.semiconductors.bosch.de/pdf/Users_Manual_C_CAN.pdf</A>
+</I>&gt;<i> 
+</I>&gt;<i> This patch adds the support for this controller.
+</I>&gt;<i> There are a few design approaches that have been taken initially(some of which have been influenced by the SPEAr320 platform driver which invokes the Bosch CCAN driver functionalities) but based on the reviews, can be changed later:
+</I>&gt;<i>         - Of the 32 message objects available for programming, 16 have been reserved for Tx and 16 have been reserved for Rx purposes.
+</I>&gt;<i>         - Due to some issue with SPEAr320 H/W the present design programs only a single Tx object in the message RAM at the present.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Bhupesh Sharma &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">bhupesh.sharma at st.com</A>&gt;
+</I>
+Please truncate to the usual &lt; 80 lines for readability.
+
+&gt;<i> 
+</I>&gt;<i> Index: bosch_ccan.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- bosch_ccan.c        (revision 0)
+</I>&gt;<i> +++ bosch_ccan.c        (revision 0)
+</I>&gt;<i> @@ -0,0 +1,858 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * drivers/net/can/bosch_ccan.c
+</I>&gt;<i> + *
+</I>&gt;<i> + * CAN bus driver for Bosch CCAN controller
+</I>&gt;<i> + *
+</I>&gt;<i> + * Copyright (C) 2010 ST Microelectronics
+</I>&gt;<i> + * Bhupesh Sharma &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">bhupesh.sharma at st.com</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + * Borrowed heavily from the CCAN driver originally written by:
+</I>&gt;<i> + * - Sascha Hauer, Marc Kleine-Budde, Pengutronix &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;
+</I>&gt;<i> + * - Simon Kallweit, intefo AG &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">simon.kallweit at intefo.ch</A>&gt;
+</I>&gt;<i> + * which can be viewed here:
+</I>&gt;<i> + * <A HREF="http://svn.berlios.de/svnroot/repos/socketcan/trunk/kernel/2.6/">http://svn.berlios.de/svnroot/repos/socketcan/trunk/kernel/2.6/</A>
+</I>&gt;<i> + * drivers/net/can/old/ccan/ccan.c
+</I>&gt;<i> + *
+</I>&gt;<i> + * Bosch CCAN controller is compliant to CAN protocol version 2.0 part A and B.
+</I>&gt;<i> + * Bosch CCAN user manual can be obtained from:
+</I>&gt;<i> + * <A HREF="http://www.semiconductors.bosch.de/pdf/Users_Manual_C_CAN.pdf">http://www.semiconductors.bosch.de/pdf/Users_Manual_C_CAN.pdf</A>
+</I>&gt;<i> + *
+</I>&gt;<i> + * TODO:
+</I>&gt;<i> + * - Add support for IF2 in Basic mode.
+</I>&gt;<i> + *
+</I>&gt;<i> + * This file is licensed under the terms of the GNU General Public
+</I>&gt;<i> + * License version 2. This program is licensed &quot;as is&quot; without any
+</I>&gt;<i> + * warranty of any kind, whether express or implied.
+</I>&gt;<i> + */
+</I>
+See may comments on patch 1/4.
+
+&gt;<i> +#include &lt;linux/kernel.h&gt;
+</I>&gt;<i> +#include &lt;linux/version.h&gt;
+</I>&gt;<i> +#include &lt;linux/module.h&gt;
+</I>&gt;<i> +#include &lt;linux/interrupt.h&gt;
+</I>&gt;<i> +#include &lt;linux/delay.h&gt;
+</I>&gt;<i> +#include &lt;linux/netdevice.h&gt;
+</I>&gt;<i> +#include &lt;linux/if_arp.h&gt;
+</I>&gt;<i> +#include &lt;linux/if_ether.h&gt;
+</I>&gt;<i> +#include &lt;linux/list.h&gt;
+</I>&gt;<i> +#include &lt;linux/delay.h&gt;
+</I>&gt;<i> +#include &lt;linux/workqueue.h&gt;
+</I>&gt;<i> +#include &lt;linux/io.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;socketcan/can.h&gt;
+</I>&gt;<i> +#include &lt;socketcan/can/dev.h&gt;
+</I>&gt;<i> +#include &lt;socketcan/can/error.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &quot;bosch_ccan.h&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +#define DRV_NAME &quot;bosch_ccan&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +static struct can_bittiming_const bosch_ccan_bittiming_const = {
+</I>&gt;<i> +       .name = DRV_NAME,
+</I>&gt;<i> +       .tseg1_min = 2,         /* Time segment 1 = prop_seg + phase_seg1 */
+</I>&gt;<i> +       .tseg1_max = 16,
+</I>&gt;<i> +       .tseg2_min = 1,         /* Time segment 2 = phase_seg2 */
+</I>&gt;<i> +       .tseg2_max = 8,
+</I>&gt;<i> +       .sjw_max = 4,
+</I>&gt;<i> +       .brp_min = 1,
+</I>&gt;<i> +       .brp_max = 1024,        /* 6-bit BRP field + 4-bit BRPE field*/
+</I>&gt;<i> +       .brp_inc = 1,
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static u32 bosch_ccan_read_reg32(struct net_device *dev, enum ccan_regs reg)
+</I>&gt;<i> +{
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       u32 val = priv-&gt;read_reg(priv, reg);
+</I>&gt;<i> +       val |= ((u32) priv-&gt;read_reg(priv, reg + 2)) &lt;&lt; 16;
+</I>&gt;<i> +
+</I>&gt;<i> +       return val;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void bosch_ccan_write_reg32(struct net_device *dev, enum ccan_regs reg,
+</I>&gt;<i> +                                       u32 val)
+</I>&gt;<i> +{
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       priv-&gt;write_reg(priv, reg, val &amp; 0xffff);
+</I>&gt;<i> +       priv-&gt;write_reg(priv, reg + 2, val &gt;&gt; 16);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static inline void bosch_ccan_object_get(struct net_device *dev,
+</I>&gt;<i> +                                       int iface, int objno, int mask)
+</I>&gt;<i> +{
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_IF_COMM(iface), mask);
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_IF_COMR(iface), objno + 1);
+</I>&gt;<i> +       while (priv-&gt;read_reg(priv, CAN_IF_COMR(iface)) &amp; IF_COMR_BUSY)
+</I>&gt;<i> +               dev_info(dev-&gt;dev.parent, &quot;busy in object get\n&quot;);
+</I>
+Hm, please use a proper timeout handling with a defined delay.
+
+&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static inline void bosch_ccan_object_put(struct net_device *dev,
+</I>&gt;<i> +                                       int iface, int objno, int mask)
+</I>&gt;<i> +{
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_IF_COMM(iface), IF_COMM_WR | mask);
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_IF_COMR(iface), objno + 1);
+</I>&gt;<i> +       while (priv-&gt;read_reg(priv, CAN_IF_COMR(iface)) &amp; IF_COMR_BUSY)
+</I>&gt;<i> +               dev_info(dev-&gt;dev.parent, &quot;busy in object put\n&quot;);
+</I>
+ditto
+
+&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +int bosch_ccan_write_object(struct net_device *dev,
+</I>&gt;<i> +                       int iface, struct can_frame *frame, int objno)
+</I>&gt;<i> +{
+</I>&gt;<i> +       unsigned int val;
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       if (frame-&gt;can_id &amp; CAN_EFF_FLAG)
+</I>&gt;<i> +               val = IF_ARB_MSGXTD | (frame-&gt;can_id &amp; CAN_EFF_MASK);
+</I>&gt;<i> +       else
+</I>&gt;<i> +               val = ((frame-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 18);
+</I>&gt;<i> +
+</I>&gt;<i> +       if (!(frame-&gt;can_id &amp; CAN_RTR_FLAG))
+</I>&gt;<i> +               val |= IF_ARB_TRANSMIT;
+</I>&gt;<i> +
+</I>&gt;<i> +       val |= IF_ARB_MSGVAL;
+</I>&gt;<i> +       bosch_ccan_write_reg32(dev, CAN_IF_ARB(iface), val);
+</I>&gt;<i> +
+</I>&gt;<i> +       memcpy(&amp;val, &amp;frame-&gt;data[0], 4);
+</I>&gt;<i> +       bosch_ccan_write_reg32(dev, CAN_IF_DATAA(iface), val);
+</I>&gt;<i> +       memcpy(&amp;val, &amp;frame-&gt;data[4], 4);
+</I>&gt;<i> +       bosch_ccan_write_reg32(dev, CAN_IF_DATAB(iface), val);
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_IF_MCONT(iface),
+</I>&gt;<i> +                       IF_MCONT_TXIE | IF_MCONT_TXRQST | IF_MCONT_EOB |
+</I>&gt;<i> +                       (frame-&gt;can_dlc &amp; 0xf));
+</I>
+This seems very inefficient. Also you only need to set can_dlc bytes.
+
+&gt;<i> +       bosch_ccan_object_put(dev, 0, objno, IF_COMM_ALL);
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +int bosch_ccan_read_object(struct net_device *dev, int iface, int objno)
+</I>&gt;<i> +{
+</I>&gt;<i> +       unsigned int val, ctrl, data;
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+</I>&gt;<i> +       struct net_device_stats *stats = can_get_stats(dev);
+</I>&gt;<i> +#else
+</I>&gt;<i> +       struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;<i> +#endif
+</I>&gt;<i> +       struct sk_buff *skb;
+</I>&gt;<i> +       struct can_frame *frame;
+</I>&gt;<i> +
+</I>&gt;<i> +       skb = dev_alloc_skb(sizeof(struct can_frame));
+</I>&gt;<i> +       if (skb == NULL) {
+</I>&gt;<i> +               dev_err(dev-&gt;dev.parent,
+</I>&gt;<i> +                               &quot;failed to allocate skb for read object\n&quot;);
+</I>&gt;<i> +               return -ENOMEM;
+</I>&gt;<i> +       }
+</I>&gt;<i> +
+</I>&gt;<i> +       skb-&gt;dev = dev;
+</I>&gt;<i> +       bosch_ccan_object_get(dev, 0, objno, IF_COMM_ALL &amp; ~IF_COMM_TXRQST);
+</I>&gt;<i> +       frame = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+</I>&gt;<i> +
+</I>&gt;<i> +       ctrl = priv-&gt;read_reg(priv, CAN_IF_MCONT(iface));
+</I>&gt;<i> +       if (ctrl &amp; IF_MCONT_MSGLST) {
+</I>&gt;<i> +               stats-&gt;rx_errors++;
+</I>&gt;<i> +               dev_info(dev-&gt;dev.parent, &quot;msg lost in buffer %d\n&quot;, objno);
+</I>&gt;<i> +       }
+</I>&gt;<i> +
+</I>&gt;<i> +       frame-&gt;can_dlc = ctrl &amp; 0xf;
+</I>&gt;<i> +       val = bosch_ccan_read_reg32(dev, CAN_IF_ARB(iface));
+</I>&gt;<i> +       data = bosch_ccan_read_reg32(dev, CAN_IF_DATAA(iface));
+</I>&gt;<i> +       memcpy(&amp;frame-&gt;data[0], &amp;data, 4);
+</I>&gt;<i> +       data = bosch_ccan_read_reg32(dev, CAN_IF_DATAB(iface));
+</I>&gt;<i> +       memcpy(&amp;frame-&gt;data[4], &amp;data, 4);
+</I>
+Dito. Also, I smell endianess issus.
+
+&gt;<i> +       if (val &amp; IF_ARB_MSGXTD)
+</I>&gt;<i> +               frame-&gt;can_id = (val &amp; CAN_EFF_MASK) | CAN_EFF_FLAG;
+</I>&gt;<i> +       else
+</I>&gt;<i> +               frame-&gt;can_id = (val &gt;&gt; 18) &amp; CAN_SFF_MASK;
+</I>&gt;<i> +
+</I>&gt;<i> +       if (val &amp; IF_ARB_TRANSMIT)
+</I>&gt;<i> +               frame-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;<i> +
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_IF_MCONT(iface), ctrl &amp;
+</I>&gt;<i> +                       ~(IF_MCONT_MSGLST | IF_MCONT_INTPND | IF_MCONT_NEWDAT));
+</I>&gt;<i> +
+</I>&gt;<i> +       bosch_ccan_object_put(dev, 0, objno, IF_COMM_CONTROL);
+</I>&gt;<i> +
+</I>&gt;<i> +       skb-&gt;protocol = __constant_htons(ETH_P_CAN);
+</I>&gt;<i> +       netif_rx(skb);
+</I>&gt;<i> +
+</I>&gt;<i> +#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,32)
+</I>&gt;<i> +       dev-&gt;last_rx = jiffies;
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +       stats-&gt;rx_packets++;
+</I>&gt;<i> +       stats-&gt;rx_bytes += frame-&gt;can_dlc;
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int bosch_ccan_setup_receive_object(struct net_device *dev, int iface,
+</I>&gt;<i> +                                       int objno, unsigned int mask,
+</I>&gt;<i> +                                       unsigned int id, unsigned int mcont)
+</I>&gt;<i> +{
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       bosch_ccan_write_reg32(dev, CAN_IF_MASK(iface), mask);
+</I>&gt;<i> +       bosch_ccan_write_reg32(dev, CAN_IF_ARB(iface), IF_ARB_MSGVAL | id);
+</I>&gt;<i> +
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_IF_MCONT(iface), mcont);
+</I>&gt;<i> +       bosch_ccan_object_put(dev, 0, objno, IF_COMM_ALL &amp; ~IF_COMM_TXRQST);
+</I>&gt;<i> +
+</I>&gt;<i> +       dev_dbg(dev-&gt;dev.parent, &quot;obj no:%d, msgval:0x%08x\n&quot;, objno,
+</I>&gt;<i> +                       bosch_ccan_read_reg32(dev, CAN_MSGVAL));
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int bosch_ccan_inval_object(struct net_device *dev, int iface, int objno)
+</I>&gt;<i> +{
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       bosch_ccan_write_reg32(dev, CAN_IF_ARB(iface), 0);
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_IF_MCONT(iface), 0);
+</I>&gt;<i> +       bosch_ccan_object_put(dev, 0, objno, IF_COMM_ARB | IF_COMM_CONTROL);
+</I>&gt;<i> +
+</I>&gt;<i> +       dev_dbg(dev-&gt;dev.parent, &quot;obj no:%d, msgval:0x%08x\n&quot;, objno,
+</I>&gt;<i> +                       bosch_ccan_read_reg32(dev, CAN_MSGVAL));
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,32)
+</I>&gt;<i> +static int bosch_ccan_start_xmit(struct sk_buff *skb,
+</I>&gt;<i> +                                struct net_device *dev)
+</I>&gt;<i> +#else
+</I>&gt;<i> +static netdev_tx_t bosch_ccan_start_xmit(struct sk_buff *skb,
+</I>&gt;<i> +                                       struct net_device *dev)
+</I>&gt;<i> +#endif
+</I>&gt;<i> +{
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +       struct can_frame *frame = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i> +#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+</I>&gt;<i> +       struct net_device_stats *stats = can_get_stats(dev);
+</I>&gt;<i> +#else
+</I>&gt;<i> +       struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +       netif_stop_queue(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       bosch_ccan_write_object(dev, 0, frame, priv-&gt;tx_object);
+</I>&gt;<i> +       priv-&gt;tx_object++;
+</I>
+Is this variable really useful?
+
+&gt;<i> +
+</I>&gt;<i> +       stats-&gt;tx_bytes += frame-&gt;can_dlc;
+</I>
+Should be set when TX is done.
+
+&gt;<i> +       dev-&gt;trans_start = jiffies;
+</I>&gt;<i> +       can_put_echo_skb(skb, dev, 0);
+</I>&gt;<i> +
+</I>&gt;<i> +       return NETDEV_TX_OK;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int bosch_ccan_set_bittiming(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +       unsigned int reg_btr, reg_brpe, ctrl_save;
+</I>&gt;<i> +       u8 brp, brpe, sjw, tseg1, tseg2;
+</I>&gt;<i> +       u32 ten_bit_brp;
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +       const struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
+</I>&gt;<i> +
+</I>&gt;<i> +       /* ccan provides a 6-bit brp and 4-bit brpe fields */
+</I>&gt;<i> +       ten_bit_brp = bt-&gt;brp - 1;
+</I>&gt;<i> +       brp = ten_bit_brp &amp; BTR_BRP_MASK;
+</I>&gt;<i> +       brpe = ten_bit_brp &gt;&gt; 6;
+</I>&gt;<i> +
+</I>&gt;<i> +       sjw = bt-&gt;sjw - 1;
+</I>&gt;<i> +       tseg1 = bt-&gt;prop_seg + bt-&gt;phase_seg1 - 1;
+</I>&gt;<i> +       tseg2 = bt-&gt;phase_seg2 - 1;
+</I>&gt;<i> +
+</I>&gt;<i> +       reg_btr = (brp) |
+</I>&gt;<i> +               ((sjw &lt;&lt; BTR_SJW_SHIFT) &amp; BTR_SJW_MASK) |
+</I>&gt;<i> +               ((tseg1 &lt;&lt; BTR_TSEG1_SHIFT) &amp; BTR_TSEG1_MASK) |
+</I>&gt;<i> +               ((tseg2 &lt;&lt; BTR_TSEG2_SHIFT) &amp; BTR_TSEG2_MASK);
+</I>&gt;<i> +
+</I>&gt;<i> +       reg_brpe = brpe &amp; BRP_EXT_BRPE_MASK;
+</I>&gt;<i> +
+</I>&gt;<i> +       dev_dbg(dev-&gt;dev.parent,
+</I>&gt;<i> +                       &quot;brp = %d, brpe = %d, sjw = %d, seg1 = %d, seg2 = %d\n&quot;,
+</I>&gt;<i> +                       brp, brpe, sjw, tseg1, tseg2);
+</I>&gt;<i> +       dev_dbg(dev-&gt;dev.parent, &quot;setting BTR to %04x\n&quot;, reg_btr);
+</I>&gt;<i> +       dev_dbg(dev-&gt;dev.parent, &quot;setting BRPE to %04x\n&quot;, reg_brpe);
+</I>&gt;<i> +
+</I>&gt;<i> +       ctrl_save = priv-&gt;read_reg(priv, CAN_CONTROL);
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_CONTROL,
+</I>&gt;<i> +                       ctrl_save | CONTROL_CCE | CONTROL_INIT);
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_BTR, reg_btr);
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_BRP_EXT, reg_brpe);
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_CONTROL, ctrl_save);
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Configure CCAN auto-retransmission:
+</I>&gt;<i> + * CCAN provides means to disable automatic retransmission of
+</I>&gt;<i> + * frames to allow CCAN to work within a TTCAN environment.
+</I>&gt;<i> + * One must be careful about the different bevaior of TxRqst and
+</I>&gt;<i> + * NewDat in the case automatic retransmssion is disabled.
+</I>&gt;<i> + * See user guide document for details.
+</I>&gt;<i> + */
+</I>&gt;<i> +static int bosch_ccan_auto_retransmission_config(struct net_device *dev,
+</I>&gt;<i> +                                       enum bosch_ccan_auto_tx_config mode)
+</I>&gt;<i> +{
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       switch (mode) {
+</I>&gt;<i> +       case CCAN_ENABLE_AUTO_RE_TRANSMIT:
+</I>&gt;<i> +               priv-&gt;write_reg(priv, CAN_CONTROL, CONTROL_ENABLE_AR);
+</I>&gt;<i> +               break;
+</I>&gt;<i> +       case CCAN_DISABLE_AUTO_RE_TRANSMIT:
+</I>&gt;<i> +               priv-&gt;write_reg(priv, CAN_CONTROL, CONTROL_DISABLE_AR);
+</I>&gt;<i> +               break;
+</I>&gt;<i> +       default:
+</I>&gt;<i> +               return -EOPNOTSUPP;
+</I>&gt;<i> +       }
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Configure CCAN operating mode
+</I>&gt;<i> + */
+</I>&gt;<i> +static int bosch_ccan_set_operating_mode(struct net_device *dev,
+</I>&gt;<i> +                               enum bosch_ccan_operating_mode mode)
+</I>&gt;<i> +{
+</I>&gt;<i> +       unsigned int cntrl_reg = 0;
+</I>&gt;<i> +       unsigned int test_reg = 0;
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       switch (mode) {
+</I>&gt;<i> +       case CCAN_NORMAL_MODE:
+</I>&gt;<i> +               cntrl_reg = (CONTROL_EIE | CONTROL_SIE | CONTROL_IE);
+</I>&gt;<i> +               break;
+</I>&gt;<i> +       case CCAN_BASIC_MODE:
+</I>&gt;<i> +               /* basic mode : CCAN runs without the message RAM */
+</I>&gt;<i> +               cntrl_reg = (CONTROL_EIE | CONTROL_SIE |
+</I>&gt;<i> +                               CONTROL_IE | CONTROL_TEST);
+</I>&gt;<i> +               test_reg = TEST_BASIC;
+</I>&gt;<i> +               break;
+</I>&gt;<i> +       case CCAN_LOOPBACK_MODE:
+</I>&gt;<i> +               /* loopback mode : useful for self-test function */
+</I>&gt;<i> +               cntrl_reg = (CONTROL_EIE | CONTROL_SIE |
+</I>&gt;<i> +                               CONTROL_IE | CONTROL_TEST);
+</I>&gt;<i> +               test_reg = TEST_LBACK;
+</I>&gt;<i> +               break;
+</I>&gt;<i> +       case CCAN_LOOPBACK_WITH_SILENT_MODE:
+</I>&gt;<i> +               /* loopback + silent mode : useful for hot self-test */
+</I>&gt;<i> +               cntrl_reg = (CONTROL_EIE | CONTROL_SIE |
+</I>&gt;<i> +                               CONTROL_IE | CONTROL_TEST);
+</I>&gt;<i> +               test_reg = (TEST_LBACK | TEST_SILENT);
+</I>&gt;<i> +               break;
+</I>&gt;<i> +       case CCAN_SILENT_MODE:
+</I>&gt;<i> +               /* silent mode : bus-monitoring mode */
+</I>&gt;<i> +               cntrl_reg = (CONTROL_EIE | CONTROL_SIE |
+</I>&gt;<i> +                               CONTROL_IE | CONTROL_TEST);
+</I>&gt;<i> +               test_reg = TEST_SILENT;
+</I>&gt;<i> +               break;
+</I>
+Of these only CCAN_NORMAL_MODE is used. Please use priv-&gt;crtlmode to
+handle more of them and remove the unused cases.
+
+&gt;<i> +       default:
+</I>&gt;<i> +               return -EOPNOTSUPP;
+</I>&gt;<i> +       }
+</I>&gt;<i> +
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_CONTROL, cntrl_reg);
+</I>&gt;<i> +
+</I>&gt;<i> +       /* set test mode only when we do not want NORMAL mode */
+</I>&gt;<i> +       if (test_reg)
+</I>&gt;<i> +               priv-&gt;write_reg(priv, CAN_TEST, test_reg);
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Configure CCAN message objects for Tx and Rx purposes:
+</I>&gt;<i> + * CCAN provides a total of 32 message objects that can be configured
+</I>&gt;<i> + * either for Tx or Rx purposes. This configuration may vary as per the
+</I>&gt;<i> + * system design. Here by default 16 message objects are kept aside for
+</I>&gt;<i> + * Tx purposes and 16 for Rx purposes. See user guide document for details.
+</I>&gt;<i> + */
+</I>&gt;<i> +static int bosch_ccan_configure_msg_objects(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +       int i;
+</I>&gt;<i> +
+</I>&gt;<i> +       /* setup message objects */
+</I>&gt;<i> +       for (i = 0; i &lt;= MAX_OBJECT; i++)
+</I>&gt;<i> +               bosch_ccan_inval_object(dev, 0, i);
+</I>&gt;<i> +
+</I>&gt;<i> +       for (i = MAX_TRANSMIT_OBJECT + 1; i &lt; MAX_OBJECT; i++)
+</I>&gt;<i> +               bosch_ccan_setup_receive_object(dev, 0, i, 0, 0,
+</I>&gt;<i> +                                               IF_MCONT_RXIE | IF_MCONT_UMASK);
+</I>&gt;<i> +
+</I>&gt;<i> +       bosch_ccan_setup_receive_object(dev, 0, MAX_OBJECT, 0, 0, IF_MCONT_EOB |
+</I>&gt;<i> +                                               IF_MCONT_RXIE | IF_MCONT_UMASK);
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Configure CCAN chip:
+</I>&gt;<i> + * - enable/disable auto-retransmission
+</I>&gt;<i> + * - set operating mode
+</I>&gt;<i> + * - configure message objects
+</I>&gt;<i> + */
+</I>&gt;<i> +static int bosch_ccan_chip_config(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +       int err;
+</I>&gt;<i> +
+</I>&gt;<i> +       /* enable automatic retransmission */
+</I>&gt;<i> +       err = bosch_ccan_auto_retransmission_config(dev,
+</I>&gt;<i> +                                       CCAN_ENABLE_AUTO_RE_TRANSMIT);
+</I>&gt;<i> +       if (err)
+</I>&gt;<i> +               return err;
+</I>&gt;<i> +
+</I>&gt;<i> +       /* enable normal operating mode */
+</I>&gt;<i> +       err = bosch_ccan_set_operating_mode(dev, CCAN_NORMAL_MODE);
+</I>&gt;<i> +       if (err)
+</I>&gt;<i> +               return err;
+</I>&gt;<i> +
+</I>&gt;<i> +       /* configure message objects */
+</I>&gt;<i> +       bosch_ccan_configure_msg_objects(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int bosch_ccan_start(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +       int err;
+</I>&gt;<i> +       unsigned int cntrl_save;
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       /* enable status change, error and module interrupts */
+</I>&gt;<i> +       cntrl_save = priv-&gt;read_reg(priv, CAN_CONTROL);
+</I>&gt;<i> +       cntrl_save = (cntrl_save | (CONTROL_SIE | CONTROL_EIE | CONTROL_IE));
+</I>
+&quot;|=&quot; ?
+
+&gt;<i> +       priv-&gt;write_reg(priv, CAN_CONTROL, cntrl_save);
+</I>&gt;<i> +
+</I>&gt;<i> +       /* basic ccan configuration */
+</I>&gt;<i> +       err = bosch_ccan_chip_config(dev);
+</I>&gt;<i> +       if (err)
+</I>&gt;<i> +               return err;
+</I>&gt;<i> +
+</I>&gt;<i> +       priv-&gt;tx_object = 0;
+</I>&gt;<i> +       priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int bosch_ccan_stop(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +       unsigned int cntrl_save;
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       /* disable all interrupts */
+</I>&gt;<i> +       cntrl_save = priv-&gt;read_reg(priv, CAN_CONTROL);
+</I>&gt;<i> +       cntrl_save = ((((cntrl_save &amp; ~CONTROL_EIE) &amp; ~CONTROL_IE) &amp;
+</I>&gt;<i> +                       ~CONTROL_SIE));
+</I>
+&quot;&amp;=&quot; ?
+
+&gt;<i> +       priv-&gt;write_reg(priv, CAN_CONTROL, cntrl_save);
+</I>&gt;<i> +
+</I>&gt;<i> +       priv-&gt;can.state = CAN_STATE_STOPPED;
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int bosch_ccan_set_mode(struct net_device *dev, enum can_mode mode)
+</I>&gt;<i> +{
+</I>&gt;<i> +       switch (mode) {
+</I>&gt;<i> +       case CAN_MODE_START:
+</I>&gt;<i> +               bosch_ccan_start(dev);
+</I>&gt;<i> +               if (netif_queue_stopped(dev))
+</I>&gt;<i> +                       netif_wake_queue(dev);
+</I>&gt;<i> +               dev_info(dev-&gt;dev.parent,
+</I>&gt;<i> +                               &quot;bosch ccan CAN_MODE_START requested\n&quot;);
+</I>&gt;<i> +               break;
+</I>
+How is bus-off recovery supposed to work?
+
+&gt;<i> +       default:
+</I>&gt;<i> +               return -EOPNOTSUPP;
+</I>&gt;<i> +       }
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int bosch_ccan_get_state(const struct net_device *dev,
+</I>&gt;<i> +                               enum can_state *state)
+</I>&gt;<i> +{
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       *state = priv-&gt;can.state;
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int bosch_ccan_err(struct net_device *dev,
+</I>&gt;<i> +                               enum bosch_ccan_bus_error_types error_type,
+</I>&gt;<i> +                               int lec_type)
+</I>&gt;<i> +{
+</I>&gt;<i> +       unsigned int reg_err_counter = 0;
+</I>&gt;<i> +       unsigned int rx_err_passive = 0;
+</I>&gt;<i> +       unsigned int rx_err_counter = 0;
+</I>&gt;<i> +       unsigned int tx_err_counter = 0;
+</I>
+I do not see a need for pre-setting the values above.
+
+&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+</I>&gt;<i> +       struct net_device_stats *stats = can_get_stats(dev);
+</I>&gt;<i> +#else
+</I>&gt;<i> +       struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;<i> +#endif
+</I>&gt;<i> +       struct can_frame *cf;
+</I>&gt;<i> +       struct sk_buff *skb;
+</I>&gt;<i> +
+</I>&gt;<i> +       /* propogate the error condition to the CAN stack */
+</I>&gt;<i> +       skb = dev_alloc_skb(sizeof(struct can_frame));
+</I>&gt;<i> +       if (skb == NULL)
+</I>&gt;<i> +               return -ENOMEM;
+</I>&gt;<i> +
+</I>&gt;<i> +       skb-&gt;dev = dev;
+</I>&gt;<i> +       skb-&gt;protocol = htons(ETH_P_CAN);
+</I>&gt;<i> +       cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+</I>&gt;<i> +       memset(cf, 0, sizeof(struct can_frame));
+</I>&gt;<i> +       cf-&gt;can_id = CAN_ERR_FLAG;
+</I>&gt;<i> +       cf-&gt;can_dlc = CAN_ERR_DLC;
+</I>
+Please use alloc_can_skb(),
+
+&gt;<i> +
+</I>&gt;<i> +       reg_err_counter = priv-&gt;read_reg(priv, CAN_ERROR);
+</I>&gt;<i> +       rx_err_counter = ((reg_err_counter &amp; ERR_COUNTER_REC_MASK) &gt;&gt;
+</I>&gt;<i> +                               ERR_COUNTER_REC_SHIFT);
+</I>&gt;<i> +       tx_err_counter = (reg_err_counter &amp; ERR_COUNTER_TEC_MASK);
+</I>&gt;<i> +       rx_err_passive = ((reg_err_counter &amp; ERR_COUNTER_RP_MASK) &gt;&gt;
+</I>&gt;<i> +                               ERR_COUNTER_RP_SHIFT);
+</I>&gt;<i> +
+</I>&gt;<i> +       if (error_type &amp; CCAN_ERROR_WARNING) {
+</I>&gt;<i> +               /* error warning state */
+</I>&gt;<i> +               priv-&gt;can.can_stats.error_warning++;
+</I>&gt;<i> +               priv-&gt;can.state = CAN_STATE_ERROR_WARNING;
+</I>&gt;<i> +               cf-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;<i> +               if (rx_err_counter &gt; 96)
+</I>&gt;<i> +                       cf-&gt;data[1] = CAN_ERR_CRTL_RX_WARNING;
+</I>&gt;<i> +               if (tx_err_counter &gt; 96)
+</I>&gt;<i> +                       cf-&gt;data[1] = CAN_ERR_CRTL_TX_WARNING;
+</I>&gt;<i> +       }
+</I>&gt;<i> +       if (error_type &amp; CCAN_ERROR_PASSIVE) {
+</I>&gt;<i> +               /* error passive state */
+</I>&gt;<i> +               priv-&gt;can.can_stats.error_passive++;
+</I>&gt;<i> +               priv-&gt;can.state = CAN_STATE_ERROR_PASSIVE;
+</I>&gt;<i> +               cf-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;<i> +               if (rx_err_passive)
+</I>&gt;<i> +                       cf-&gt;data[1] = CAN_ERR_CRTL_RX_PASSIVE;
+</I>&gt;<i> +               if (tx_err_counter &gt; 127)
+</I>&gt;<i> +                       cf-&gt;data[1] = CAN_ERR_CRTL_TX_PASSIVE;
+</I>&gt;<i> +       }
+</I>&gt;<i> +       if (error_type &amp; CCAN_BUS_OFF) {
+</I>&gt;<i> +               /* bus-off state */
+</I>&gt;<i> +               priv-&gt;can.state = CAN_STATE_BUS_OFF;
+</I>&gt;<i> +               cf-&gt;can_id |= CAN_ERR_BUSOFF;
+</I>&gt;<i> +               /* disable all interrupts in bus-off mode to ensure that
+</I>&gt;<i> +                * the CPU is not hogged down
+</I>&gt;<i> +                */
+</I>&gt;<i> +               priv-&gt;write_reg(priv, CAN_CONTROL, 0);
+</I>&gt;<i> +               can_bus_off(dev);
+</I>&gt;<i> +       }
+</I>&gt;<i> +
+</I>&gt;<i> +       /* check for 'last error code' which tells us the
+</I>&gt;<i> +        * type of the last error to occur on the CAN bus
+</I>&gt;<i> +        */
+</I>&gt;<i> +       if (lec_type) {
+</I>&gt;<i> +               /* common for all type of bus errors */
+</I>&gt;<i> +               priv-&gt;can.can_stats.bus_error++;
+</I>&gt;<i> +               stats-&gt;rx_errors++;
+</I>&gt;<i> +               cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
+</I>&gt;<i> +               cf-&gt;data[2] |= CAN_ERR_PROT_UNSPEC;
+</I>&gt;<i> +
+</I>&gt;<i> +               if (lec_type &amp; LEC_STUFF_ERROR) {
+</I>&gt;<i> +                       dev_info(dev-&gt;dev.parent, &quot;stuff error\n&quot;);
+</I>&gt;<i> +                       cf-&gt;data[2] |= CAN_ERR_PROT_STUFF;
+</I>&gt;<i> +               }
+</I>&gt;<i> +               if (lec_type &amp; LEC_FORM_ERROR) {
+</I>&gt;<i> +                       dev_info(dev-&gt;dev.parent, &quot;form error\n&quot;);
+</I>&gt;<i> +                       cf-&gt;data[2] |= CAN_ERR_PROT_FORM;
+</I>&gt;<i> +               }
+</I>&gt;<i> +               if (lec_type &amp; LEC_ACK_ERROR) {
+</I>&gt;<i> +                       dev_info(dev-&gt;dev.parent, &quot;ack error\n&quot;);
+</I>&gt;<i> +                       cf-&gt;data[2] |= (CAN_ERR_PROT_LOC_ACK |
+</I>&gt;<i> +                                       CAN_ERR_PROT_LOC_ACK_DEL);
+</I>&gt;<i> +               }
+</I>&gt;<i> +               if (lec_type &amp; LEC_BIT1_ERROR) {
+</I>&gt;<i> +                       dev_info(dev-&gt;dev.parent, &quot;bit1 error\n&quot;);
+</I>&gt;<i> +                       cf-&gt;data[2] |= CAN_ERR_PROT_BIT1;
+</I>&gt;<i> +               }
+</I>&gt;<i> +               if (lec_type &amp; LEC_BIT0_ERROR) {
+</I>&gt;<i> +                       dev_info(dev-&gt;dev.parent, &quot;bit0 error\n&quot;);
+</I>&gt;<i> +                       cf-&gt;data[2] |= CAN_ERR_PROT_BIT0;
+</I>&gt;<i> +               }
+</I>&gt;<i> +               if (lec_type &amp; LEC_CRC_ERROR) {
+</I>&gt;<i> +                       dev_info(dev-&gt;dev.parent, &quot;CRC error\n&quot;);
+</I>&gt;<i> +                       cf-&gt;data[2] |= (CAN_ERR_PROT_LOC_CRC_SEQ |
+</I>&gt;<i> +                                       CAN_ERR_PROT_LOC_CRC_DEL);
+</I>&gt;<i> +               }
+</I>&gt;<i> +       }
+</I>&gt;<i> +
+</I>&gt;<i> +       netif_rx(skb);
+</I>&gt;<i> +
+</I>&gt;<i> +#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,32)
+</I>&gt;<i> +       dev-&gt;last_rx = jiffies;
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +       stats-&gt;rx_packets++;
+</I>&gt;<i> +       stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int bosch_ccan_do_status_irq(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +       int ret, lec_type = 0;
+</I>&gt;<i> +       enum bosch_ccan_bus_error_types error_type = CCAN_NO_ERROR;
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       priv-&gt;current_status = priv-&gt;read_reg(priv, CAN_STATUS);
+</I>&gt;<i> +
+</I>&gt;<i> +       /* handle Tx/Rx events */
+</I>&gt;<i> +       if (priv-&gt;current_status &amp; STATUS_TXOK) {
+</I>&gt;<i> +               dev_dbg(dev-&gt;dev.parent,
+</I>&gt;<i> +                               &quot;Trasmitted a msg successfully\n&quot;);
+</I>&gt;<i> +               priv-&gt;write_reg(priv, CAN_STATUS,
+</I>&gt;<i> +                               (priv-&gt;current_status &amp; ~STATUS_TXOK));
+</I>
+Please restrict dev_dbg() to the one useful for the real user. Printing
+a message for every message sent is not really usefull.
+
+&gt;<i> +       }
+</I>&gt;<i> +       if (priv-&gt;current_status &amp; STATUS_RXOK) {
+</I>&gt;<i> +               dev_dbg(dev-&gt;dev.parent,
+</I>&gt;<i> +                               &quot;Received a msg successfully\n&quot;);
+</I>&gt;<i> +               priv-&gt;write_reg(priv, CAN_STATUS,
+</I>&gt;<i> +                               (priv-&gt;current_status &amp; ~STATUS_RXOK));
+</I>&gt;<i> +       }
+</I>
+Dito.
+
+&gt;<i> +       /* handle bus error events */
+</I>&gt;<i> +       if (priv-&gt;current_status &amp; STATUS_EWARN) {
+</I>&gt;<i> +               dev_info(dev-&gt;dev.parent,
+</I>&gt;<i> +                               &quot;entered error warning state\n&quot;);
+</I>&gt;<i> +               error_type = CCAN_ERROR_WARNING;
+</I>&gt;<i> +       }
+</I>&gt;<i> +       if ((priv-&gt;current_status &amp; STATUS_EPASS) &amp;&amp;
+</I>&gt;<i> +                       (!(priv-&gt;last_status &amp; STATUS_EPASS))) {
+</I>&gt;<i> +               dev_info(dev-&gt;dev.parent,
+</I>&gt;<i> +                               &quot;entered error passive state\n&quot;);
+</I>&gt;<i> +               error_type = CCAN_ERROR_PASSIVE;
+</I>&gt;<i> +       }
+</I>&gt;<i> +       if ((priv-&gt;current_status &amp; STATUS_BOFF) &amp;&amp;
+</I>&gt;<i> +                       (!(priv-&gt;last_status &amp; STATUS_BOFF))) {
+</I>&gt;<i> +               dev_info(dev-&gt;dev.parent,
+</I>&gt;<i> +                               &quot;entered bus off state\n&quot;);
+</I>&gt;<i> +               error_type = CCAN_BUS_OFF;
+</I>&gt;<i> +       }
+</I>
+But you can keep these.
+
+&gt;<i> +       if (priv-&gt;current_status &amp; STATUS_LEC_MASK)
+</I>&gt;<i> +               lec_type = (priv-&gt;current_status &amp; STATUS_LEC_MASK);
+</I>&gt;<i> +
+</I>&gt;<i> +       /* handle bus recovery events */
+</I>&gt;<i> +       if ((!(priv-&gt;current_status &amp; STATUS_EPASS)) &amp;&amp;
+</I>&gt;<i> +                       (priv-&gt;last_status &amp; STATUS_EPASS)) {
+</I>&gt;<i> +               dev_info(dev-&gt;dev.parent,
+</I>&gt;<i> +                               &quot;left error passive state\n&quot;);
+</I>&gt;<i> +               priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;<i> +       }
+</I>&gt;<i> +       if ((!(priv-&gt;current_status &amp; STATUS_BOFF)) &amp;&amp;
+</I>&gt;<i> +                       (priv-&gt;last_status &amp; STATUS_BOFF)) {
+</I>&gt;<i> +               dev_info(dev-&gt;dev.parent,
+</I>&gt;<i> +                               &quot;left bus off state\n&quot;);
+</I>&gt;<i> +               priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;<i> +       }
+</I>&gt;<i> +
+</I>&gt;<i> +       priv-&gt;last_status = priv-&gt;current_status;
+</I>&gt;<i> +
+</I>&gt;<i> +       /* handle error on the bus */
+</I>&gt;<i> +       if (error_type != CCAN_NO_ERROR) {
+</I>&gt;<i> +               ret = bosch_ccan_err(dev, error_type, lec_type);
+</I>&gt;<i> +               if (ret &lt; 0)
+</I>&gt;<i> +                       return ret;
+</I>&gt;<i> +       }
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void bosch_ccan_do_object_irq(struct net_device *dev, u16 irqstatus)
+</I>&gt;<i> +{
+</I>&gt;<i> +       int i;
+</I>&gt;<i> +       u32 val;
+</I>&gt;<i> +#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+</I>&gt;<i> +       struct net_device_stats *stats = can_get_stats(dev);
+</I>&gt;<i> +#else
+</I>&gt;<i> +       struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;<i> +#endif
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       if (irqstatus &gt; MAX_TRANSMIT_OBJECT) {
+</I>&gt;<i> +               val = bosch_ccan_read_reg32(dev, CAN_NEWDAT);
+</I>&gt;<i> +               while (val &amp; RECEIVE_OBJECT_BITS) {
+</I>&gt;<i> +                       for (i = MAX_TRANSMIT_OBJECT + 1; i &lt;= MAX_OBJECT; i++)
+</I>&gt;<i> +                               if (val &amp; (1 &lt;&lt; i))
+</I>&gt;<i> +                                       bosch_ccan_read_object(dev, 0, i);
+</I>&gt;<i> +
+</I>&gt;<i> +                       val = bosch_ccan_read_reg32(dev, CAN_NEWDAT);
+</I>&gt;<i> +               }
+</I>&gt;<i> +       } else {
+</I>&gt;<i> +               bosch_ccan_inval_object(dev, 0, irqstatus - 1);
+</I>&gt;<i> +               val = bosch_ccan_read_reg32(dev, CAN_TXRQST);
+</I>&gt;<i> +               if (!val) {
+</I>&gt;<i> +                       can_get_echo_skb(dev, 0);
+</I>&gt;<i> +                       priv-&gt;tx_object--;
+</I>&gt;<i> +                       stats-&gt;tx_packets++;
+</I>&gt;<i> +                       netif_wake_queue(dev);
+</I>&gt;<i> +               }
+</I>&gt;<i> +       }
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,19)
+</I>&gt;<i> +static irqreturn_t bosch_ccan_isr(int irq, void *dev_id, struct pt_regs *regs)
+</I>&gt;<i> +#else
+</I>&gt;<i> +static irqreturn_t bosch_ccan_isr(int irq, void *dev_id)
+</I>&gt;<i> +#endif
+</I>&gt;<i> +{
+</I>&gt;<i> +       u16 irqstatus;
+</I>&gt;<i> +       int ret;
+</I>&gt;<i> +       struct net_device *dev = (struct net_device *)dev_id;
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       irqstatus = priv-&gt;read_reg(priv, CAN_IR);
+</I>&gt;<i> +
+</I>&gt;<i> +       if (!irqstatus)
+</I>&gt;<i> +               return IRQ_NONE;
+</I>&gt;<i> +       while (irqstatus) {
+</I>&gt;<i> +               if (irqstatus == 0x8000) {
+</I>
+Please use an appropriate macro definition.
+
+&gt;<i> +                       ret = bosch_ccan_do_status_irq(dev);
+</I>&gt;<i> +                       if (ret &lt; 0) {
+</I>&gt;<i> +                               dev_err(dev-&gt;dev.parent,
+</I>&gt;<i> +                                               &quot;do_status_irq failed\n&quot;);
+</I>&gt;<i> +                               goto exit;
+</I>&gt;<i> +                       }
+</I>&gt;<i> +               } else
+</I>&gt;<i> +                       bosch_ccan_do_object_irq(dev, irqstatus);
+</I>&gt;<i> +
+</I>&gt;<i> +               irqstatus = priv-&gt;read_reg(priv, CAN_IR);
+</I>&gt;<i> +       }
+</I>&gt;<i> +
+</I>&gt;<i> +exit:
+</I>&gt;<i> +       return IRQ_HANDLED;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int bosch_ccan_open(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +       int err;
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       /* open the can device */
+</I>&gt;<i> +       err = open_candev(dev);
+</I>&gt;<i> +       if (err) {
+</I>&gt;<i> +               dev_err(dev-&gt;dev.parent, &quot;failed to open can device\n&quot;);
+</I>&gt;<i> +               return err;
+</I>&gt;<i> +       }
+</I>&gt;<i> +
+</I>&gt;<i> +       /* register interrupt handler */
+</I>&gt;<i> +       err = request_irq(dev-&gt;irq, &amp;bosch_ccan_isr, priv-&gt;irq_flags, dev-&gt;name,
+</I>&gt;<i> +                               (void *)dev);
+</I>&gt;<i> +       if (err &lt; 0) {
+</I>&gt;<i> +               dev_err(dev-&gt;dev.parent, &quot;failed to attach interrupt\n&quot;);
+</I>&gt;<i> +               goto exit_irq_fail;
+</I>&gt;<i> +       }
+</I>&gt;<i> +
+</I>&gt;<i> +#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+</I>&gt;<i> +       /* clear statistics */
+</I>&gt;<i> +       memset(&amp;priv-&gt;can.net_stats, 0, sizeof(priv-&gt;can.net_stats));
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +       /* start the ccan controller */
+</I>&gt;<i> +       err = bosch_ccan_start(dev);
+</I>&gt;<i> +       if (err)
+</I>&gt;<i> +               goto exit_start_fail;
+</I>&gt;<i> +
+</I>&gt;<i> +       netif_start_queue(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +
+</I>&gt;<i> +exit_start_fail:
+</I>&gt;<i> +       free_irq(dev-&gt;irq, dev);
+</I>&gt;<i> +exit_irq_fail:
+</I>&gt;<i> +       close_candev(dev);
+</I>&gt;<i> +       return err;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int bosch_ccan_close(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +       netif_stop_queue(dev);
+</I>&gt;<i> +       bosch_ccan_stop(dev);
+</I>&gt;<i> +       free_irq(dev-&gt;irq, dev);
+</I>&gt;<i> +       close_candev(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +struct net_device *alloc_bosch_ccandev(int sizeof_priv)
+</I>&gt;<i> +{
+</I>&gt;<i> +       struct net_device *dev;
+</I>&gt;<i> +       struct bosch_ccan_priv *priv;
+</I>&gt;<i> +
+</I>&gt;<i> +#if ((LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,32)) ||(LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,32)))
+</I>&gt;<i> +       dev = alloc_candev(sizeof(struct bosch_ccan_priv) + sizeof_priv,
+</I>&gt;<i> +                               BOSCH_CCAN_ECHO_SKB_MAX);
+</I>&gt;<i> +#else
+</I>&gt;<i> +       dev = alloc_candev(sizeof(struct bosch_ccan_priv) + sizeof_priv);
+</I>&gt;<i> +#endif
+</I>&gt;<i> +       if (!dev)
+</I>&gt;<i> +               return NULL;
+</I>&gt;<i> +
+</I>&gt;<i> +       priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       priv-&gt;dev = dev;
+</I>&gt;<i> +       priv-&gt;can.bittiming_const = &amp;bosch_ccan_bittiming_const;
+</I>&gt;<i> +       priv-&gt;can.do_set_bittiming = bosch_ccan_set_bittiming;
+</I>&gt;<i> +       priv-&gt;can.do_get_state = bosch_ccan_get_state;
+</I>&gt;<i> +       priv-&gt;can.do_set_mode = bosch_ccan_set_mode;
+</I>
+Please also implement the &quot;get_berr_counter&quot; callback.
+
+&gt;<i> +       return dev;
+</I>&gt;<i> +}
+</I>&gt;<i> +EXPORT_SYMBOL(alloc_bosch_ccandev);
+</I>&gt;<i> +
+</I>&gt;<i> +void free_bosch_ccandev(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +       free_candev(dev);
+</I>&gt;<i> +}
+</I>&gt;<i> +EXPORT_SYMBOL(free_bosch_ccandev);
+</I>&gt;<i> +
+</I>&gt;<i> +#if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
+</I>&gt;<i> +static const struct net_device_ops bosch_ccan_netdev_ops = {
+</I>&gt;<i> +       .ndo_open = bosch_ccan_open,
+</I>&gt;<i> +       .ndo_stop = bosch_ccan_close,
+</I>&gt;<i> +       .ndo_start_xmit = bosch_ccan_start_xmit,
+</I>&gt;<i> +};
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +int register_bosch_ccandev(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +       dev-&gt;flags |= IFF_ECHO; /* we support local echo */
+</I>&gt;<i> +#if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
+</I>&gt;<i> +       dev-&gt;netdev_ops = &amp;bosch_ccan_netdev_ops;
+</I>&gt;<i> +#else
+</I>&gt;<i> +       dev-&gt;open = bosch_ccan_open;
+</I>&gt;<i> +       dev-&gt;stop = bosch_ccan_close;
+</I>&gt;<i> +       dev-&gt;hard_start_xmit = bosch_ccan_start_xmit;
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +       return register_candev(dev);
+</I>&gt;<i> +}
+</I>&gt;<i> +EXPORT_SYMBOL(register_bosch_ccandev);
+</I>&gt;<i> +
+</I>&gt;<i> +void unregister_bosch_ccandev(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +       struct bosch_ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +       /* disable all interrupts */
+</I>&gt;<i> +       priv-&gt;write_reg(priv, CAN_CONTROL, 0);
+</I>&gt;<i> +
+</I>&gt;<i> +       unregister_candev(dev);
+</I>&gt;<i> +}
+</I>&gt;<i> +EXPORT_SYMBOL(unregister_bosch_ccandev);
+</I>&gt;<i> +
+</I>&gt;<i> +MODULE_AUTHOR(&quot;Bhupesh Sharma &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">bhupesh.sharma at st.com</A>&gt;&quot;);
+</I>&gt;<i> +MODULE_LICENSE(&quot;GPL&quot;);
+</I>&gt;<i> +MODULE_DESCRIPTION(&quot;CAN bus driver for Bosch CCAN controller&quot;);
+</I>&gt;<i> 
+</I>&gt;<i> Property changes on: bosch_ccan.c
+</I>&gt;<i> ___________________________________________________________________
+</I>&gt;<i> Name: svn:executable
+</I>&gt;<i>    + *
+</I>&gt;<i> 
+</I>&gt;<i> Index: bosch_ccan.h
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- bosch_ccan.h        (revision 0)
+</I>&gt;<i> +++ bosch_ccan.h        (revision 0)
+</I>&gt;<i> @@ -0,0 +1,207 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * drivers/net/can/bosch_ccan.h
+</I>&gt;<i> + *
+</I>&gt;<i> + * CAN bus driver definitions for Bosch CCAN controller
+</I>&gt;<i> + *
+</I>&gt;<i> + * Copyright (C) 2010 ST Microelectronics
+</I>&gt;<i> + * Bhupesh Sharma &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">bhupesh.sharma at st.com</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + * Borrowed heavily from the CCAN driver originally written by:
+</I>&gt;<i> + * - Sascha Hauer, Marc Kleine-Budde, Pengutronix &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;
+</I>&gt;<i> + * - Simon Kallweit, intefo AG &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">simon.kallweit at intefo.ch</A>&gt;
+</I>&gt;<i> + * which can be viewed here:
+</I>&gt;<i> + * <A HREF="http://svn.berlios.de/svnroot/repos/socketcan/trunk/kernel/2.6/">http://svn.berlios.de/svnroot/repos/socketcan/trunk/kernel/2.6/</A>
+</I>&gt;<i> + * drivers/net/can/old/ccan/ccan.c
+</I>&gt;<i> + *
+</I>&gt;<i> + * Bosch CCAN controller is compliant to CAN protocol version 2.0 part A and B.
+</I>&gt;<i> + * Bosch CCAN user manual can be obtained from:
+</I>&gt;<i> + * <A HREF="http://www.semiconductors.bosch.de/pdf/Users_Manual_C_CAN.pdf">http://www.semiconductors.bosch.de/pdf/Users_Manual_C_CAN.pdf</A>
+</I>&gt;<i> + *
+</I>&gt;<i> + * This file is licensed under the terms of the GNU General Public
+</I>&gt;<i> + * License version 2. This program is licensed &quot;as is&quot; without any
+</I>&gt;<i> + * warranty of any kind, whether express or implied.
+</I>&gt;<i> + */
+</I>
+See abocve.
+
+&gt;<i> +#ifndef __CCAN_H__
+</I>&gt;<i> +#define __CCAN_H__
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;linux/can.h&gt;
+</I>&gt;<i> +#include &lt;linux/clk.h&gt;
+</I>&gt;<i> +#include &lt;linux/platform_device.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#define BOSCH_CCAN_ECHO_SKB_MAX        1
+</I>&gt;<i> +
+</I>&gt;<i> +/* ccan register offsets */
+</I>&gt;<i> +enum ccan_regs {
+</I>&gt;<i> +       CAN_CONTROL = 0x00,
+</I>&gt;<i> +       CAN_STATUS = 0x02,
+</I>&gt;<i> +       CAN_ERROR = 0x04,
+</I>&gt;<i> +       CAN_BTR = 0x06,
+</I>&gt;<i> +       CAN_IR = 0x08,
+</I>&gt;<i> +       CAN_TEST = 0x0a,
+</I>&gt;<i> +       CAN_BRP_EXT = 0x0c,
+</I>&gt;<i> +       CAN_IF1 = 0x10,
+</I>&gt;<i> +       CAN_IF2 = 0x40,
+</I>&gt;<i> +       CAN_TXRQST = 0x80,      /* 32bit */
+</I>&gt;<i> +       CAN_NEWDAT = 0x90,      /* 32bit */
+</I>&gt;<i> +       CAN_INTPND = 0xa0,      /* 32bit */
+</I>&gt;<i> +       CAN_MSGVAL = 0xb0,      /* 32bit */
+</I>&gt;<i> +};
+</I>
+It's unusual to define register offsets as enumeration.
+
+&gt;<i> +#define CAN_IF_COMR(x)         (CAN_IF1 + (x) * 0x30 + 0x00)
+</I>&gt;<i> +#define CAN_IF_COMM(x)         (CAN_IF1 + (x) * 0x30 + 0x02)
+</I>&gt;<i> +#define CAN_IF_MASK(x)         (CAN_IF1 + (x) * 0x30 + 0x04)   /* 32bit */
+</I>&gt;<i> +#define CAN_IF_ARB(x)          (CAN_IF1 + (x) * 0x30 + 0x08)   /* 32bit */
+</I>&gt;<i> +#define CAN_IF_MCONT(x)                (CAN_IF1 + (x) * 0x30 + 0x0c)
+</I>&gt;<i> +#define CAN_IF_DATAA(x)                (CAN_IF1 + (x) * 0x30 + 0x0e)   /* 32bit */
+</I>&gt;<i> +#define CAN_IF_DATAB(x)                (CAN_IF1 + (x) * 0x30 + 0x12)   /* 32bit */
+</I>
+Hm, I don't like these macros. Is there a better way to handle message
+offsets? Either with &quot;static inlines&quot; or even better by using a struct
+to define the register layout.
+
+&gt;<i> +/* control register */
+</I>&gt;<i> +#define CONTROL_TEST           (1&lt;&lt;7)
+</I>&gt;<i> +#define CONTROL_CCE            (1&lt;&lt;6)
+</I>&gt;<i> +#define CONTROL_DISABLE_AR     (1&lt;&lt;5)
+</I>&gt;<i> +#define CONTROL_ENABLE_AR      (0&lt;&lt;5)
+</I>&gt;<i> +#define CONTROL_EIE            (1&lt;&lt;3)
+</I>&gt;<i> +#define CONTROL_SIE            (1&lt;&lt;2)
+</I>&gt;<i> +#define CONTROL_IE             (1&lt;&lt;1)
+</I>&gt;<i> +#define CONTROL_INIT           (1&lt;&lt;0)
+</I>&gt;<i> +
+</I>&gt;<i> +/* test register */
+</I>&gt;<i> +#define TEST_RX                        (1&lt;&lt;7)
+</I>&gt;<i> +#define TEST_TX1               (1&lt;&lt;6)
+</I>&gt;<i> +#define TEST_TX2               (1&lt;&lt;5)
+</I>&gt;<i> +#define TEST_LBACK             (1&lt;&lt;4)
+</I>&gt;<i> +#define TEST_SILENT            (1&lt;&lt;3)
+</I>&gt;<i> +#define TEST_BASIC             (1&lt;&lt;2)
+</I>&gt;<i> +
+</I>&gt;<i> +/* status register */
+</I>&gt;<i> +#define STATUS_BOFF            (1&lt;&lt;7)
+</I>&gt;<i> +#define STATUS_EWARN           (1&lt;&lt;6)
+</I>&gt;<i> +#define STATUS_EPASS           (1&lt;&lt;5)
+</I>&gt;<i> +#define STATUS_RXOK            (1&lt;&lt;4)
+</I>&gt;<i> +#define STATUS_TXOK            (1&lt;&lt;3)
+</I>&gt;<i> +#define STATUS_LEC_MASK                0x07
+</I>&gt;<i> +#define LEC_STUFF_ERROR                1
+</I>&gt;<i> +#define LEC_FORM_ERROR         2
+</I>&gt;<i> +#define LEC_ACK_ERROR          3
+</I>&gt;<i> +#define LEC_BIT1_ERROR         4
+</I>&gt;<i> +#define LEC_BIT0_ERROR         5
+</I>&gt;<i> +#define LEC_CRC_ERROR          6
+</I>&gt;<i> +
+</I>&gt;<i> +/* error counter register */
+</I>&gt;<i> +#define ERR_COUNTER_TEC_MASK   0xff
+</I>&gt;<i> +#define ERR_COUNTER_TEC_SHIFT  0x0
+</I>&gt;<i> +#define ERR_COUNTER_REC_SHIFT  8
+</I>&gt;<i> +#define ERR_COUNTER_REC_MASK   (0x7f&lt;&lt;ERR_COUNTER_REC_SHIFT)
+</I>&gt;<i> +#define ERR_COUNTER_RP_SHIFT   15
+</I>&gt;<i> +#define ERR_COUNTER_RP_MASK    (0x1&lt;&lt;ERR_COUNTER_RP_SHIFT)
+</I>&gt;<i> +
+</I>&gt;<i> +/* bit-timing register */
+</I>&gt;<i> +#define BTR_BRP_MASK           0x3f
+</I>&gt;<i> +#define BTR_BRP_SHIFT          0
+</I>&gt;<i> +#define BTR_SJW_SHIFT          6
+</I>&gt;<i> +#define BTR_SJW_MASK           (0x3&lt;&lt;BTR_SJW_SHIFT)
+</I>&gt;<i> +#define BTR_TSEG1_SHIFT                8
+</I>&gt;<i> +#define BTR_TSEG1_MASK         (0xf&lt;&lt;BTR_TSEG1_SHIFT)
+</I>&gt;<i> +#define BTR_TSEG2_SHIFT                12
+</I>&gt;<i> +#define BTR_TSEG2_MASK         (0x7&lt;&lt;BTR_TSEG2_SHIFT)
+</I>&gt;<i> +
+</I>&gt;<i> +/* brp extension register */
+</I>&gt;<i> +#define BRP_EXT_BRPE_MASK      0x0f
+</I>&gt;<i> +#define BRP_EXT_BRPE_SHIFT     0
+</I>&gt;<i> +
+</I>&gt;<i> +/* IFx command request */
+</I>&gt;<i> +#define IF_COMR_BUSY           (1&lt;&lt;15)
+</I>&gt;<i> +
+</I>&gt;<i> +/* IFx command mask */
+</I>&gt;<i> +#define IF_COMM_WR             (1&lt;&lt;7)
+</I>&gt;<i> +#define IF_COMM_MASK           (1&lt;&lt;6)
+</I>&gt;<i> +#define IF_COMM_ARB            (1&lt;&lt;5)
+</I>&gt;<i> +#define IF_COMM_CONTROL                (1&lt;&lt;4)
+</I>&gt;<i> +#define IF_COMM_CLR_INT_PND    (1&lt;&lt;3)
+</I>&gt;<i> +#define IF_COMM_TXRQST         (1&lt;&lt;2)
+</I>&gt;<i> +#define IF_COMM_DATAA          (1&lt;&lt;1)
+</I>&gt;<i> +#define IF_COMM_DATAB          (1&lt;&lt;0)
+</I>&gt;<i> +#define IF_COMM_ALL            (IF_COMM_MASK | IF_COMM_ARB | \
+</I>&gt;<i> +                               IF_COMM_CONTROL | IF_COMM_TXRQST | \
+</I>&gt;<i> +                               IF_COMM_DATAA | IF_COMM_DATAB)
+</I>&gt;<i> +
+</I>&gt;<i> +/* IFx arbitration */
+</I>&gt;<i> +#define IF_ARB_MSGVAL          (1&lt;&lt;31)
+</I>&gt;<i> +#define IF_ARB_MSGXTD          (1&lt;&lt;30)
+</I>&gt;<i> +#define IF_ARB_TRANSMIT                (1&lt;&lt;29)
+</I>&gt;<i> +
+</I>&gt;<i> +/* IFx message control */
+</I>&gt;<i> +#define IF_MCONT_NEWDAT                (1&lt;&lt;15)
+</I>&gt;<i> +#define IF_MCONT_MSGLST                (1&lt;&lt;14)
+</I>&gt;<i> +#define IF_MCONT_INTPND                (1&lt;&lt;13)
+</I>&gt;<i> +#define IF_MCONT_UMASK         (1&lt;&lt;12)
+</I>&gt;<i> +#define IF_MCONT_TXIE          (1&lt;&lt;11)
+</I>&gt;<i> +#define IF_MCONT_RXIE          (1&lt;&lt;10)
+</I>&gt;<i> +#define IF_MCONT_RMTEN         (1&lt;&lt;9)
+</I>&gt;<i> +#define IF_MCONT_TXRQST                (1&lt;&lt;8)
+</I>&gt;<i> +#define IF_MCONT_EOB           (1&lt;&lt;7)
+</I>&gt;<i> +
+</I>&gt;<i> +/* message object */
+</I>&gt;<i> +#define MAX_OBJECT             31
+</I>&gt;<i> +#define MAX_TRANSMIT_OBJECT    15
+</I>&gt;<i> +#define RECEIVE_OBJECT_BITS    0xffff0000
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * CCAN operating modes:
+</I>&gt;<i> + * Support is available for default as well as test operating modes.
+</I>&gt;<i> + * Normal mode will generally be used as a default mode in most cases,
+</I>&gt;<i> + * however, various test modes may be useful in specific use-cases.
+</I>&gt;<i> + */
+</I>&gt;<i> +enum bosch_ccan_operating_mode {
+</I>&gt;<i> +       CCAN_NORMAL_MODE = 0,
+</I>&gt;<i> +       CCAN_BASIC_MODE,
+</I>&gt;<i> +       CCAN_LOOPBACK_MODE,
+</I>&gt;<i> +       CCAN_LOOPBACK_WITH_SILENT_MODE,
+</I>&gt;<i> +       CCAN_SILENT_MODE
+</I>&gt;<i> +};
+</I>
+I do not see a need for another enumeration o the type. We already have
+the CAN_CTRLMODE_*.
+
+&gt;<i> +/*
+</I>&gt;<i> + * Automatic Retransmssion compliance with ISO11898, 6.3.3 Recovery Management:
+</I>&gt;<i> + * Support is available for enabling automatic retransmission of frames
+</I>&gt;<i> + * (default behavior) as well as disabling the same for TTCAN
+</I>&gt;<i> + * environments.
+</I>&gt;<i> + */
+</I>&gt;<i> +enum bosch_ccan_auto_tx_config {
+</I>&gt;<i> +       CCAN_ENABLE_AUTO_RE_TRANSMIT = 0,
+</I>&gt;<i> +       CCAN_DISABLE_AUTO_RE_TRANSMIT
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * CCAN error types:
+</I>&gt;<i> + * Bus errors (BUS_OFF, ERROR_WARNING, ERROR_PASSIVE) are supported
+</I>&gt;<i> + */
+</I>&gt;<i> +enum bosch_ccan_bus_error_types {
+</I>&gt;<i> +       CCAN_NO_ERROR = 0,
+</I>&gt;<i> +       CCAN_BUS_OFF,
+</I>&gt;<i> +       CCAN_ERROR_WARNING,
+</I>&gt;<i> +       CCAN_ERROR_PASSIVE
+</I>&gt;<i> +};
+</I>
+Ditto. Also CCAN_ERROR_PASSIVE=3 and you use &quot;error_type &amp;
+CCAN_ERROR_PASSIVE&quot; in your code.
+
+&gt;<i> +/* CCAN private data structure */
+</I>&gt;<i> +struct bosch_ccan_priv {
+</I>&gt;<i> +       struct can_priv can;    /* must be the first member */
+</I>&gt;<i> +       struct net_device *dev;
+</I>&gt;<i> +       int tx_object;
+</I>&gt;<i> +       int current_status;
+</I>&gt;<i> +       int last_status;
+</I>&gt;<i> +       u16 (*read_reg) (const struct bosch_ccan_priv *priv,
+</I>&gt;<i> +                               enum ccan_regs reg);
+</I>&gt;<i> +       void (*write_reg) (const struct bosch_ccan_priv *priv,
+</I>&gt;<i> +                               enum ccan_regs reg, u16 val);
+</I>&gt;<i> +       void __iomem *reg_base;  /* ioremap'ed address to registers */
+</I>&gt;<i> +       unsigned long irq_flags; /* for request_irq() */
+</I>&gt;<i> +       struct clk *clk;
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +struct net_device *alloc_bosch_ccandev(int sizeof_priv);
+</I>&gt;<i> +void free_bosch_ccandev(struct net_device *dev);
+</I>&gt;<i> +int register_bosch_ccandev(struct net_device *dev);
+</I>&gt;<i> +void unregister_bosch_ccandev(struct net_device *dev);
+</I>&gt;<i> +
+</I>&gt;<i> +#endif /* __CCAN_H__ */
+</I>
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004579.html">[RFC PATCH 2/4 RESEND] Bosch CCAN driver
+</A></li>
+	<LI>Next message: <A HREF="004583.html">[RFC PATCH 2/4 RESEND] Bosch CCAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4582">[ date ]</a>
+              <a href="thread.html#4582">[ thread ]</a>
+              <a href="subject.html#4582">[ subject ]</a>
+              <a href="author.html#4582">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

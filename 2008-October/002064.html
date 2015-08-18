@@ -1,0 +1,218 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] MCP251x bug fixes
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20MCP251x%20bug%20fixes&In-Reply-To=%3C12248509303971-git-send-email-chripell%40gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002075.html">
+   <LINK REL="Next"  HREF="002066.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] MCP251x bug fixes</H1>
+    <B>Christian Pellegrin</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20MCP251x%20bug%20fixes&In-Reply-To=%3C12248509303971-git-send-email-chripell%40gmail.com%3E"
+       TITLE="[PATCH] MCP251x bug fixes">chripell at gmail.com
+       </A><BR>
+    <I>Fri Oct 24 14:22:10 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002075.html">[PATCH] mcp251x: add hardware probe function
+</A></li>
+        <LI>Next message: <A HREF="002066.html">[PATCH] MCP251x bug fixes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2064">[ date ]</a>
+              <a href="thread.html#2064">[ thread ]</a>
+              <a href="subject.html#2064">[ subject ]</a>
+              <a href="author.html#2064">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+this patch corrects:
+
+1) crash on bus error found by Claudio
+
+2) enable_dma name clash
+
+3) not turning off transceiver on first load
+
+
+---
+Index: drivers/net/can/mcp251x.c
+===================================================================
+--- drivers/net/can/mcp251x.c	(revision 848)
++++ drivers/net/can/mcp251x.c	(working copy)
+@@ -149,9 +149,9 @@
+ 
+ #define DEVICE_NAME &quot;mcp251x&quot;
+ 
+-static int enable_dma; /* Enable SPI DMA. Default: 0 (Off) */
+-module_param(enable_dma, int, S_IRUGO);
+-MODULE_PARM_DESC(enable_dma, &quot;Enable SPI DMA. Default: 0 (Off)&quot;);
++static int mcp251x_enable_dma; /* Enable SPI DMA. Default: 0 (Off) */
++module_param(mcp251x_enable_dma, int, S_IRUGO);
++MODULE_PARM_DESC(mcp251x_enable_dma, &quot;Enable SPI DMA. Default: 0 (Off)&quot;);
+ 
+ static struct can_bittiming_const mcp251x_bittiming_const = {
+ 	.tseg1_min = 3,
+@@ -209,7 +209,7 @@
+ 
+ 	spi_message_init(&amp;m);
+ 
+-	if (enable_dma) {
++	if (mcp251x_enable_dma) {
+ 		t.tx_dma = priv-&gt;spi_tx_dma;
+ 		t.rx_dma = priv-&gt;spi_rx_dma;
+ 		m.is_dma_mapped = 1;
+@@ -249,7 +249,7 @@
+ 
+ 	spi_message_init(&amp;m);
+ 
+-	if (enable_dma) {
++	if (mcp251x_enable_dma) {
+ 		t.tx_dma = priv-&gt;spi_tx_dma;
+ 		t.rx_dma = priv-&gt;spi_rx_dma;
+ 		m.is_dma_mapped = 1;
+@@ -287,7 +287,7 @@
+ 
+ 	spi_message_init(&amp;m);
+ 
+-	if (enable_dma) {
++	if (mcp251x_enable_dma) {
+ 		t.tx_dma = priv-&gt;spi_tx_dma;
+ 		t.rx_dma = priv-&gt;spi_rx_dma;
+ 		m.is_dma_mapped = 1;
+@@ -362,7 +362,7 @@
+ 
+ 		spi_message_init(&amp;m);
+ 
+-		if (enable_dma) {
++		if (mcp251x_enable_dma) {
+ 			t.tx_dma = priv-&gt;spi_tx_dma;
+ 			t.rx_dma = priv-&gt;spi_rx_dma;
+ 			m.is_dma_mapped = 1;
+@@ -461,7 +461,7 @@
+ 
+ 		spi_message_init(&amp;m);
+ 
+-		if (enable_dma) {
++		if (mcp251x_enable_dma) {
+ 			t.tx_dma = priv-&gt;spi_tx_dma;
+ 			t.rx_dma = priv-&gt;spi_rx_dma;
+ 			m.is_dma_mapped = 1;
+@@ -766,14 +766,16 @@
+ 	struct mcp251x_priv *priv = container_of(ws, struct mcp251x_priv,
+ 						 tx_work);
+ 	struct spi_device *spi = priv-&gt;spi;
+-	struct can_frame *frame = (struct can_frame *)priv-&gt;tx_skb-&gt;data;
++	struct can_frame *frame;;
+ 
+ 	dev_dbg(&amp;spi-&gt;dev, &quot;%s\n&quot;, __func__);
+ 
+-	if (frame-&gt;can_dlc &gt; CAN_FRAME_MAX_DATA_LEN)
+-		frame-&gt;can_dlc = CAN_FRAME_MAX_DATA_LEN;
+-
+-	mcp251x_hw_tx(spi, frame, 0);
++	if (priv-&gt;tx_skb) {
++		frame = (struct can_frame *)priv-&gt;tx_skb-&gt;data;
++		if (frame-&gt;can_dlc &gt; CAN_FRAME_MAX_DATA_LEN)
++			frame-&gt;can_dlc = CAN_FRAME_MAX_DATA_LEN;
++		mcp251x_hw_tx(spi, frame, 0);
++	}
+ }
+ 
+ static void mcp251x_irq_work_handler(struct work_struct *ws)
+@@ -1022,7 +1024,7 @@
+ 	priv-&gt;can.bittiming.clock = pdata-&gt;oscillator_frequency / 2;
+ 
+ 	/* If requested, allocate DMA buffers */
+-	if (enable_dma) {
++	if (mcp251x_enable_dma) {
+ 		spi-&gt;dev.coherent_dma_mask = DMA_32BIT_MASK;
+ 
+ 		/* Minimum coherent DMA allocation is PAGE_SIZE, so allocate
+@@ -1037,12 +1039,12 @@
+ 				(PAGE_SIZE / 2));
+ 		} else {
+ 			/* Fall back to non-DMA */
+-			enable_dma = 0;
++			mcp251x_enable_dma = 0;
+ 		}
+ 	}
+ 
+ 	/* Allocate non-DMA buffers */
+-	if (!enable_dma) {
++	if (!mcp251x_enable_dma) {
+ 		priv-&gt;spi_tx_buf = kmalloc(SPI_TRANSFER_BUF_LEN, GFP_KERNEL);
+ 		if (!priv-&gt;spi_tx_buf) {
+ 			ret = -ENOMEM;
+@@ -1087,6 +1089,9 @@
+ 	mcp251x_hw_reset(spi);
+ 	mcp251x_hw_sleep(spi);
+ 
++	if (pdata-&gt;transceiver_enable)
++		pdata-&gt;transceiver_enable(0);
++
+ 	ret = register_netdev(net);
+ 	if (ret &gt;= 0) {
+ 		dev_info(&amp;spi-&gt;dev, &quot;probed\n&quot;);
+@@ -1095,14 +1100,14 @@
+ 
+ 	free_irq(spi-&gt;irq, net);
+ error_irq:
+-	if (!enable_dma)
++	if (!mcp251x_enable_dma)
+ 		kfree(priv-&gt;spi_rx_buf);
+ error_rx_buf:
+-	if (!enable_dma)
++	if (!mcp251x_enable_dma)
+ 		kfree(priv-&gt;spi_tx_buf);
+ error_tx_buf:
+ 	free_candev(net);
+-	if (enable_dma) {
++	if (mcp251x_enable_dma) {
+ 		dma_free_coherent(&amp;spi-&gt;dev, PAGE_SIZE,
+ 			priv-&gt;spi_tx_buf, priv-&gt;spi_tx_dma);
+ 	}
+@@ -1123,7 +1128,7 @@
+ 	flush_workqueue(priv-&gt;wq);
+ 	destroy_workqueue(priv-&gt;wq);
+ 
+-	if (enable_dma) {
++	if (mcp251x_enable_dma) {
+ 		dma_free_coherent(&amp;spi-&gt;dev, PAGE_SIZE,
+ 			priv-&gt;spi_tx_buf, priv-&gt;spi_tx_dma);
+ 	} else {
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002075.html">[PATCH] mcp251x: add hardware probe function
+</A></li>
+	<LI>Next message: <A HREF="002066.html">[PATCH] MCP251x bug fixes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2064">[ date ]</a>
+              <a href="thread.html#2064">[ thread ]</a>
+              <a href="subject.html#2064">[ subject ]</a>
+              <a href="author.html#2064">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

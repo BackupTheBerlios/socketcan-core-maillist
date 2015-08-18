@@ -1,0 +1,262 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v5] can: Unify droping of invalid tx skbs and	netdev stats
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v5%5D%20can%3A%20Unify%20droping%20of%20invalid%20tx%20skbs%20and%0A%09netdev%20stats&In-Reply-To=%3C4B4C420C.1040308%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003836.html">
+   <LINK REL="Next"  HREF="003838.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v5] can: Unify droping of invalid tx skbs and	netdev stats</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v5%5D%20can%3A%20Unify%20droping%20of%20invalid%20tx%20skbs%20and%0A%09netdev%20stats&In-Reply-To=%3C4B4C420C.1040308%40hartkopp.net%3E"
+       TITLE="[PATCH net-next-2.6 v5] can: Unify droping of invalid tx skbs and	netdev stats">socketcan at hartkopp.net
+       </A><BR>
+    <I>Tue Jan 12 10:34:04 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003836.html">[PATCH net-next-2.6 v4] can: Unify droping of invalid tx skbs	and netdev stats
+</A></li>
+        <LI>Next message: <A HREF="003838.html">[PATCH net-next-2.6 v5] can: Unify droping of invalid tx skbs	and	netdev stats
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3837">[ date ]</a>
+              <a href="thread.html#3837">[ thread ]</a>
+              <a href="subject.html#3837">[ subject ]</a>
+              <a href="author.html#3837">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>To prevent the CAN drivers to operate on invalid socketbuffers the skbs are
+now checked and silently dropped at the xmit-function consistently.
+
+Also the netdev stats are consistently using the CAN data length code (dlc)
+for [rx|tx]_bytes now.
+
+Signed-off-by: Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">oliver at hartkopp.net</A>&gt;
+
+---
+
+diff --git a/drivers/net/can/at91_can.c b/drivers/net/can/at91_can.c
+index 166cc7e..f728749 100644
+--- a/drivers/net/can/at91_can.c
++++ b/drivers/net/can/at91_can.c
+@@ -342,6 +342,9 @@ static netdev_tx_t at91_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	unsigned int mb, prio;
+ 	u32 reg_mid, reg_mcr;
+ 
++	if (can_dropped_invalid_skb(dev, skb))
++		return NETDEV_TX_OK;
++
+ 	mb = get_tx_next_mb(priv);
+ 	prio = get_tx_next_prio(priv);
+ 
+diff --git a/drivers/net/can/bfin_can.c b/drivers/net/can/bfin_can.c
+index 0ec1524..7e1926e 100644
+--- a/drivers/net/can/bfin_can.c
++++ b/drivers/net/can/bfin_can.c
+@@ -318,6 +318,9 @@ static int bfin_can_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	u16 val;
+ 	int i;
+ 
++	if (can_dropped_invalid_skb(dev, skb))
++		return NETDEV_TX_OK;
++
+ 	netif_stop_queue(dev);
+ 
+ 	/* fill id */
+diff --git a/drivers/net/can/mcp251x.c b/drivers/net/can/mcp251x.c
+index 1a72ca0..afa2fa4 100644
+--- a/drivers/net/can/mcp251x.c
++++ b/drivers/net/can/mcp251x.c
+@@ -494,12 +494,8 @@ static netdev_tx_t mcp251x_hard_start_xmit(struct sk_buff *skb,
+ 		return NETDEV_TX_BUSY;
+ 	}
+ 
+-	if (skb-&gt;len != sizeof(struct can_frame)) {
+-		dev_err(&amp;spi-&gt;dev, &quot;dropping packet - bad length\n&quot;);
+-		dev_kfree_skb(skb);
+-		net-&gt;stats.tx_dropped++;
++	if (can_dropped_invalid_skb(net, skb))
+ 		return NETDEV_TX_OK;
+-	}
+ 
+ 	netif_stop_queue(net);
+ 	priv-&gt;tx_skb = skb;
+diff --git a/drivers/net/can/mscan/mscan.c b/drivers/net/can/mscan/mscan.c
+index 500d189..40827c1 100644
+--- a/drivers/net/can/mscan/mscan.c
++++ b/drivers/net/can/mscan/mscan.c
+@@ -204,11 +204,8 @@ static netdev_tx_t mscan_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	int i, rtr, buf_id;
+ 	u32 can_id;
+ 
+-	if (skb-&gt;len != sizeof(*frame) || frame-&gt;can_dlc &gt; 8) {
+-		kfree_skb(skb);
+-		dev-&gt;stats.tx_dropped++;
++	if (can_dropped_invalid_skb(dev, skb))
+ 		return NETDEV_TX_OK;
+-	}
+ 
+ 	out_8(&amp;regs-&gt;cantier, 0);
+ 
+diff --git a/drivers/net/can/sja1000/sja1000.c b/drivers/net/can/sja1000/sja1000.c
+index 542a4f7..345304d 100644
+--- a/drivers/net/can/sja1000/sja1000.c
++++ b/drivers/net/can/sja1000/sja1000.c
+@@ -249,6 +249,9 @@ static netdev_tx_t sja1000_start_xmit(struct sk_buff *skb,
+ 	uint8_t dreg;
+ 	int i;
+ 
++	if (can_dropped_invalid_skb(dev, skb))
++		return NETDEV_TX_OK;
++
+ 	netif_stop_queue(dev);
+ 
+ 	fi = dlc = cf-&gt;can_dlc;
+diff --git a/drivers/net/can/ti_hecc.c b/drivers/net/can/ti_hecc.c
+index 5c993c2..7d370e3 100644
+--- a/drivers/net/can/ti_hecc.c
++++ b/drivers/net/can/ti_hecc.c
+@@ -477,6 +477,9 @@ static netdev_tx_t ti_hecc_xmit(struct sk_buff *skb, struct net_device *ndev)
+ 	u32 mbxno, mbx_mask, data;
+ 	unsigned long flags;
+ 
++	if (can_dropped_invalid_skb(ndev, skb))
++		return NETDEV_TX_OK;
++
+ 	mbxno = get_tx_head_mb(priv);
+ 	mbx_mask = BIT(mbxno);
+ 	spin_lock_irqsave(&amp;priv-&gt;mbx_lock, flags);
+@@ -491,7 +494,6 @@ static netdev_tx_t ti_hecc_xmit(struct sk_buff *skb, struct net_device *ndev)
+ 	spin_unlock_irqrestore(&amp;priv-&gt;mbx_lock, flags);
+ 
+ 	/* Prepare mailbox for transmission */
+-	data = min_t(u8, cf-&gt;can_dlc, 8);
+ 	if (cf-&gt;can_id &amp; CAN_RTR_FLAG) /* Remote transmission request */
+ 		data |= HECC_CANMCF_RTR;
+ 	data |= get_tx_head_prio(priv) &lt;&lt; 8;
+diff --git a/drivers/net/can/usb/ems_usb.c b/drivers/net/can/usb/ems_usb.c
+index efbb05c..ddb17e2 100644
+--- a/drivers/net/can/usb/ems_usb.c
++++ b/drivers/net/can/usb/ems_usb.c
+@@ -767,6 +767,9 @@ static netdev_tx_t ems_usb_start_xmit(struct sk_buff *skb, struct net_device *ne
+ 	size_t size = CPC_HEADER_SIZE + CPC_MSG_HEADER_LEN
+ 			+ sizeof(struct cpc_can_msg);
+ 
++	if (can_dropped_invalid_skb(netdev, skb))
++		return NETDEV_TX_OK;
++
+ 	/* create a URB, and a buffer for it, and copy the data to the URB */
+ 	urb = usb_alloc_urb(0, GFP_ATOMIC);
+ 	if (!urb) {
+diff --git a/drivers/net/can/vcan.c b/drivers/net/can/vcan.c
+index 80ac563..d124d83 100644
+--- a/drivers/net/can/vcan.c
++++ b/drivers/net/can/vcan.c
+@@ -47,6 +47,7 @@
+ #include &lt;linux/if_arp.h&gt;
+ #include &lt;linux/if_ether.h&gt;
+ #include &lt;linux/can.h&gt;
++#include &lt;linux/can/dev.h&gt;
+ #include &lt;net/rtnetlink.h&gt;
+ 
+ static __initdata const char banner[] =
+@@ -70,10 +71,11 @@ MODULE_PARM_DESC(echo, &quot;Echo sent frames (for testing). Default: 0 (Off)&quot;);
+ 
+ static void vcan_rx(struct sk_buff *skb, struct net_device *dev)
+ {
++	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+ 	struct net_device_stats *stats = &amp;dev-&gt;stats;
+ 
+ 	stats-&gt;rx_packets++;
+-	stats-&gt;rx_bytes += skb-&gt;len;
++	stats-&gt;rx_bytes += cf-&gt;can_dlc;
+ 
+ 	skb-&gt;protocol  = htons(ETH_P_CAN);
+ 	skb-&gt;pkt_type  = PACKET_BROADCAST;
+@@ -85,11 +87,15 @@ static void vcan_rx(struct sk_buff *skb, struct net_device *dev)
+ 
+ static netdev_tx_t vcan_tx(struct sk_buff *skb, struct net_device *dev)
+ {
++	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+ 	struct net_device_stats *stats = &amp;dev-&gt;stats;
+ 	int loop;
+ 
++	if (can_dropped_invalid_skb(dev, skb))
++		return NETDEV_TX_OK;
++
+ 	stats-&gt;tx_packets++;
+-	stats-&gt;tx_bytes += skb-&gt;len;
++	stats-&gt;tx_bytes += cf-&gt;can_dlc;
+ 
+ 	/* set flag whether this packet has to be looped back */
+ 	loop = skb-&gt;pkt_type == PACKET_LOOPBACK;
+@@ -103,7 +109,7 @@ static netdev_tx_t vcan_tx(struct sk_buff *skb, struct net_device *dev)
+ 			 * CAN core already did the echo for us
+ 			 */
+ 			stats-&gt;rx_packets++;
+-			stats-&gt;rx_bytes += skb-&gt;len;
++			stats-&gt;rx_bytes += cf-&gt;can_dlc;
+ 		}
+ 		kfree_skb(skb);
+ 		return NETDEV_TX_OK;
+diff --git a/include/linux/can/dev.h b/include/linux/can/dev.h
+index 3db7767..7e7c98a 100644
+--- a/include/linux/can/dev.h
++++ b/include/linux/can/dev.h
+@@ -60,6 +60,21 @@ struct can_priv {
+  */
+ #define get_can_dlc(i)	(min_t(__u8, (i), 8))
+ 
++/* Drop a given socketbuffer if it does not contain a valid CAN frame. */
++static inline int can_dropped_invalid_skb(struct net_device *dev,
++					  struct sk_buff *skb)
++{
++	const struct can_frame *cf = (struct can_frame *)skb-&gt;data;
++
++	if (unlikely(skb-&gt;len != sizeof(*cf) || cf-&gt;can_dlc &gt; 8)) {
++		kfree_skb(skb);
++		dev-&gt;stats.tx_dropped++;
++		return 1;
++	}
++
++	return 0;
++}
++
+ struct net_device *alloc_candev(int sizeof_priv, unsigned int echo_skb_max);
+ void free_candev(struct net_device *dev);
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003836.html">[PATCH net-next-2.6 v4] can: Unify droping of invalid tx skbs	and netdev stats
+</A></li>
+	<LI>Next message: <A HREF="003838.html">[PATCH net-next-2.6 v5] can: Unify droping of invalid tx skbs	and	netdev stats
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3837">[ date ]</a>
+              <a href="thread.html#3837">[ thread ]</a>
+              <a href="subject.html#3837">[ subject ]</a>
+              <a href="author.html#3837">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Setting CAN bit rate in HW-independent way
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Setting%20CAN%20bit%20rate%20in%20HW-independent%20way&In-Reply-To=%3C131D8B8382DA50479D762FEEFAFC25DB6F8A94%40ixxatw2ks4.ixxat.intranet.priv%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000688.html">
+   <LINK REL="Next"  HREF="000689.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Setting CAN bit rate in HW-independent way</H1>
+    <B>gribov at ixxat.de</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Setting%20CAN%20bit%20rate%20in%20HW-independent%20way&In-Reply-To=%3C131D8B8382DA50479D762FEEFAFC25DB6F8A94%40ixxatw2ks4.ixxat.intranet.priv%3E"
+       TITLE="Setting CAN bit rate in HW-independent way">gribov at ixxat.de
+       </A><BR>
+    <I>Thu Sep 27 14:25:48 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000688.html">[RFC] setting baudrate
+</A></li>
+        <LI>Next message: <A HREF="000689.html">[RFC] setting baudrate
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#687">[ date ]</a>
+              <a href="thread.html#687">[ thread ]</a>
+              <a href="subject.html#687">[ subject ]</a>
+              <a href="author.html#687">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I am on porting the IXXAT CANopen RT Stack to work with Socket CAN, we want to use the stack both with our PCI cards (SJA1000 CAN controller) and on MPC5200, which has MSCAN.
+
+The problem I have now is how to switch CAN bit rate in the HW independent way.
+
+The definition of the CAN bit rate in the almost HW independent way is actually done over the
+
+struct can_bittime_std {
+	__u32 brp;        /* baud rate prescaler */
+	__u8  prop_seg;   /* from 1 to 8 */
+	__u8  phase_seg1; /* from 1 to 8 */
+	__u8  phase_seg2; /* from 1 to 8 */
+	__u8  sjw:7;      /* from 1 to 4 */
+	__u8  sam:1;      /* 1 - enable triple sampling */
+};
+
+The only problem with the structure is baud rate prescaler (well, triple sampling is also SJA1000 specific). Such a structure describes CAN bit rate only if supplied with CAN controller clock frequency (can_priv.can_sys_clock), which is target(HW) specific.
+That means that configuration
+
+brp=2, prop_seg=11, phase_seg1=2, phase_seg2=2, sjw=1, sam=0
+
+selects 125kbit/s for SJA1000 CAN controller clocked with 8MHz and 250kbit/s  for SJA1000 CAN controller clocked with 16MHz (you have to consider additional fix prescaler by 2 for SJA1000 CAN controllers in this example)
+
+The definition of CAN bit rate is described in ISO 11989-1 document (is also available in adapted form from eg &quot;<A HREF="http://www.can-cia.org/downloads/?269">http://www.can-cia.org/downloads/?269</A>&quot; )
+
+According to that spec following definition seems to be really HW independent:
+
+struct can_bittime_std {
+	u32 TQ;         /* time quanta in ns               */
+	u8  Sync_Seg;   /* shall be always 1               */
+	u8  Prop_Seg;   /* propagation time, at least 1..8 */
+	u8  Phase_Seg1; /* at least 1..8                   */
+	u8  Phase_Seg2; /* max(Phase_Seg1,2)               */
+	u8  SJW;        /* from 1 to min (4,Phase_Seg1)    */
+};
+
+
+The definition of 500 kbit/s looks like
+TQ=125, Sync_Seg=1, Prop_Seg=11, Phase_Seg1=2, Phase_Seg2=2, SJW=1
+
+The bit time is 125ns*(1+11+2+2) = 2 us, sampling point 100%*(14/16) = 87,5% .
+
+
+The following definition
+TQ=100, Sync_Seg=1, Prop_Seg=13, Phase_Seg1=4, Phase_Seg2=2, SJW=1
+
+is also 500 kbit/s : 100ns*(1+13+4+2) = 2 us, sampling point 100%*(18/20) = 90% .
+
+Such a bit rate however cannot be supported by SJA1000 clocked with 16Mhz. The smallest supported TQ in this case is 125 ns.
+
+That is why the idea of providing the bit rate additionally to desired bit timings is a good idea (additionally to the reasons provided by Marc in his RFC setting baudrate).
+
+struct can_bitrate {
+	u32 bitrate; /* bit rate in bit per second */
+	enum CAN_BITTIMINGS_TYPE bittime_type;
+	union {
+		struct can_bittime_std std;
+		u8 hw[12];
+	} btr;
+};
+
+enum CAN_BITTIMINGS_TYPE {
+	CAN_BITRATE_STD, /* use */
+	CAN_BITRATE_HW
+};
+
+The driver will at first try to configure desired bit timings and in case it is not possible, own bit timings may be calculated from the bitrate.
+
+bittime_type allows also providing of bittiming in some HW specific way, 12 bytes seems for me to be enougth for any type of HW.
+
+I am looking forward for your comments,
+
+Vladislav
+
+--------------------------------------------
+
+Mit freundlichen Gr&#252;&#223;en / Kind regards,
+Dipl.-Ing. Vladislav Gribov MSc
+Development
+--------------------------------------------
+IXXAT Automation GmbH
+Leibnizstr. 15, 88250 Weingarten, Germany
+Phone  +49-751-56146-0
+Direct +49-751-56146-162
+Fax    +49-751-56146-29
+mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A>
+<A HREF="http://www.ixxat.de">http://www.ixxat.de</A>
+--------------------------------------------
+PRIVILEGED AND CONFIDENTIAL.
+Any unauthorized use or disclosure
+is strictly prohibited.
+--------------------------------------------
+Sitz der Gesellschaft: Weingarten
+Handelsregister Ulm HRB 551905
+Gesch&#228;ftsf&#252;hrer:
+Christian Schlegel, Sieglinde Etschberger
+--------------------------------------------
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000688.html">[RFC] setting baudrate
+</A></li>
+	<LI>Next message: <A HREF="000689.html">[RFC] setting baudrate
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#687">[ date ]</a>
+              <a href="thread.html#687">[ thread ]</a>
+              <a href="subject.html#687">[ subject ]</a>
+              <a href="author.html#687">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

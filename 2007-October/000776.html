@@ -1,0 +1,227 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Review comments to AT91 CAN driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Review%20comments%20to%20AT91%20CAN%20driver&In-Reply-To=%3C20071021090421.GB746%40uranus.ravnborg.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000775.html">
+   <LINK REL="Next"  HREF="000778.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Review comments to AT91 CAN driver</H1>
+    <B>Sam Ravnborg</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Review%20comments%20to%20AT91%20CAN%20driver&In-Reply-To=%3C20071021090421.GB746%40uranus.ravnborg.org%3E"
+       TITLE="Review comments to AT91 CAN driver">sam at ravnborg.org
+       </A><BR>
+    <I>Sun Oct 21 11:04:21 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000775.html">mcp251x driver for review
+</A></li>
+        <LI>Next message: <A HREF="000778.html">Review comments to AT91 CAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#776">[ date ]</a>
+              <a href="thread.html#776">[ thread ]</a>
+              <a href="subject.html#776">[ subject ]</a>
+              <a href="author.html#776">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Hans-J&#252;rgen.
+
+I have a few comments to the recently posted AT91 CAN driver.
+As I just joined the ML you get this non-thread post.
+
+
+In geneal it look good and I have only some specific comments.
+
+	Sam
+
+
+[PATCH 1/2]
+
+Index: linux-2.6.23-rc/include/asm/arch/board.h
+===================================================================
+--- linux-2.6.23-rc.orig/include/asm/arch/board.h	2007-10-18 12:53:48.000000000 +0200
++++ linux-2.6.23-rc/include/asm/arch/board.h	2007-10-18 12:54:59.000000000 +0200
+@@ -125,6 +125,12 @@
+ };
+ extern void __init at91_add_device_ac97(struct atmel_ac97_data *data);
+ 
++/* CAN */
++struct at91_can_data {
++	void (*transceiver_enable)(int enable);
++};
++extern void __init at91_add_device_can(struct at91_can_data *data);
++
+
+You are diffing the wrong file - it should have been:
+include/asm-arm/arch-at91/board.h
+
+Otherwise it looks good - it follows the style of the rest of the arm stuff.
+
+[PATCH 2/2]
+struct can_priv {
+	...
+	struct sk_buff		*loop_skb[8];
+};
+Where did the 'magic' 8 come from. A define or a comment please.
+
+#define STATE_UNINITIALIZED	0
+#define STATE_PROBE		1
+#define STATE_ACTIVE		2
+#define STATE_ERROR_ACTIVE	3
+#define STATE_ERROR_PASSIVE	4
+#define STATE_BUS_OFF		5
+#define STATE_RESET_MODE	6
+Make that an enum - this will ease debugging.
+
+
+void can_proc_create(const char *drv_name);
+void can_proc_remove(const char *drv_name);
+
+These prototypes are not defined in this patch - can be deleted.
+
+++ linux-2.6.23-rc/drivers/net/can/at91/Makefile	2007-10-18 12:58:19.000000000 +0200
+@@ -0,0 +1,5 @@
+#
+# Makefile for AT91 SoC CAN controllers
+#
+
+obj-$(CONFIG_CAN_AT91) += at91_can.o
+
+There is no reason to create a directory for a signle file driver.
+Keep them in the drivers/net/can/ directory.
+This is usual linux style.
+
+/* We can never have more than one CAN controller */
+struct net_device *can_dev;
+
+This declaration should be static.
+
+#ifdef CONFIG_CAN_DEBUG_DEVICES
+static void can_dbg(int log_level, const char *fmt, ...)
+{
+	va_list args;
+	char dbg_buf[80];
+
+	if (debug &gt;= log_level) {
+		snprintf(dbg_buf, 79, &quot;CAN: %s&quot;, fmt);
+		va_start(args, fmt);
+		vprintk(dbg_buf, args);
+		va_end(args);
+	}
+}
+#else
+static void can_dbg(int log_level, ...) {}
+#endif
+
+Can we replace this opencoded stuff with dev_* from device.h?
+This will result in more readable printouts and you will not violate
+the prinkk semantics. And it is standard.
+
+/*
+ * calculate baud rate register values
+ * @baud:	Desired baud rate in Hz
+ * @clock:	MCK clock in Hz
+ */
+static int set_baud(struct net_device *dev, int baud, int clock)
+{
+
+This could follow Documentation/kernel-doc-nano-HOWTO.txt
+But as this is an internal function no big need.
+
+	while (1) {
+		brp = (u32)clock/(time_quanta * (u32)baud) - 1;
+		if (brp &lt; 50) break;
+
+In the if above put the break on next line (properly indented)
+
+at91_can_read() always uses dev-&gt;base_addr so I suggest you create an inline function
+at91_can_read(dev, addr)
+
+Then typical usage is:
+at_91_can_read(dev, CAN_MR);
+
+Same goes for at91_can_write.
+
+As an added bonus you get a little bit better type safety.
+
+
+	set_mailbox_mode(dev, 7, MB_MODE_RX_OVRWR);
+
+It would be nice with a define for mailbox 7 that you use
+as last mailbox in several places.
+
+	if (mb &lt; 0)
+		return 0; /* Should never happen... */
+
+Agree - but please print out something now you trap this impossible case.
+
+
+static void read_mailbox(struct net_device *dev, int mb, struct can_frame *cf)
+{
+	u32 can_msr, can_mid, can_mdl, can_mdh;
+	int i;
+
+	can_mid = at91_can_read(dev-&gt;base_addr + CAN_MID(mb));
+	if (can_mid &amp; CAN_MID_MIDE)
+		cf-&gt;can_id = (can_mid &amp; 0x0003FFFF) | CAN_EFF_FLAG;
+	else
+		cf-&gt;can_id = ((can_mid &amp; 0x1FFC0000) &gt;&gt; 18);
+
+	can_msr = at91_can_read(dev-&gt;base_addr + CAN_MSR(mb));
+	cf-&gt;can_dlc = ((can_msr &amp; 0x000F0000) &gt;&gt; 16);
+	if (can_msr &amp; CAN_MSR_MRTR)
+		cf-&gt;can_id |= CAN_RTR_FLAG;
+
+	can_mdl = at91_can_read(dev-&gt;base_addr + CAN_MDL(mb));
+	can_mdh = at91_can_read(dev-&gt;base_addr + CAN_MDH(mb));
+
+	for (i = 0; i &lt; 4; i++) {
+		cf-&gt;data[i] = can_mdl &amp; 0x000000FF;
+		cf-&gt;data[i+4] = can_mdh &amp; 0x000000FF;
+		can_mdl = can_mdl &gt;&gt; 8;
+		can_mdh = can_mdh &gt;&gt; 8;
+	}
+
+	/* reenable mailbox */
+	set_mailbox_mode(dev, mb, MB_MODE_RX);
+
+But if this is mailbox 7 you should set it to OVRWR?
+
+
+I did not see any locking in the interrupt pats - is it not needed?
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000775.html">mcp251x driver for review
+</A></li>
+	<LI>Next message: <A HREF="000778.html">Review comments to AT91 CAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#776">[ date ]</a>
+              <a href="thread.html#776">[ thread ]</a>
+              <a href="subject.html#776">[ subject ]</a>
+              <a href="author.html#776">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

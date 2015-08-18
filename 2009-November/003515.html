@@ -1,0 +1,128 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> mcp251x v2
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%20v2&In-Reply-To=%3Ccabda6420911162345v77fd6cf6rf1326480bd89480%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003524.html">
+   <LINK REL="Next"  HREF="003517.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>mcp251x v2</H1>
+    <B>christian pellegrin</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%20v2&In-Reply-To=%3Ccabda6420911162345v77fd6cf6rf1326480bd89480%40mail.gmail.com%3E"
+       TITLE="mcp251x v2">chripell at gmail.com
+       </A><BR>
+    <I>Tue Nov 17 08:45:04 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003524.html">mcp251x v2
+</A></li>
+        <LI>Next message: <A HREF="003517.html">mcp251x v2
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3515">[ date ]</a>
+              <a href="thread.html#3515">[ thread ]</a>
+              <a href="subject.html#3515">[ subject ]</a>
+              <a href="author.html#3515">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I'm afraid that this patch isn't going to work: normally the mcp251x
+is kept in sleep mode to reduce power consumption. In a comment to my
+patch  you said that mcp251x_do_set_bittiming is called only from
+open_candev. This is important to make sure that mcp2515 is in setup
+mode. For this reason  mcp251x_setup is always called after
+mcp251x_hw_reset and before  mcp251x_set_normal_mode. The code is
+mcp251x_do_set_bittiming can be made more context-free with the patch
+I'm attaching that explicitly puts the mcp251x in configuration mode
+for setting bit timings and then restores the old mode.
+
+
+
+On Mon, Nov 16, 2009 at 10:50 PM, Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt; wrote:
+&gt;<i> ---
+</I>&gt;<i> &#160;drivers/net/can/mcp251x.c | &#160; 12 ++++++------
+</I>&gt;<i> &#160;1 file changed, 6 insertions(+), 6 deletions(-)
+</I>&gt;<i>
+</I>&gt;<i> Index: net-next-2.6/drivers/net/can/mcp251x.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- net-next-2.6.orig/drivers/net/can/mcp251x.c
+</I>&gt;<i> +++ net-next-2.6/drivers/net/can/mcp251x.c
+</I>&gt;<i> @@ -596,12 +596,6 @@ static int mcp251x_setup(struct net_devi
+</I>&gt;<i> &#160;{
+</I>&gt;<i> &#160; &#160; &#160; &#160;int ret;
+</I>&gt;<i>
+</I>&gt;<i> - &#160; &#160; &#160; ret = open_candev(net);
+</I>&gt;<i> - &#160; &#160; &#160; if (ret) {
+</I>&gt;<i> - &#160; &#160; &#160; &#160; &#160; &#160; &#160; dev_err(&amp;spi-&gt;dev, &quot;unable to set initial baudrate!\n&quot;);
+</I>&gt;<i> - &#160; &#160; &#160; &#160; &#160; &#160; &#160; return ret;
+</I>&gt;<i> - &#160; &#160; &#160; }
+</I>&gt;<i> -
+</I>&gt;<i> &#160; &#160; &#160; &#160;/* Enable RX0-&gt;RX1 buffer roll over and disable filters */
+</I>&gt;<i> &#160; &#160; &#160; &#160;mcp251x_write_bits(spi, RXBCTRL(0),
+</I>&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; RXBCTRL_BUKT | RXBCTRL_RXM0 | RXBCTRL_RXM1,
+</I>&gt;<i> @@ -671,6 +665,12 @@ static int mcp251x_open(struct net_devic
+</I>&gt;<i> &#160; &#160; &#160; &#160;struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
+</I>&gt;<i> &#160; &#160; &#160; &#160;int ret;
+</I>&gt;<i>
+</I>&gt;<i> + &#160; &#160; &#160; ret = open_candev(net);
+</I>&gt;<i> + &#160; &#160; &#160; if (ret) {
+</I>&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; dev_err(&amp;spi-&gt;dev, &quot;unable to set initial baudrate!\n&quot;);
+</I>&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; return ret;
+</I>&gt;<i> + &#160; &#160; &#160; }
+</I>&gt;<i> +
+</I>&gt;<i> &#160; &#160; &#160; &#160;if (pdata-&gt;transceiver_enable)
+</I>&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;pdata-&gt;transceiver_enable(1);
+</I>&gt;<i>
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> Socketcan-core mailing list
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>&gt;<i>
+</I>
+
+
+-- 
+Christian Pellegrin, see <A HREF="http://www.evolware.org/chri/">http://www.evolware.org/chri/</A>
+&quot;Real Programmers don't play tennis, or any other sport which requires
+you to change clothes. Mountain climbing is OK, and Real Programmers
+wear their climbing boots to work in case a mountain should suddenly
+spring up in the middle of the computer room.&quot;
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: mcp-confmode
+Type: application/octet-stream
+Size: 899 bytes
+Desc: not available
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20091117/2a791edd/attachment.obj">https://lists.berlios.de/pipermail/socketcan-core/attachments/20091117/2a791edd/attachment.obj</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003524.html">mcp251x v2
+</A></li>
+	<LI>Next message: <A HREF="003517.html">mcp251x v2
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3515">[ date ]</a>
+              <a href="thread.html#3515">[ thread ]</a>
+              <a href="subject.html#3515">[ subject ]</a>
+              <a href="author.html#3515">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

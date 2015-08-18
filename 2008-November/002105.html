@@ -1,0 +1,182 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> REC and TEC
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20REC%20and%20TEC&In-Reply-To=%3C49245562.1080400%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002104.html">
+   <LINK REL="Next"  HREF="002108.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>REC and TEC</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20REC%20and%20TEC&In-Reply-To=%3C49245562.1080400%40grandegger.com%3E"
+       TITLE="REC and TEC">wg at grandegger.com
+       </A><BR>
+    <I>Wed Nov 19 19:05:22 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002104.html">REC and TEC
+</A></li>
+        <LI>Next message: <A HREF="002108.html">REC and TEC
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2105">[ date ]</a>
+              <a href="thread.html#2105">[ thread ]</a>
+              <a href="subject.html#2105">[ subject ]</a>
+              <a href="author.html#2105">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Claudio Lanconelli wrote:
+&gt;<i> christian pellegrin ha scritto:
+</I>&gt;&gt;<i> On Wed, Nov 19, 2008 at 2:58 PM, Claudio Lanconelli
+</I>&gt;&gt;<i> &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">lanconelli.claudio at eptar.com</A>&gt; wrote:
+</I>&gt;&gt;&gt;&gt;<i> For what CAN controller? Is the above reporting not enough?
+</I>&gt;&gt;&gt;<i> MCP2515
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I'll try to add REC and TEC in data[5] and data[6] of error frames.
+</I>&gt;&gt;&gt;<i> If I understand well data[5..7] are free for any additional controller
+</I>&gt;&gt;&gt;<i> specific information.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;<i> Hi,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> MCP251x driver should already generate an error frame if
+</I>&gt;&gt;<i> warning/passive/buss-off conditions are triggered (each of these
+</I>&gt;&gt;<i> corresponds to an increasing number of REC/TECs). So if you see an
+</I>&gt;&gt;<i> error frame you know that a given number of errors has happened (you
+</I>&gt;&gt;<i> can look-up for the number in the data-sheet). I think that the best
+</I>&gt;&gt;<i> way for having access to these counters is with an entry somewhere in
+</I>&gt;&gt;<i> sysfs or procfs. Otherwise you have to poll the registers in kernel
+</I>&gt;&gt;<i> space and send the error frame from that polling routine.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Hi Christian,
+</I>&gt;<i> in my current implementation (not using socketcan, but a previous driver
+</I>&gt;<i> with linux 2.6.19) I enabled MERR interrupt and read REC and TEC in
+</I>&gt;<i> the interrupt handler, then report the maximum value via sysfs.
+</I>&gt;<i> Now I need to port the application to Linux 2.6.27 + socketcan, so
+</I>&gt;<i> I'm considering a way to implement the same functionality, possibly
+</I>&gt;<i> compatible with the official socketcan layer.
+</I>
+Looks similar to the bus errors on the SJA1000.
+
+&gt;<i> Some code snippets from my current code:
+</I>&gt;<i> 
+</I>&gt;<i> interrupt handler:
+</I>&gt;<i> ------------------------
+</I>&gt;<i> 		if ( (intf &amp; CANINTF_MERRF) )
+</I>&gt;<i> 		{
+</I>&gt;<i> 			uint8_t txbnctrl;
+</I>&gt;<i> 			int local_rec = mcp251x_read_reg(spi, REC);
+</I>&gt;<i> 			int local_tec = mcp251x_read_reg(spi, TEC);
+</I>&gt;<i> 
+</I>&gt;<i> 			/* if there are no pending Tx buffers, restart queue */
+</I>&gt;<i> 			txbnctrl = mcp251x_read_reg(spi, TXBCTRL(chip-&gt;tx_idx));
+</I>&gt;<i> 
+</I>&gt;<i> 			if( local_tec &gt; can_tec )
+</I>&gt;<i> 				can_tec = local_tec;
+</I>&gt;<i> 
+</I>&gt;<i> 			if( local_rec &gt; can_rec )
+</I>&gt;<i> 				can_rec = local_rec;
+</I>&gt;<i> 
+</I>&gt;<i> 			if ( (txbnctrl &amp; TXBCTRL_TXREQ) == 0 )
+</I>&gt;<i> 				netif_wake_queue(&amp;chip-&gt;can-&gt;ndev);
+</I>&gt;<i> 			mcp251x_write_bits(spi, CANINTF, CANINTF_MERRF, 0x00);
+</I>&gt;<i> 		}
+</I>&gt;<i> 
+</I>&gt;<i> ---------------------
+</I>&gt;<i> 
+</I>&gt;<i> static int mcp251x_get_tec(struct can_device *can)
+</I>&gt;<i> {
+</I>&gt;<i> 	struct spi_device *spi = to_spi_device(can-&gt;cdev.dev);
+</I>&gt;<i> 	int retval;
+</I>&gt;<i> 	int local_tec = mcp251x_read_reg(spi, TEC);
+</I>&gt;<i> 	if( local_tec &gt; can_tec )
+</I>&gt;<i> 		can_tec = local_tec;
+</I>&gt;<i> 	retval = can_tec;
+</I>&gt;<i> 	can_tec = 0;
+</I>&gt;<i> 	return retval;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> static int mcp251x_get_rec(struct can_device *can)
+</I>&gt;<i> {
+</I>&gt;<i> 	struct spi_device *spi = to_spi_device(can-&gt;cdev.dev);
+</I>&gt;<i> 	int retval;
+</I>&gt;<i> 	int local_rec;
+</I>&gt;<i> 
+</I>&gt;<i> 	local_rec = mcp251x_read_reg(spi, REC);
+</I>&gt;<i> 	if( local_rec &gt; can_rec )
+</I>&gt;<i> 		can_rec = local_rec;
+</I>&gt;<i> 	retval = can_rec;
+</I>&gt;<i> 	can_rec = 0;
+</I>&gt;<i> 	return retval;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> -------------------
+</I>&gt;<i> 
+</I>&gt;<i> ssize_t can_tec_show(struct class_device *cdev, char *buf)
+</I>&gt;<i> {
+</I>&gt;<i> 	struct can_device *can = to_can_device(cdev);
+</I>&gt;<i> 	if (can-&gt;get_tx_error_counter)
+</I>&gt;<i> 		return sprintf(buf, &quot;%d\n&quot;, can-&gt;get_tx_error_counter(can));
+</I>&gt;<i> 	else
+</I>&gt;<i> 	{
+</I>&gt;<i> 		*buf = '\0';
+</I>&gt;<i> 		return 0;
+</I>&gt;<i> 	}
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> ssize_t can_rec_show(struct class_device *cdev, char *buf)
+</I>&gt;<i> {
+</I>&gt;<i> 	struct can_device *can = to_can_device(cdev);
+</I>&gt;<i> 	if (can-&gt;get_rx_error_counter)
+</I>&gt;<i> 		return sprintf(buf, &quot;%d\n&quot;, can-&gt;get_rx_error_counter(can));
+</I>&gt;<i> 	else
+</I>&gt;<i> 	{
+</I>&gt;<i> 		*buf = '\0';
+</I>&gt;<i> 		return 0;
+</I>&gt;<i> 	}
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> CLASS_DEVICE_ATTR(tec, 0444, can_tec_show, NULL);
+</I>&gt;<i> CLASS_DEVICE_ATTR(rec, 0444, can_rec_show, NULL);
+</I>
+I'm against exporting these values via SYSFS because the availability is
+hardware dependent. Please implement bus error messages like for the
+SJA1000, which might include the TXERR and RXERR counters.
+
+But be warned. Using TXERR and RXESS is *not* portable!!!
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002104.html">REC and TEC
+</A></li>
+	<LI>Next message: <A HREF="002108.html">REC and TEC
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2105">[ date ]</a>
+              <a href="thread.html#2105">[ thread ]</a>
+              <a href="subject.html#2105">[ subject ]</a>
+              <a href="author.html#2105">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

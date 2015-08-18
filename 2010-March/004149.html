@@ -1,0 +1,210 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> struct sockaddr_can for j1939
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-March/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20100301095406.GA338%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="004150.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>struct sockaddr_can for j1939</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20100301095406.GA338%40e-circ.dyndns.org%3E"
+       TITLE="struct sockaddr_can for j1939">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Mon Mar  1 10:54:06 CET 2010</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="004150.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4149">[ date ]</a>
+              <a href="thread.html#4149">[ thread ]</a>
+              <a href="subject.html#4149">[ subject ]</a>
+              <a href="author.html#4149">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Sat, Feb 27, 2010 at 07:26:46PM +0100, Oliver Hartkopp wrote:
+
+&gt;<i> I just wanted to say, that from the protocols view it is not relevant whether
+</I>&gt;<i> &gt;&gt; Is the socket collapsing after sending a socket error?
+</I>&gt;<i> &gt; collapsing? I don't understand the word.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> E.g. some sockets are set in an unusable state, when an error occurred on it's
+</I>&gt;<i> specific transport protocol.
+</I>&gt;<i> 
+</I>&gt;<i> E.g. the userspace app get's a socket error on a socket (e.g. -ETIMEO(ut)) and
+</I>&gt;<i> then you need to close this socket and create a new one, if you still want to
+</I>&gt;<i> communicate ...
+</I>&gt;<i> 
+</I>non-collapsing.
+[...]
+&gt;<i> 
+</I>&gt;<i> Thanks for all you explanation. Indeed the 64 bit 'name' seems to be a vital
+</I>No problem. It forced me to rethink the API too :-). So, thank you.
+&gt;<i> knowledge to ensure a proper dynamic address handling (&amp; recovery).
+</I>&gt;<i> 
+</I>&gt;<i> Btw. dynamic addressing is not an *essential* functionality for all J1939
+</I>&gt;<i> applications, that only like to communicate using J1939 protocols, right?
+</I>Ack.
+&gt;<i> 
+</I>&gt;<i> Having
+</I>&gt;<i> 
+</I>&gt;<i>       struct {
+</I>&gt;<i>          uint8_t sa, da;
+</I>&gt;<i>          uint8_t priority;
+</I>&gt;<i>          uint32_t pgn;
+</I>&gt;<i>       } j1939;
+</I>1. during this discussion, I learned that combining source &amp; destination
+   in 1 sockaddr is bad. I turned my code into a seperate source &amp;
+   destination, with only PGN duplicated. It avoids some other confusion,
+   like which fields are used/filled out in: bind(), connect(),
+   recvfrom(), sendto()
+2. To know the exact destination address of an incoming message, I added
+   a sockopt to add the original destination sockaddr into a cmsg.
+   so, a recvfrom(), you must suppose you're a receiver, but don't know
+   if it were a broadcast or not. with recvmsg(), you can find out.
+3. Since priority is an option, I turned that into a sockopt
+   (potentially reusing the existing SO_PRIORITY option). for receiving,
+   the priority is only usefull in debugging, and I put it into a cmsg
+   entry in recvmsg().
+(1), (2) &amp; (3) lead to
+   struct {
+      uint8_t addr;
+      uint32_t pgn;
+   } j1939;
+which is very clean.
+I know most j1939 users will ask where the DA has gone, but existing
+socket API's have different structs for source &amp; destination.
+
+To come to this stripped version, a few cmsg entries are added to allow
+debugging tools get all information, but those entries are IMO not used
+in everyday communication.
+Some socketoptions will be used in everyday applications, but that does
+not make the code (using a j1939 socket) much more complex.
+
+&gt;<i> 
+</I>&gt;<i> and
+</I>&gt;<i> 
+</I>&gt;<i>       uint64_t name;
+</I>&gt;<i> 
+</I>&gt;<i> in /one/ structure IMO could lead to confusion and therefore to potential
+</I>&gt;<i> misusage.
+</I>would 
+struct sockaddr_can {
+   union {
+      struct {
+         uint8_t addr;
+         uint32_t pgn;
+      } j1939;
+      struct {
+         uint8_t addr;
+         uint32_t pgn;
+         uint64_t name;
+      } j1939_dyn;
+   } can_addr;
+};
+make things better then? IMO not.
+
+when the 8byte name is added to the sockaddr, like 
+   struct {
+      uint64_t name;
+      uint8_t addr;
+      uint32_t pgn;
+   } j1939;
+   I doubt there would be confusion.
+   leaving the name empty (0) would ignore dynamic addressing, having the name
+   non-empty would disable the addr (for transmissions).
+   For receiving, the name would be filled out when available, the addr
+   would be filled out always.
+
+The possible misusage I can imagine is that the name is set to something
+(non-empty) when a statis SA was meant, so an error would probably
+occur indicating the 8byte name is not known in the system.
+It's like stuffing a sockaddr_in with random values. You won't get the
+result you expected, but the stack (in the j1939 case) is able to report clean errors.
+This latter is IMHO a crucial part of a good API, since people make
+mistakes anywhere.
+If name is required to be 0, that not a real obstacle, IMO. having the
+addr defaulting to 0xff is more obstacle.
+
+&gt;<i> 
+</I>&gt;<i> I would suggest to have the shown j1939 struct in sockaddr_can to handle the
+</I>&gt;<i> J1939 communication without dynamic addressing.
+</I>IMO, my replacement (without da &amp; priority) matches better the original socket API
+in the way that source &amp; destination are seperated ...
+&gt;<i> 
+</I>&gt;<i> By setting the uint64_t name with a socketoption the behaviour of the selected
+</I>&gt;<i> socket changes in the way that ...
+</I>&gt;<i> 
+</I>&gt;<i> - the source address (sa) is set dynamically depending on the name
+</I>When this 8byte name is stripped from the sockaddr,
+this would work as sender (definitely), but would not work as good for receiving.
+An extra cmsg would work, but I doubt such API (for standard
+usage) is a good API.
+When one would move from static to dynamic addressing,  that means one is forced
+to use recvmsg() over recv() &amp; recvfrom(), which looks to me as a way too big constraint
+(read: being forced is a big constraint).
+given the small step you're taking. IMO, this proves the API being rude
+to users of dynamic addressed busses.
+
+&gt;<i> - the sockets data structures are updated according the dynamic addressing
+</I>&gt;<i> - any other things that differ when using the J1939 name
+</I>Filtering on a dynamic bus, would not base on SA, but
+on 8byte name. As such, the 8byte name is used all over the API _but_
+the sockaddr, which sounds strange to me.
+&gt;<i> 
+</I>&gt;<i> Would this work for you?
+</I>I'm glad you started the discussion on the API, you made me clean it up.
+Now I've come the the smallest version (still bigger that current
+      sockaddr_can).
+
+I do understand that my proposition extends the original sockaddr_can.
+This would not be the first time it changes.
+My original patch (starting this thread) solves the problems related with extending it.
+
+Up to now, I've only had some well crafted C programs.
+Some time in the future, I would have some reallife j1939 (dynamically
+      addressed) example, or a Documentation/j1939.txt, to demonstrate
+the API, and the need to have the 8byte name in sockaddr_can.
+
+&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>&gt;<i> 
+</I>Regards,
+Kurt
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="004150.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4149">[ date ]</a>
+              <a href="thread.html#4149">[ thread ]</a>
+              <a href="subject.html#4149">[ subject ]</a>
+              <a href="author.html#4149">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

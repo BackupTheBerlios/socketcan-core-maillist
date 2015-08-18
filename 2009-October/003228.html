@@ -1,0 +1,486 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2] can: provide library functions for skb allocation
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20can%3A%20provide%20library%20functions%20for%20skb%20allocation&In-Reply-To=%3C4ACB961A.4030300%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003320.html">
+   <LINK REL="Next"  HREF="003230.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2] can: provide library functions for skb allocation</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20can%3A%20provide%20library%20functions%20for%20skb%20allocation&In-Reply-To=%3C4ACB961A.4030300%40grandegger.com%3E"
+       TITLE="[PATCH v2] can: provide library functions for skb allocation">wg at grandegger.com
+       </A><BR>
+    <I>Tue Oct  6 21:10:18 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003320.html">[PATCH] can: provide library functions for skb allocation
+</A></li>
+        <LI>Next message: <A HREF="003230.html">[PATCH v2] can: provide library functions for skb allocation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3228">[ date ]</a>
+              <a href="thread.html#3228">[ thread ]</a>
+              <a href="subject.html#3228">[ subject ]</a>
+              <a href="author.html#3228">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch makes the private functions alloc_can_skb() and
+alloc_can_err_skb() of the at91_can driver public and adapts all
+drivers to use these. While making the patch I realized, that
+the skb's are *not* setup consistently. The skb's are now setup
+as shown:
+
+	skb-&gt;protocol = __constant_htons(ETH_P_CAN);
+	skb-&gt;pkt_type = PACKET_BROADCAST;
+	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+	*cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+	memset(*cf, 0, sizeof(struct can_frame));
+
+The frame is zero'ed out to avoid uninitialized data to be passed
+to user space.
+
+Some drivers or library code used &quot;htons(ETH_P_CAN)&quot; or did not set
+&quot;pkt_type&quot; or &quot;ip_summed&quot; or did not zero the fame.
+
+Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+ kernel/2.6/drivers/net/can/at91_can.c             |   32 ----------------
+ kernel/2.6/drivers/net/can/cc770/cc770.c          |   13 +-----
+ kernel/2.6/drivers/net/can/dev.c                  |   44 ++++++++++++++++++----
+ kernel/2.6/drivers/net/can/esd_pci331.c           |   16 +-------
+ kernel/2.6/drivers/net/can/mcp251x.c              |   20 +---------
+ kernel/2.6/drivers/net/can/mscan/mscan.c          |    8 ----
+ kernel/2.6/drivers/net/can/sja1000/sja1000.c      |   12 +-----
+ kernel/2.6/drivers/net/can/softing/softing_main.c |    8 +---
+ kernel/2.6/drivers/net/can/usb/ems_usb.c          |   16 +-------
+ kernel/2.6/include/socketcan/can/dev.h            |    4 ++
+ 10 files changed, 55 insertions(+), 118 deletions(-)
+
+Index: trunk/kernel/2.6/drivers/net/can/dev.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/dev.c
++++ trunk/kernel/2.6/drivers/net/can/dev.c
+@@ -318,7 +318,7 @@ void can_put_echo_skb(struct sk_buff *sk
+ 		skb-&gt;sk = srcsk;
+ 
+ 		/* make settings for echo to reduce code in irq context */
+-		skb-&gt;protocol = htons(ETH_P_CAN);
++		skb-&gt;protocol = __constant_htons(ETH_P_CAN);
+ 		skb-&gt;pkt_type = PACKET_BROADCAST;
+ 		skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+ 		skb-&gt;dev = dev;
+@@ -397,17 +397,12 @@ void can_restart(unsigned long data)
+ 	can_flush_echo_skb(dev);
+ 
+ 	/* send restart message upstream */
+-	skb = dev_alloc_skb(sizeof(struct can_frame));
++	skb = alloc_can_err_skb(dev, &amp;cf);
+ 	if (skb == NULL) {
+ 		err = -ENOMEM;
+ 		goto restart;
+ 	}
+-	skb-&gt;dev = dev;
+-	skb-&gt;protocol = htons(ETH_P_CAN);
+-	cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+-	memset(cf, 0, sizeof(struct can_frame));
+-	cf-&gt;can_id = CAN_ERR_FLAG | CAN_ERR_RESTARTED;
+-	cf-&gt;can_dlc = CAN_ERR_DLC;
++	cf-&gt;can_id |= CAN_ERR_RESTARTED;
+ 
+ 	netif_rx(skb);
+ 
+@@ -496,6 +491,39 @@ static void can_setup(struct net_device 
+ #endif
+ }
+ 
++struct sk_buff *alloc_can_skb(struct net_device *dev, struct can_frame **cf)
++{
++	struct sk_buff *skb;
++
++	skb = netdev_alloc_skb(dev, sizeof(struct can_frame));
++	if (unlikely(!skb))
++		return NULL;
++
++	skb-&gt;protocol = __constant_htons(ETH_P_CAN);
++	skb-&gt;pkt_type = PACKET_BROADCAST;
++	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
++	*cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
++	memset(*cf, 0, sizeof(struct can_frame));
++
++	return skb;
++}
++EXPORT_SYMBOL_GPL(alloc_can_skb);
++
++struct sk_buff *alloc_can_err_skb(struct net_device *dev, struct can_frame **cf)
++{
++	struct sk_buff *skb;
++
++	skb = alloc_can_skb(dev, cf);
++	if (unlikely(!skb))
++		return NULL;
++
++	(*cf)-&gt;can_id = CAN_ERR_FLAG;
++	(*cf)-&gt;can_dlc = CAN_ERR_DLC;
++
++	return skb;
++}
++EXPORT_SYMBOL_GPL(alloc_can_err_skb);
++
+ /*
+  * Allocate and setup space for the CAN network device
+  */
+Index: trunk/kernel/2.6/drivers/net/can/at91_can.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/at91_can.c
++++ trunk/kernel/2.6/drivers/net/can/at91_can.c
+@@ -221,38 +221,6 @@ static inline void set_mb_mode(const str
+ 	set_mb_mode_prio(priv, mb, mode, 0);
+ }
+ 
+-static struct sk_buff *alloc_can_skb(struct net_device *dev,
+-		struct can_frame **cf)
+-{
+-	struct sk_buff *skb;
+-
+-	skb = netdev_alloc_skb(dev, sizeof(struct can_frame));
+-	if (unlikely(!skb))
+-		return NULL;
+-
+-	skb-&gt;protocol = htons(ETH_P_CAN);
+-	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+-	*cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+-
+-	return skb;
+-}
+-
+-static struct sk_buff *alloc_can_err_skb(struct net_device *dev,
+-		struct can_frame **cf)
+-{
+-	struct sk_buff *skb;
+-
+-	skb = alloc_can_skb(dev, cf);
+-	if (unlikely(!skb))
+-		return NULL;
+-
+-	memset(*cf, 0, sizeof(struct can_frame));
+-	(*cf)-&gt;can_id = CAN_ERR_FLAG;
+-	(*cf)-&gt;can_dlc = CAN_ERR_DLC;
+-
+-	return skb;
+-}
+-
+ /*
+  * Swtich transceiver on or off
+  */
+Index: trunk/kernel/2.6/include/socketcan/can/dev.h
+===================================================================
+--- trunk.orig/kernel/2.6/include/socketcan/can/dev.h
++++ trunk/kernel/2.6/include/socketcan/can/dev.h
+@@ -88,4 +88,8 @@ void can_put_echo_skb(struct sk_buff *sk
+ void can_get_echo_skb(struct net_device *dev, unsigned int idx);
+ void can_free_echo_skb(struct net_device *dev, unsigned int idx);
+ 
++struct sk_buff *alloc_can_skb(struct net_device *dev, struct can_frame **cf);
++struct sk_buff *alloc_can_err_skb(struct net_device *dev,
++				  struct can_frame **cf);
++
+ #endif /* CAN_DEV_H */
+Index: trunk/kernel/2.6/drivers/net/can/cc770/cc770.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/cc770/cc770.c
++++ trunk/kernel/2.6/drivers/net/can/cc770/cc770.c
+@@ -517,13 +517,10 @@ static void cc770_rx(struct net_device *
+ 	u32 id;
+ 	int i;
+ 
+-	skb = dev_alloc_skb(sizeof(struct can_frame));
++	skb = alloc_can_skb(dev, &amp;cf);
+ 	if (skb == NULL)
+ 		return;
+-	skb-&gt;dev = dev;
+-	skb-&gt;protocol = htons(ETH_P_CAN);
+ 
+-	cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+ 	config = cc770_read_reg(priv, msgobj[mo].config);
+ 
+ 	if (ctrl1 &amp; RMTPND_SET) {
+@@ -582,15 +579,9 @@ static int cc770_err(struct net_device *
+ 
+ 	dev_dbg(ND2D(dev), &quot;status interrupt (%#x)\n&quot;, status);
+ 
+-	skb = dev_alloc_skb(sizeof(struct can_frame));
++	skb = alloc_can_err_skb(dev, &amp;cf);
+ 	if (skb == NULL)
+ 		return -ENOMEM;
+-	skb-&gt;dev = dev;
+-	skb-&gt;protocol = htons(ETH_P_CAN);
+-	cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+-	memset(cf, 0, sizeof(struct can_frame));
+-	cf-&gt;can_id = CAN_ERR_FLAG;
+-	cf-&gt;can_dlc = CAN_ERR_DLC;
+ 
+ 	if (status &amp; STAT_BOFF) {
+ 		/* Disable interrupts */
+Index: trunk/kernel/2.6/drivers/net/can/esd_pci331.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/esd_pci331.c
++++ trunk/kernel/2.6/drivers/net/can/esd_pci331.c
+@@ -439,7 +439,7 @@ static int esd331_create_err_frame(struc
+ 	struct can_frame *cf;
+ 	struct sk_buff *skb;
+ 
+-	skb = dev_alloc_skb(sizeof(*cf));
++	skb = alloc_can_err_skb(dev, &amp;cf);
+ 	if (unlikely(skb == NULL))
+ 		return -ENOMEM;
+ 
+@@ -449,13 +449,7 @@ static int esd331_create_err_frame(struc
+ 	stats = &amp;dev-&gt;stats;
+ #endif
+ 
+-	skb-&gt;dev = dev;
+-	skb-&gt;protocol = htons(ETH_P_CAN);
+-	cf = (struct can_frame *)skb_put(skb, sizeof(*cf));
+-	memset(cf, 0, sizeof(*cf));
+-
+-	cf-&gt;can_id = CAN_ERR_FLAG | idflags;
+-	cf-&gt;can_dlc = CAN_ERR_DLC;
++	cf-&gt;can_id |= idflags;
+ 	cf-&gt;data[1] = d1;
+ 
+ 	netif_rx(skb);
+@@ -481,15 +475,11 @@ static void esd331_irq_rx(struct net_dev
+ 	struct sk_buff *skb;
+ 	int i;
+ 
+-	skb = netdev_alloc_skb(dev, sizeof(*cfrm));
++	skb = alloc_can_skb(dev, &amp;cfrm);
+ 	if (unlikely(skb == NULL)) {
+ 		stats-&gt;rx_dropped++;
+ 		return;
+ 	}
+-	skb-&gt;protocol = htons(ETH_P_CAN);
+-
+-	cfrm = (struct can_frame *)skb_put(skb, sizeof(*cfrm));
+-	memset(cfrm, 0, sizeof(*cfrm));
+ 
+ 	if (eff) {
+ 		cfrm-&gt;can_id = (msg-&gt;id &lt;&lt; 16);
+Index: trunk/kernel/2.6/drivers/net/can/mcp251x.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/mcp251x.c
++++ trunk/kernel/2.6/drivers/net/can/mcp251x.c
+@@ -357,15 +357,13 @@ static void mcp251x_hw_rx(struct spi_dev
+ 	struct sk_buff *skb;
+ 	struct can_frame *frame;
+ 
+-	skb = dev_alloc_skb(sizeof(struct can_frame));
++	skb = alloc_can_skb(priv-&gt;net, &amp;frame);
+ 	if (!skb) {
+ 		dev_err(&amp;spi-&gt;dev, &quot;%s: out of memory for Rx'd frame\n&quot;,
+ 			__func__);
+ 		priv-&gt;net-&gt;stats.rx_dropped++;
+ 		return;
+ 	}
+-	skb-&gt;dev = priv-&gt;net;
+-	frame = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+ 
+ 	if (pdata-&gt;model == CAN_MCP251X_MCP2510) {
+ 		int i;
+@@ -457,9 +455,6 @@ static void mcp251x_hw_rx(struct spi_dev
+ 	priv-&gt;net-&gt;stats.rx_packets++;
+ 	priv-&gt;net-&gt;stats.rx_bytes += frame-&gt;can_dlc;
+ 
+-	skb-&gt;protocol = __constant_htons(ETH_P_CAN);
+-	skb-&gt;pkt_type = PACKET_BROADCAST;
+-	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+ 	netif_rx(skb);
+ }
+ 
+@@ -808,19 +803,8 @@ static void mcp251x_irq_work_handler(str
+ 			u8 eflag = mcp251x_read_reg(spi, EFLG);
+ 
+ 			/* create error frame */
+-			skb = dev_alloc_skb(sizeof(struct can_frame));
++			skb = alloc_can_err_skb(net, &amp;frame);
+ 			if (skb) {
+-				frame = (struct can_frame *)
+-					skb_put(skb, sizeof(struct can_frame));
+-				*(unsigned long long *)&amp;frame-&gt;data = 0ULL;
+-				frame-&gt;can_id = CAN_ERR_FLAG;
+-				frame-&gt;can_dlc = CAN_ERR_DLC;
+-
+-				skb-&gt;dev = net;
+-				skb-&gt;protocol = __constant_htons(ETH_P_CAN);
+-				skb-&gt;pkt_type = PACKET_BROADCAST;
+-				skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+-
+ 				/* Set error frame flags based on bus state */
+ 				if (eflag &amp; EFLG_TXBO) {
+ 					frame-&gt;can_id |= CAN_ERR_BUSOFF;
+Index: trunk/kernel/2.6/drivers/net/can/mscan/mscan.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/mscan/mscan.c
++++ trunk/kernel/2.6/drivers/net/can/mscan/mscan.c
+@@ -364,7 +364,7 @@ static int mscan_rx_poll(struct net_devi
+ 	while (npackets &lt; quota &amp;&amp; ((canrflg = in_8(&amp;regs-&gt;canrflg)) &amp;
+ 				    (MSCAN_RXF | MSCAN_ERR_IF))) {
+ 
+-		skb = dev_alloc_skb(sizeof(struct can_frame));
++		skb = alloc_can_skb(dev, &amp;frame);
+ 		if (!skb) {
+ 			if (printk_ratelimit())
+ 				dev_notice(ND2D(dev), &quot;packet dropped\n&quot;);
+@@ -373,9 +373,6 @@ static int mscan_rx_poll(struct net_devi
+ 			continue;
+ 		}
+ 
+-		frame = (struct can_frame *)skb_put(skb, sizeof(*frame));
+-		memset(frame, 0, sizeof(*frame));
+-
+ 		if (canrflg &amp; MSCAN_RXF) {
+ 			can_id = in_be16(&amp;regs-&gt;rx.idr1_0);
+ 			if (can_id &amp; (1 &lt;&lt; 3)) {
+@@ -459,9 +456,6 @@ static int mscan_rx_poll(struct net_devi
+ 		}
+ 
+ 		npackets++;
+-		skb-&gt;dev = dev;
+-		skb-&gt;protocol = __constant_htons(ETH_P_CAN);
+-		skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+ 		netif_receive_skb(skb);
+ 	}
+ 
+Index: trunk/kernel/2.6/drivers/net/can/sja1000/sja1000.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/sja1000/sja1000.c
++++ trunk/kernel/2.6/drivers/net/can/sja1000/sja1000.c
+@@ -308,11 +308,9 @@ static void sja1000_rx(struct net_device
+ 	uint8_t dlc;
+ 	int i;
+ 
+-	skb = dev_alloc_skb(sizeof(struct can_frame));
++	skb = alloc_can_skb(dev, &amp;cf);
+ 	if (skb == NULL)
+ 		return;
+-	skb-&gt;dev = dev;
+-	skb-&gt;protocol = htons(ETH_P_CAN);
+ 
+ 	fi = priv-&gt;read_reg(priv, REG_FI);
+ 	dlc = fi &amp; 0x0F;
+@@ -370,15 +368,9 @@ static int sja1000_err(struct net_device
+ 	enum can_state state = priv-&gt;can.state;
+ 	uint8_t ecc, alc;
+ 
+-	skb = dev_alloc_skb(sizeof(struct can_frame));
++	skb = alloc_can_err_skb(dev, &amp;cf);
+ 	if (skb == NULL)
+ 		return -ENOMEM;
+-	skb-&gt;dev = dev;
+-	skb-&gt;protocol = htons(ETH_P_CAN);
+-	cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+-	memset(cf, 0, sizeof(struct can_frame));
+-	cf-&gt;can_id = CAN_ERR_FLAG;
+-	cf-&gt;can_dlc = CAN_ERR_DLC;
+ 
+ 	if (isrc &amp; IRQ_DOI) {
+ 		/* data overrun interrupt */
+Index: trunk/kernel/2.6/drivers/net/can/softing/softing_main.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/softing/softing_main.c
++++ trunk/kernel/2.6/drivers/net/can/softing/softing_main.c
+@@ -143,16 +143,14 @@ int softing_rx(struct net_device *netdev
+ 	ktime_t ktime)
+ {
+ 	struct sk_buff *skb;
++	struct can_frame *cf;
+ 	int ret;
+ 	struct net_device_stats *stats;
+ 
+-	skb = dev_alloc_skb(sizeof(msg));
++	skb = alloc_can_skb(netdev, &amp;cf);
+ 	if (!skb)
+ 		return -ENOMEM;
+-	skb-&gt;dev = netdev;
+-	skb-&gt;protocol = htons(ETH_P_CAN);
+-	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+-	memcpy(skb_put(skb, sizeof(*msg)), msg, sizeof(*msg));
++	memcpy(cf, msg, sizeof(*msg));
+ 	skb-&gt;tstamp = ktime;
+ 	ret = netif_rx(skb);
+ 	if (ret == NET_RX_DROP) {
+Index: trunk/kernel/2.6/drivers/net/can/usb/ems_usb.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/usb/ems_usb.c
++++ trunk/kernel/2.6/drivers/net/can/usb/ems_usb.c
+@@ -311,14 +311,10 @@ static void ems_usb_rx_can_msg(struct em
+ 	int i;
+ 	struct net_device_stats *stats = &amp;dev-&gt;netdev-&gt;stats;
+ 
+-	skb = netdev_alloc_skb(dev-&gt;netdev, sizeof(struct can_frame));
++	skb = alloc_can_skb(dev-&gt;netdev, &amp;cf);
+ 	if (skb == NULL)
+ 		return;
+ 
+-	skb-&gt;protocol = htons(ETH_P_CAN);
+-
+-	cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+-
+ 	cf-&gt;can_id = msg-&gt;msg.can_msg.id;
+ 	cf-&gt;can_dlc = min_t(u8, msg-&gt;msg.can_msg.length, 8);
+ 
+@@ -349,18 +345,10 @@ static void ems_usb_rx_err(struct ems_us
+ 	struct sk_buff *skb;
+ 	struct net_device_stats *stats = &amp;dev-&gt;netdev-&gt;stats;
+ 
+-	skb = netdev_alloc_skb(dev-&gt;netdev, sizeof(struct can_frame));
++	skb = alloc_can_err_skb(dev-&gt;netdev, &amp;cf);
+ 	if (skb == NULL)
+ 		return;
+ 
+-	skb-&gt;protocol = htons(ETH_P_CAN);
+-
+-	cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+-	memset(cf, 0, sizeof(struct can_frame));
+-
+-	cf-&gt;can_id = CAN_ERR_FLAG;
+-	cf-&gt;can_dlc = CAN_ERR_DLC;
+-
+ 	if (msg-&gt;type == CPC_MSG_TYPE_CAN_STATE) {
+ 		u8 state = msg-&gt;msg.can_state;
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003320.html">[PATCH] can: provide library functions for skb allocation
+</A></li>
+	<LI>Next message: <A HREF="003230.html">[PATCH v2] can: provide library functions for skb allocation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3228">[ date ]</a>
+              <a href="thread.html#3228">[ thread ]</a>
+              <a href="subject.html#3228">[ subject ]</a>
+              <a href="author.html#3228">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,129 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] Introduce can_get_echo_skb_ni() when TX is not in	interrupt
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Introduce%20can_get_echo_skb_ni%28%29%20when%20TX%20is%20not%20in%0A%09interrupt&In-Reply-To=%3C4DD41677.8080905%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005752.html">
+   <LINK REL="Next"  HREF="005754.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] Introduce can_get_echo_skb_ni() when TX is not in	interrupt</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Introduce%20can_get_echo_skb_ni%28%29%20when%20TX%20is%20not%20in%0A%09interrupt&In-Reply-To=%3C4DD41677.8080905%40hartkopp.net%3E"
+       TITLE="[PATCH] Introduce can_get_echo_skb_ni() when TX is not in	interrupt">socketcan at hartkopp.net
+       </A><BR>
+    <I>Wed May 18 20:56:55 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005752.html">[PATCH] Introduce can_get_echo_skb_ni() when TX is not in interrupt
+</A></li>
+        <LI>Next message: <A HREF="005754.html">[PATCH] Introduce can_get_echo_skb_ni() when TX is not in	interrupt
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5753">[ date ]</a>
+              <a href="thread.html#5753">[ thread ]</a>
+              <a href="subject.html#5753">[ subject ]</a>
+              <a href="author.html#5753">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 18.05.2011 10:44, Stefano Babic wrote:
+&gt;<i> Drivers that do not have TX inside an interrupt handler must
+</I>&gt;<i> call this function that replaces netif_rx with netif_rx_ni.
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Stefano Babic &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">sbabic at denx.de</A>&gt;
+</I>&gt;<i> ---
+</I>
+Acked-by: Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan at hartkopp.net</A>&gt;
+
+
+What should be done with this patch now?
+
+1. It could be committed to the SocketCAN SVN on BerliOS
+2. It could be posted on netdev-ml
+
+While '1' is easy to do, i wonder if this function would be added to mainline
+without any user. IMHO the correct way would be to add this patch to the
+mainline tree when you also add the 'user' of this patch - e.g. your SPI-based
+CAN driver, right?
+
+I don't know if it's worth a try to add this function without a consumer ?!?
+
+Regards,
+Oliver
+
+
+
+&gt;<i>  drivers/net/can/dev.c   |   13 +++++++++++++
+</I>&gt;<i>  include/linux/can/dev.h |    1 +
+</I>&gt;<i>  2 files changed, 14 insertions(+), 0 deletions(-)
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/dev.c b/drivers/net/can/dev.c
+</I>&gt;<i> index d0f8c7e..e3e6101 100644
+</I>&gt;<i> --- a/drivers/net/can/dev.c
+</I>&gt;<i> +++ b/drivers/net/can/dev.c
+</I>&gt;<i> @@ -328,6 +328,19 @@ void can_get_echo_skb(struct net_device *dev, unsigned int idx)
+</I>&gt;<i>  }
+</I>&gt;<i>  EXPORT_SYMBOL_GPL(can_get_echo_skb);
+</I>&gt;<i>  
+</I>&gt;<i> +void can_get_echo_skb_ni(struct net_device *dev, unsigned int idx)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct can_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	BUG_ON(idx &gt;= priv-&gt;echo_skb_max);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (priv-&gt;echo_skb[idx]) {
+</I>&gt;<i> +		netif_rx_ni(priv-&gt;echo_skb[idx]);
+</I>&gt;<i> +		priv-&gt;echo_skb[idx] = NULL;
+</I>&gt;<i> +	}
+</I>&gt;<i> +}
+</I>&gt;<i> +EXPORT_SYMBOL_GPL(can_get_echo_skb_ni);
+</I>&gt;<i> +
+</I>&gt;<i>  /*
+</I>&gt;<i>    * Remove the skb from the stack and free it.
+</I>&gt;<i>    *
+</I>&gt;<i> diff --git a/include/linux/can/dev.h b/include/linux/can/dev.h
+</I>&gt;<i> index cc0bb49..5b99f78 100644
+</I>&gt;<i> --- a/include/linux/can/dev.h
+</I>&gt;<i> +++ b/include/linux/can/dev.h
+</I>&gt;<i> @@ -94,6 +94,7 @@ void can_bus_off(struct net_device *dev);
+</I>&gt;<i>  void can_put_echo_skb(struct sk_buff *skb, struct net_device *dev,
+</I>&gt;<i>  		      unsigned int idx);
+</I>&gt;<i>  void can_get_echo_skb(struct net_device *dev, unsigned int idx);
+</I>&gt;<i> +void can_get_echo_skb_ni(struct net_device *dev, unsigned int idx);
+</I>&gt;<i>  void can_free_echo_skb(struct net_device *dev, unsigned int idx);
+</I>&gt;<i>  
+</I>&gt;<i>  struct sk_buff *alloc_can_skb(struct net_device *dev, struct can_frame **cf);
+</I>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005752.html">[PATCH] Introduce can_get_echo_skb_ni() when TX is not in interrupt
+</A></li>
+	<LI>Next message: <A HREF="005754.html">[PATCH] Introduce can_get_echo_skb_ni() when TX is not in	interrupt
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5753">[ date ]</a>
+              <a href="thread.html#5753">[ thread ]</a>
+              <a href="subject.html#5753">[ subject ]</a>
+              <a href="author.html#5753">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

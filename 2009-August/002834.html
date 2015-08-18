@@ -1,0 +1,174 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> MSCAN pacth: order of frames
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20MSCAN%20pacth%3A%20order%20of%20frames&In-Reply-To=%3C131D8B8382DA50479D762FEEFAFC25DB013CB90E%40ixxatw2ks4.ixxat.intranet.priv%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002865.html">
+   <LINK REL="Next"  HREF="002844.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>MSCAN pacth: order of frames</H1>
+    <B>gribov at ixxat.de</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20MSCAN%20pacth%3A%20order%20of%20frames&In-Reply-To=%3C131D8B8382DA50479D762FEEFAFC25DB013CB90E%40ixxatw2ks4.ixxat.intranet.priv%3E"
+       TITLE="MSCAN pacth: order of frames">gribov at ixxat.de
+       </A><BR>
+    <I>Wed Aug  5 11:28:02 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002865.html">Replacing mpc52xx_find_ipb_freq with mpc5xxx_get_bus_frequency 	for mscan driver
+</A></li>
+        <LI>Next message: <A HREF="002844.html">MSCAN pacth: order of frames
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2834">[ date ]</a>
+              <a href="thread.html#2834">[ thread ]</a>
+              <a href="subject.html#2834">[ subject ]</a>
+              <a href="author.html#2834">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+I have got here small patch for the MSCAN driver.
+
+The mscan has 3 Tx HW buffers with fixed send priorities. The actual driver 
+uses all 3 buffers, and has problem of changing the order of the frames
+(listed in the comments to the mscan_start_xmit). 
+
+The constellation is: 
+Buff2 is sending, Buff3 is ready to send and waits for Buff2 is finished.
+If the next message for sending arrives, it will be put to Buff1, which
+has higher priority than Buff3. After Buff3 is finished, the message from
+Buff1 will be sent, instead of the one from Buff3.
+
+I can reproduce the problem during the full duplex stress test. 
+The proposed solution is to use 2 Tx buffers instead of 3. I do not think
+this will cause serious impact on performance issues.
+Also 2 udelays are added.
+
+The patch:
+
+&lt;---start---
+--- ./kernel/2.6/drivers/net/can/mscan/mscan.c	2009-08-05 10:45:36.000000000 +0200
++++ ./mscan.c	2009-08-05 11:10:28.000000000 +0200
+@@ -82,7 +82,9 @@
+ 	u8 cantier;
+ };
+ 
+-#define TX_QUEUE_SIZE	3
++/* use only 2 HW Tx buffers to avoid out of order problems at transmission */
++#define TX_QUEUE_SIZE	2
++#define TX_MASK	      0x03
+ 
+ struct tx_queue_entry {
+ 	struct list_head list;
+@@ -159,6 +161,7 @@
+ 			for (i = 0; i &lt; MSCAN_SET_MODE_RETRIES; i++) {
+ 				if (in_8(&amp;regs-&gt;canctl1) &amp; MSCAN_INITAK)
+ 					break;
++				udelay(100);
+ 			}
+ 			if (i &gt;= MSCAN_SET_MODE_RETRIES)
+ 				ret = -ENODEV;
+@@ -179,6 +182,7 @@
+ 				canctl1 = in_8(&amp;regs-&gt;canctl1);
+ 				if (!(canctl1 &amp; (MSCAN_INITAK | MSCAN_SLPAK)))
+ 					break;
++				udelay(100);
+ 			}
+ 			if (i &gt;= MSCAN_SET_MODE_RETRIES)
+ 				ret = -ENODEV;
+@@ -234,7 +238,7 @@
+ 
+ 	out_8(&amp;regs-&gt;cantier, 0);
+ 
+-	i = ~priv-&gt;tx_active &amp; MSCAN_TXE;
++	i = ~priv-&gt;tx_active &amp; TX_MASK;
+ 	buf_id = ffs(i) - 1;
+ 	switch (hweight8(i)) {
+ 	case 0:
+@@ -242,9 +246,10 @@
+ 		dev_err(ND2D(dev), &quot;BUG! Tx Ring full when queue awake!\n&quot;);
+ 		return NETDEV_TX_BUSY;
+ 	case 1:
+-		/* if buf_id &lt; 3, then current frame will be send out of order,
+-		   since  buffer with lower id have higher priority (hell..) */
+-		if (buf_id &lt; 3)
++		/* if buf_id &lt; 3 and TX_QUEUE_SIZE is 3, then current frame 
++		   will be send out of order, since  buffer with lower id 
++		   have higher priority (hell..) */
++		if (buf_id &lt; TX_QUEUE_SIZE)
+ 			priv-&gt;cur_pri++;
+ 		if (priv-&gt;cur_pri == 0xff)
+ 			set_bit(F_TX_WAIT_ALL, &amp;priv-&gt;flags);
+@@ -486,7 +491,7 @@
+ 	u8 cantier, cantflg, canrflg;
+ 	irqreturn_t ret = IRQ_NONE;
+ 
+-	cantier = in_8(&amp;regs-&gt;cantier) &amp; MSCAN_TXE;
++	cantier = in_8(&amp;regs-&gt;cantier) &amp; TX_MASK;
+ 	cantflg = in_8(&amp;regs-&gt;cantflg) &amp; cantier;
+ 
+ 	if (cantier &amp;&amp; cantflg) {
+---end---&gt;
+
+
+Vladislav.
+
+
+Mit freundlichen Gr&#252;&#223;en / Kind regards,
+Dipl.-Ing. Vladislav Gribov MSc
+Development
+--------------------------------------------
+IXXAT Automation GmbH
+Leibnizstr. 15, 88250 Weingarten, Germany 
+Phone  +49-751-56146-0 
+Direct +49-751-56146-162
+Fax    +49-751-56146-29
+mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A>
+<A HREF="http://www.ixxat.de">http://www.ixxat.de</A>
+--------------------------------------------
+PRIVILEGED AND CONFIDENTIAL.
+Any unauthorized use or disclosure
+is strictly prohibited.
+--------------------------------------------
+Sitz der Gesellschaft: Weingarten
+Handelsregister Ulm HRB 551905
+Gesch&#228;ftsf&#252;hrer:
+Dipl.-Ing. Christian Schlegel,
+Prof. Dr.-Ing. Konrad Etschberger
+--------------------------------------------
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002865.html">Replacing mpc52xx_find_ipb_freq with mpc5xxx_get_bus_frequency 	for mscan driver
+</A></li>
+	<LI>Next message: <A HREF="002844.html">MSCAN pacth: order of frames
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2834">[ date ]</a>
+              <a href="thread.html#2834">[ thread ]</a>
+              <a href="subject.html#2834">[ subject ]</a>
+              <a href="author.html#2834">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

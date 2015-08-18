@@ -1,0 +1,367 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> ixxatpci driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20ixxatpci%20driver&In-Reply-To=%3C20080509155200.GG9467%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001179.html">
+   <LINK REL="Next"  HREF="001181.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>ixxatpci driver</H1>
+    <B>Sascha Hauer</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20ixxatpci%20driver&In-Reply-To=%3C20080509155200.GG9467%40pengutronix.de%3E"
+       TITLE="ixxatpci driver">s.hauer at pengutronix.de
+       </A><BR>
+    <I>Fri May  9 17:52:00 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001179.html">Socket returns invalid argument using Virtual CAN,	and mcp251x probe issue
+</A></li>
+        <LI>Next message: <A HREF="001181.html">ixxatpci driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1180">[ date ]</a>
+              <a href="thread.html#1180">[ thread ]</a>
+              <a href="subject.html#1180">[ subject ]</a>
+              <a href="author.html#1180">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all,
+
+I'm working with a ixxat PCI dual CAN card. The driver has several
+problems like it does not work, oopses on rmmod and does not iounmap
+the mapped regions.
+After looking at it for some time I still did not understand how it is
+supposed to work, so I decided to reorganize the driver a little bit to
+increase readability.
+I tested it on a single and a dual CAN card including rmmod.
+
+Sascha
+
+
+Signed-off-by: Sascha Hauer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;
+
+
+---
+ drivers/net/can/sja1000/ixxat_pci.c |  166 ++++++++++++++----------------------
+ 1 file changed, 69 insertions(+), 97 deletions(-)
+
+Index: cannetdriver26/drivers/net/can/sja1000/ixxat_pci.c
+===================================================================
+--- cannetdriver26.orig/drivers/net/can/sja1000/ixxat_pci.c
++++ cannetdriver26/drivers/net/can/sja1000/ixxat_pci.c
+@@ -36,10 +36,10 @@ MODULE_SUPPORTED_DEVICE(&quot;IXXAT PC-I 04/P
+ MODULE_LICENSE(&quot;GPL v2&quot;);
+ 
+ struct ixxat_pci {
+-	int channel;
+ 	struct pci_dev *pci_dev;
+-	struct net_device *slave_dev;
++	struct net_device *dev0, *dev1;
+ 	int conf_addr;
++	void __iomem *base_addr;
+ };
+ 
+ #define IXXAT_PCI_CAN_CLOCK  (16000000 / 2)
+@@ -57,8 +57,9 @@ struct ixxat_pci {
+ #define CHANNEL_SLAVE_RESET  (CHANNEL_MASTER_RESET + CHANNEL_OFFSET)
+ 
+ #define INTCSR_OFFSET        0x4c /* Offset in PLX9050 conf registers */
+-#define INTCSR_MASTER        0x41 /* LINT1 and PCI interrupt enabled */
+-#define INTCSR_SLAVE         0x08 /* LINT2 enabled */
++#define INTCSR_LINTI1        (1 &lt;&lt; 0)
++#define INTCSR_LINTI2        (1 &lt;&lt; 3)
++#define INTCSR_PCI           (1 &lt;&lt; 6)
+ 
+ /* PCI vender, device and sub-device ID */
+ #define IXXAT_PCI_VENDOR_ID  0x10b5
+@@ -78,71 +79,36 @@ MODULE_DEVICE_TABLE(pci, ixxat_pci_tbl);
+ static u8 ixxat_pci_read_reg(struct net_device *dev, int port)
+ {
+ 	u8 val;
+-	val = readb((const volatile void __iomem *)(dev-&gt;base_addr + port));
++	val = readb((void __iomem *)(dev-&gt;base_addr + port));
+ 	return val;
+ }
+ 
+ static void ixxat_pci_write_reg(struct net_device *dev, int port, u8 val)
+ {
+-	writeb(val, (volatile void __iomem *)(dev-&gt;base_addr + port));
++	writeb(val, (void __iomem *)(dev-&gt;base_addr + port));
+ }
+ 
+ static void ixxat_pci_del_chan(struct net_device *dev)
+ {
+-	struct sja1000_priv *priv = netdev_priv(dev);
+-	struct ixxat_pci *board;
+-	u8 intcsr;
+-
+-	if (!dev || !(priv = netdev_priv(dev)) || !(board = priv-&gt;priv))
+-		return;
+-
+ 	printk(&quot;Removing %s device %s\n&quot;, DRV_NAME, dev-&gt;name);
+ 	unregister_sja1000dev(dev);
+ 
+-	/* Disable PCI interrupts */
+-	intcsr = inb(board-&gt;conf_addr + INTCSR_OFFSET);
+-	if (board-&gt;slave_dev) {
+-		intcsr &amp;= ~INTCSR_MASTER;
+-		outb(intcsr, board-&gt;conf_addr + INTCSR_OFFSET);
+-		writeb(0x1, (volatile void __iomem *)
+-		       (dev-&gt;base_addr + CHANNEL_MASTER_RESET));
+-	} else {
+-		intcsr &amp;= ~INTCSR_SLAVE;
+-		outb(intcsr, board-&gt;conf_addr + INTCSR_OFFSET);
+-		writeb(0x1, (volatile void __iomem *)
+-		       (dev-&gt;base_addr + CHANNEL_SLAVE_RESET));
+-		iounmap((void *)dev-&gt;base_addr);
+-	}
+ 	free_sja1000dev(dev);
+ }
+ 
+-static int ixxat_pci_add_chan(struct pci_dev *pdev, int channel,
+-			      struct net_device **master_dev,
+-			      int conf_addr,
+-			      volatile void __iomem *base_addr)
++static struct net_device *ixxat_pci_add_chan(struct pci_dev *pdev, void __iomem *base_addr, int irq)
+ {
+-	struct net_device *dev;
++	struct net_device *ndev;
+ 	struct sja1000_priv *priv;
+-	struct ixxat_pci *board;
+-	u8 intcsr;
+ 	int err;
+ 
+-	dev = alloc_sja1000dev(sizeof(struct ixxat_pci));
+-	if (dev == NULL)
+-		return -ENOMEM;
++	ndev = alloc_sja1000dev(0);
++	if (ndev == NULL)
++		return ERR_PTR(-ENOMEM);
+ 
+-	priv = netdev_priv(dev);
+-	board = priv-&gt;priv;
++	priv = netdev_priv(ndev);
+ 
+-	board-&gt;pci_dev = pdev;
+-	board-&gt;conf_addr = conf_addr;
+-	dev-&gt;base_addr = (unsigned long)base_addr;
+-
+-	if (channel == IXXAT_PCI_SLAVE) {
+-		struct sja1000_priv *master_priv = netdev_priv(*master_dev);
+-		struct ixxat_pci *master_board = master_priv-&gt;priv;
+-		master_board-&gt;slave_dev = dev;
+-	}
++	ndev-&gt;base_addr = (unsigned long)base_addr;
+ 
+ 	priv-&gt;read_reg = ixxat_pci_read_reg;
+ 	priv-&gt;write_reg = ixxat_pci_write_reg;
+@@ -153,48 +119,43 @@ static int ixxat_pci_add_chan(struct pci
+ 	priv-&gt;cdr = IXXAT_PCI_CDR;
+ 
+ 	/* Set and enable PCI interrupts */
+-	dev-&gt;irq = pdev-&gt;irq;
+-	intcsr = inb(board-&gt;conf_addr + INTCSR_OFFSET);
+-	if (channel == IXXAT_PCI_SLAVE)
+-		intcsr |= INTCSR_SLAVE;
+-	else
+-		intcsr |= INTCSR_MASTER;
+-	outb(intcsr, board-&gt;conf_addr + INTCSR_OFFSET);
++	ndev-&gt;irq = irq;
+ 
+-	printk(&quot;%s: base_addr=%#lx conf_addr=%#x irq=%d\n&quot;, DRV_NAME,
+-	       dev-&gt;base_addr, board-&gt;conf_addr, dev-&gt;irq);
++	printk(&quot;%s: base_addr=%#lx irq=%d\n&quot;, DRV_NAME,
++	       ndev-&gt;base_addr, ndev-&gt;irq);
+ 
+-	SET_NETDEV_DEV(dev, &amp;pdev-&gt;dev);
++	SET_NETDEV_DEV(ndev, &amp;pdev-&gt;dev);
+ 
+-	err = register_sja1000dev(dev);
++	err = register_sja1000dev(ndev);
+ 	if (err) {
+ 		printk(KERN_ERR &quot;Registering %s failed (err=%d)\n&quot;,
+ 		       DRV_NAME, err);
+ 		goto failure;
+ 	}
+ 
+-	if (channel != IXXAT_PCI_SLAVE)
+-		*master_dev = dev;
+-
+-	return 0;
++	return ndev;
+ 
+ failure:
+-	free_sja1000dev(dev);
+-	return err;
++	free_sja1000dev(ndev);
++	return ERR_PTR(err);
+ }
+ 
+ static int __devinit ixxat_pci_init_one(struct pci_dev *pdev,
+ 				       const struct pci_device_id *ent)
+ {
+-	struct net_device *master_dev = NULL;
+-	volatile void __iomem *base_addr;
++	struct ixxat_pci *board;
+ 	unsigned long addr;
+-	int conf_addr, channel, err;
++	int err, intcsr = INTCSR_LINTI1 | INTCSR_PCI;
+ 	u16 sub_sys_id;
++	void __iomem *base_addr;
+ 
+ 	printk(&quot;%s: initializing device %04x:%04x\n&quot;,
+ 	       DRV_NAME, pdev-&gt;vendor, pdev-&gt;device);
+ 
++	board = kzalloc(sizeof(*board), GFP_KERNEL);
++	if (!board)
++		return -ENOMEM;
++
+ 	if ((err = pci_enable_device(pdev)))
+ 		goto failure;
+ 
+@@ -211,7 +172,7 @@ static int __devinit ixxat_pci_init_one(
+ 	if ((err = pci_write_config_word(pdev, 0x04, 0x3)))
+ 		goto failure_release_pci;
+ 
+-	conf_addr = pci_resource_start(pdev, 1);
++	board-&gt;conf_addr = pci_resource_start(pdev, 1);
+ 
+ 	addr = pci_resource_start(pdev, 2);
+ 	base_addr = ioremap(addr, IXXAT_PCI_BASE_SIZE);
+@@ -220,57 +181,68 @@ static int __devinit ixxat_pci_init_one(
+ 		goto failure_release_pci;
+ 	}
+ 
+-	/* Check if second channel is available after reset */
+-	writeb(0x1, (volatile void __iomem *)base_addr + CHANNEL_MASTER_RESET);
+-	writeb(0x1, (volatile void __iomem *)base_addr + CHANNEL_SLAVE_RESET);
++	board-&gt;base_addr = base_addr;
++
++	writeb(0x1, base_addr + CHANNEL_MASTER_RESET);
++	writeb(0x1, base_addr + CHANNEL_SLAVE_RESET);
+ 	udelay(100);
+-	if (readb(base_addr + CHANNEL_OFFSET + REG_MOD) != 0x21 ||
+-	    readb(base_addr + CHANNEL_OFFSET + REG_SR ) != 0x0c ||
+-	    readb(base_addr + CHANNEL_OFFSET + REG_IR ) != 0xe0)
+-		channel = IXXAT_PCI_SINGLE;
+-	else
+-		channel = IXXAT_PCI_MASTER;
+ 
+-	if ((err = ixxat_pci_add_chan(pdev, channel, &amp;master_dev,
+-				      conf_addr, base_addr)))
++	board-&gt;dev0 = ixxat_pci_add_chan(pdev, base_addr, pdev-&gt;irq);
++	if (IS_ERR(board-&gt;dev0))
+ 		goto failure_iounmap;
+ 
+-	if (channel != IXXAT_PCI_SINGLE) {
+-		channel = IXXAT_PCI_SLAVE;
+-		if ((err = ixxat_pci_add_chan(pdev, channel,
+-					      &amp;master_dev, conf_addr,
+-					      base_addr + CHANNEL_OFFSET)))
+-			goto failure_iounmap;
++	/* Check if second channel is available */
++	if (readb(base_addr + CHANNEL_OFFSET + REG_MOD) == 0x21 &amp;&amp;
++	    readb(base_addr + CHANNEL_OFFSET + REG_SR ) == 0x0c &amp;&amp;
++	    readb(base_addr + CHANNEL_OFFSET + REG_IR ) == 0xe0) {
++		board-&gt;dev1 = ixxat_pci_add_chan(pdev,
++				base_addr + CHANNEL_OFFSET, pdev-&gt;irq);
++		if (IS_ERR(board-&gt;dev1))
++			goto failure_unreg_dev0;
++
++		intcsr |= INTCSR_LINTI2;
+ 	}
+ 
+-	pci_set_drvdata(pdev, master_dev);
++	outb(intcsr, board-&gt;conf_addr + INTCSR_OFFSET);
++
++	pci_set_drvdata(pdev, board);
++
+ 	return 0;
+ 
++failure_unreg_dev0:
++	ixxat_pci_del_chan(board-&gt;dev0);
++
+ failure_iounmap:
+-	if (master_dev)
+-		ixxat_pci_del_chan(master_dev);
+-	iounmap(base_addr);
++	iounmap(board-&gt;base_addr);
+ 
+ failure_release_pci:
+ 	pci_release_regions(pdev);
+ 
+ failure:
++	kfree(board);
++
+ 	return err;
+ }
+ 
+ static void __devexit ixxat_pci_remove_one(struct pci_dev *pdev)
+ {
+-	struct net_device *dev = pci_get_drvdata(pdev);
+-	struct sja1000_priv *priv = netdev_priv(dev);
+-	struct ixxat_pci *board = priv-&gt;priv;
+-
+-	if (board-&gt;slave_dev)
+-		ixxat_pci_del_chan(board-&gt;slave_dev);
+-	ixxat_pci_del_chan(dev);
++	struct ixxat_pci *board = pci_get_drvdata(pdev);
++
++	/* Disable PCI interrupts */
++	outb(0, board-&gt;conf_addr + INTCSR_OFFSET);
++
++	ixxat_pci_del_chan(board-&gt;dev0);
++
++	if (board-&gt;dev1)
++		ixxat_pci_del_chan(board-&gt;dev1);
++
++	iounmap(board-&gt;base_addr);
+ 
+ 	pci_release_regions(pdev);
+ 	pci_disable_device(pdev);
+ 	pci_set_drvdata(pdev, NULL);
++
++	kfree(board);
+ }
+ 
+ static struct pci_driver ixxat_pci_driver = {
+
+-- 
+Pengutronix e.K. - Linux Solutions for Science and Industry
+-----------------------------------------------------------
+Kontakt-Informationen finden Sie im Header dieser Mail oder
+auf der Webseite -&gt; <A HREF="http://www.pengutronix.de/impressum/">http://www.pengutronix.de/impressum/</A> &lt;-
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001179.html">Socket returns invalid argument using Virtual CAN,	and mcp251x probe issue
+</A></li>
+	<LI>Next message: <A HREF="001181.html">ixxatpci driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1180">[ date ]</a>
+              <a href="thread.html#1180">[ thread ]</a>
+              <a href="subject.html#1180">[ subject ]</a>
+              <a href="author.html#1180">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

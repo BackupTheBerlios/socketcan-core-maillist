@@ -1,0 +1,395 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> CAN State Information
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20CAN%20State%20Information&In-Reply-To=%3C166589D0B9DD2547A1319599B9BADA1FC62417%40vsv-exchange.ixxat.intranet.priv%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006251.html">
+   <LINK REL="Next"  HREF="006253.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>CAN State Information</H1>
+    <B>kime at ixxat.de</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20CAN%20State%20Information&In-Reply-To=%3C166589D0B9DD2547A1319599B9BADA1FC62417%40vsv-exchange.ixxat.intranet.priv%3E"
+       TITLE="CAN State Information">kime at ixxat.de
+       </A><BR>
+    <I>Mon Dec 12 11:21:29 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006251.html">CAN State Information
+</A></li>
+        <LI>Next message: <A HREF="006253.html">[PATCH net-next] can: plx_pci: add support for IXXAT PCI cards
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6252">[ date ]</a>
+              <a href="thread.html#6252">[ thread ]</a>
+              <a href="subject.html#6252">[ subject ]</a>
+              <a href="author.html#6252">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Here is the patch.  It polls for messages at the end of the loop and repeats if needed.
+
+diff -Naur b/libsocketcan.c a/libsocketcan.c
+--- b/libsocketcan.c	2010-02-14 20:22:15.000000000 +0100
++++ a/libsocketcan.c	2011-12-12 11:10:40.000000000 +0100
+@@ -32,6 +32,7 @@
+ 
+ #include &lt;linux/rtnetlink.h&gt;
+ #include &lt;linux/netlink.h&gt;
++#include &lt;poll.h&gt;
+ 
+ #include &lt;libsocketcan.h&gt;
+ 
+@@ -322,6 +323,13 @@
+ 	char nlbuf[1024 * 8];
+ 
+ 	int ret = -1;
++	int repeat = 0;
++
++	struct pollfd poll_msg = {
++		.fd = fd,
++		.events = 0x0001,
++		.revents = 0,
++	};
+ 
+ 	struct iovec iov = {
+ 		.iov_base = (void *)nlbuf,
+@@ -352,126 +360,142 @@
+ 		perror(&quot;Receive error&quot;);
+ 		return ret;
+ 	}
+-	size_t u_msglen = (size_t) msglen;
+-	/* Check to see if the buffers in msg get truncated */
+-	if (msg.msg_namelen != sizeof(peer) ||
+-	    (msg.msg_flags &amp; (MSG_TRUNC | MSG_CTRUNC))) {
+-		fprintf(stderr, &quot;Uhoh... truncated message.\n&quot;);
+-		return ret;
+-	}
+-
+-	for (nl_msg = (struct nlmsghdr *)nlbuf;
+-	     NLMSG_OK(nl_msg, u_msglen);
+-	     nl_msg = NLMSG_NEXT(nl_msg, u_msglen)) {
+-		int type = nl_msg-&gt;nlmsg_type;
+-		int len;
+-		if (type != RTM_NEWLINK)
+-			continue;
+-
+-		struct ifinfomsg *ifi = NLMSG_DATA(nl_msg);
+-		struct rtattr *tb[IFLA_MAX + 1];
+-
+-		len =
+-		    nl_msg-&gt;nlmsg_len - NLMSG_LENGTH(sizeof(struct ifaddrmsg));
+-		parse_rtattr(tb, IFLA_MAX, IFLA_RTA(ifi), len);
+-
+-		if (strncmp
+-		    ((char *)RTA_DATA(tb[IFLA_IFNAME]), name,
+-		     sizeof(name)) != 0)
+-			continue;
+-
+-		if (tb[IFLA_LINKINFO])
+-			parse_rtattr_nested(linkinfo,
+-					    IFLA_INFO_MAX, tb[IFLA_LINKINFO]);
+-		else
+-			continue;
+ 
+-		if (!linkinfo[IFLA_INFO_DATA]) {
+-			fprintf(stderr, &quot;no link data found\n&quot;);
++    while(repeat == 0){
++		size_t u_msglen = (size_t) msglen;
++		/* Check to see if the buffers in msg get truncated */
++		if (msg.msg_namelen != sizeof(peer) ||
++			(msg.msg_flags &amp; (MSG_TRUNC | MSG_CTRUNC))) {
++			fprintf(stderr, &quot;Uhoh... truncated message.\n&quot;);
+ 			return ret;
+ 		}
+ 
+-		parse_rtattr_nested(can_attr, IFLA_CAN_MAX,
+-				    linkinfo[IFLA_INFO_DATA]);
+-
+-		switch (acquire) {
+-		case GET_STATE:
+-			if (can_attr[IFLA_CAN_STATE]) {
+-				*((int *)res) = *((__u32 *)
+-						  RTA_DATA(can_attr
+-							   [IFLA_CAN_STATE]));
+-				ret = 0;
+-			} else {
+-				fprintf(stderr, &quot;no state data found\n&quot;);
++		for (nl_msg = (struct nlmsghdr *)nlbuf;
++			NLMSG_OK(nl_msg, u_msglen);
++			nl_msg = NLMSG_NEXT(nl_msg, u_msglen)) {
++
++			int type = nl_msg-&gt;nlmsg_type;
++			int len;
++			if (type != RTM_NEWLINK)
++				continue;
++
++
++			struct ifinfomsg *ifi = NLMSG_DATA(nl_msg);
++			struct rtattr *tb[IFLA_MAX + 1];
++
++			len =
++				nl_msg-&gt;nlmsg_len - NLMSG_LENGTH(sizeof(struct ifaddrmsg));
++			parse_rtattr(tb, IFLA_MAX, IFLA_RTA(ifi), len);
++
++			if (strncmp
++				((char *)RTA_DATA(tb[IFLA_IFNAME]), name,
++				 sizeof(name)) != 0) {
++				continue;
++			}
++			if (tb[IFLA_LINKINFO])
++				parse_rtattr_nested(linkinfo,
++							IFLA_INFO_MAX, tb[IFLA_LINKINFO]);
++			else
++				continue;
++
++			if (!linkinfo[IFLA_INFO_DATA]) {
++				fprintf(stderr, &quot;no link data found\n&quot;);
++				return ret;
+ 			}
+ 
+-			break;
+-		case GET_RESTART_MS:
+-			if (can_attr[IFLA_CAN_RESTART_MS]) {
+-				*((__u32 *) res) = *((__u32 *)
+-						     RTA_DATA(can_attr
+-							      [IFLA_CAN_RESTART_MS]));
+-				ret = 0;
+-			} else
+-				fprintf(stderr, &quot;no restart_ms data found\n&quot;);
+-
+-			break;
+-		case GET_BITTIMING:
+-			if (can_attr[IFLA_CAN_BITTIMING]) {
+-				memcpy(res,
+-				       RTA_DATA(can_attr[IFLA_CAN_BITTIMING]),
+-				       sizeof(struct can_bittiming));
+-				ret = 0;
+-			} else
+-				fprintf(stderr, &quot;no bittiming data found\n&quot;);
+-
+-			break;
+-		case GET_CTRLMODE:
+-			if (can_attr[IFLA_CAN_CTRLMODE]) {
+-				memcpy(res,
+-				       RTA_DATA(can_attr[IFLA_CAN_CTRLMODE]),
+-				       sizeof(struct can_ctrlmode));
+-				ret = 0;
+-			} else
+-				fprintf(stderr, &quot;no ctrlmode data found\n&quot;);
+-
+-			break;
+-		case GET_CLOCK:
+-			if (can_attr[IFLA_CAN_CLOCK]) {
+-				memcpy(res,
+-				       RTA_DATA(can_attr[IFLA_CAN_CLOCK]),
+-				       sizeof(struct can_clock));
+-				ret = 0;
+-			} else
+-				fprintf(stderr,
+-					&quot;no clock parameter data found\n&quot;);
++			parse_rtattr_nested(can_attr, IFLA_CAN_MAX,
++						linkinfo[IFLA_INFO_DATA]);
++
++			switch (acquire) {
++			case GET_STATE:
++				if (can_attr[IFLA_CAN_STATE]) {
++					*((int *)res) = *((__u32 *)
++							  RTA_DATA(can_attr
++								   [IFLA_CAN_STATE]));
++					ret = 0;
++				} else {
++					fprintf(stderr, &quot;no state data found\n&quot;);
++				}
+ 
+-			break;
+-		case GET_BITTIMING_CONST:
+-			if (can_attr[IFLA_CAN_BITTIMING_CONST]) {
+-				memcpy(res,
+-				       RTA_DATA(can_attr[IFLA_CAN_BITTIMING_CONST]),
+-				       sizeof(struct can_bittiming_const));
+-				ret = 0;
+-			} else
+-				fprintf(stderr, &quot;no bittiming_const data found\n&quot;);
+-
+-			break;
+-		case GET_BERR_COUNTER:
+-			if (can_attr[IFLA_CAN_BERR_COUNTER]) {
+-				memcpy(res,
+-				       RTA_DATA(can_attr[IFLA_CAN_BERR_COUNTER]),
+-				       sizeof(struct can_berr_counter));
+-				ret = 0;
+-			} else
+-				fprintf(stderr, &quot;no berr_counter data found\n&quot;);
++				break;
++			case GET_RESTART_MS:
++				if (can_attr[IFLA_CAN_RESTART_MS]) {
++					*((__u32 *) res) = *((__u32 *)
++								 RTA_DATA(can_attr
++									  [IFLA_CAN_RESTART_MS]));
++					ret = 0;
++				} else
++					fprintf(stderr, &quot;no restart_ms data found\n&quot;);
++
++				break;
++			case GET_BITTIMING:
++				if (can_attr[IFLA_CAN_BITTIMING]) {
++					memcpy(res,
++						   RTA_DATA(can_attr[IFLA_CAN_BITTIMING]),
++						   sizeof(struct can_bittiming));
++					ret = 0;
++				} else
++					fprintf(stderr, &quot;no bittiming data found\n&quot;);
++
++				break;
++			case GET_CTRLMODE:
++				if (can_attr[IFLA_CAN_CTRLMODE]) {
++					memcpy(res,
++						   RTA_DATA(can_attr[IFLA_CAN_CTRLMODE]),
++						   sizeof(struct can_ctrlmode));
++					ret = 0;
++				} else
++					fprintf(stderr, &quot;no ctrlmode data found\n&quot;);
++
++				break;
++			case GET_CLOCK:
++				if (can_attr[IFLA_CAN_CLOCK]) {
++					memcpy(res,
++						   RTA_DATA(can_attr[IFLA_CAN_CLOCK]),
++						   sizeof(struct can_clock));
++					ret = 0;
++				} else
++					fprintf(stderr,
++						&quot;no clock parameter data found\n&quot;);
++
++				break;
++			case GET_BITTIMING_CONST:
++				if (can_attr[IFLA_CAN_BITTIMING_CONST]) {
++					memcpy(res,
++						   RTA_DATA(can_attr[IFLA_CAN_BITTIMING_CONST]),
++						   sizeof(struct can_bittiming_const));
++					ret = 0;
++				} else
++					fprintf(stderr, &quot;no bittiming_const data found\n&quot;);
++
++				break;
++			case GET_BERR_COUNTER:
++				if (can_attr[IFLA_CAN_BERR_COUNTER]) {
++					memcpy(res,
++						   RTA_DATA(can_attr[IFLA_CAN_BERR_COUNTER]),
++						   sizeof(struct can_berr_counter));
++					ret = 0;
++				} else
++					fprintf(stderr, &quot;no berr_counter data found\n&quot;);
+ 
+-			break;
++				break;
+ 
+-		default:
+-			fprintf(stderr, &quot;unknown acquire mode\n&quot;);
++			default:
++				fprintf(stderr, &quot;unknown acquire mode\n&quot;);
++			}
+ 		}
+-	}
++
++		if((poll(&amp;poll_msg,1,1))&gt;0) {
++			msglen = recvmsg(fd, &amp;msg, 0);
++			if (msglen &lt;= 0) {
++				perror(&quot;Receive error&quot;);
++				return -1;
++			}
++		}
++		else {
++			repeat = 1;
++		}
++	}  //while(repeat == 0)
+ 	return ret;
+ }
+
+Mit freundlichen Gr&#252;ssen / Yours sincerely,
+
+James Kime
+Entwicklung / Development
+--------------------------------------------
+IXXAT Automation GmbH
+Leibnizstr. 15, 88250 Weingarten, Germany
+Phone +49-751-56146-181
+Fax   +49-751-56146-29
+mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kime at ixxat.de</A>
+<A HREF="http://www.ixxat.de">http://www.ixxat.de</A>
+--------------------------------------------
+PRIVILEGED AND CONFIDENTIAL.
+Any unauthorized use or disclosure
+is strictly prohibited.
+--------------------------------------------
+Sitz der Gesellschaft: Weingarten
+Handelsregister Ulm HRB 551905
+Gesch&#228;ftsf&#252;hrer:
+Dipl.-Ing. Christian Schlegel
+--------------------------------------------
+
+
+-----Original Message-----
+From: Wolfgang Grandegger [mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>] 
+Sent: Friday, December 09, 2011 3:50 PM
+To: Kime, James
+Cc: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core at lists.berlios.de</A>; <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">linux-can at vger.kernel.org</A>
+Subject: Re: CAN State Information
+
+On 12/09/2011 02:41 PM, <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kime at ixxat.de</A> wrote:
+&gt;<i> I noticed that when libsocketcan calls send_dump_request() it returns a message for me that has a length of 3424 with recvmsg().  This is not the full message, if I add a loop into the routine to again receive, I receive a second message this time with a length of 1424.  I added some prints into the routine to output strings and sizes:
+</I>&gt;<i> 
+</I>&gt;<i> First read:
+</I>&gt;<i> nl_msg:-1073753668  u_msglen:3424
+</I>&gt;<i> lo
+</I>&gt;<i> nl_msg:-1073752676  u_msglen:2432
+</I>&gt;<i> eth0
+</I>&gt;<i> nl_msg:-1073751668  u_msglen:1424
+</I>&gt;<i> can0
+</I>&gt;<i> nl_msg:-1073750956  u_msglen:712
+</I>&gt;<i> can1
+</I>&gt;<i> 
+</I>&gt;<i> Second read:
+</I>&gt;<i> nl_msg:-1073753668  u_msglen:1424
+</I>&gt;<i> can2
+</I>&gt;<i> nl_msg:-1073752956  u_msglen:712
+</I>&gt;<i> can3
+</I>&gt;<i> 
+</I>&gt;<i> With this loop, it seems to work.  Does this make sense?
+</I>
+Yes, could you send a patch (showing your modifications)?
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006251.html">CAN State Information
+</A></li>
+	<LI>Next message: <A HREF="006253.html">[PATCH net-next] can: plx_pci: add support for IXXAT PCI cards
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6252">[ date ]</a>
+              <a href="thread.html#6252">[ thread ]</a>
+              <a href="subject.html#6252">[ subject ]</a>
+              <a href="author.html#6252">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

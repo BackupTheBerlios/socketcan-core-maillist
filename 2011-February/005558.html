@@ -1,0 +1,156 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: cleaning up CAN_ERR_ACK issue
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20cleaning%20up%20CAN_ERR_ACK%20issue&In-Reply-To=%3C4D5AE87F.8090406%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005557.html">
+   <LINK REL="Next"  HREF="005561.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: cleaning up CAN_ERR_ACK issue</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20cleaning%20up%20CAN_ERR_ACK%20issue&In-Reply-To=%3C4D5AE87F.8090406%40hartkopp.net%3E"
+       TITLE="RFC: cleaning up CAN_ERR_ACK issue">socketcan at hartkopp.net
+       </A><BR>
+    <I>Tue Feb 15 21:56:31 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005557.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+        <LI>Next message: <A HREF="005561.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5558">[ date ]</a>
+              <a href="thread.html#5558">[ thread ]</a>
+              <a href="subject.html#5558">[ subject ]</a>
+              <a href="author.html#5558">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 15.02.2011 21:21, Wolfgang Grandegger wrote:
+
+&gt;&gt;<i> I strongly assumed the data[] bytes hold 'states' and not 'state changes' ...
+</I>&gt;<i> 
+</I>&gt;<i> Yep, but we treat error active as state as well. Anyway, I'm fine with
+</I>&gt;<i> the CAN_ERR_ACTIVE class (in can_id).
+</I>
+ok
+
+
+&gt;&gt;<i>
+</I>&gt;&gt;<i> Hm - my intention was that most of the interesting states are available in the
+</I>&gt;&gt;<i> CAN-ID directly (e.g. _BUSOFF, _RESTARTED, _ACK and now _ACTIVE)
+</I>&gt;<i> 
+</I>&gt;<i> Why is especially _ACK interesting. As I said, it belongs to the bus
+</I>&gt;<i> errors. There are 5 different error types (which are not mutually
+</I>&gt;<i> exclusive):
+</I>&gt;<i> 
+</I>&gt;<i> - BIT ERROR
+</I>&gt;<i> - STUFF ERROR
+</I>&gt;<i> - CRC ERROR
+</I>&gt;<i> - FORM ERROR
+</I>&gt;<i> - ACKNOWLEDGMENT ERROR
+</I>&gt;<i> 
+</I>&gt;<i> It does make little sense to me to just have a bit for the last error in
+</I>&gt;<i> the CAN id (and not the others as well). They all below to CAN_ERR_BUSERROR.
+</I>
+Ah, got it now.
+
+So when CAN_ERR_BUSERROR is set, i may check CAN_ERR_PROT and then into
+data [2..3], right?
+
+So CAN_ERR_ACK would be obsolete ...
+
+I think, the reason why CAN_ERR_ACK has made it's way into the error class
+bits in the CAN-ID was because of missing ACKs usually happen, when there's
+only one CAN node on the bus. The idea was to detect missing CAN nodes or
+wrong termination directly through CAN_ERR_ACK.
+
+Logically this is redundant to the bitvalue in CAN_ERR_PROT_ACK
+
+&gt;&gt;<i> These bits are only enablers for the additional information in data[..] :
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #define CAN_ERR_LOSTARB     0x00000002U /* lost arbitration    / data[0]    */
+</I>&gt;&gt;<i> #define CAN_ERR_CRTL        0x00000004U /* controller problems / data[1]    */
+</I>&gt;&gt;<i> #define CAN_ERR_PROT        0x00000008U /* protocol violations / data[2..3] */
+</I>&gt;&gt;<i> #define CAN_ERR_TRX         0x00000010U /* transceiver status  / data[4]    */
+</I>&gt;<i> 
+</I>&gt;<i> The problem we have is that the errors are mainly derived from the
+</I>&gt;<i> reporting capabilities of the SJA1000. Then we added some other flags
+</I>&gt;<i> for errors from other controllers. There are other inconsistencies.
+</I>&gt;<i> We do not have a bit for CRC errors. Therefore the at91_can.c just sets:
+</I>&gt;<i> 
+</I>
+(leaving out the mess :-)
+
+&gt;<i> 
+</I>&gt;<i> Puh, what a mess. OK, I think what we need is:
+</I>&gt;<i> 
+</I>&gt;<i> /* error in CAN protocol (type) / data[2] */
+</I>&gt;<i> #define CAN_ERR_PROT_UNSPEC      0x00 /* unspecified */
+</I>&gt;<i> #define CAN_ERR_PROT_BIT         0x01 /* single bit error */
+</I>&gt;<i> #define CAN_ERR_PROT_FORM        0x02 /* frame format error */
+</I>&gt;<i> #define CAN_ERR_PROT_STUFF       0x04 /* bit stuffing error */
+</I>&gt;<i> #define CAN_ERR_PROT_BIT0        0x08 /* unable to send dominant bit */
+</I>&gt;<i> #define CAN_ERR_PROT_BIT1        0x10 /* unable to send recessive bit */
+</I>&gt;<i> #define CAN_ERR_PROT_CRC         0x20 /* crc error */
+</I>&gt;<i> #define CAN_ERR_PROT_ACK         0x40 /* active error announcement */
+</I>
+copy&amp;paste problem in this comment?
+
+Should be
+#define CAN_ERR_PROT_ACK         0x40 /* received no ACK on transmission */
+
+&gt;<i> #define CAN_ERR_PROT_TX          0x80 /* error occured on transmission
+</I>&gt;<i> 
+</I>&gt;<i> Apart from CAN_ERR_PROT_ACTIVE I removed CAN_ERR_PROT_OVERLOAD which is
+</I>&gt;<i> *not* used in any driver and added the missing two bus error types
+</I>&gt;<i> CAN_ERR_PROT_CRC, CAN_ERR_PROT_ACK. For BIT errors we have three bits
+</I>&gt;<i> and in principle we could set (CAN_ERR_PROT_BIT0 &#166; CAN_ERR_PROT_BIT1)
+</I>&gt;<i> for CAN controllers not distinguishing BIT0 and BIT1 errors. data[3]
+</I>&gt;<i> would only be filled by the SJA1000. CAN_ERR_PROT and CAN_ERR_BUSERROR
+</I>&gt;<i> are more or less redundant.
+</I>
+Yes. From the current point of view they are. I thought a CAN_ERR_BUSERROR
+could be triggered by anything else then protocol violations ...
+Then it might have become interesting when using a special filter mask for
+error frames.
+
+&gt;<i> It's getting more and more clear now what to do.
+</I>
+Yes.
+
+Regards,
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005557.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+	<LI>Next message: <A HREF="005561.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5558">[ date ]</a>
+              <a href="thread.html#5558">[ thread ]</a>
+              <a href="subject.html#5558">[ subject ]</a>
+              <a href="author.html#5558">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

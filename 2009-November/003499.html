@@ -1,0 +1,143 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> mcp251x v2
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%20v2&In-Reply-To=%3C4B01C932.1040607%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003498.html">
+   <LINK REL="Next"  HREF="003501.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>mcp251x v2</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%20v2&In-Reply-To=%3C4B01C932.1040607%40grandegger.com%3E"
+       TITLE="mcp251x v2">wg at grandegger.com
+       </A><BR>
+    <I>Mon Nov 16 22:50:42 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003498.html">mcp251x v2
+</A></li>
+        <LI>Next message: <A HREF="003501.html">mcp251x v2
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3499">[ date ]</a>
+              <a href="thread.html#3499">[ thread ]</a>
+              <a href="subject.html#3499">[ subject ]</a>
+              <a href="author.html#3499">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Paul,
+
+Paul Thomas wrote:
+&gt;<i> Hi, I've been working with Christian, and he's been very helpful. In
+</I>&gt;<i> trying to get to the bottom of my problem I wrote a /proc/file
+</I>&gt;<i> interface so I could read &amp; write mcp251x registers from userspace.
+</I>&gt;<i> I've discovered that I can only read/write resisters in one very
+</I>&gt;<i> specific condition. I describe how to get there below:
+</I>
+&gt;<i> 1. load the module
+</I>&gt;<i> 2. run &quot;ip link set can0 up&quot; this creates a &quot;RTNETLINK answers:
+</I>&gt;<i> Invalid argument&quot; error, however the driver is doing several things
+</I>&gt;<i> here (attached as fcall_link-up_fail is the debug output including my
+</I>&gt;<i> added debug stuff).
+</I>
+Before you can start the device, you need to specify the bitrate:
+
+  # ip link set can0 up type can bitrate 50000
+
+or
+  # ip link set can0 type can bitrate 50000
+  # ifconfig can0 up
+
+50 kB/s is a rather unusual and slow bit-rate. The driver's open
+function should first check if the bit-timing has been set. The
+attached patch does fix that.
+
+&gt;<i> 3. Now I can read/write registers. I don't even need to use my hacked
+</I>&gt;<i> /proc/file to test this. This is the only time &quot;ip link set can0 type
+</I>&gt;<i> can bitrate 50000&quot; shows a actual numbers on the CNF debug line
+</I>&gt;<i> &quot;mcp251x spi1.3: CNF: 0x09 0xbf 0x02&quot;.
+</I>
+If the link is up, you cannot change the bit-rate.
+
+&gt;<i> The only way I've found to get back to this state is to unload &amp;
+</I>&gt;<i> reload the driver. I understand that you can only mess with some of
+</I>&gt;<i> the mcp251x registers when CANCTRL is in configuration mode, but at
+</I>&gt;<i> the very least on startup you shouldn't need the failed link up
+</I>&gt;<i> command for it to work. And probably whenever the link is down in
+</I>&gt;<i> should be configurable.
+</I>&gt;<i> 
+</I>&gt;<i> I'm going through all of this because I was have a baud problems on the bus.
+</I>
+Does the patch below already help to cure your problems?
+
+Wolfgang.
+
+
+---
+ drivers/net/can/mcp251x.c |   12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+Index: net-next-2.6/drivers/net/can/mcp251x.c
+===================================================================
+--- net-next-2.6.orig/drivers/net/can/mcp251x.c
++++ net-next-2.6/drivers/net/can/mcp251x.c
+@@ -596,12 +596,6 @@ static int mcp251x_setup(struct net_devi
+ {
+ 	int ret;
+ 
+-	ret = open_candev(net);
+-	if (ret) {
+-		dev_err(&amp;spi-&gt;dev, &quot;unable to set initial baudrate!\n&quot;);
+-		return ret;
+-	}
+-
+ 	/* Enable RX0-&gt;RX1 buffer roll over and disable filters */
+ 	mcp251x_write_bits(spi, RXBCTRL(0),
+ 			   RXBCTRL_BUKT | RXBCTRL_RXM0 | RXBCTRL_RXM1,
+@@ -671,6 +665,12 @@ static int mcp251x_open(struct net_devic
+ 	struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
+ 	int ret;
+ 
++	ret = open_candev(net);
++	if (ret) {
++		dev_err(&amp;spi-&gt;dev, &quot;unable to set initial baudrate!\n&quot;);
++		return ret;
++	}
++
+ 	if (pdata-&gt;transceiver_enable)
+ 		pdata-&gt;transceiver_enable(1);
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003498.html">mcp251x v2
+</A></li>
+	<LI>Next message: <A HREF="003501.html">mcp251x v2
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3499">[ date ]</a>
+              <a href="thread.html#3499">[ thread ]</a>
+              <a href="subject.html#3499">[ subject ]</a>
+              <a href="author.html#3499">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

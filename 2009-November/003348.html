@@ -1,0 +1,260 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] add MPC512x support to mscan
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20add%20MPC512x%20support%20to%20mscan&In-Reply-To=%3C1257176480-3928-1-git-send-email-w.sang%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003456.html">
+   <LINK REL="Next"  HREF="003351.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] add MPC512x support to mscan</H1>
+    <B>Wolfram Sang</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20add%20MPC512x%20support%20to%20mscan&In-Reply-To=%3C1257176480-3928-1-git-send-email-w.sang%40pengutronix.de%3E"
+       TITLE="[PATCH] add MPC512x support to mscan">w.sang at pengutronix.de
+       </A><BR>
+    <I>Mon Nov  2 16:41:20 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003456.html">How to provide product information
+</A></li>
+        <LI>Next message: <A HREF="003351.html">[PATCH] add MPC512x support to mscan
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3348">[ date ]</a>
+              <a href="thread.html#3348">[ thread ]</a>
+              <a href="subject.html#3348">[ subject ]</a>
+              <a href="author.html#3348">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch adds MPC512x support to mscan. Tested with a phyCORE-MPC5121e and 2.6.31.
+cansequence ran quite some time successfully.
+
+Note 1: It depends on changes to the clock-implementation of the MPC512x.
+Those patches need to be discussed and approved on the ppc list and can be found here:
+<A HREF="http://patchwork.ozlabs.org/patch/37417/">http://patchwork.ozlabs.org/patch/37417/</A>
+<A HREF="http://patchwork.ozlabs.org/patch/37427/">http://patchwork.ozlabs.org/patch/37427/</A>
+(If they work for you, I'd be happy about Acked-by-tags.)
+
+Note 2: If this approach is accepted, I will next do the remaining cleanup
+work (giving the functions the proper 5xxx names, ...) as follow up patches to
+hopefully get this driver into mainline soonish.
+
+Signed-off-by: Wolfram Sang &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">w.sang at pengutronix.de</A>&gt;
+
+ Kconfig             |    8 +++---
+ mscan/mpc52xx_can.c |   64 +++++++++++++++++++++++++++++++++++++++++-----------
+ mscan/mscan.h       |    3 +-
+ 3 files changed, 57 insertions(+), 18 deletions(-)
+
+Index: Kconfig
+===================================================================
+--- Kconfig	(revision 1072)
++++ Kconfig	(working copy)
+@@ -234,12 +234,12 @@
+ 	  the Motorola MC68HC12 Microcontroller Family.
+ 
+ config CAN_MPC52XX
+-	tristate &quot;Freescale MPC5200 onboard CAN controller&quot;
+-	depends on CAN_MSCAN &amp;&amp; (PPC_MPC52xx || PPC_52xx)
++	tristate &quot;Freescale MPC5xxx onboard CAN controller&quot;
++	depends on CAN_MSCAN &amp;&amp; (PPC_MPC512x || PPC_MPC52xx || PPC_52xx)
+ 	default LITE5200
+ 	---help---
+-	  If you say yes here you get support for Freescale MPC5200
+-	  onboard dualCAN controller.
++	  If you say yes here you get support for Freescale MPC5xxx
++	  onboard CAN controller.
+ 
+ 	  This driver can also be built as a module.  If so, the module
+ 	  will be called mpc52xx_can.
+Index: mscan/mscan.h
+===================================================================
+--- mscan/mscan.h	(revision 1072)
++++ mscan/mscan.h	(working copy)
+@@ -52,7 +52,8 @@
+ #define MSCAN_FOR_MPC5200
+ #endif
+ 
+-#ifdef MSCAN_FOR_MPC5200
++/* Following block only needed for MPC52xx! */
++#ifdef CONFIG_PPC_MPC52xx
+ #define MSCAN_CLKSRC_BUS	0
+ #define MSCAN_CLKSRC_XTAL	MSCAN_CLKSRC
+ #else
+Index: mscan/mpc52xx_can.c
+===================================================================
+--- mscan/mpc52xx_can.c	(revision 1072)
++++ mscan/mpc52xx_can.c	(working copy)
+@@ -4,6 +4,7 @@
+  * Copyright (C) 2004-2005 Andrey Volkov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">avolkov at varma-el.com</A>&gt;,
+  *                         Varma Electronics Oy
+  * Copyright (C) 2008-2009 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
++ * Copyright (C) 2009 Wolfram Sang &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">w.sang at pengutronix.de</A>&gt;
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the version 2 of the GNU General Public License
+@@ -28,6 +29,7 @@
+ #include &lt;socketcan/can/dev.h&gt;
+ #if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,27)
+ #include &lt;linux/of_platform.h&gt;
++#include &lt;linux/clk.h&gt;
+ #include &lt;sysdev/fsl_soc.h&gt;
+ #endif
+ #if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,16)
+@@ -260,19 +262,53 @@
+ 
+ /*
+  * Get the frequency of the external oscillator clock connected
+- * to the SYS_XTAL_IN pin, or retrun 0 if it cannot be determined.
++ * to the SYS_XTAL_IN pin, or return 0 if it cannot be determined.
+  */
+-static unsigned int  __devinit mpc52xx_can_xtal_freq(struct device_node *np)
++
++#define CLK_NAME_SIZE 14
++
++static unsigned int  __devinit mpc512x_can_clock_freq(struct of_device *ofdev,
++						      int clock_src)
+ {
++	struct clk *mscan_clk, *port_clk;
++	char clk_name[CLK_NAME_SIZE];
++	const u32 *cellp;
++
++	cellp = of_get_property(ofdev-&gt;node, &quot;cell-index&quot;, NULL);
++	if (!cellp)
++		return 0;
++
++	mscan_clk = clk_get(NULL, &quot;mscan_clk&quot;);
++	if (!mscan_clk) {
++		dev_err(&amp;ofdev-&gt;dev, &quot;can't get mscan clock!\n&quot;);
++		return 0;
++	}
++	clk_enable(mscan_clk);
++
++	if (clock_src == MSCAN_CLKSRC_BUS)
++		return mpc5xxx_get_bus_frequency(ofdev-&gt;node);
++
++	/* Do we have a port clock (Chip Rev2 and later) */
++	snprintf(clk_name, CLK_NAME_SIZE, &quot;mscan%d_clk&quot;, *cellp);
++	port_clk = clk_get(&amp;ofdev-&gt;dev, clk_name);
++
++	if (port_clk)
++		return clk_get_rate(port_clk);
++	else
++		return clk_get_rate(mscan_clk);
++}
++
++static unsigned int  __devinit mpc52xx_can_xtal_freq(struct of_device *ofdev)
++{
+ 	struct mpc52xx_cdm  __iomem *cdm;
+ 	struct device_node *np_cdm;
+ 	unsigned int freq;
+ 	u32 val;
+ 
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,31)
+-	freq = mpc52xx_find_ipb_freq(np);
++	freq = mpc52xx_find_ipb_freq(ofdev-&gt;node);
+ #else
+-	freq = mpc5xxx_get_bus_frequency(np);
++	freq = mpc5xxx_get_bus_frequency(ofdev-&gt;node);
+ #endif
+ 	if (!freq)
+ 		return 0;
+@@ -284,7 +320,7 @@
+ 	cdm = of_iomap(np_cdm, 0);
+ 	of_node_put(np_cdm);
+ 	if (!np_cdm) {
+-		printk(KERN_ERR &quot;%s() failed abnormally\n&quot;, __func__);
++		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't find clock!&quot;);
+ 		return 0;
+ 	}
+ 
+@@ -314,22 +350,21 @@
+  * bug, it can not be selected for the old MPC5200 Rev. A chips.
+  */
+ 
+-static unsigned int  __devinit mpc52xx_can_clock_freq(struct device_node *np,
++static unsigned int  __devinit mpc52xx_can_clock_freq(struct of_device *ofdev,
+ 						      int clock_src)
+ {
+ 	unsigned int pvr;
+-
+ 	pvr = mfspr(SPRN_PVR);
+ 
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,31)
+ 	if (clock_src == MSCAN_CLKSRC_BUS || pvr == 0x80822011)
+-		return mpc52xx_find_ipb_freq(np);
++		return mpc52xx_find_ipb_freq(ofdev-&gt;node);
+ #else
+ 	if (clock_src == MSCAN_CLKSRC_BUS || pvr == 0x80822011)
+-		return mpc5xxx_get_bus_frequency(np);
++		return mpc5xxx_get_bus_frequency(ofdev-&gt;node);
+ #endif
+ 
+-	return mpc52xx_can_xtal_freq(np);
++	return mpc52xx_can_xtal_freq(ofdev);
+ }
+ 
+ static int __devinit mpc52xx_can_probe(struct of_device *ofdev,
+@@ -340,6 +375,7 @@
+ 	struct can_priv *priv;
+ 	struct resource res;
+ 	void __iomem *base;
++	unsigned int (*can_clock)(struct of_device *, int) = id-&gt;data;
+ 	int err, irq, res_size, clock_src;
+ 
+ 	err = of_address_to_resource(np, 0, &amp;res);
+@@ -393,7 +429,8 @@
+ 		clock_src = MSCAN_CLKSRC_BUS;
+ 	else
+ 		clock_src = MSCAN_CLKSRC_XTAL;
+-	priv-&gt;clock.freq = mpc52xx_can_clock_freq(np, clock_src);
++
++	priv-&gt;clock.freq = can_clock(ofdev, clock_src);
+ 	if (!priv-&gt;clock.freq) {
+ 		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't get MSCAN clock frequency\n&quot;);
+ 		err = -ENODEV;
+@@ -488,8 +525,9 @@
+ #endif
+ 
+ static struct of_device_id __devinitdata mpc52xx_can_table[] = {
+-	{.compatible = &quot;fsl,mpc5200-mscan&quot;},
+-	{.compatible = &quot;fsl,mpc5200b-mscan&quot;},
++	{ .compatible = &quot;fsl,mpc5200-mscan&quot;, .data = mpc52xx_can_clock_freq },
++	{ .compatible = &quot;fsl,mpc5200b-mscan&quot;, .data = mpc52xx_can_clock_freq },
++	{ .compatible = &quot;fsl,mpc5121-mscan&quot;, .data = mpc512x_can_clock_freq },
+ 	{},
+ };
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003456.html">How to provide product information
+</A></li>
+	<LI>Next message: <A HREF="003351.html">[PATCH] add MPC512x support to mscan
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3348">[ date ]</a>
+              <a href="thread.html#3348">[ thread ]</a>
+              <a href="subject.html#3348">[ subject ]</a>
+              <a href="author.html#3348">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

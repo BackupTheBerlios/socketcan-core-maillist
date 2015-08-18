@@ -1,0 +1,169 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Bittiming SJA1000
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-March/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Bittiming%20SJA1000&In-Reply-To=%3C4B964199.9090504%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004172.html">
+   <LINK REL="Next"  HREF="004175.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Bittiming SJA1000</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Bittiming%20SJA1000&In-Reply-To=%3C4B964199.9090504%40grandegger.com%3E"
+       TITLE="Bittiming SJA1000">wg at grandegger.com
+       </A><BR>
+    <I>Tue Mar  9 13:39:53 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004172.html">Bittiming SJA1000 
+</A></li>
+        <LI>Next message: <A HREF="004175.html">Bittiming SJA1000
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4173">[ date ]</a>
+              <a href="thread.html#4173">[ thread ]</a>
+              <a href="subject.html#4173">[ subject ]</a>
+              <a href="author.html#4173">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Schubert, Thorsten wrote:
+&gt;<i> I am struggling with the CAN bit-timing. I implemented an SJA1000 driver
+</I>&gt;<i> on top of the SJA1000 kernel module which comes with Linux 2.6.31. So
+</I>&gt;<i> far it
+</I>&gt;<i> seems to work except that the bitrate is off by factor two, i.e. a
+</I>
+To be clear here, for the SJA1000 you have to set &quot;priv-&gt;can.clock.freq&quot;
+to half of the oscillator frequency, e.g. to 8000000 for 16MHz. This is
+actually the frequency before the pre-scaler, which is used by the
+bit-timing calculation algorithm. This is special to the SJA1000.
+
+&gt;<i> # ip link set can0 type can bitrate 250000
+</I>&gt;<i>  
+</I>&gt;<i> makes my CAN run at 125kBit/s. While it is easy to work around this
+</I>&gt;<i> problem
+</I>&gt;<i> by simply providing half the real clock frequency to the struct
+</I>&gt;<i> sja1000_priv, 
+</I>&gt;<i> I was trying to figure out where and why things go wrong. After reading
+</I>&gt;<i> through
+</I>&gt;<i> the kernel/driver sources, the CAN sources (Verilog), the SJA1000 spec
+</I>&gt;<i> as
+</I>&gt;<i> well as the Bosch CAN spec, I got stuck at following point:
+</I>&gt;<i> 
+</I>&gt;<i> In linux/can/netlink.h I have:
+</I>&gt;<i> 
+</I>&gt;&gt;<i> /*
+</I>&gt;&gt;<i>  * CAN bit-timing parameters
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * For futher information, please read chapter &quot;8 BIT TIMING
+</I>&gt;&gt;<i>  * REQUIREMENTS&quot; of the &quot;Bosch CAN Specification version 2.0&quot;
+</I>&gt;&gt;<i>  * at <A HREF="http://www.semiconductors.bosch.de/pdf/can2spec.pdf.">http://www.semiconductors.bosch.de/pdf/can2spec.pdf.</A>
+</I>&gt;&gt;<i>  */
+</I>&gt;&gt;<i> struct can_bittiming {
+</I>&gt;&gt;<i> 	__u32 bitrate;		/* Bit-rate in bits/second */
+</I>&gt;&gt;<i> 	__u32 sample_point;	/* Sample point in one-tenth of a
+</I>&gt;<i> percent */
+</I>&gt;&gt;<i> 	__u32 tq;		/* Time quanta (TQ) in nanoseconds */
+</I>&gt;&gt;<i> 	__u32 prop_seg;		/* Propagation segment in TQs */
+</I>&gt;&gt;<i> 	__u32 phase_seg1;	/* Phase buffer segment 1 in TQs */
+</I>&gt;&gt;<i> 	__u32 phase_seg2;	/* Phase buffer segment 2 in TQs */
+</I>&gt;&gt;<i> 	__u32 sjw;		/* Synchronisation jump width in TQs */
+</I>&gt;&gt;<i> 	__u32 brp;		/* Bit-rate prescaler */
+</I>&gt;&gt;<i> }; 
+</I>&gt;<i> 
+</I>&gt;<i> What is the exact meaning of the brp field? Looking at
+</I>&gt;<i> drivers/net/can/dev.c,
+</I>&gt;<i> 
+</I>&gt;&gt;<i> static int can_calc_bittiming(struct net_device *dev, struct
+</I>&gt;<i> can_bittiming *bt)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	u64 v64;
+</I>&gt;&gt;<i> [...]
+</I>&gt;&gt;<i> 	v64 = (u64)best_brp * 1000000000UL;
+</I>&gt;&gt;<i> 	do_div(v64, priv-&gt;clock.freq);
+</I>&gt;&gt;<i> 	bt-&gt;tq = (u32)v64;
+</I>&gt;&gt;<i> [...]
+</I>&gt;&gt;<i> 	bt-&gt;brp = best_brp;
+</I>&gt;&gt;<i> 	/* real bit-rate */
+</I>&gt;&gt;<i> 	bt-&gt;bitrate = priv-&gt;clock.freq / (bt-&gt;brp * (tseg1 + tseg2 +
+</I>&gt;<i> 1));
+</I>&gt;<i> 
+</I>&gt;<i> it seems the meaning of brp=n is &quot;one time quanta is n clock cycles&quot;.
+</I>&gt;<i> However, looking at drivers/net/can/sja1000/sja1000.c:
+</I>&gt;<i> 
+</I>&gt;&gt;<i> static int sja1000_set_bittiming(struct net_device *dev)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct sja1000_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
+</I>&gt;&gt;<i> 	u8 btr0, btr1;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	btr0 = ((bt-&gt;brp - 1) &amp; 0x3f) | (((bt-&gt;sjw - 1) &amp; 0x3) &lt;&lt; 6);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> [...]
+</I>&gt;&gt;<i> 	
+</I>&gt;&gt;<i> 	priv-&gt;write_reg(priv, REG_BTR0, btr0);
+</I>&gt;<i> 
+</I>&gt;<i> the brp value (minus one) is written into the SJA's Baud Rate Prescaler
+</I>&gt;<i> (BTR0[5:0]). According my SJA1000 spec
+</I>&gt;<i> 
+</I>&gt;<i> t_scl = 2 * t_clk * (BRP + 1)
+</I>
+Here is the factor of *two* I mentioned above. The frequency before the
+pre-scaler is half the frequency of the external oscillator clock.
+
+&gt;<i> Where t_scl is the time quanta and t_clk the clock period. So BRP=n
+</I>&gt;<i> means
+</I>&gt;<i> &quot;one time quanta is 2*(n+1) clock cycles&quot;. So wouldn't
+</I>&gt;<i> 
+</I>&gt;<i> 	btr0 = ((bt-&gt;brp/2 - 1) &amp; 0x3f) | (((bt-&gt;sjw - 1) &amp; 0x3) &lt;&lt; 6);
+</I>&gt;<i> 
+</I>&gt;<i> and
+</I>&gt;<i> 
+</I>&gt;<i> static struct can_bittiming_const sja1000_bittiming_const = {
+</I>&gt;<i> [...]
+</I>&gt;<i> 	.brp_min = 2,
+</I>&gt;<i> 	.brp_inc = 2,
+</I>&gt;<i> [...]
+</I>&gt;<i> 
+</I>&gt;<i> be more correct?
+</I>
+No, &quot;.brp_inc = 2&quot; would mean that the brp register does not support odd
+values. To avoid further confusion, we might think of adding a field
+.brp_div, which we would set to &quot;2&quot; for the SJA1000. All other (or
+most?) CAN controllers would use &quot;1&quot;.
+
+Hope it's clean now.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004172.html">Bittiming SJA1000 
+</A></li>
+	<LI>Next message: <A HREF="004175.html">Bittiming SJA1000
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4173">[ date ]</a>
+              <a href="thread.html#4173">[ thread ]</a>
+              <a href="subject.html#4173">[ subject ]</a>
+              <a href="author.html#4173">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

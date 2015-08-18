@@ -1,0 +1,163 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 0/5] CAN transceiver subsystem
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/5%5D%20CAN%20transceiver%20subsystem&In-Reply-To=%3C4AD8AD28.9010403%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003286.html">
+   <LINK REL="Next"  HREF="003293.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 0/5] CAN transceiver subsystem</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/5%5D%20CAN%20transceiver%20subsystem&In-Reply-To=%3C4AD8AD28.9010403%40grandegger.com%3E"
+       TITLE="[PATCH 0/5] CAN transceiver subsystem">wg at grandegger.com
+       </A><BR>
+    <I>Fri Oct 16 19:28:08 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003286.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+        <LI>Next message: <A HREF="003293.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3287">[ date ]</a>
+              <a href="thread.html#3287">[ thread ]</a>
+              <a href="subject.html#3287">[ subject ]</a>
+              <a href="author.html#3287">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Kurt,
+
+Kurt Van Dijck wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> This is an effort to provide a CAN transceiver subsystem for use with
+</I>&gt;<i> socketcan.
+</I>&gt;<i> The goal is to allow different functions of different CAN transceivers
+</I>&gt;<i> to nicely cooperate with socketCAN devices, without socketCAN devices
+</I>&gt;<i> needing to know thing of their corresponding transceivers.
+</I>&gt;<i> 
+</I>&gt;<i> I did take these arguments into account during developing this:
+</I>&gt;<i> 1) the intrusion in socketcan device code should be minimal.
+</I>&gt;<i> 2) the registration of CAN transceivers should be optional, not required
+</I>&gt;<i> 3) CAN transceiver core should provide meaningfull defaults for
+</I>&gt;<i> functions that the particular transceiver does not support.
+</I>&gt;<i> 4) the matching of transceivers to net_devices should be predictable
+</I>&gt;<i> 5) beside the regular device scheme, a board with on-board transceiver
+</I>&gt;<i> should not depend on transceiver core device matching. It should easily
+</I>&gt;<i> pre-match a transceiver to a net device.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> I'll shortly describe the changes:
+</I>&gt;<i> 1) a new class is made: can-transceiver.
+</I>&gt;<i> 2) this class receives net_device register/unregister notifications.
+</I>&gt;<i> 3) this class will match netdevs to transceivers. The matching itself is
+</I>&gt;<i>    done with the netdevice's parent name (like sja1000_platform.0)
+</I>&gt;<i>    These names are not changed by using udev or similar, whereas ifnames
+</I>&gt;<i>    like 'can0' can.
+</I>&gt;<i> 4) The match between transceiver &amp; net device can change during device
+</I>&gt;<i>    lifetime.
+</I>&gt;<i> 5) a can_transceiver_alert entry is provided that could handle common
+</I>&gt;<i>    transceiver fault handling. Currently, I sends a can_frame upstream,
+</I>&gt;<i>    and brings down the iface.
+</I>&gt;<i> 6) A new bit in error can_frame's can_id is occupied to indicate
+</I>&gt;<i>    CAN transceiver notifications.
+</I>&gt;<i> 
+</I>&gt;<i> I probably forgot to tell a lot more :-).
+</I>&gt;<i> Probably, the locking is not yet correct (I still must run with
+</I>&gt;<i>       PROVE_LOCKING).
+</I>&gt;<i> At least, it can act as a starting point.
+</I>
+I'm not yet familiar with the features and technical details of CAN
+transceivers but at a first glance I have the following comments:
+
+- I would follow more closely the existing PHY implementation.
+- SysFS is not an option.
+- It's a lot of code for the functionality it provides (that's just my
+  first impression).
+
+When time permits, I will have a closer look. Hopefully before Oliver is
+back from holiday. This new interface will require some time to mature.
+If you need a quick solution, resend your original patch for the SJA1000
+similar to the one of the AT91. It should also not be a big deal to push
+it upstream.
+
+In general, there are various coding style issues:
+
+- Use labels just for the usual cleanup purposes:
+
+  +#ifdef CONFIG_CANTR_CORE
+  +	if (!priv-&gt;cantr)
+  +		goto no_transceiver;
+  +	max_bitrate = can_transceiver_get_max_bitrate(priv-&gt;cantr);
+  +	if (priv-&gt;bittiming.bitrate &lt;= max_bitrate)
+  +		goto transceiver_bitrate_ok;
+  +	dev_err(ND2D(dev), &quot;bitrate over transceiver's range\n&quot;);
+  +	return -EINVAL;
+  +transceiver_bitrate_ok:
+  +	ret = can_transceiver_set_mode(priv-&gt;cantr, CANTR_MODE_ON);
+  +	if (ret &lt; 0)
+  +		return ret;
+  +no_transceiver:
+  +#endif
+
+  This is not Fortran4 ;-).
+
+- Use the prefix &quot;can_&quot; or &quot;CAN_&quot;, e.g. CAN_TR instead of CAN_TR or even
+  better CAN_TRANSCEIVER.
+
+- Use long names for members of structures:
+
+  +struct tja1041_platform_data {
+  +	/* gpio's */
+  +	int stb;
+  +	int en;
+  +	int err;
+  +
+  +	const char *match;
+  +};
+
+  Or at least document them.
+
+- Use Macro definitions for bit masks:
+
+  +	if (!(mask &amp; 4))
+  +		goto no_err;
+
+  What is bit 2 good for?
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003286.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+	<LI>Next message: <A HREF="003293.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3287">[ date ]</a>
+              <a href="thread.html#3287">[ thread ]</a>
+              <a href="subject.html#3287">[ subject ]</a>
+              <a href="author.html#3287">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,148 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC] Specific CAN bit rate settings in HW-independent way
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20Specific%20CAN%20bit%20rate%20settings%20in%20HW-independent%20way&In-Reply-To=%3C470B26D1.8020403%40volkswagen.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000739.html">
+   <LINK REL="Next"  HREF="000741.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC] Specific CAN bit rate settings in HW-independent way</H1>
+    <B>Hartkopp, Oliver (K-GEFE/E)</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20Specific%20CAN%20bit%20rate%20settings%20in%20HW-independent%20way&In-Reply-To=%3C470B26D1.8020403%40volkswagen.de%3E"
+       TITLE="[RFC] Specific CAN bit rate settings in HW-independent way">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Tue Oct  9 08:59:29 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000739.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+        <LI>Next message: <A HREF="000741.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#740">[ date ]</a>
+              <a href="thread.html#740">[ thread ]</a>
+              <a href="subject.html#740">[ subject ]</a>
+              <a href="author.html#740">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Pavel Pisa wrote:
+&gt;<i> On Monday 08 October 2007 21:13, Wolfgang Grandegger wrote:
+</I>&gt;<i>   
+</I>&gt;&gt;&gt;<i> Currently the calculated default values are totally broken for MPC52000B.
+</I>&gt;&gt;&gt;<i>       
+</I>&gt;&gt;<i> Then it should be fixed, if possible. I agree, that the current
+</I>&gt;&gt;<i> implementation is not satisfactory. The SJA1000 (and i82572) driver does
+</I>&gt;&gt;<i> still use its own different baud-rate calculation. More feedback and
+</I>&gt;&gt;<i> maybe complaints are to be expected when they finally switch to the
+</I>&gt;&gt;<i> device interface.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     
+</I>
+Hi all,
+
+just to make sure i understood everything fine:
+
+We have ...
+
+SIOCSCANBAUDRATE to set a baudrate (like 100000)
+SIOCSCANCUSTOMBITTIME to set a BTR value like 0x4914
+
+And the idea from Juergen is to add SIOCSCANDEDBITTIME where you can add 
+several {bitrate / calucation constants} items to a list, which is 
+preferably used.
+
++
++struct custom_mode_setting {
++	struct list_head link;
++	u32 bit_rate;	/* bit rate these settings are valid for */
++	struct can_bittime_std custom_setting;
++};
+ 
+
+Looking onto these three possibilities i would just get confused, as i 
+expect SIOCSCANBAUDRATE to be the standard (for dummies) and 
+SIOCSCANCUSTOMBITTIME to be the direct access (for professionals testing 
+curious things).
+
+As Wolfgang stated correctly SIOCSCANBAUDRATE should be fixed to be a 
+reliable configuration interface in the common case.
+
+ From the code from Pavel i got the idea, to specify that every CAN 
+driver _has to bring his own calculation constants_, e.g.:
+
+&gt;<i> can_calc_const_t can_calc_const_2638 = {
+</I>&gt;<i> 	.sync = 1,
+</I>&gt;<i> 	.tseg1_min = 4,
+</I>&gt;<i> 	.tseg1_max = 16,
+</I>&gt;<i> 	.tseg2_min = 2,
+</I>&gt;<i> 	.tseg2_max = 8,
+</I>&gt;<i> 	.brp_min = 2,
+</I>&gt;<i> 	.brp_max = 128,
+</I>&gt;<i> 	.brp_inc = 2,
+</I>&gt;<i> 	.fix_div = 1
+</I>&gt;<i> };
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>
+or
+
+&gt;<i> can_calc_const_t can_calc_const_sja1000 = {
+</I>&gt;<i> 	.sync = 1,
+</I>&gt;<i> 	.tseg1_min = 1,
+</I>&gt;<i> 	.tseg1_max = 16,
+</I>&gt;<i> 	.tseg2_min = 1,
+</I>&gt;<i> 	.tseg2_max = 8,
+</I>&gt;<i> 	.brp_min = 1,
+</I>&gt;<i> 	.brp_max = 64,
+</I>&gt;<i> 	.brp_inc = 1,
+</I>&gt;<i> 	.fix_div = 2
+</I>&gt;<i> };
+</I>&gt;<i>   
+</I>
+So that when the driver has to calculate SIOCSCANBAUDRATE it invokes the 
+calculation function like suggested by Pavel:
+my_new_btr = can_auto_baud(&amp;brp, &amp;tseg1, &amp;tseg2, baud_rate, sampl_pt, 
+ref_clk, calc_const);
+
+This also does not change the the ioctl() interface and should lead to 
+an heavily improved SIOCSCANBAUDRATE.
+
+Would this solve the general problem or did i miss anything here?
+
+Regards,
+Oliver
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000739.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+	<LI>Next message: <A HREF="000741.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#740">[ date ]</a>
+              <a href="thread.html#740">[ thread ]</a>
+              <a href="subject.html#740">[ subject ]</a>
+              <a href="author.html#740">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

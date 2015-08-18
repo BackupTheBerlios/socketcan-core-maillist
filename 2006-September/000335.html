@@ -1,0 +1,122 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-users] Looping back TX messages
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-users%5D%20Looping%20back%20TX%20messages&In-Reply-To=%3Cm2odtvn5n2.fsf%40janus.isnogud.escape.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000333.html">
+   <LINK REL="Next"  HREF="000336.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-users] Looping back TX messages</H1>
+    <B>Urs Thuermann</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-users%5D%20Looping%20back%20TX%20messages&In-Reply-To=%3Cm2odtvn5n2.fsf%40janus.isnogud.escape.de%3E"
+       TITLE="[Socketcan-users] Looping back TX messages">urs at isnogud.escape.de
+       </A><BR>
+    <I>Mon Sep  4 15:05:53 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000333.html">[Socketcan-users] Looping back TX messages
+</A></li>
+        <LI>Next message: <A HREF="000336.html">[Socketcan-users] Looping back TX messages
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#335">[ date ]</a>
+              <a href="thread.html#335">[ thread ]</a>
+              <a href="subject.html#335">[ subject ]</a>
+              <a href="author.html#335">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt; writes:
+
+&gt;<i> OK, so far you and Urs have been happy with the loopback solution in the 
+</I>&gt;<i> Linux socket-can driver and you didn't miss the ability to switch it 
+</I>&gt;<i> off. Jan and I still prefer the implementation via protocol because we 
+</I>&gt;<i> want to keep it simple and are concerned about the RT latency. I think
+</I>&gt;<i> a resonable minimal solution for the time being could be the use of:
+</I>&gt;<i> 
+</I>&gt;<i> 	socket(PF_CAN, SOCK_RAW, CAN_PROTO_NET); /* local loopback */
+</I>&gt;<i> 	socket(PF_CAN, SOCK_RAW, CAN_PROTO_DEVICE); /* no loopback */
+</I>&gt;<i> 
+</I>&gt;<i>          #define CAN_PROTO_NET 0     (or maybe better CAN_RAW_NET?)
+</I>&gt;<i>          #define CAN_PROTO_DEVICE 1  (or maybe bettr CAN_RAW_DEVICE?)
+</I>
+As pointed out in another posting, a new protocol is simply not the
+right way to do it, as it is not a different protocol, but only a
+minor change in behavior of an existing protocol.  You send and
+receive the same frames, you use the same sockaddr types, etc. the
+only difference is where packets are delivered to.  It is a simple
+on/off flag to control wether frames are looped back to local
+listeners or not, and this is exactly what the {get,set}sockopt calls
+where invented for.  There might be further similar flags in the
+future which might be reasonable in combination with each other, and
+you surely wouldn't want to define 2^n protocols for n such flags.  In
+fact, we already have two such flags, one to control looping back in
+general, and one to control looping back to the sending socket.  The
+two options are
+
+    CAN_RAW_LOOPBACK to enable or disable loopback of packets to the
+        sending interface.  The default is on, so that other sockets
+        on the same machine will receive everything, that is sent on
+        that interface, and not only what is sent from other hosts.
+
+    CAN_RAW_RECV_OWN_MSGS to enable or disable reception of looped
+        back packets by the sending socket.  The default is off to
+        meet your expectations expressed here.
+
+This means if you simply open a socket and don't use these socket
+options you get exactly the behavior you wanted' i.e. you don't see
+your own messages.  As long as you open only one socket on the same
+host (which I understand is your normal use case) you won't see
+anything looped back.  If you do run other sockets connected the same
+CAN interface you will soon be happy that packets are looped back.  If
+not, switch it off using the socket option.
+
+&gt;<i> The default &quot;0&quot; is what your current implementation does. You have to 
+</I>&gt;<i> change nothing. If in the future, there is the need to change the 
+</I>&gt;<i> behavior as well, we could still implement an appropriate socket option.
+</I>
+The result would be what looks like a couple of ideas kludged together
+by unkwnoledgeable people having misunderstood the whole point behind
+the BSD socket API.  It would look like a an implementation driven
+only be current needs without analyzing the whole thing for
+similarities to utilize common patterns and the socket API provided
+for this.  We would have two different ways (protocol selection and
+socket option) to achieve the same thing.
+
+As mentioned above, we already have a solution and AFAICS, it will
+meet your needs.  Try it, please.
+
+urs
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000333.html">[Socketcan-users] Looping back TX messages
+</A></li>
+	<LI>Next message: <A HREF="000336.html">[Socketcan-users] Looping back TX messages
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#335">[ date ]</a>
+              <a href="thread.html#335">[ thread ]</a>
+              <a href="subject.html#335">[ subject ]</a>
+              <a href="author.html#335">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

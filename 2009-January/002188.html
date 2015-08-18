@@ -1,0 +1,339 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] SJA1000: remove unnecessary debugging code
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20SJA1000%3A%20remove%20unnecessary%20debugging%20code&In-Reply-To=%3C4982B7CE.40800%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002190.html">
+   <LINK REL="Next"  HREF="002198.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] SJA1000: remove unnecessary debugging code</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20SJA1000%3A%20remove%20unnecessary%20debugging%20code&In-Reply-To=%3C4982B7CE.40800%40grandegger.com%3E"
+       TITLE="[PATCH] SJA1000: remove unnecessary debugging code">wg at grandegger.com
+       </A><BR>
+    <I>Fri Jan 30 09:18:22 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002190.html">slcan on 64bit
+</A></li>
+        <LI>Next message: <A HREF="002198.html">[PATCH] SJA1000: remove unnecessary debugging code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2188">[ date ]</a>
+              <a href="thread.html#2188">[ thread ]</a>
+              <a href="subject.html#2188">[ subject ]</a>
+              <a href="author.html#2188">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>For kernel inclusion, we need to cleanup and remove unnecessary
+debugging code from the SJA1000 driver. Therefore I removed the
+private DBG debugging interface and converted a few DBG calls to
+dev_info() or dev_err(), where appropriate. Maybe they can be
+removed as well, please check?
+
+Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+ drivers/net/can/sja1000/sja1000.c |  139 +++++---------------------------------
+ 1 file changed, 20 insertions(+), 119 deletions(-)
+
+Index: 2.6/drivers/net/can/sja1000/sja1000.c
+===================================================================
+--- 2.6.orig/drivers/net/can/sja1000/sja1000.c
++++ 2.6/drivers/net/can/sja1000/sja1000.c
+@@ -77,61 +77,6 @@ MODULE_AUTHOR(&quot;Oliver Hartkopp &lt;oliver.h
+ MODULE_LICENSE(&quot;Dual BSD/GPL&quot;);
+ MODULE_DESCRIPTION(DRV_NAME &quot; CAN netdevice driver&quot;);
+ 
+-#ifdef CONFIG_CAN_DEBUG_DEVICES
+-#define DBG(args...)   ((debug &gt; 0) ? printk(args) : 0)
+-/* logging in interrupt context! */
+-#define iDBG(args...)  ((debug &gt; 1) ? printk(args) : 0)
+-#define iiDBG(args...) ((debug &gt; 2) ? printk(args) : 0)
+-#else
+-#define DBG(args...)
+-#define iDBG(args...)
+-#define iiDBG(args...)
+-#endif
+-
+-#ifdef CONFIG_CAN_DEBUG_DEVICES
+-static const char *ecc_errors[] = {
+-	NULL,
+-	NULL,
+-	&quot;ID.28 to ID.28&quot;,
+-	&quot;start of frame&quot;,
+-	&quot;bit SRTR&quot;,
+-	&quot;bit IDE&quot;,
+-	&quot;ID.20 to ID.18&quot;,
+-	&quot;ID.17 to ID.13&quot;,
+-	&quot;CRC sequence&quot;,
+-	&quot;reserved bit 0&quot;,
+-	&quot;data field&quot;,
+-	&quot;data length code&quot;,
+-	&quot;bit RTR&quot;,
+-	&quot;reserved bit 1&quot;,
+-	&quot;ID.4 to ID.0&quot;,
+-	&quot;ID.12 to ID.5&quot;,
+-	NULL,
+-	&quot;active error flag&quot;,
+-	&quot;intermission&quot;,
+-	&quot;tolerate dominant bits&quot;,
+-	NULL,
+-	NULL,
+-	&quot;passive error flag&quot;,
+-	&quot;error delimiter&quot;,
+-	&quot;CRC delimiter&quot;,
+-	&quot;acknowledge slot&quot;,
+-	&quot;end of frame&quot;,
+-	&quot;acknowledge delimiter&quot;,
+-	&quot;overload flag&quot;,
+-	NULL,
+-	NULL,
+-	NULL
+-};
+-
+-static const char *ecc_types[] = {
+-	&quot;bit error&quot;,
+-	&quot;form error&quot;,
+-	&quot;stuff error&quot;,
+-	&quot;other type of error&quot;
+-};
+-#endif
+-
+ static struct can_bittiming_const sja1000_bittiming_const = {
+ 	.tseg1_min = 1,
+ 	.tseg1_max = 16,
+@@ -143,12 +88,6 @@ static struct can_bittiming_const sja100
+ 	.brp_inc = 1,
+ };
+ 
+-static int debug;
+-
+-module_param(debug, int, S_IRUGO | S_IWUSR);
+-
+-MODULE_PARM_DESC(debug, &quot;Set debug mask (default: 0)&quot;);
+-
+ static int sja1000_probe_chip(struct net_device *dev)
+ {
+ 	struct sja1000_priv *priv = netdev_priv(dev);
+@@ -173,10 +112,11 @@ int set_reset_mode(struct net_device *de
+ 	for (i = 0; i &lt; 100; i++) {
+ 		/* check reset bit */
+ 		if (status &amp; MOD_RM) {
+-			if (i &gt; 1) {
+-				iDBG(KERN_INFO &quot;%s: %s looped %d times\n&quot;,
+-				     dev-&gt;name, __func__, i);
+-			}
++#ifdef CONFIG_CAN_DEBUG_DEVICES
++			if (i &gt; 1)
++				dev_info(ND2D(dev), &quot;%s looped %d times\n&quot;,
++					 __func__, i);
++#endif
+ 			priv-&gt;can.state = CAN_STATE_STOPPED;
+ 			return 0;
+ 		}
+@@ -201,10 +141,9 @@ static int set_normal_mode(struct net_de
+ 		/* check reset bit */
+ 		if ((status &amp; MOD_RM) == 0) {
+ #ifdef CONFIG_CAN_DEBUG_DEVICES
+-			if (i &gt; 1) {
+-				iDBG(KERN_INFO &quot;%s: %s looped %d times\n&quot;,
+-				     dev-&gt;name, __func__, i);
+-			}
++			if (i &gt; 1)
++				dev_info(ND2D(dev), &quot;%s looped %d times\n&quot;,
++					 __func__, i);
+ #endif
+ 			priv-&gt;can.state = CAN_STATE_ACTIVE;
+ 			/* enable all interrupts */
+@@ -228,8 +167,6 @@ static void sja1000_start(struct net_dev
+ {
+ 	struct sja1000_priv *priv = netdev_priv(dev);
+ 
+-	iDBG(KERN_INFO &quot;%s: %s()\n&quot;, dev-&gt;name, __func__);
+-
+ 	/* leave reset mode */
+ 	if (priv-&gt;can.state != CAN_STATE_STOPPED)
+ 		set_reset_mode(dev);
+@@ -249,7 +186,6 @@ static int sja1000_set_mode(struct net_d
+ 
+ 	switch (mode) {
+ 	case CAN_MODE_START:
+-		DBG(&quot;%s: CAN_MODE_START requested\n&quot;, __func__);
+ 		if (!priv-&gt;open_time)
+ 			return -EINVAL;
+ 
+@@ -315,7 +251,7 @@ static int sja1000_set_bittiming(struct 
+ 		(((bt-&gt;phase_seg2 - 1) &amp; 0x7) &lt;&lt; 4) |
+ 	  ((priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES) &lt;&lt; 7);
+ 
+-	dev_info(ND2D(dev), &quot;BTR0=0x%02x BTR1=0x%02x\n&quot;, btr0, btr1);
++	dev_info(ND2D(dev), &quot;setting BTR0=0x%02x BTR1=0x%02x\n&quot;, btr0, btr1);
+ 
+ 	priv-&gt;write_reg(dev, REG_BTR0, btr0);
+ 	priv-&gt;write_reg(dev, REG_BTR1, btr1);
+@@ -472,8 +408,7 @@ static void sja1000_rx(struct net_device
+ 	stats-&gt;rx_bytes += dlc;
+ }
+ 
+-static int sja1000_err(struct net_device *dev,
+-		       uint8_t isrc, uint8_t status, int n)
++static int sja1000_err(struct net_device *dev, uint8_t isrc, uint8_t status)
+ {
+ 	struct sja1000_priv *priv = netdev_priv(dev);
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+@@ -498,9 +433,6 @@ static int sja1000_err(struct net_device
+ 
+ 	if (isrc &amp; IRQ_DOI) {
+ 		/* data overrun interrupt */
+-		iiDBG(KERN_INFO &quot;%s: data overrun isrc=0x%02X &quot;
+-		      &quot;status=0x%02X\n&quot;, dev-&gt;name, isrc, status);
+-		iDBG(KERN_INFO &quot;%s: DOI #%d#\n&quot;, dev-&gt;name, n);
+ 		cf-&gt;can_id |= CAN_ERR_CRTL;
+ 		cf-&gt;data[1] = CAN_ERR_CRTL_RX_OVERFLOW;
+ 		priv-&gt;can.can_stats.data_overrun++;
+@@ -509,35 +441,21 @@ static int sja1000_err(struct net_device
+ 
+ 	if (isrc &amp; IRQ_EI) {
+ 		/* error warning interrupt */
+-		iiDBG(KERN_INFO &quot;%s: error warning isrc=0x%02X &quot;
+-		      &quot;status=0x%02X\n&quot;, dev-&gt;name, isrc, status);
+-		iDBG(KERN_INFO &quot;%s: EI #%d#\n&quot;, dev-&gt;name, n);
+ 		priv-&gt;can.can_stats.error_warning++;
+ 
+ 		if (status &amp; SR_BS) {
+ 			state = CAN_STATE_BUS_OFF;
+ 			cf-&gt;can_id |= CAN_ERR_BUSOFF;
+ 			can_bus_off(dev);
+-			iDBG(KERN_INFO &quot;%s: BUS OFF\n&quot;, dev-&gt;name);
+ 		} else if (status &amp; SR_ES) {
+ 			state = CAN_STATE_BUS_WARNING;
+-			iDBG(KERN_INFO &quot;%s: error\n&quot;, dev-&gt;name);
+ 		} else
+ 			state = CAN_STATE_ACTIVE;
+ 	}
+ 	if (isrc &amp; IRQ_BEI) {
+ 		/* bus error interrupt */
+-		iiDBG(KERN_INFO &quot;%s: bus error isrc=0x%02X &quot;
+-		      &quot;status=0x%02X\n&quot;, dev-&gt;name, isrc, status);
+-		iDBG(KERN_INFO &quot;%s: BEI #%d# [%d]\n&quot;, dev-&gt;name, n,
+-		     priv-&gt;can.can_stats.bus_error);
+ 		priv-&gt;can.can_stats.bus_error++;
+ 		ecc = priv-&gt;read_reg(dev, REG_ECC);
+-		iDBG(KERN_INFO &quot;%s: ECC = 0x%02X (%s, %s, %s)\n&quot;,
+-		     dev-&gt;name, ecc,
+-		     (ecc &amp; ECC_DIR) ? &quot;RX&quot; : &quot;TX&quot;,
+-		     ecc_types[ecc &gt;&gt; ECC_ERR],
+-		     ecc_errors[ecc &amp; ECC_SEG]);
+ 
+ 		cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
+ 
+@@ -562,26 +480,15 @@ static int sja1000_err(struct net_device
+ 	}
+ 	if (isrc &amp; IRQ_EPI) {
+ 		/* error passive interrupt */
+-		iiDBG(KERN_INFO &quot;%s: error passive isrc=0x%02X&quot;
+-		      &quot; status=0x%02X\n&quot;, dev-&gt;name, isrc, status);
+-		iDBG(KERN_INFO &quot;%s: EPI #%d#\n&quot;, dev-&gt;name, n);
+ 		priv-&gt;can.can_stats.error_passive++;
+-		if (status &amp; SR_ES) {
+-			iDBG(KERN_INFO &quot;%s: ERROR PASSIVE\n&quot;, dev-&gt;name);
++		if (status &amp; SR_ES)
+ 			state = CAN_STATE_BUS_PASSIVE;
+-		} else {
+-			iDBG(KERN_INFO &quot;%s: ERROR ACTIVE\n&quot;, dev-&gt;name);
++		else
+ 			state = CAN_STATE_ACTIVE;
+-		}
+ 	}
+ 	if (isrc &amp; IRQ_ALI) {
+ 		/* arbitration lost interrupt */
+-		iiDBG(KERN_INFO &quot;%s: error arbitration lost &quot;
+-		      &quot;isrc=0x%02X status=0x%02X\n&quot;,
+-		      dev-&gt;name, isrc, status);
+-		iDBG(KERN_INFO &quot;%s: ALI #%d#\n&quot;, dev-&gt;name, n);
+ 		alc = priv-&gt;read_reg(dev, REG_ALC);
+-		iDBG(KERN_INFO &quot;%s: ALC = 0x%02X\n&quot;, dev-&gt;name, alc);
+ 		priv-&gt;can.can_stats.arbitration_lost++;
+ 		cf-&gt;can_id |= CAN_ERR_LOSTARB;
+ 		cf-&gt;data[0] = alc &amp; 0x1f;
+@@ -632,14 +539,14 @@ irqreturn_t sja1000_interrupt(int irq, v
+ 	if (priv-&gt;pre_irq)
+ 		priv-&gt;pre_irq(dev);
+ 
+-	iiDBG(KERN_INFO &quot;%s: interrupt\n&quot;, dev-&gt;name);
+-
+ 	if (priv-&gt;can.state == CAN_STATE_STOPPED) {
+-		iiDBG(KERN_ERR &quot;%s: %s: controller is in reset mode! &quot;
+-		      &quot;MOD=0x%02X IER=0x%02X IR=0x%02X SR=0x%02X!\n&quot;,
+-		      dev-&gt;name, __func__, priv-&gt;read_reg(dev, REG_MOD),
+-		      priv-&gt;read_reg(dev, REG_IER), priv-&gt;read_reg(dev, REG_IR),
+-		      priv-&gt;read_reg(dev, REG_SR));
++		dev_err(ND2D(dev), &quot;%s: controller is in reset mode!&quot;
++			&quot;MOD=0x%02X IER=0x%02X IR=0x%02X SR=0x%02X!\n&quot;,
++			__func__,
++			priv-&gt;read_reg(dev, REG_MOD),
++			priv-&gt;read_reg(dev, REG_IER),
++			priv-&gt;read_reg(dev, REG_IR),
++			priv-&gt;read_reg(dev, REG_SR));
+ 		goto out;
+ 	}
+ 
+@@ -666,12 +573,10 @@ irqreturn_t sja1000_interrupt(int irq, v
+ 		}
+ 		if (isrc &amp; (IRQ_DOI | IRQ_EI | IRQ_BEI | IRQ_EPI | IRQ_ALI)) {
+ 			/* error interrupt */
+-			if (sja1000_err(dev, isrc, status, n))
++			if (sja1000_err(dev, isrc, status))
+ 				break;
+ 		}
+ 	}
+-	if (n &gt; 1)
+-		iDBG(KERN_INFO &quot;%s: handled %d IRQs\n&quot;, dev-&gt;name, n);
+ 
+ out:
+ 	if (priv-&gt;post_irq)
+@@ -807,10 +712,6 @@ static __init int sja1000_init(void)
+ {
+ 	printk(KERN_INFO &quot;%s CAN netdevice driver\n&quot;, DRV_NAME);
+ 
+-	if (debug)
+-		printk(KERN_INFO &quot;%s: debug level set to %d.\n&quot;,
+-		       DRV_NAME, debug);
+-
+ 	return 0;
+ }
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002190.html">slcan on 64bit
+</A></li>
+	<LI>Next message: <A HREF="002198.html">[PATCH] SJA1000: remove unnecessary debugging code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2188">[ date ]</a>
+              <a href="thread.html#2188">[ thread ]</a>
+              <a href="subject.html#2188">[ subject ]</a>
+              <a href="author.html#2188">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

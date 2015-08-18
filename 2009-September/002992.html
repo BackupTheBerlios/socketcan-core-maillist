@@ -1,0 +1,122 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH V2] net-next-2.6:can: add TI CAN (HECC) driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V2%5D%20net-next-2.6%3Acan%3A%20add%20TI%20CAN%20%28HECC%29%20driver&In-Reply-To=%3C4AA2214F.5060707%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002991.html">
+   <LINK REL="Next"  HREF="002967.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH V2] net-next-2.6:can: add TI CAN (HECC) driver</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V2%5D%20net-next-2.6%3Acan%3A%20add%20TI%20CAN%20%28HECC%29%20driver&In-Reply-To=%3C4AA2214F.5060707%40grandegger.com%3E"
+       TITLE="[PATCH V2] net-next-2.6:can: add TI CAN (HECC) driver">wg at grandegger.com
+       </A><BR>
+    <I>Sat Sep  5 10:29:03 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002991.html">[PATCH V2] net-next-2.6:can: add TI CAN (HECC) driver
+</A></li>
+        <LI>Next message: <A HREF="002967.html">[PATCH V2] net-next-2.6:can: add TI CAN (HECC) driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2992">[ date ]</a>
+              <a href="thread.html#2992">[ thread ]</a>
+              <a href="subject.html#2992">[ subject ]</a>
+              <a href="author.html#2992">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 09/05/2009 10:07 AM, Gole, Anant wrote:
+&gt;<i>
+</I>&gt;&gt;<i> -----Original Message-----
+</I>&gt;&gt;<i> From: Wolfgang Grandegger [mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>]
+</I>&gt;&gt;<i> Sent: Friday, September 04, 2009 8:11 PM
+</I>&gt;&gt;<i> To: Gole, Anant
+</I>&gt;&gt;<i> Cc: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core at lists.berlios.de</A>; Marc Kleine-Budde
+</I>&gt;&gt;<i> Subject: Re: [PATCH V2] net-next-2.6:can: add TI CAN (HECC) driver
+</I>&gt;&gt;<i>
+</I>&gt;<i> [snip]
+</I>&gt;&gt;<i> expected: 0078: [8] 16 17 18 19 1a 1b 1c 1d
+</I>&gt;&gt;&gt;<i> received: 0078: [8] 18 19 1a 1b 1c 1d 1e 1f
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I am losing packets in send probably ...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> You could attach another board to the bus sniffing the traffic with
+</I>&gt;&gt;<i> candump. This should make obvious what happened.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Wolfgang.
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Yes I did that by putting a 3rd can sniffer node and have some interesting observations:
+</I>&gt;<i>
+</I>&gt;<i> 1. First I picked up the two canecho utilities from Vladislav that he modified from Marc's git (Thanks to both of you)
+</I>&gt;<i> <A HREF="https://lists.berlios.de/pipermail/socketcan-core/2009-August/002871.html">https://lists.berlios.de/pipermail/socketcan-core/2009-August/002871.html</A>
+</I>&gt;<i>
+</I>&gt;<i> 2. I noticed that the write functions on both did not check for errors and suspected that that might be the issue of not having enough buffers on the queue and it was - After changing the write call to loop until successful I was able to get traffic moving (until later when it fails again) - the change was a single line on write calls (in both utilities)
+</I>&gt;<i> while (write(s,&amp;tx_frames[send_pos], sizeof(*tx_frames))&lt;  0) ;
+</I>
+Ah, right, I fixed that in my private version as show:
+
+         rewrite:
+                 nbytes = write(s, &amp;tx_frames[send_pos],
+                                sizeof(*tx_frames));
+                 if (nbytes != sizeof(*tx_frames))
+                 {
+                         if (nbytes &lt; 0)
+                         {
+                                 if (errno == ENOBUFS)
+                                 {
+                                         sched_yield();
+                                         goto rewrite;
+                                 }
+                                 perror(&quot;write failed&quot;);
+                         }
+                         else
+                                 fprintf(stderr, &quot;write retruned only &quot;
+                                         &quot;%d bytes\n&quot;, nbytes);
+                         break;
+                 }
+
+Sorry, I didn't remember.
+
+&gt;<i> 3. On further testing I found that at times the canecho_gen node generates a duplicate frame (probably my driver is at fault here) and hence the utility fails after a few seconds. The duplicate frame was verified on the 3rd node on the bus (the scanner).
+</I>&gt;<i>
+</I>&gt;<i> Any clues welcome. I will continue by debug.
+</I>
+You can run candump on the test target to check message reception.
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002991.html">[PATCH V2] net-next-2.6:can: add TI CAN (HECC) driver
+</A></li>
+	<LI>Next message: <A HREF="002967.html">[PATCH V2] net-next-2.6:can: add TI CAN (HECC) driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2992">[ date ]</a>
+              <a href="thread.html#2992">[ thread ]</a>
+              <a href="subject.html#2992">[ subject ]</a>
+              <a href="author.html#2992">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,689 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Driver for some PLX PCI bridge + sja1000 CAN controllers
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Driver%20for%20some%20PLX%20PCI%20bridge%20%2B%20sja1000%20CAN%20controllers&In-Reply-To=%3C4B388589.4030706%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003709.html">
+   <LINK REL="Next"  HREF="003714.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Driver for some PLX PCI bridge + sja1000 CAN controllers</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Driver%20for%20some%20PLX%20PCI%20bridge%20%2B%20sja1000%20CAN%20controllers&In-Reply-To=%3C4B388589.4030706%40grandegger.com%3E"
+       TITLE="Driver for some PLX PCI bridge + sja1000 CAN controllers">wg at grandegger.com
+       </A><BR>
+    <I>Mon Dec 28 11:16:41 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003709.html">Driver for some PLX PCI bridge + sja1000 CAN controllers
+</A></li>
+        <LI>Next message: <A HREF="003714.html">Driver for some PLX PCI bridge + sja1000 CAN controllers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3712">[ date ]</a>
+              <a href="thread.html#3712">[ thread ]</a>
+              <a href="subject.html#3712">[ subject ]</a>
+              <a href="author.html#3712">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Pavel,
+
+Pavel B. Cheblakov wrote:
+&gt;<i> Hi!
+</I>&gt;<i> 
+</I>&gt;<i> This driver (plx_pci) adds support for some sja1000 CAN controllers
+</I>&gt;<i> which is based on PLX PCI bridges.
+</I>&gt;<i> It works with:
+</I>&gt;<i>    - Marathon CAN-bus-PCI card (<A HREF="http://www.marathon.ru/">http://www.marathon.ru/</A>)
+</I>&gt;<i>    - Adlink PCI-7841/cPCI-7841 card (<A HREF="http://www.adlinktech.com/">http://www.adlinktech.com/</A>)
+</I>&gt;<i>    - Adlink PCI-7841/cPCI-7841 SE card (it's a slight modification of
+</I>&gt;<i> previous card)
+</I>&gt;<i>    - TEWS TECHNOLOGIES TPMC810 card (<A HREF="http://www.tews.com/">http://www.tews.com/</A>)
+</I>
+Nice.
+
+&gt;<i> I'm not sure that plx_pci is a right name for this driver. But I think
+</I>&gt;<i> this driver have certain potentialities to support any other similar
+</I>&gt;<i> cards (based on PLX bridges).
+</I>
+The name sounds reasonable. In principle, also the ixxat_pci cards could
+be supported by this driver. IIRC, there was just some trick with
+probing the number of CAN channels. You may want to check/compare? In
+general it's *good* to share code.
+
+&gt;<i> Attached patch against revision 1095 of socketcan SVN.
+</I>
+&gt;<i> I hope it will be useful for anybody else.
+</I>
+It's usefull, of course.
+
+BTW: could you please send you patches inline next time to simplify the
+review. I'm adding the patch below manually. Some general comments first:
+
+- Use the proper style for comments. Please check:
+
+  <A HREF="http://lxr.linux.no/#linux+v2.6.32/Documentation/CodingStyle#L425">http://lxr.linux.no/#linux+v2.6.32/Documentation/CodingStyle#L425</A>
+
+- Consider using (dev)/(!dev) instead of ((dev != NULL)/(dev == NULL).
+
+&gt;<i> Index: kernel/2.6/drivers/net/can/sja1000/plx_pci.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- kernel/2.6/drivers/net/can/sja1000/plx_pci.c	(.../svn+<A HREF="ssh://cheblakov@v5cvs/socketcan/vendor/socketcan/1095">ssh://cheblakov@v5cvs/socketcan/vendor/socketcan/1095</A>)	(revision 0)
+</I>&gt;<i> +++ kernel/2.6/drivers/net/can/sja1000/plx_pci.c	(revision 199)
+</I>&gt;<i> @@ -0,0 +1,426 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Copyright (C) 2008-2009 Pavel Cheblakov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">P.B.Cheblakov at inp.nsk.su</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + * Derived from the ems_pci.c driver:
+</I>&gt;<i> + *       Copyright (C) 2007 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+</I>&gt;<i> + *       Copyright (C) 2008 Markus Plessing &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">plessing at ems-wuensche.com</A>&gt;
+</I>&gt;<i> + *       Copyright (C) 2008 Sebastian Haas &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">haas at ems-wuensche.com</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is free software; you can redistribute it and/or modify
+</I>&gt;<i> + * it under the terms of the version 2 of the GNU General Public License
+</I>&gt;<i> + * as published by the Free Software Foundation
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is distributed in the hope that it will be useful,
+</I>&gt;<i> + * but WITHOUT ANY WARRANTY; without even the implied warranty of
+</I>&gt;<i> + * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+</I>&gt;<i> + * GNU General Public License for more details.
+</I>&gt;<i> + *
+</I>&gt;<i> + * You should have received a copy of the GNU General Public License
+</I>&gt;<i> + * along with this program; if not, write to the Free Software Foundation,
+</I>&gt;<i> + * Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> +    Driver plx_pci, version 1.1.0, 2009-12-26
+</I>&gt;<i> +*/
+</I>
+Please use the required style for comments.
+
+&gt;<i> +
+</I>&gt;<i> +#include &lt;linux/kernel.h&gt;
+</I>&gt;<i> +#include &lt;linux/module.h&gt;
+</I>&gt;<i> +#include &lt;linux/interrupt.h&gt;
+</I>&gt;<i> +#include &lt;linux/netdevice.h&gt;
+</I>&gt;<i> +#include &lt;linux/delay.h&gt;
+</I>&gt;<i> +#include &lt;linux/pci.h&gt;
+</I>&gt;<i> +#include &lt;socketcan/can.h&gt;
+</I>&gt;<i> +#include &lt;socketcan/can/dev.h&gt;
+</I>&gt;<i> +#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2, 6, 16)
+</I>&gt;<i> +#include &lt;linux/io.h&gt;
+</I>&gt;<i> +#else
+</I>&gt;<i> +#include &lt;asm/io.h&gt;
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +#include &quot;sja1000.h&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +#define DRV_NAME  &quot;plx_pci&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +MODULE_AUTHOR(&quot;Pavel Cheblakov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">P.B.Cheblakov at inp.nsk.su</A>&gt;&quot;);
+</I>&gt;<i> +MODULE_DESCRIPTION(&quot;Socket-CAN driver for PLX9xxx PCI-bridge cards with &quot;
+</I>&gt;<i> +		   &quot;sja1000 chips&quot;);
+</I>&gt;<i> +MODULE_SUPPORTED_DEVICE(&quot;Marathon CAN-bus-PCI, &quot;
+</I>&gt;<i> +			&quot;Adlink PCI-7841/cPCI-7841, &quot;
+</I>&gt;<i> +			&quot;Adlink PCI-7841/cPCI-7841 SE, &quot;
+</I>&gt;<i> +			&quot;TEWS TECHNOLOGIES TPMC810&quot;);
+</I>&gt;<i> +MODULE_LICENSE(&quot;GPL v2&quot;);
+</I>&gt;<i> +
+</I>&gt;<i> +#define PLX_PCI_MAX_CHAN 2
+</I>&gt;<i> +
+</I>&gt;<i> +struct plx_pci_card {
+</I>&gt;<i> +	int channels;			/* detected channels count */
+</I>&gt;<i> +
+</I>&gt;<i> +	struct pci_dev *pci_dev;
+</I>&gt;<i> +	struct net_device *net_dev[PLX_PCI_MAX_CHAN];
+</I>&gt;<i> +
+</I>&gt;<i> +	void __iomem *conf_addr;
+</I>&gt;<i> +	void __iomem *base_addr[PLX_PCI_MAX_CHAN];
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +#define PLX_PCI_CAN_CLOCK (16000000 / 2)
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * PLX9xxx registers
+</I>&gt;<i> + */
+</I>&gt;<i> +#define PLX_INTCSR	0x4c		/* Interrup Control/Status */
+</I>&gt;<i> +#define PLX_CNTRL	0x50		/* User I/O, Direct Slave Response,
+</I>&gt;<i> +					   Serial EEPROM, and Initialization
+</I>&gt;<i> +					   Control register */
+</I>&gt;<i> +
+</I>&gt;<i> +#define PLX_LINT1_EN	0x1		/* Local interrupt 1 enable */
+</I>&gt;<i> +#define PLX_LINT2_EN	(1 &lt;&lt; 3)		/* Local interrupt 2 enable */
+</I>&gt;<i> +#define PLX_PCI_INT_EN	(1 &lt;&lt; 6)		/* PCI Interrupt Enable */
+</I>&gt;<i> +#define PLX_PCI_RESET	(1 &lt;&lt; 30)		/* PCI Adapter Software Reset */
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * The board configuration is probably following:
+</I>&gt;<i> + * RX1 is connected to ground.
+</I>&gt;<i> + * TX1 is not connected.
+</I>&gt;<i> + * CLKO is not connected.
+</I>&gt;<i> + * Setting the OCR register to 0xDA is a good idea.
+</I>&gt;<i> + * This means  normal output mode , push-pull and the correct polarity.
+</I>
+                                    ^ remove space before &quot;,&quot;.
+
+&gt;<i> + */
+</I>&gt;<i> +#define PLX_PCI_OCR	(OCR_TX0_PUSHPULL | OCR_TX1_PUSHPULL)
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * In the CDR register, you should set CBP to 1.
+</I>&gt;<i> + * You will probably also want to set the clock divider value to 7
+</I>&gt;<i> + * (meaning direct oscillator output) because the second SJA1000 chip
+</I>&gt;<i> + * is driven by the first one CLKOUT output.
+</I>&gt;<i> + */
+</I>&gt;<i> +#define PLX_PCI_CDR			(CDR_CBP | CDR_CLKOUT_MASK)
+</I>&gt;<i> +
+</I>&gt;<i> +#define ADLINK_PCI_VENDOR_ID		0x144A
+</I>&gt;<i> +#define ADLINK_PCI_DEVICE_ID		0x7841
+</I>&gt;<i> +
+</I>&gt;<i> +#define MARATHON_PCI_DEVICE_ID		0x2715
+</I>&gt;<i> +
+</I>&gt;<i> +#define TEWS_PCI_VENDOR_ID		0x1498
+</I>&gt;<i> +#define TEWS_PCI_DEVICE_ID_TMPC810	0x032A
+</I>
+Please check if the vendors are already defined in the kernel's
+&quot;include/linux/pci_ids.h&quot;.
+
+&gt;<i> +enum plx_cards {
+</I>&gt;<i> +	MARATHON_CAN_BUS_PCI = 0,
+</I>&gt;<i> +	ADLINK_PCI_7841,
+</I>&gt;<i> +	ADLINK_PCI_7841_SE,
+</I>&gt;<i> +	TEWS_TPMC810
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +struct channel_map {
+</I>&gt;<i> +	u8 bar;
+</I>
+As it does not save any space, u32 is fine for &quot;bar&quot; as well.
+
+&gt;<i> +	u32 offset;
+</I>&gt;<i> +	u32 size;		/* 0x00 - auto, e.g. length of entire bar */
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static struct plx_card_info {
+</I>&gt;<i> +	const char *name;
+</I>&gt;<i> +	u8 channel_count;
+</I>
+unsigned int? See above.
+
+&gt;<i> +	int can_clock;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Parameters for mapping local configuration space is located
+</I>&gt;<i> +	 * at index 0 in this array.
+</I>&gt;<i> +	 * Subsequent array elements correspond to mapping SJA1000 chips.
+</I>&gt;<i> +	 */
+</I>
+Please correct comment style.
+
+&gt;<i> +	struct channel_map ch_map_tbl[PLX_PCI_MAX_CHAN + 1];
+</I>&gt;<i> +} plx_card_info_tbl[] __devinitdata = {
+</I>&gt;<i> +		{&quot;Marathon CAN-bus-PCI&quot;,
+</I>
+Please use just one tab per indention level, put &quot;{&quot; on a separate line
+and concatenate some lines, e.g.:
+
+} plx_card_info_tbl[] __devinitdata = {
+	{
+		&quot;Marathon CAN-bus-PCI&quot;, 2, PLX_PCI_CAN_CLOCK,
+		{ {0, 0x00, 0x00}, {2, 0x00, 0x00}, {4, 0x00, 0x00} }
+	},
+
+&gt;<i> +				2, PLX_PCI_CAN_CLOCK, { {0, 0x00, 0x00},
+</I>&gt;<i> +							{2, 0x00, 0x00},
+</I>&gt;<i> +							{4, 0x00, 0x00} }
+</I>&gt;<i> +		},
+</I>&gt;<i> +		{&quot;Adlink PCI-7841/cPCI-7841&quot;,
+</I>&gt;<i> +				2, PLX_PCI_CAN_CLOCK, { {1, 0x00, 0x00},
+</I>&gt;<i> +							{2, 0x00, 0x80},
+</I>&gt;<i> +							{2, 0x80, 0x80} }
+</I>&gt;<i> +		},
+</I>&gt;<i> +		{&quot;Adlink PCI-7841/cPCI-7841 SE&quot;,
+</I>&gt;<i> +				2, PLX_PCI_CAN_CLOCK, { {0, 0x00, 0x00},
+</I>&gt;<i> +							{2, 0x00, 0x80},
+</I>&gt;<i> +							{2, 0x80, 0x80} }
+</I>&gt;<i> +		},
+</I>&gt;<i> +		{&quot;TEWS TECHNOLOGIES TPMC810&quot;,
+</I>&gt;<i> +				2, PLX_PCI_CAN_CLOCK, { {0, 0x00,  0x00},
+</I>&gt;<i> +							{2, 0x000, 0x80},
+</I>&gt;<i> +							{2, 0x100, 0x80} }
+</I>&gt;<i> +		},
+</I>&gt;<i> +		{ NULL }
+</I>
+Do you need the zero termination? Use ARRAY_SIZE() instead.
+
+&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static struct pci_device_id plx_pci_tbl[] = {
+</I>&gt;<i> +
+</I>&gt;<i> +	{ 	/* Marathon CAN-bus-PCI card */
+</I>&gt;<i> +		PCI_VENDOR_ID_PLX, MARATHON_PCI_DEVICE_ID,
+</I>&gt;<i> +		PCI_ANY_ID, PCI_ANY_ID,
+</I>&gt;<i> +		0, 0,
+</I>&gt;<i> +		MARATHON_CAN_BUS_PCI
+</I>&gt;<i> +	},
+</I>&gt;<i> +
+</I>&gt;<i> +	{ 	/* Adlink PCI-7841/cPCI-7841 */
+</I>&gt;<i> +		ADLINK_PCI_VENDOR_ID, ADLINK_PCI_DEVICE_ID,
+</I>&gt;<i> +		PCI_ANY_ID, PCI_ANY_ID,
+</I>&gt;<i> +		PCI_CLASS_NETWORK_OTHER &lt;&lt; 8, ~0,
+</I>&gt;<i> +		ADLINK_PCI_7841
+</I>&gt;<i> +	},
+</I>&gt;<i> +	{	/* Adlink PCI-7841/cPCI-7841 SE */
+</I>&gt;<i> +		ADLINK_PCI_VENDOR_ID, ADLINK_PCI_DEVICE_ID,
+</I>&gt;<i> +		PCI_ANY_ID, PCI_ANY_ID,
+</I>&gt;<i> +		PCI_CLASS_COMMUNICATION_OTHER &lt;&lt; 8, ~0,
+</I>&gt;<i> +		ADLINK_PCI_7841_SE
+</I>&gt;<i> +	},
+</I>&gt;<i> +	{ 	/* TEWS TECHNOLOGIES TPMC810 card */
+</I>&gt;<i> +		TEWS_PCI_VENDOR_ID, TEWS_PCI_DEVICE_ID_TMPC810,
+</I>&gt;<i> +		PCI_ANY_ID, PCI_ANY_ID,
+</I>&gt;<i> +		0, 0,
+</I>&gt;<i> +		TEWS_TPMC810
+</I>&gt;<i> +	},
+</I>&gt;<i> +	{ 0,}
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>
+Please remove empty line above.
+
+&gt;<i> +MODULE_DEVICE_TABLE(pci, plx_pci_tbl);
+</I>&gt;<i> +
+</I>&gt;<i> +static u8 plx_pci_read_reg(const struct sja1000_priv *priv, int port)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return readb(priv-&gt;reg_base + port);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void plx_pci_write_reg(const struct sja1000_priv *priv, int port, u8 val)
+</I>&gt;<i> +{
+</I>&gt;<i> +	writeb(val, priv-&gt;reg_base + port);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Check if a CAN controller is present at the specified location
+</I>&gt;<i> + * by trying to set 'em into the PeliCAN mode
+</I>&gt;<i> + */
+</I>&gt;<i> +static inline int plx_pci_check_sja1000(const struct sja1000_priv *priv)
+</I>&gt;<i> +{
+</I>&gt;<i> +	u8 res;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Make sure SJA1000 is in reset mode */
+</I>&gt;<i> +	priv-&gt;write_reg(priv, REG_MOD, 1);
+</I>&gt;<i> +
+</I>&gt;<i> +	priv-&gt;write_reg(priv, REG_CDR, CDR_PELICAN);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* read reset-values */
+</I>&gt;<i> +	res = priv-&gt;read_reg(priv, REG_CDR);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (res == CDR_PELICAN)
+</I>&gt;<i> +		return 1;
+</I>
+The ixxat pci driver uses a more sophisticated probing mechanism, which
+might fit here as well.
+
+&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + *  Software reset PLX9xxx
+</I>&gt;<i> + *	Also LRESET# asserts and brings to reset device on the Local Bus
+</I>&gt;<i> + */
+</I>&gt;<i> +static void plx_pci_reset(struct plx_pci_card *card)
+</I>&gt;<i> +{
+</I>&gt;<i> +	u32 cntrl;
+</I>&gt;<i> +
+</I>&gt;<i> +	cntrl = ioread32(card-&gt;conf_addr + PLX_CNTRL);
+</I>&gt;<i> +	cntrl |= PLX_PCI_RESET;
+</I>&gt;<i> +	iowrite32(cntrl, card-&gt;conf_addr + PLX_CNTRL);
+</I>&gt;<i> +	udelay(100);
+</I>&gt;<i> +	cntrl ^= PLX_PCI_RESET;
+</I>&gt;<i> +	iowrite32(cntrl, card-&gt;conf_addr + PLX_CNTRL);
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static void plx_pci_del_card(struct pci_dev *pdev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct plx_pci_card *card = pci_get_drvdata(pdev);
+</I>&gt;<i> +	struct net_device *dev;
+</I>&gt;<i> +	int i = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	for (i = 0; i &lt; card-&gt;channels; i++) {
+</I>&gt;<i> +		dev = card-&gt;net_dev[i];
+</I>&gt;<i> +
+</I>
+Consider removing the empty line above please.
+
+&gt;<i> +		if (!dev)
+</I>&gt;<i> +			continue;
+</I>&gt;<i> +
+</I>&gt;<i> +		dev_info(&amp;pdev-&gt;dev, &quot;Removing %s.\n&quot;, dev-&gt;name);
+</I>
+Please remove the &quot;.&quot;.
+
+&gt;<i> +		unregister_sja1000dev(dev);
+</I>&gt;<i> +		free_sja1000dev(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +		if (card-&gt;base_addr[i] != NULL)
+</I>&gt;<i> +			pci_iounmap(card-&gt;pci_dev, card-&gt;base_addr[i]);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	plx_pci_reset(card);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Disable interrupts from PCI-card (PLX9xxx) and disable Local_1,
+</I>&gt;<i> +	 * Local_2 interrupts */
+</I>
+Please fix comment sytle.
+
+&gt;<i> +	iowrite32(0x0, card-&gt;conf_addr + PLX_INTCSR);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (card-&gt;conf_addr != NULL)
+</I>
+	if (card-&gt;conf_addr) ?
+
+&gt;<i> +		pci_iounmap(card-&gt;pci_dev, card-&gt;conf_addr);
+</I>&gt;<i> +
+</I>&gt;<i> +	kfree(card);
+</I>&gt;<i> +
+</I>&gt;<i> +	pci_disable_device(pdev);
+</I>&gt;<i> +	pci_set_drvdata(pdev, NULL);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Probe PLX9xxx based device for SJA1000 chips and register each available
+</I>&gt;<i> + * CAN channel to SJA1000 Socket-CAN subsystem.
+</I>&gt;<i> + */
+</I>&gt;<i> +static int __devinit plx_pci_add_card(struct pci_dev *pdev,
+</I>&gt;<i> +				      const struct pci_device_id *ent)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct sja1000_priv *priv;
+</I>&gt;<i> +	struct net_device *dev;
+</I>&gt;<i> +	struct plx_pci_card *card;
+</I>&gt;<i> +	struct plx_card_info *ci;
+</I>&gt;<i> +	int err, i;
+</I>&gt;<i> +	u32 tmp;
+</I>
+s/tmp/val/ ?
+
+&gt;<i> +
+</I>&gt;<i> +	ci = &amp;plx_card_info_tbl[ent-&gt;driver_data];
+</I>&gt;<i> +
+</I>&gt;<i> +	if (pci_enable_device(pdev) &lt; 0) {
+</I>&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;Failed to enable PCI device\n&quot;);
+</I>&gt;<i> +		return -ENODEV;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_info(&amp;pdev-&gt;dev, &quot;Detected \&quot;%s\&quot; card at slot #%i\n&quot;,
+</I>&gt;<i> +		 ci-&gt;name, PCI_SLOT(pdev-&gt;devfn));
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Allocate card structures to hold addresses, ... */
+</I>&gt;<i> +	card = kzalloc(sizeof(struct plx_pci_card), GFP_KERNEL);
+</I>
+Please use
+
+	card = kzalloc(*card, ...
+
+&gt;<i> +	if (card == NULL) {
+</I>
+We usually use &quot;!card&quot;.
+
+&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;Unable to allocate memory\n&quot;);
+</I>&gt;<i> +		pci_disable_device(pdev);
+</I>&gt;<i> +		return -ENOMEM;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	pci_set_drvdata(pdev, card);
+</I>&gt;<i> +
+</I>&gt;<i> +	card-&gt;pci_dev = pdev;
+</I>&gt;<i> +	card-&gt;channels = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Remap PLX9xxx configuration space */
+</I>&gt;<i> +	card-&gt;conf_addr = pci_iomap(pdev, ci-&gt;ch_map_tbl[0].bar,
+</I>&gt;<i> +				    ci-&gt;ch_map_tbl[0].size) +
+</I>&gt;<i> +				    ci-&gt;ch_map_tbl[0].offset;
+</I>&gt;<i> +				    /* this calculation only for commonality */
+</I>
+I don't understand the comment.
+
+&gt;<i> +	if (card-&gt;conf_addr == NULL) {
+</I>
+Hm, this test is wrong if &quot;ci-&gt;ch_map_tbl[0].offset != 0&quot;, right?
+
+&gt;<i> +		err = -ENOMEM;
+</I>&gt;<i> +		dev_err(&amp;pdev-&gt;dev,
+</I>&gt;<i> +			&quot;Failed to remap configuration space (BAR%d)\n&quot;,
+</I>&gt;<i> +			ci-&gt;ch_map_tbl[0].bar);
+</I>&gt;<i> +		goto failure_cleanup;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	dev_dbg(&amp;pdev-&gt;dev, &quot;Configuration space remaped to 0x%x\n&quot;,
+</I>&gt;<i> +		(u32)card-&gt;conf_addr);
+</I>
+Please use &quot;0x%p&quot; to avoid the cast.
+
+&gt;<i> +
+</I>&gt;<i> +	plx_pci_reset(card);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Detect available channels */
+</I>&gt;<i> +	for (i = 0; i &lt; ci-&gt;channel_count; i++) {
+</I>&gt;<i> +		dev = alloc_sja1000dev(0);
+</I>&gt;<i> +		if (dev == NULL) {
+</I>
+if (!dev) ?
+
+&gt;<i> +			err = -ENOMEM;
+</I>&gt;<i> +			goto failure_cleanup;
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		card-&gt;net_dev[i] = dev;
+</I>&gt;<i> +		priv = netdev_priv(dev);
+</I>&gt;<i> +		priv-&gt;priv = card;
+</I>&gt;<i> +#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2, 6, 18)
+</I>&gt;<i> +		priv-&gt;irq_flags = SA_SHIRQ;
+</I>&gt;<i> +#else
+</I>&gt;<i> +		priv-&gt;irq_flags = IRQF_SHARED;
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +		dev-&gt;irq = pdev-&gt;irq;
+</I>&gt;<i> +
+</I>&gt;<i> +		/*
+</I>&gt;<i> +		 * Remap IO space of SJA1000 chips
+</I>&gt;<i> +		 * This is device-dependent mapping
+</I>&gt;<i> +		 */
+</I>&gt;<i> +		card-&gt;base_addr[i] = pci_iomap(pdev, ci-&gt;ch_map_tbl[i+1].bar,
+</I>&gt;<i> +					       ci-&gt;ch_map_tbl[i+1].size) +
+</I>&gt;<i> +					       ci-&gt;ch_map_tbl[i+1].offset;
+</I>&gt;<i> +		if (card-&gt;base_addr[i] == NULL) {
+</I>
+		if (!card-&gt;base_addr[i]) ?
+
+&gt;<i> +			err = -ENOMEM;
+</I>&gt;<i> +			goto failure_cleanup;
+</I>&gt;<i> +		}
+</I>
+Wrong check, see above.
+
+&gt;<i> +		dev_dbg(&amp;pdev-&gt;dev, &quot;IO space of chip #%d remaped to 0x%x\n&quot;,
+</I>&gt;<i> +			i+1, (u32)card-&gt;base_addr[i]);
+</I>
+&quot;0x%p&quot; ? See above. Also &quot;i + 1&quot;, please
+
+&gt;<i> +		dev-&gt;base_addr = (u32)card-&gt;base_addr[i];
+</I>&gt;<i> +
+</I>&gt;<i> +		priv-&gt;reg_base = (void *)card-&gt;base_addr[i];
+</I>&gt;<i> +		priv-&gt;read_reg  = plx_pci_read_reg;
+</I>&gt;<i> +		priv-&gt;write_reg = plx_pci_write_reg;
+</I>&gt;<i> +
+</I>&gt;<i> +		/* Check if channel is present */
+</I>&gt;<i> +		if (plx_pci_check_sja1000(priv)) {
+</I>&gt;<i> +			priv-&gt;can.clock.freq = ci-&gt;can_clock;
+</I>&gt;<i> +			priv-&gt;ocr = PLX_PCI_OCR;
+</I>&gt;<i> +			priv-&gt;cdr = PLX_PCI_CDR;
+</I>
+BTW: do all cards work with the same OCR/CDR settings?
+
+&gt;<i> +			SET_NETDEV_DEV(dev, &amp;pdev-&gt;dev);
+</I>&gt;<i> +
+</I>&gt;<i> +			/* Register SJA1000 device */
+</I>&gt;<i> +			err = register_sja1000dev(dev);
+</I>&gt;<i> +			if (err) {
+</I>&gt;<i> +				dev_err(&amp;pdev-&gt;dev, &quot;Registering device failed &quot;
+</I>&gt;<i> +					&quot;(err=%d)\n&quot;, err);
+</I>&gt;<i> +				free_sja1000dev(dev);
+</I>&gt;<i> +				goto failure_cleanup;
+</I>&gt;<i> +			}
+</I>&gt;<i> +
+</I>&gt;<i> +			card-&gt;channels++;
+</I>&gt;<i> +
+</I>&gt;<i> +			dev_info(&amp;pdev-&gt;dev, &quot;Channel #%d at 0x%x, irq %d &quot;
+</I>&gt;<i> +				 &quot;registered as %s\n&quot;,
+</I>&gt;<i> +				 i + 1, (u32)dev-&gt;base_addr,
+</I>&gt;<i> +				 dev-&gt;irq, dev-&gt;name);
+</I>
+Use &quot;0x%p&quot; to avoid the cast.
+
+&gt;<i> +		} else {
+</I>&gt;<i> +			dev_err(&amp;pdev-&gt;dev, &quot;Channel #%d not detected\n&quot;, i+1);
+</I>
+&quot;i + 1&quot;, please.
+
+&gt;<i> +			free_sja1000dev(dev);
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Enable interrupts from PCI-card (PLX9xxx) and enable Local_1,
+</I>&gt;<i> +	 * Local_2 interrupts from SJA1000 chips */
+</I>
+Comment style?
+
+&gt;<i> +	tmp = ioread32(card-&gt;conf_addr + PLX_INTCSR);
+</I>&gt;<i> +	tmp |= PLX_LINT1_EN | PLX_LINT2_EN | PLX_PCI_INT_EN;
+</I>&gt;<i> +	iowrite32(tmp, card-&gt;conf_addr + PLX_INTCSR);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +
+</I>&gt;<i> +failure_cleanup:
+</I>&gt;<i> +	dev_err(&amp;pdev-&gt;dev, &quot;Error: %d. Cleaning Up.\n&quot;, err);
+</I>&gt;<i> +
+</I>&gt;<i> +	plx_pci_del_card(pdev);
+</I>&gt;<i> +
+</I>&gt;<i> +	return err;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static struct pci_driver plx_pci_driver = {
+</I>&gt;<i> +	.name = DRV_NAME,
+</I>&gt;<i> +	.id_table = plx_pci_tbl,
+</I>&gt;<i> +	.probe = plx_pci_add_card,
+</I>&gt;<i> +	.remove = plx_pci_del_card,
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static int __init plx_pci_init(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return pci_register_driver(&amp;plx_pci_driver);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void __exit plx_pci_exit(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	pci_unregister_driver(&amp;plx_pci_driver);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +module_init(plx_pci_init);
+</I>&gt;<i> +module_exit(plx_pci_exit);
+</I>&gt;<i> +
+</I>&gt;<i> Index: kernel/2.6/drivers/net/can/sja1000/Kconfig
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- kernel/2.6/drivers/net/can/sja1000/Kconfig	(.../svn+<A HREF="ssh://cheblakov@v5cvs/socketcan/vendor/socketcan/1095">ssh://cheblakov@v5cvs/socketcan/vendor/socketcan/1095</A>)	(revision 199)
+</I>&gt;<i> +++ kernel/2.6/drivers/net/can/sja1000/Kconfig	(working copy)
+</I>&gt;<i> @@ -36,6 +36,17 @@
+</I>&gt;<i>  	  This driver is for the one, two or four channel CPC-PCI,
+</I>&gt;<i>  	  CPC-PCIe and CPC-104P cards from EMS Dr. Thomas Wuensche
+</I>&gt;<i>  	  (<A HREF="http://www.ems-wuensche.de">http://www.ems-wuensche.de</A>).
+</I>&gt;<i> +	  
+</I>
+Remove trailing white space above, please.
+
+&gt;<i> +config CAN_PLX_PCI
+</I>&gt;<i> +	tristate &quot;Socket-CAN driver for PLX9xxx PCI-bridge cards with sja1000 chips&quot;
+</I>
+Can you please shorten this string and make it more like for the others
+SJA1000 drivers, e.g:
+
+	tristate &quot;PLX9xxx PCI-bridge based Cards&quot;
+
+&gt;<i> +	depends on PCI &amp;&amp; CAN_SJA1000
+</I>&gt;<i> +	---help---
+</I>&gt;<i> +	This driver is for CAN interface cards which based on PLX9xxx PCI bridge.
+</I>
+s/which// ?
+
+&gt;<i> +	Driver supports now:
+</I>&gt;<i> +	 - Marathon CAN-bus-PCI card (<A HREF="http://www.marathon.ru/">http://www.marathon.ru/</A>)
+</I>&gt;<i> +	 - Adlink PCI-7841/cPCI-7841 card (<A HREF="http://www.adlinktech.com/">http://www.adlinktech.com/</A>)
+</I>&gt;<i> +	 - Adlink PCI-7841/cPCI-7841 SE card
+</I>&gt;<i> +	 - TEWS TECHNOLOGIES TPMC810 card (<A HREF="http://www.tews.com/">http://www.tews.com/</A>)
+</I>&gt;<i>  
+</I>&gt;<i>  config CAN_EMS_PCMCIA
+</I>&gt;<i>  	tristate &quot;EMS CPC-CARD Card&quot;
+</I>&gt;<i> Index: kernel/2.6/drivers/net/can/sja1000/Makefile
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- kernel/2.6/drivers/net/can/sja1000/Makefile	(.../svn+<A HREF="ssh://cheblakov@v5cvs/socketcan/vendor/socketcan/1095">ssh://cheblakov@v5cvs/socketcan/vendor/socketcan/1095</A>)	(revision 199)
+</I>&gt;<i> +++ kernel/2.6/drivers/net/can/sja1000/Makefile	(working copy)
+</I>&gt;<i> @@ -20,6 +20,7 @@
+</I>&gt;<i>  obj-$(CONFIG_CAN_SJA1000_PLATFORM) += sja1000_platform.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_SJA1000_OF_PLATFORM) += sja1000_of_platform.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_EMS_PCI) += ems_pci.o
+</I>&gt;<i> +obj-$(CONFIG_CAN_PLX_PCI) += plx_pci.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_EMS_PCMCIA) += ems_pcmcia.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_EMS_104M) += ems_104m.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_ESD_PCI) += esd_pci.o
+</I>&gt;<i> Index: kernel/2.6/drivers/net/can/Makefile
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- kernel/2.6/drivers/net/can/Makefile	(.../svn+<A HREF="ssh://cheblakov@v5cvs/socketcan/vendor/socketcan/1095">ssh://cheblakov@v5cvs/socketcan/vendor/socketcan/1095</A>)	(revision 199)
+</I>&gt;<i> +++ kernel/2.6/drivers/net/can/Makefile	(working copy)
+</I>&gt;<i> @@ -23,6 +23,7 @@
+</I>&gt;<i>  export CONFIG_CAN_SOFTING=m
+</I>&gt;<i>  export CONFIG_CAN_SOFTING_CS=m
+</I>&gt;<i>  export CONFIG_CAN_MCP251X=m
+</I>&gt;<i> +export CONFIG_CAN_PLX_PCI=m
+</I>&gt;<i>  
+</I>&gt;<i>  modules modules_install clean:
+</I>&gt;<i>  	$(MAKE) -C $(KERNELDIR) M=$(PWD) $@ TOPDIR=$(TOPDIR)
+</I>
+Do you intend to push the driver to mainlain as well? That would be nice.
+
+Thanks for your contribution.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003709.html">Driver for some PLX PCI bridge + sja1000 CAN controllers
+</A></li>
+	<LI>Next message: <A HREF="003714.html">Driver for some PLX PCI bridge + sja1000 CAN controllers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3712">[ date ]</a>
+              <a href="thread.html#3712">[ thread ]</a>
+              <a href="subject.html#3712">[ subject ]</a>
+              <a href="author.html#3712">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

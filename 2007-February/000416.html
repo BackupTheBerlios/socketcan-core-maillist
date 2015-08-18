@@ -1,0 +1,137 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Magics of [CAN] message filtering
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Magics%20of%20%5BCAN%5D%20message%20filtering&In-Reply-To=%3C45D61C5C.8090201%40web.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000415.html">
+   <LINK REL="Next"  HREF="000420.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Magics of [CAN] message filtering</H1>
+    <B>Jan Kiszka</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Magics%20of%20%5BCAN%5D%20message%20filtering&In-Reply-To=%3C45D61C5C.8090201%40web.de%3E"
+       TITLE="Magics of [CAN] message filtering">jan.kiszka at web.de
+       </A><BR>
+    <I>Fri Feb 16 22:04:28 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000415.html">Magics of message filtering
+</A></li>
+        <LI>Next message: <A HREF="000420.html">Magics of [CAN] message filtering
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#416">[ date ]</a>
+              <a href="thread.html#416">[ thread ]</a>
+              <a href="subject.html#416">[ subject ]</a>
+              <a href="author.html#416">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all,
+
+I just bluntly jump in and capture this posting for the original issue
+behind it. :-&gt;
+
+Oliver Hartkopp wrote:
+&gt;<i> Hello Wolfgang,
+</I>&gt;<i> 
+</I>&gt;<i> indeed you are right with all your examples.
+</I>&gt;<i> 
+</I>&gt;<i> To get more practice i would suggest to check out the possibilities by 
+</I>&gt;<i> using the tools 'cangen', 'cansend' and 'candump'.
+</I>&gt;<i> 
+</I>&gt;<i> E.g. these are /your/ examples on the virtual CAN interface vcan0:
+</I>&gt;<i> 
+</I>&gt;&gt;<i> The following filter will select all messages, extended and standard 
+</I>&gt;&gt;<i> messages:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   rfilter[0].can_id   = 0x0;
+</I>&gt;&gt;<i>   rfilter[0].can_mask = 0x0;
+</I>&gt;&gt;<i>   
+</I>&gt;<i> candump vcan0
+</I>&gt;<i> or
+</I>&gt;<i> candump -m 0 -v 0 vcan0
+</I>&gt;<i> /* mask = value = 0 is the default */
+</I>&gt;<i> 
+</I>&gt;&gt;<i> The following filter will select only extended messages:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   rfilter[0].can_id   = CAN_EFF_FLAG;
+</I>&gt;&gt;<i>   rfilter[0].can_mask = CAN_EFF_FLAG;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   
+</I>&gt;<i> candump -m 0x80000000 -v 0x80000000 vcan0
+</I>&gt;&gt;<i> The following filter will select only standard messages:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   rfilter[0].can_id   = CAN_EFF_FLAG | CAN_INV_FILTER;
+</I>&gt;&gt;<i>   rfilter[0].can_mask = CAN_EFF_FLAG;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   
+</I>&gt;<i> candump -m 0x80000000 -v 0x80000000 -i 1 vcan0
+</I>
+...and I guess this would work as well:
+
+candump -m 0x80000000 -v 0x00000000 vcan0
+
+&gt;&gt;<i> And RTR-Messages could be filtered in a similar way. Is this correct?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   
+</I>&gt;<i> Yes. E.g.
+</I>&gt;<i> 
+</I>&gt;<i> candump -m 0x40000000 -v 0x40000000 vcan0
+</I>&gt;<i> 
+</I>
+Makes perfect sense, it's considering EFF and RTR as yet some more bits
+of the CAN ID. That's what I actually tried to apply yesterday under
+Xenomai and wondered why it didn't work. :o)
+
+So, to align RT-Socket-CAN with plain Socket-CAN again, we (Xenomai) should
+
+a) include EFF and RTS transparently into mask building and ID
+   comparison
+b) add support for inverse masks
+
+Wolfgang, as we currently have some &quot;exception&quot; specified in the CAN
+profile, I would just fix the code in this regard (for 2.3.1). The two
+changes above should be queued for Xenomai 2.4 together with a profile
+and revision number update - to avoid breakage inside the stable series.
+
+Jan
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 250 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20070216/e400d853/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20070216/e400d853/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000415.html">Magics of message filtering
+</A></li>
+	<LI>Next message: <A HREF="000420.html">Magics of [CAN] message filtering
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#416">[ date ]</a>
+              <a href="thread.html#416">[ thread ]</a>
+              <a href="subject.html#416">[ subject ]</a>
+              <a href="author.html#416">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

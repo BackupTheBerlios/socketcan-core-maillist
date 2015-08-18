@@ -1,0 +1,720 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%202/3%5D%20can%3A%20mscan-mpc5xxx%3A%20add%20support%20for%20the%0A%09MPC521x%20processor&In-Reply-To=%3C20100102135734.GC2239%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003725.html">
+   <LINK REL="Next"  HREF="003728.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor</H1>
+    <B>Wolfram Sang</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%202/3%5D%20can%3A%20mscan-mpc5xxx%3A%20add%20support%20for%20the%0A%09MPC521x%20processor&In-Reply-To=%3C20100102135734.GC2239%40pengutronix.de%3E"
+       TITLE="[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor">w.sang at pengutronix.de
+       </A><BR>
+    <I>Sat Jan  2 14:57:34 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003725.html">[PATCH net-next 3/3] powerpc/mpc5xxx: add OF platform binding	doc for FSL MSCAN devices
+</A></li>
+        <LI>Next message: <A HREF="003728.html">[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3724">[ date ]</a>
+              <a href="thread.html#3724">[ thread ]</a>
+              <a href="subject.html#3724">[ subject ]</a>
+              <a href="author.html#3724">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Sat, Jan 02, 2010 at 09:17:53AM +0100, Wolfgang Grandegger wrote:
+&gt;<i> From: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at denx.de</A>&gt;
+</I>&gt;<i> 
+</I>&gt;<i> The main differences compared to the MSCAN on the MPC5200 are:
+</I>&gt;<i> 
+</I>&gt;<i> - More flexibility in choosing the CAN source clock and frequency:
+</I>&gt;<i> 
+</I>&gt;<i>   Three different clock sources can be selected: &quot;ip&quot;, &quot;ref&quot; or &quot;sys&quot;.
+</I>&gt;<i>   For the latter two, a clock divider can be defined as well. If the
+</I>&gt;<i>   clock source is not specified by the device tree, we first try to
+</I>&gt;<i>   find an optimal CAN source clock based on the system clock. If that
+</I>&gt;<i>   is not possible, the reference clock will be used.
+</I>&gt;<i> 
+</I>&gt;<i> - The behavior of bus-off recovery is configurable:
+</I>&gt;<i> 
+</I>&gt;<i>   To comply with the usual handling of Socket-CAN bus-off recovery,
+</I>&gt;<i>   &quot;recovery on request&quot; is selected (instead of automatic recovery).
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at denx.de</A>&gt;
+</I>&gt;<i> ---
+</I>&gt;<i>  drivers/net/can/mscan/Kconfig       |    2 +-
+</I>&gt;<i>  drivers/net/can/mscan/mpc5xxx_can.c |  234 +++++++++++++++++++++++++++++------
+</I>&gt;<i>  drivers/net/can/mscan/mscan.c       |   41 +++++--
+</I>&gt;<i>  drivers/net/can/mscan/mscan.h       |   81 ++++++------
+</I>&gt;<i>  4 files changed, 271 insertions(+), 87 deletions(-)
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/mscan/Kconfig b/drivers/net/can/mscan/Kconfig
+</I>&gt;<i> index cd0f2d6..723d009 100644
+</I>&gt;<i> --- a/drivers/net/can/mscan/Kconfig
+</I>&gt;<i> +++ b/drivers/net/can/mscan/Kconfig
+</I>&gt;<i> @@ -11,7 +11,7 @@ if CAN_MSCAN
+</I>&gt;<i>  
+</I>&gt;<i>  config CAN_MPC5XXX
+</I>&gt;<i>  	tristate &quot;Freescale MPC5xxx onboard CAN controller&quot;
+</I>&gt;<i> -	depends on PPC_MPC52xx
+</I>&gt;<i> +	depends on (PPC_MPC52xx || PPC_MPC512x)
+</I>&gt;<i>  	---help---
+</I>&gt;<i>  	  If you say yes here you get support for Freescale's MPC5xxx
+</I>&gt;<i>  	  onboard CAN controller.
+</I>&gt;<i> diff --git a/drivers/net/can/mscan/mpc5xxx_can.c b/drivers/net/can/mscan/mpc5xxx_can.c
+</I>&gt;<i> index 1de6f63..42c719b 100644
+</I>&gt;<i> --- a/drivers/net/can/mscan/mpc5xxx_can.c
+</I>&gt;<i> +++ b/drivers/net/can/mscan/mpc5xxx_can.c
+</I>&gt;<i> @@ -29,6 +29,7 @@
+</I>&gt;<i>  #include &lt;linux/can/dev.h&gt;
+</I>&gt;<i>  #include &lt;linux/of_platform.h&gt;
+</I>&gt;<i>  #include &lt;sysdev/fsl_soc.h&gt;
+</I>&gt;<i> +#include &lt;linux/clk.h&gt;
+</I>&gt;<i>  #include &lt;linux/io.h&gt;
+</I>&gt;<i>  #include &lt;asm/mpc52xx.h&gt;
+</I>&gt;<i>  
+</I>&gt;<i> @@ -36,22 +37,15 @@
+</I>&gt;<i>  
+</I>&gt;<i>  #define DRV_NAME &quot;mpc5xxx_can&quot;
+</I>&gt;<i>  
+</I>&gt;<i> +#ifdef CONFIG_PPC_MPC5200
+</I>&gt;<i>  static struct of_device_id mpc52xx_cdm_ids[] __devinitdata = {
+</I>&gt;<i>  	{ .compatible = &quot;fsl,mpc5200-cdm&quot;, },
+</I>&gt;<i>  	{}
+</I>&gt;<i>  };
+</I>&gt;<i>  
+</I>&gt;<i> -/*
+</I>&gt;<i> - * Get frequency of the MSCAN clock source
+</I>&gt;<i> - *
+</I>&gt;<i> - * Either the oscillator clock (SYS_XTAL_IN) or the IP bus clock (IP_CLK)
+</I>&gt;<i> - * can be selected. According to the MPC5200 user's manual, the oscillator
+</I>&gt;<i> - * clock is the better choice as it has less jitter but due to a hardware
+</I>&gt;<i> - * bug, it can not be selected for the old MPC5200 Rev. A chips.
+</I>&gt;<i> - */
+</I>&gt;<i> -
+</I>&gt;<i> -static unsigned int  __devinit mpc52xx_can_clock_freq(struct of_device *of,
+</I>&gt;<i> -						      int clock_src)
+</I>&gt;<i> +static u32 __devinit mpc52xx_can_get_clock(struct of_device *ofdev,
+</I>&gt;<i> +					   const char *clock_name,
+</I>&gt;<i> +					   int *mscan_clksrc)
+</I>&gt;<i>  {
+</I>&gt;<i>  	unsigned int pvr;
+</I>&gt;<i>  	struct mpc52xx_cdm  __iomem *cdm;
+</I>&gt;<i> @@ -61,11 +55,24 @@ static unsigned int  __devinit mpc52xx_can_clock_freq(struct of_device *of,
+</I>&gt;<i>  
+</I>&gt;<i>  	pvr = mfspr(SPRN_PVR);
+</I>&gt;<i>  
+</I>&gt;<i> -	freq = mpc5xxx_get_bus_frequency(of-&gt;node);
+</I>&gt;<i> +	/*
+</I>&gt;<i> +	 * Either the oscillator clock (SYS_XTAL_IN) or the IP bus clock
+</I>&gt;<i> +	 * (IP_CLK) can be selected as MSCAN clock source. According to
+</I>&gt;<i> +	 * the MPC5200 user's manual, the oscillator clock is the better
+</I>&gt;<i> +	 * choice as it has less jitter. For this reason, it is selected
+</I>&gt;<i> +	 * by default. Unfortunately, it can not be selected for the old
+</I>&gt;<i> +	 * MPC5200 Rev. A chips due toa hardware bug (check errata).
+</I>
+s/toa/to a/
+
+&gt;<i> +	 */
+</I>&gt;<i> +	if (clock_name &amp;&amp; strcmp(clock_name, &quot;ip&quot;) == 0)
+</I>&gt;<i> +		*mscan_clksrc = MSCAN_CLKSRC_BUS;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		*mscan_clksrc = MSCAN_CLKSRC_XTAL;
+</I>&gt;<i> +
+</I>&gt;<i> +	freq = mpc5xxx_get_bus_frequency(ofdev-&gt;node);
+</I>&gt;<i>  	if (!freq)
+</I>&gt;<i>  		return 0;
+</I>&gt;<i>  
+</I>&gt;<i> -	if (clock_src == MSCAN_CLKSRC_BUS || pvr == 0x80822011)
+</I>&gt;<i> +	if (*mscan_clksrc == MSCAN_CLKSRC_BUS || pvr == 0x80822011)
+</I>&gt;<i>  		return freq;
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Determine SYS_XTAL_IN frequency from the clock domain settings */
+</I>&gt;<i> @@ -75,7 +82,6 @@ static unsigned int  __devinit mpc52xx_can_clock_freq(struct of_device *of,
+</I>&gt;<i>  		return 0;
+</I>&gt;<i>  	}
+</I>&gt;<i>  	cdm = of_iomap(np_cdm, 0);
+</I>&gt;<i> -	of_node_put(np_cdm);
+</I>&gt;<i>  
+</I>&gt;<i>  	if (in_8(&amp;cdm-&gt;ipb_clk_sel) &amp; 0x1)
+</I>&gt;<i>  		freq *= 2;
+</I>&gt;<i> @@ -84,10 +90,157 @@ static unsigned int  __devinit mpc52xx_can_clock_freq(struct of_device *of,
+</I>&gt;<i>  	freq *= (val &amp; (1 &lt;&lt; 5)) ? 8 : 4;
+</I>&gt;<i>  	freq /= (val &amp; (1 &lt;&lt; 6)) ? 12 : 16;
+</I>&gt;<i>  
+</I>&gt;<i> +	of_node_put(np_cdm);
+</I>&gt;<i>  	iounmap(cdm);
+</I>&gt;<i>  
+</I>&gt;<i>  	return freq;
+</I>&gt;<i>  }
+</I>&gt;<i> +#else /* !CONFIG_PPC_MPC5200 */
+</I>&gt;<i> +static u32 __devinit mpc52xx_can_get_clock(struct of_device *ofdev,
+</I>&gt;<i> +					   const char *clock_name,
+</I>&gt;<i> +					   int *mscan_clksrc)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +#endif /* CONFIG_PPC_MPC5200 */
+</I>
+Hmmm, I don't really like those empty functions. I once used the data-field of
+struct of_device_id, which carried a function pointer to a specific
+init-function for the matched device. What do you think about such an approach?
+
+&gt;<i> +
+</I>&gt;<i> +#ifdef CONFIG_PPC_MPC512x
+</I>&gt;<i> +struct mpc512x_clockctl {
+</I>&gt;<i> +	u32 spmr;		/* System PLL Mode Reg */
+</I>&gt;<i> +	u32 sccr[2];		/* System Clk Ctrl Reg 1 &amp; 2 */
+</I>&gt;<i> +	u32 scfr1;		/* System Clk Freq Reg 1 */
+</I>&gt;<i> +	u32 scfr2;		/* System Clk Freq Reg 2 */
+</I>&gt;<i> +	u32 reserved;
+</I>&gt;<i> +	u32 bcr;		/* Bread Crumb Reg */
+</I>&gt;<i> +	u32 pccr[12];		/* PSC Clk Ctrl Reg 0-11 */
+</I>&gt;<i> +	u32 spccr;		/* SPDIF Clk Ctrl Reg */
+</I>&gt;<i> +	u32 cccr;		/* CFM Clk Ctrl Reg */
+</I>&gt;<i> +	u32 dccr;		/* DIU Clk Cnfg Reg */
+</I>&gt;<i> +	u32 mccr[4];		/* MSCAN Clk Ctrl Reg 1-3 */
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static struct of_device_id mpc512x_clock_ids[] __devinitdata = {
+</I>&gt;<i> +	{ .compatible = &quot;fsl,mpc5121-clock&quot;, },
+</I>&gt;<i> +	{}
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static u32  __devinit mpc512x_can_get_clock(struct of_device *ofdev,
+</I>&gt;<i> +					    const char *clock_name,
+</I>&gt;<i> +					    int *mscan_clksrc,
+</I>&gt;<i> +					    ssize_t mscan_addr)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mpc512x_clockctl __iomem *clockctl;
+</I>&gt;<i> +	struct device_node *np_clock;
+</I>&gt;<i> +	struct clk *sys_clk, *ref_clk;
+</I>&gt;<i> +	int plen, clockidx, clocksrc = -1;
+</I>&gt;<i> +	u32 sys_freq, val, clockdiv = 1, freq = 0;
+</I>&gt;<i> +	const u32 *pval;
+</I>&gt;<i> +
+</I>&gt;<i> +	np_clock = of_find_matching_node(NULL, mpc512x_clock_ids);
+</I>&gt;<i> +	if (!np_clock) {
+</I>&gt;<i> +		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't find clock node\n&quot;);
+</I>&gt;<i> +		return -ENODEV;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	clockctl = of_iomap(np_clock, 0);
+</I>&gt;<i> +	if (!clockctl) {
+</I>&gt;<i> +		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't map clock registers\n&quot;);
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Determine the MSCAN device index from the physical address */
+</I>&gt;<i> +	clockidx = (mscan_addr &amp; 0x80) ? 1 : 0;
+</I>&gt;<i> +	if (mscan_addr &amp; 0x2000)
+</I>&gt;<i> +		clockidx += 2;
+</I>
+The PSCs use 'cell-index', here we use mscan_addr to derive the index. This is
+not consistent, but should be IMHO. Now, which is the preferred way? I think
+I'd go for 'cell-index', as other processors might have mscan_addr shuffled.
+Also, we could use 'of_iomap' again in the probe_routine.
+
+&gt;<i> +
+</I>&gt;<i> +	/*
+</I>&gt;<i> +	 * Clock source and divider selection: 3 different clock sources
+</I>&gt;<i> +	 * can be selected: &quot;ip&quot;, &quot;ref&quot; or &quot;sys&quot;. For the latetr two, a
+</I>&gt;<i> +	 * clock divider can be defined as well. If the clock source is
+</I>&gt;<i> +	 * not specified by the device tree, we first try to find an
+</I>&gt;<i> +	 * optimal CAN source clock based on the system clock. If that
+</I>&gt;<i> +	 * is not posslible, the reference clock will be used.
+</I>&gt;<i> +	 */
+</I>&gt;<i> +	if (clock_name &amp;&amp; !strcmp(clock_name, &quot;ip&quot;)) {
+</I>&gt;<i> +		*mscan_clksrc = MSCAN_CLKSRC_IPS;
+</I>&gt;<i> +		freq = mpc5xxx_get_bus_frequency(ofdev-&gt;node);
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		*mscan_clksrc = MSCAN_CLKSRC_BUS;
+</I>&gt;<i> +
+</I>&gt;<i> +		pval = of_get_property(ofdev-&gt;node,
+</I>&gt;<i> +				       &quot;fsl,mscan-clock-divider&quot;, &amp;plen);
+</I>&gt;<i> +		if (pval &amp;&amp; plen == sizeof(*pval))
+</I>&gt;<i> +			clockdiv = *pval;
+</I>&gt;<i> +		if (!clockdiv)
+</I>&gt;<i> +			clockdiv = 1;
+</I>&gt;<i> +
+</I>&gt;<i> +		if (!clock_name || !strcmp(clock_name, &quot;sys&quot;)) {
+</I>&gt;<i> +			sys_clk = clk_get(&amp;ofdev-&gt;dev, &quot;sys_clk&quot;);
+</I>&gt;<i> +			if (!sys_clk) {
+</I>&gt;<i> +				dev_err(&amp;ofdev-&gt;dev, &quot;couldn't get sys_clk\n&quot;);
+</I>&gt;<i> +				goto exit_unmap;
+</I>&gt;<i> +			}
+</I>&gt;<i> +			/* Get and round up/down sys clock rate */
+</I>&gt;<i> +			sys_freq = 1000000 *
+</I>&gt;<i> +				((clk_get_rate(sys_clk) + 499999) / 1000000);
+</I>&gt;<i> +
+</I>&gt;<i> +			if (!clock_name) {
+</I>&gt;<i> +				/* A multiple of 16 MHz would be optimal */
+</I>&gt;<i> +				if ((sys_freq % 16000000) == 0) {
+</I>&gt;<i> +					clocksrc = 0;
+</I>&gt;<i> +					clockdiv = sys_freq / 16000000;
+</I>&gt;<i> +					freq = sys_freq / clockdiv;
+</I>&gt;<i> +				}
+</I>&gt;<i> +			} else {
+</I>&gt;<i> +				clocksrc = 0;
+</I>&gt;<i> +				freq = sys_freq / clockdiv;
+</I>&gt;<i> +			}
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		if (clocksrc &lt; 0) {
+</I>&gt;<i> +			ref_clk = clk_get(&amp;ofdev-&gt;dev, &quot;ref_clk&quot;);
+</I>&gt;<i> +			if (!ref_clk) {
+</I>&gt;<i> +				dev_err(&amp;ofdev-&gt;dev, &quot;couldn't get ref_clk\n&quot;);
+</I>&gt;<i> +				goto exit_unmap;
+</I>&gt;<i> +			}
+</I>&gt;<i> +			clocksrc = 1;
+</I>&gt;<i> +			freq = clk_get_rate(ref_clk) / clockdiv;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Disable clock */
+</I>&gt;<i> +	out_be32(&amp;clockctl-&gt;mccr[clockidx], 0x0);
+</I>&gt;<i> +	if (clocksrc &gt;= 0) {
+</I>&gt;<i> +		/* Set source and divider */
+</I>&gt;<i> +		val = (clocksrc &lt;&lt; 14) | ((clockdiv - 1) &lt;&lt; 17);
+</I>&gt;<i> +		out_be32(&amp;clockctl-&gt;mccr[clockidx], val);
+</I>&gt;<i> +		/* Dnable clock */
+</I>
+Enable
+
+&gt;<i> +		out_be32(&amp;clockctl-&gt;mccr[clockidx], val | 0x10000);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Enable MSCAN clock domain */
+</I>&gt;<i> +	val = in_be32(&amp;clockctl-&gt;sccr[1]);
+</I>&gt;<i> +	if (!(val &amp; (1 &lt;&lt; 25)))
+</I>&gt;<i> +		out_be32(&amp;clockctl-&gt;sccr[1], val | (1 &lt;&lt; 25));
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(&amp;ofdev-&gt;dev, &quot;using '%s' with frequency divider %d\n&quot;,
+</I>&gt;<i> +		*mscan_clksrc == MSCAN_CLKSRC_IPS ? &quot;ips_clk&quot; :
+</I>&gt;<i> +		clocksrc == 1 ? &quot;ref_clk&quot; : &quot;sys_clk&quot;, clockdiv);
+</I>&gt;<i> +
+</I>&gt;<i> +exit_unmap:
+</I>&gt;<i> +	of_node_put(np_clock);
+</I>&gt;<i> +	iounmap(clockctl);
+</I>&gt;<i> +
+</I>&gt;<i> +	return freq;
+</I>&gt;<i> +}
+</I>&gt;<i> +#else /* !CONFIG_PPC_MPC512x */
+</I>&gt;<i> +static u32  __devinit mpc512x_can_get_clock(struct of_device *ofdev,
+</I>&gt;<i> +					    const char *clock_name,
+</I>&gt;<i> +					    int *mscan_clksrc,
+</I>&gt;<i> +					    ssize_t mscan_addr)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +#endif /* CONFIG_PPC_MPC512x */
+</I>&gt;<i>  
+</I>&gt;<i>  static int __devinit mpc5xxx_can_probe(struct of_device *ofdev,
+</I>&gt;<i>  				       const struct of_device_id *id)
+</I>&gt;<i> @@ -95,15 +248,21 @@ static int __devinit mpc5xxx_can_probe(struct of_device *ofdev,
+</I>&gt;<i>  	struct device_node *np = ofdev-&gt;node;
+</I>&gt;<i>  	struct net_device *dev;
+</I>&gt;<i>  	struct mscan_priv *priv;
+</I>&gt;<i> +	struct resource res;
+</I>&gt;<i>  	void __iomem *base;
+</I>&gt;<i> -	const char *clk_src;
+</I>&gt;<i> -	int err, irq, clock_src;
+</I>&gt;<i> +	const char *clock_name = NULL;
+</I>&gt;<i> +	int irq, clock_src = 0;
+</I>&gt;<i> +	int err = -ENOMEM;
+</I>&gt;<i>  
+</I>&gt;<i> -	base = of_iomap(ofdev-&gt;node, 0);
+</I>&gt;<i> +	if (of_address_to_resource(np, 0, &amp;res)) {
+</I>&gt;<i> +		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't get resource address\n&quot;);
+</I>&gt;<i> +		return err;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	base = ioremap(res.start, resource_size(&amp;res));
+</I>&gt;<i>  	if (!base) {
+</I>&gt;<i>  		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't ioremap\n&quot;);
+</I>&gt;<i> -		err = -ENOMEM;
+</I>&gt;<i> -		goto exit_release_mem;
+</I>&gt;<i> +		return err;
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i>  	irq = irq_of_parse_and_map(np, 0);
+</I>&gt;<i> @@ -114,31 +273,27 @@ static int __devinit mpc5xxx_can_probe(struct of_device *ofdev,
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i>  	dev = alloc_mscandev();
+</I>&gt;<i> -	if (!dev) {
+</I>&gt;<i> -		err = -ENOMEM;
+</I>&gt;<i> +	if (!dev)
+</I>&gt;<i>  		goto exit_dispose_irq;
+</I>&gt;<i> -	}
+</I>&gt;<i>  
+</I>&gt;<i>  	priv = netdev_priv(dev);
+</I>&gt;<i>  	priv-&gt;reg_base = base;
+</I>&gt;<i>  	dev-&gt;irq = irq;
+</I>&gt;<i>  
+</I>&gt;<i> -	/*
+</I>&gt;<i> -	 * Either the oscillator clock (SYS_XTAL_IN) or the IP bus clock
+</I>&gt;<i> -	 * (IP_CLK) can be selected as MSCAN clock source. According to
+</I>&gt;<i> -	 * the MPC5200 user's manual, the oscillator clock is the better
+</I>&gt;<i> -	 * choice as it has less jitter. For this reason, it is selected
+</I>&gt;<i> -	 * by default.
+</I>&gt;<i> -	 */
+</I>&gt;<i> -	clk_src = of_get_property(np, &quot;fsl,mscan-clock-source&quot;, NULL);
+</I>&gt;<i> -	if (clk_src &amp;&amp; strcmp(clk_src, &quot;ip&quot;) == 0)
+</I>&gt;<i> -		clock_src = MSCAN_CLKSRC_BUS;
+</I>&gt;<i> -	else
+</I>&gt;<i> -		clock_src = MSCAN_CLKSRC_XTAL;
+</I>&gt;<i> -	priv-&gt;can.clock.freq = mpc52xx_can_clock_freq(ofdev, clock_src);
+</I>&gt;<i> +	clock_name = of_get_property(np, &quot;fsl,mscan-clock-source&quot;, NULL);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (of_device_is_compatible(np, &quot;fsl,mpc5121-mscan&quot;)) {
+</I>&gt;<i> +		priv-&gt;type = MSCAN_TYPE_MPC5121;
+</I>&gt;<i> +		priv-&gt;can.clock.freq =
+</I>&gt;<i> +			mpc512x_can_get_clock(ofdev, clock_name, &amp;clock_src,
+</I>&gt;<i> +					      res.start);
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		priv-&gt;type = MSCAN_TYPE_MPC5200;
+</I>&gt;<i> +		priv-&gt;can.clock.freq =
+</I>&gt;<i> +			mpc52xx_can_get_clock(ofdev, clock_name, &amp;clock_src);
+</I>&gt;<i> +	}
+</I>&gt;<i>  	if (!priv-&gt;can.clock.freq) {
+</I>&gt;<i> -		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't get MSCAN clock frequency\n&quot;);
+</I>&gt;<i> -		err = -ENODEV;
+</I>&gt;<i> +		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't get MSCAN clock properties\n&quot;);
+</I>&gt;<i>  		goto exit_free_mscan;
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i> @@ -164,7 +319,7 @@ exit_dispose_irq:
+</I>&gt;<i>  	irq_dispose_mapping(irq);
+</I>&gt;<i>  exit_unmap_mem:
+</I>&gt;<i>  	iounmap(base);
+</I>&gt;<i> -exit_release_mem:
+</I>&gt;<i> +
+</I>&gt;<i>  	return err;
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> @@ -227,6 +382,7 @@ static int mpc5xxx_can_resume(struct of_device *ofdev)
+</I>&gt;<i>  
+</I>&gt;<i>  static struct of_device_id __devinitdata mpc5xxx_can_table[] = {
+</I>&gt;<i>  	{.compatible = &quot;fsl,mpc5200-mscan&quot;},
+</I>&gt;<i> +	{.compatible = &quot;fsl,mpc5121-mscan&quot;},
+</I>&gt;<i>  	{},
+</I>&gt;<i>  };
+</I>&gt;<i>  
+</I>&gt;<i> @@ -255,5 +411,5 @@ static void __exit mpc5xxx_can_exit(void)
+</I>&gt;<i>  module_exit(mpc5xxx_can_exit);
+</I>&gt;<i>  
+</I>&gt;<i>  MODULE_AUTHOR(&quot;Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;&quot;);
+</I>&gt;<i> -MODULE_DESCRIPTION(&quot;Freescale MPC5200 CAN driver&quot;);
+</I>&gt;<i> +MODULE_DESCRIPTION(&quot;Freescale MPC5200 and MPC521x CAN driver&quot;);
+</I>
+simply 5xxx?
+
+&gt;<i>  MODULE_LICENSE(&quot;GPL v2&quot;);
+</I>&gt;<i> diff --git a/drivers/net/can/mscan/mscan.c b/drivers/net/can/mscan/mscan.c
+</I>&gt;<i> index abdf5e8..9812aa0 100644
+</I>&gt;<i> --- a/drivers/net/can/mscan/mscan.c
+</I>&gt;<i> +++ b/drivers/net/can/mscan/mscan.c
+</I>&gt;<i> @@ -169,6 +169,27 @@ static int mscan_start(struct net_device *dev)
+</I>&gt;<i>  	return 0;
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> +static int mscan_restart(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (priv-&gt;type == MSCAN_TYPE_MPC5121) {
+</I>&gt;<i> +		struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +
+</I>&gt;<i> +		priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;<i> +		if (!(in_8(&amp;regs-&gt;canmisc) &amp; MSCAN_BOHOLD))
+</I>&gt;<i> +			dev_err(dev-&gt;dev.parent, &quot;Oops, not bus-off&quot;);
+</I>
+I think this error-message could be improved :)
+
+&gt;<i> +		else
+</I>&gt;<i> +			out_8(&amp;regs-&gt;canmisc, MSCAN_BOHOLD);
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		if (priv-&gt;can.state &lt;= CAN_STATE_BUS_OFF)
+</I>&gt;<i> +			mscan_set_mode(dev, MSCAN_INIT_MODE);
+</I>&gt;<i> +		return mscan_start(dev);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i>  static netdev_tx_t mscan_start_xmit(struct sk_buff *skb, struct net_device *dev)
+</I>&gt;<i>  {
+</I>&gt;<i>  	struct can_frame *frame = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i> @@ -364,9 +385,12 @@ static void mscan_get_err_frame(struct net_device *dev, struct can_frame *frame,
+</I>&gt;<i>  			 * automatically. To avoid that we stop the chip doing
+</I>&gt;<i>  			 * a light-weight stop (we are in irq-context).
+</I>&gt;<i>  			 */
+</I>&gt;<i> -			out_8(&amp;regs-&gt;cantier, 0);
+</I>&gt;<i> -			out_8(&amp;regs-&gt;canrier, 0);
+</I>&gt;<i> -			setbits8(&amp;regs-&gt;canctl0, MSCAN_SLPRQ | MSCAN_INITRQ);
+</I>&gt;<i> +			if (priv-&gt;type != MSCAN_TYPE_MPC5121) {
+</I>&gt;<i> +				out_8(&amp;regs-&gt;cantier, 0);
+</I>&gt;<i> +				out_8(&amp;regs-&gt;canrier, 0);
+</I>&gt;<i> +				setbits8(&amp;regs-&gt;canctl0,
+</I>&gt;<i> +					 MSCAN_SLPRQ | MSCAN_INITRQ);
+</I>&gt;<i> +			}
+</I>&gt;<i>  			can_bus_off(dev);
+</I>&gt;<i>  			break;
+</I>&gt;<i>  		default:
+</I>&gt;<i> @@ -496,9 +520,7 @@ static int mscan_do_set_mode(struct net_device *dev, enum can_mode mode)
+</I>&gt;<i>  
+</I>&gt;<i>  	switch (mode) {
+</I>&gt;<i>  	case CAN_MODE_START:
+</I>&gt;<i> -		if (priv-&gt;can.state &lt;= CAN_STATE_BUS_OFF)
+</I>&gt;<i> -			mscan_set_mode(dev, MSCAN_INIT_MODE);
+</I>&gt;<i> -		ret = mscan_start(dev);
+</I>&gt;<i> +		ret = mscan_restart(dev);
+</I>&gt;<i>  		if (ret)
+</I>&gt;<i>  			break;
+</I>&gt;<i>  		if (netif_queue_stopped(dev))
+</I>&gt;<i> @@ -597,18 +619,21 @@ static const struct net_device_ops mscan_netdev_ops = {
+</I>&gt;<i>         .ndo_start_xmit         = mscan_start_xmit,
+</I>&gt;<i>  };
+</I>&gt;<i>  
+</I>&gt;<i> -int register_mscandev(struct net_device *dev, int clock_src)
+</I>&gt;<i> +int register_mscandev(struct net_device *dev, int mscan_clksrc)
+</I>&gt;<i>  {
+</I>&gt;<i>  	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i>  	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i>  	u8 ctl1;
+</I>&gt;<i>  
+</I>&gt;<i>  	ctl1 = in_8(&amp;regs-&gt;canctl1);
+</I>&gt;<i> -	if (clock_src)
+</I>&gt;<i> +	if (mscan_clksrc)
+</I>&gt;<i>  		ctl1 |= MSCAN_CLKSRC;
+</I>&gt;<i>  	else
+</I>&gt;<i>  		ctl1 &amp;= ~MSCAN_CLKSRC;
+</I>&gt;<i>  
+</I>&gt;<i> +	if (priv-&gt;type == MSCAN_TYPE_MPC5121)
+</I>&gt;<i> +		ctl1 |= MSCAN_BORM; /* bus-off recovery upon request */
+</I>&gt;<i> +
+</I>&gt;<i>  	ctl1 |= MSCAN_CANE;
+</I>&gt;<i>  	out_8(&amp;regs-&gt;canctl1, ctl1);
+</I>&gt;<i>  	udelay(100);
+</I>&gt;<i> diff --git a/drivers/net/can/mscan/mscan.h b/drivers/net/can/mscan/mscan.h
+</I>&gt;<i> index 00fc4aa..2114942 100644
+</I>&gt;<i> --- a/drivers/net/can/mscan/mscan.h
+</I>&gt;<i> +++ b/drivers/net/can/mscan/mscan.h
+</I>&gt;<i> @@ -39,17 +39,19 @@
+</I>&gt;<i>  #define MSCAN_LOOPB		0x20
+</I>&gt;<i>  #define MSCAN_LISTEN		0x10
+</I>&gt;<i>  #define MSCAN_WUPM		0x04
+</I>&gt;<i> +#define MSCAN_BORM		0x08
+</I>
+This should be one line up to keep the sorting intact.
+
+&gt;<i>  #define MSCAN_SLPAK		0x02
+</I>&gt;<i>  #define MSCAN_INITAK		0x01
+</I>&gt;<i>  
+</I>&gt;<i> -/* Use the MPC5200 MSCAN variant? */
+</I>&gt;<i> +/* Use the MPC5XXX MSCAN variant? */
+</I>&gt;<i>  #ifdef CONFIG_PPC
+</I>&gt;<i> -#define MSCAN_FOR_MPC5200
+</I>&gt;<i> +#define MSCAN_FOR_MPC5XXX
+</I>&gt;<i>  #endif
+</I>&gt;<i>  
+</I>&gt;<i> -#ifdef MSCAN_FOR_MPC5200
+</I>&gt;<i> +#ifdef MSCAN_FOR_MPC5XXX
+</I>&gt;<i>  #define MSCAN_CLKSRC_BUS	0
+</I>&gt;<i>  #define MSCAN_CLKSRC_XTAL	MSCAN_CLKSRC
+</I>&gt;<i> +#define MSCAN_CLKSRC_IPS	MSCAN_CLKSRC
+</I>&gt;<i>  #else
+</I>&gt;<i>  #define MSCAN_CLKSRC_BUS	MSCAN_CLKSRC
+</I>&gt;<i>  #define MSCAN_CLKSRC_XTAL	0
+</I>&gt;<i> @@ -136,7 +138,7 @@
+</I>&gt;<i>  #define MSCAN_EFF_RTR_SHIFT	0
+</I>&gt;<i>  #define MSCAN_EFF_FLAGS		0x18	/* IDE + SRR */
+</I>&gt;<i>  
+</I>&gt;<i> -#ifdef MSCAN_FOR_MPC5200
+</I>&gt;<i> +#ifdef MSCAN_FOR_MPC5XXX
+</I>&gt;<i>  #define _MSCAN_RESERVED_(n, num) u8 _res##n[num]
+</I>&gt;<i>  #define _MSCAN_RESERVED_DSR_SIZE	2
+</I>&gt;<i>  #else
+</I>&gt;<i> @@ -165,67 +167,66 @@ struct mscan_regs {
+</I>&gt;<i>  	u8 cantbsel;				/* + 0x14     0x0a */
+</I>&gt;<i>  	u8 canidac;				/* + 0x15     0x0b */
+</I>&gt;<i>  	u8 reserved;				/* + 0x16     0x0c */
+</I>&gt;<i> -	_MSCAN_RESERVED_(6, 5);			/* + 0x17          */
+</I>&gt;<i> -#ifndef MSCAN_FOR_MPC5200
+</I>&gt;<i> -	u8 canmisc;				/*            0x0d */
+</I>&gt;<i> -#endif
+</I>&gt;<i> +	_MSCAN_RESERVED_(6, 2);			/* + 0x17          */
+</I>&gt;<i> +	u8 canmisc;				/* + 0x19     0x0d */
+</I>&gt;<i> +	_MSCAN_RESERVED_(7, 2);			/* + 0x1a          */
+</I>&gt;<i>  	u8 canrxerr;				/* + 0x1c     0x0e */
+</I>&gt;<i>  	u8 cantxerr;				/* + 0x1d     0x0f */
+</I>&gt;<i> -	_MSCAN_RESERVED_(7, 2);			/* + 0x1e          */
+</I>&gt;<i> +	_MSCAN_RESERVED_(8, 2);			/* + 0x1e          */
+</I>&gt;<i>  	u16 canidar1_0;				/* + 0x20     0x10 */
+</I>&gt;<i> -	_MSCAN_RESERVED_(8, 2);			/* + 0x22          */
+</I>&gt;<i> +	_MSCAN_RESERVED_(9, 2);			/* + 0x22          */
+</I>&gt;<i>  	u16 canidar3_2;				/* + 0x24     0x12 */
+</I>&gt;<i> -	_MSCAN_RESERVED_(9, 2);			/* + 0x26          */
+</I>&gt;<i> +	_MSCAN_RESERVED_(10, 2);		/* + 0x26          */
+</I>&gt;<i>  	u16 canidmr1_0;				/* + 0x28     0x14 */
+</I>&gt;<i> -	_MSCAN_RESERVED_(10, 2);		/* + 0x2a          */
+</I>&gt;<i> +	_MSCAN_RESERVED_(11, 2);		/* + 0x2a          */
+</I>&gt;<i>  	u16 canidmr3_2;				/* + 0x2c     0x16 */
+</I>&gt;<i> -	_MSCAN_RESERVED_(11, 2);		/* + 0x2e          */
+</I>&gt;<i> +	_MSCAN_RESERVED_(12, 2);		/* + 0x2e          */
+</I>&gt;<i>  	u16 canidar5_4;				/* + 0x30     0x18 */
+</I>&gt;<i> -	_MSCAN_RESERVED_(12, 2);		/* + 0x32          */
+</I>&gt;<i> +	_MSCAN_RESERVED_(13, 2);		/* + 0x32          */
+</I>&gt;<i>  	u16 canidar7_6;				/* + 0x34     0x1a */
+</I>&gt;<i> -	_MSCAN_RESERVED_(13, 2);		/* + 0x36          */
+</I>&gt;<i> +	_MSCAN_RESERVED_(14, 2);		/* + 0x36          */
+</I>&gt;<i>  	u16 canidmr5_4;				/* + 0x38     0x1c */
+</I>&gt;<i> -	_MSCAN_RESERVED_(14, 2);		/* + 0x3a          */
+</I>&gt;<i> +	_MSCAN_RESERVED_(15, 2);		/* + 0x3a          */
+</I>&gt;<i>  	u16 canidmr7_6;				/* + 0x3c     0x1e */
+</I>&gt;<i> -	_MSCAN_RESERVED_(15, 2);		/* + 0x3e          */
+</I>&gt;<i> +	_MSCAN_RESERVED_(16, 2);		/* + 0x3e          */
+</I>&gt;<i>  	struct {
+</I>&gt;<i>  		u16 idr1_0;			/* + 0x40     0x20 */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(16, 2);	/* + 0x42          */
+</I>&gt;<i> +		_MSCAN_RESERVED_(17, 2);	/* + 0x42          */
+</I>&gt;<i>  		u16 idr3_2;			/* + 0x44     0x22 */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(17, 2);	/* + 0x46          */
+</I>&gt;<i> +		_MSCAN_RESERVED_(18, 2);	/* + 0x46          */
+</I>&gt;<i>  		u16 dsr1_0;			/* + 0x48     0x24 */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(18, 2);	/* + 0x4a          */
+</I>&gt;<i> +		_MSCAN_RESERVED_(19, 2);	/* + 0x4a          */
+</I>&gt;<i>  		u16 dsr3_2;			/* + 0x4c     0x26 */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(19, 2);	/* + 0x4e          */
+</I>&gt;<i> +		_MSCAN_RESERVED_(20, 2);	/* + 0x4e          */
+</I>&gt;<i>  		u16 dsr5_4;			/* + 0x50     0x28 */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(20, 2);	/* + 0x52          */
+</I>&gt;<i> +		_MSCAN_RESERVED_(21, 2);	/* + 0x52          */
+</I>&gt;<i>  		u16 dsr7_6;			/* + 0x54     0x2a */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(21, 2);	/* + 0x56          */
+</I>&gt;<i> +		_MSCAN_RESERVED_(22, 2);	/* + 0x56          */
+</I>&gt;<i>  		u8 dlr;				/* + 0x58     0x2c */
+</I>&gt;<i> -		 u8:8;				/* + 0x59     0x2d */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(22, 2);	/* + 0x5a          */
+</I>&gt;<i> +		u8 reserved;			/* + 0x59     0x2d */
+</I>&gt;<i> +		_MSCAN_RESERVED_(23, 2);	/* + 0x5a          */
+</I>&gt;<i>  		u16 time;			/* + 0x5c     0x2e */
+</I>&gt;<i>  	} rx;
+</I>&gt;<i> -	 _MSCAN_RESERVED_(23, 2);		/* + 0x5e          */
+</I>&gt;<i> +	_MSCAN_RESERVED_(24, 2);		/* + 0x5e          */
+</I>&gt;<i>  	struct {
+</I>&gt;<i>  		u16 idr1_0;			/* + 0x60     0x30 */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(24, 2);	/* + 0x62          */
+</I>&gt;<i> +		_MSCAN_RESERVED_(25, 2);	/* + 0x62          */
+</I>&gt;<i>  		u16 idr3_2;			/* + 0x64     0x32 */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(25, 2);	/* + 0x66          */
+</I>&gt;<i> +		_MSCAN_RESERVED_(26, 2);	/* + 0x66          */
+</I>&gt;<i>  		u16 dsr1_0;			/* + 0x68     0x34 */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(26, 2);	/* + 0x6a          */
+</I>&gt;<i> +		_MSCAN_RESERVED_(27, 2);	/* + 0x6a          */
+</I>&gt;<i>  		u16 dsr3_2;			/* + 0x6c     0x36 */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(27, 2);	/* + 0x6e          */
+</I>&gt;<i> +		_MSCAN_RESERVED_(28, 2);	/* + 0x6e          */
+</I>&gt;<i>  		u16 dsr5_4;			/* + 0x70     0x38 */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(28, 2);	/* + 0x72          */
+</I>&gt;<i> +		_MSCAN_RESERVED_(29, 2);	/* + 0x72          */
+</I>&gt;<i>  		u16 dsr7_6;			/* + 0x74     0x3a */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(29, 2);	/* + 0x76          */
+</I>&gt;<i> +		_MSCAN_RESERVED_(30, 2);	/* + 0x76          */
+</I>&gt;<i>  		u8 dlr;				/* + 0x78     0x3c */
+</I>&gt;<i>  		u8 tbpr;			/* + 0x79     0x3d */
+</I>&gt;<i> -		 _MSCAN_RESERVED_(30, 2);	/* + 0x7a          */
+</I>&gt;<i> +		_MSCAN_RESERVED_(31, 2);	/* + 0x7a          */
+</I>&gt;<i>  		u16 time;			/* + 0x7c     0x3e */
+</I>&gt;<i>  	} tx;
+</I>&gt;<i> -	 _MSCAN_RESERVED_(31, 2);		/* + 0x7e          */
+</I>&gt;<i> +	_MSCAN_RESERVED_(32, 2);		/* + 0x7e          */
+</I>&gt;<i>  } __attribute__ ((packed));
+</I>&gt;<i>  
+</I>&gt;<i>  #undef _MSCAN_RESERVED_
+</I>&gt;<i> @@ -238,6 +239,12 @@ struct mscan_regs {
+</I>&gt;<i>  #define MSCAN_SET_MODE_RETRIES	255
+</I>&gt;<i>  #define MSCAN_ECHO_SKB_MAX	3
+</I>&gt;<i>  
+</I>&gt;<i> +/* MSCAN type variants */
+</I>&gt;<i> +enum {
+</I>&gt;<i> +	MSCAN_TYPE_MPC5200,
+</I>&gt;<i> +	MSCAN_TYPE_MPC5121
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i>  #define BTR0_BRP_MASK		0x3f
+</I>&gt;<i>  #define BTR0_SJW_SHIFT		6
+</I>&gt;<i>  #define BTR0_SJW_MASK		(0x3 &lt;&lt; BTR0_SJW_SHIFT)
+</I>&gt;<i> @@ -270,6 +277,7 @@ struct tx_queue_entry {
+</I>&gt;<i>  
+</I>&gt;<i>  struct mscan_priv {
+</I>&gt;<i>  	struct can_priv can;	/* must be the first member */
+</I>&gt;<i> +	unsigned int type; 	/* MSCAN type variants */
+</I>&gt;<i>  	long open_time;
+</I>&gt;<i>  	unsigned long flags;
+</I>&gt;<i>  	void __iomem *reg_base;	/* ioremap'ed address to registers */
+</I>&gt;<i> @@ -285,11 +293,6 @@ struct mscan_priv {
+</I>&gt;<i>  };
+</I>&gt;<i>  
+</I>&gt;<i>  extern struct net_device *alloc_mscandev(void);
+</I>&gt;<i> -/*
+</I>&gt;<i> - * clock_src:
+</I>&gt;<i> - *	1 = The MSCAN clock source is the onchip Bus Clock.
+</I>&gt;<i> - *	0 = The MSCAN clock source is the chip Oscillator Clock.
+</I>&gt;<i> - */
+</I>&gt;<i>  extern int register_mscandev(struct net_device *dev, int clock_src);
+</I>
+s/clock_src/mscan_clksrc/
+
+&gt;<i>  extern void unregister_mscandev(struct net_device *dev);
+</I>&gt;<i>  
+</I>&gt;<i> -- 
+</I>&gt;<i> 1.6.2.5
+</I>&gt;<i> 
+</I>
+-- 
+Pengutronix e.K.                           | Wolfram Sang                |
+Industrial Linux Solutions                 | <A HREF="http://www.pengutronix.de/">http://www.pengutronix.de/</A>  |
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 197 bytes
+Desc: Digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20100102/ecb49621/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20100102/ecb49621/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003725.html">[PATCH net-next 3/3] powerpc/mpc5xxx: add OF platform binding	doc for FSL MSCAN devices
+</A></li>
+	<LI>Next message: <A HREF="003728.html">[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3724">[ date ]</a>
+              <a href="thread.html#3724">[ thread ]</a>
+              <a href="subject.html#3724">[ subject ]</a>
+              <a href="author.html#3724">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

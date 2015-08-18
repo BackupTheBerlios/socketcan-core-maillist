@@ -1,0 +1,170 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Self-reception
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Self-reception&In-Reply-To=%3C4CB2F39D.50301%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004712.html">
+   <LINK REL="Next"  HREF="004717.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Self-reception</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Self-reception&In-Reply-To=%3C4CB2F39D.50301%40hartkopp.net%3E"
+       TITLE="Self-reception">socketcan at hartkopp.net
+       </A><BR>
+    <I>Mon Oct 11 13:23:09 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004712.html">Self-reception
+</A></li>
+        <LI>Next message: <A HREF="004717.html">Self-reception
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4715">[ date ]</a>
+              <a href="thread.html#4715">[ thread ]</a>
+              <a href="subject.html#4715">[ subject ]</a>
+              <a href="author.html#4715">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 11.10.2010 11:35, Kurt Van Dijck wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> On Mon, Oct 11, 2010 at 11:01:56AM +0200, <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A> wrote:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Hello all,
+</I>&gt;&gt;<i> I would like to bring up the self-reception theme again.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> In the discussion few weeks ago following ideas has been worked 
+</I>&gt;&gt;<i> out:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 1) Add per-message self reception flag to can_frame 
+</I>&gt;&gt;<i> 2) Use SO_MARK
+</I>&gt;&gt;<i> 3) sk_buff-&gt;sk may be used to see the message origin, but it is
+</I>&gt;&gt;<i>    not available in user space ...
+</I>&gt;&gt;<i>
+</I>&gt;<i> Didn't Oliver make a patch to export (3) to userspace (via candump)?
+</I>
+Yes, i tried last weekend:
+
+Index: kernel/2.6/net/can/raw.c
+===================================================================
+--- kernel/2.6/net/can/raw.c	(Revision 1198)
++++ kernel/2.6/net/can/raw.c	(Arbeitskopie)
+@@ -726,6 +726,9 @@
+ 	else
+ 		size = skb-&gt;len;
+
++	if (!skb-&gt;sk)
++		msg-&gt;msg_flags |= MSG_DONTROUTE;
++
+ 	err = memcpy_toiovec(msg-&gt;msg_iov, skb-&gt;data, size);
+ 	if (err &lt; 0) {
+ 		skb_free_datagram(sk, skb);
+Index: kernel/2.6/drivers/net/can/vcan.c
+===================================================================
+--- kernel/2.6/drivers/net/can/vcan.c	(Revision 1198)
++++ kernel/2.6/drivers/net/can/vcan.c	(Arbeitskopie)
+@@ -113,6 +113,9 @@
+ 	stats-&gt;rx_packets++;
+ 	stats-&gt;rx_bytes += cf-&gt;can_dlc;
+
++	if (cf-&gt;can_id == 0x123)
++		skb-&gt;sk = 0;
++
+ 	skb-&gt;protocol  = htons(ETH_P_CAN);
+ 	skb-&gt;pkt_type  = PACKET_BROADCAST;
+ 	skb-&gt;dev       = dev;
+Index: can-utils/candump.c
+===================================================================
+--- can-utils/candump.c	(Revision 1198)
++++ can-utils/candump.c	(Arbeitskopie)
+@@ -725,6 +725,12 @@
+ 				fprint_long_canframe(stdout, &amp;frame, NULL, view);
+
+ 				printf(&quot;%s&quot;, (color&gt;1)?col_off:&quot;&quot;);
++
++				if (msg.msg_flags &amp; MSG_DONTROUTE)
++					printf(&quot; D %08X&quot;, msg.msg_flags);
++				else
++					printf(&quot; - %08X&quot;, msg.msg_flags);
++
+ 				printf(&quot;\n&quot;);
+ 			}
+
+The vcan patch is to introduce CAN frames that tell to be from out of the
+local system. But unfortunately i was never able to see MSG_DONTROUTE in
+msg_flags ...
+
+Maybe the msg_flags are AND-filtered somewhere in the socketlayer to the
+userspace - or i made a mistake somewhere else. I hope to be able to dig a bit
+deeper on that the next days.
+
+&gt;&gt;<i>
+</I>&gt;&gt;<i> I personally like the first option a bit better, because the 
+</I>&gt;&gt;<i> self-reception flag is available &quot;automatically&quot; in the can_frame 
+</I>&gt;&gt;<i> itself without making any additional operations (like in case 
+</I>&gt;&gt;<i> of SO_MARK). Would the &quot;can_get_echo_skb&quot; be the right place to 
+</I>&gt;&gt;<i> set that flag?
+</I>&gt;<i> I think not.
+</I>
+Me too (thinking not).
+
+&gt;<i> 
+</I>&gt;<i> The idea behind socketCAN is that the CAN bus is virtually
+</I>&gt;<i> extended through the linux system. (1) would deny this nature,
+</I>&gt;<i> since _not_ all CAN chips/socketCAN apps are treated equal.
+</I>&gt;<i> IMO, to support a 'self-reception' flag, you need a combination
+</I>&gt;<i> of (1) &amp; (3):
+</I>&gt;<i> * a flag to userspace to indicate a received message was
+</I>&gt;<i>   'self-reception'
+</I>&gt;<i> * set the above flag (in raw.c or elsewhere) to indicate the sk_buff-&gt;sk
+</I>&gt;<i>   matches the receiving socket.
+</I>&gt;<i> 
+</I>&gt;<i> To userspace, this differs not compared to (1), but I think
+</I>&gt;<i> it respects the nature of socketCAN at kernel level.
+</I>&gt;<i> 
+</I>&gt;<i> Not sure if I expressed my idea clear :-)
+</I>&gt;<i> 
+</I>&gt;<i> How this would cooperate with the SO_RECV_OWN_MSGS option is unclear to me.
+</I>
+This is independent as when CAN frames come from outer world, they are not
+originated by this socket.
+
+The SO_RECV_OWN_MSGS option only allows you to see your own originated
+messages which is usually not wanted.
+
+Regards,
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004712.html">Self-reception
+</A></li>
+	<LI>Next message: <A HREF="004717.html">Self-reception
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4715">[ date ]</a>
+              <a href="thread.html#4715">[ thread ]</a>
+              <a href="subject.html#4715">[ subject ]</a>
+              <a href="author.html#4715">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

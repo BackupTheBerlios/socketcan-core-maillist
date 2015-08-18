@@ -1,0 +1,139 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v4 1/1] can: add pruss CAN driver.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v4%201/1%5D%20can%3A%20add%20pruss%20CAN%20driver.&In-Reply-To=%3C4DC17831.3070801%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005704.html">
+   <LINK REL="Next"  HREF="005726.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v4 1/1] can: add pruss CAN driver.</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v4%201/1%5D%20can%3A%20add%20pruss%20CAN%20driver.&In-Reply-To=%3C4DC17831.3070801%40grandegger.com%3E"
+       TITLE="[PATCH v4 1/1] can: add pruss CAN driver.">wg at grandegger.com
+       </A><BR>
+    <I>Wed May  4 18:00:49 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005704.html">[PATCH v4 1/1] can: add pruss CAN driver.
+</A></li>
+        <LI>Next message: <A HREF="005726.html">[PATCH v4 1/1] can: add pruss CAN driver.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5706">[ date ]</a>
+              <a href="thread.html#5706">[ thread ]</a>
+              <a href="subject.html#5706">[ subject ]</a>
+              <a href="author.html#5706">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 05/04/2011 04:48 PM, Arnd Bergmann wrote:
+&gt;<i> On Wednesday 04 May 2011, Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> On 05/04/2011 03:11 PM, Arnd Bergmann wrote:
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> Wolfgang, I'm a bit worried by the API being split between sockets and sysfs.
+</I>&gt;&gt;&gt;<i> The problem is that once the sysfs API is established, users will start
+</I>&gt;&gt;&gt;<i> relying on it, and you can no longer migrate away from it, even when
+</I>&gt;&gt;&gt;<i> a later version of the Socket CAN also supports setting through a different
+</I>&gt;&gt;&gt;<i> interface. What is the current interface to set mail box IDs in software?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Note that this CAN controller is *very* special. It cannot handle all
+</I>&gt;&gt;<i> CAN id's due to a lack or resources. The PRUSS firmware is able to
+</I>&gt;&gt;<i> manage just up to 8 different CAN identifiers out of the usual 4096
+</I>&gt;&gt;<i> (12-bit) or even more for the extended CAN ids using 29 bits. 
+</I>&gt;<i> 
+</I>&gt;<i> So for other controllers, they can simply access every ID within
+</I>&gt;<i> the range (12 or 29 bits), but there is no need to configure?
+</I>
+Yes, 11 or 29 bits, to be correct.
+
+&gt;<i> What are these IDs for? Do they identify a local port, a remote address,
+</I>&gt;<i> a connection, or something else?
+</I>
+It's a message identifier, which is used for bus arbitration and which
+other CAN nodes can listen to. See also:
+
+<A HREF="http://lxr.linux.no/#linux+v2.6.38/Documentation/networking/can.txt#L146">http://lxr.linux.no/#linux+v2.6.38/Documentation/networking/can.txt#L146</A>
+<A HREF="http://en.wikipedia.org/wiki/Controller_area_network">http://en.wikipedia.org/wiki/Controller_area_network</A>
+
+&gt;&gt;<i> There is
+</I>&gt;&gt;<i> no other CAN controller with such rather serious limitations and
+</I>&gt;&gt;<i> therefore there exists also no appropriate interface. I think using
+</I>&gt;&gt;<i> sysfs is OK for such device-specific parameters, at least for the time
+</I>&gt;&gt;<i> being.
+</I>&gt;<i> 
+</I>&gt;<i> It sounds like it's not very scalable, especially since the implementation
+</I>&gt;<i> is done completely in firmware. Imagine a new firmware version suddenly
+</I>&gt;<i> supporting 256 ids instead of 8 -- you'd then have to create 256 sysfs
+</I>&gt;<i> files to be compatible if I understand you correctly.
+</I>
+Well, than an array of CAN identifiers per file would indeed be more
+appropriate.
+
+&gt;&gt;&gt;<i> How hard would it be to implement that feature in Socket CAN?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> CAN controllers usually provide some kind of hardware CAN id filtering,
+</I>&gt;&gt;<i> but in a very hardware dependent way. A generic interface may be able to
+</I>&gt;&gt;<i> handle the PRUSS restrictions as well. CAN devices are usually
+</I>&gt;&gt;<i> configured through the netlink interface. e.g.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   $ ip link set can0 up type can bitrate 125000
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> and such a common interface would be netlink based as well.
+</I>&gt;<i> 
+</I>&gt;<i> Agreed.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> Is that something that Subhasish or someone else could to as a prerequisite
+</I>&gt;&gt;&gt;<i> to merging the driver?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Any ideas on how to handle hardware filtering in a generic way are
+</I>&gt;&gt;<i> welcome. I will try to come up with a proposal sooner than later.
+</I>&gt;<i> 
+</I>&gt;<i> It sounds to me like the best solution would be change the firmware
+</I>&gt;<i> to lift that restriction and simply allow all IDs, in case it's not
+</I>&gt;<i> actually a hardware limitation (which sounds unlikely).
+</I>
+Yes, that would be best but they told us, that it's not possible with
+the available hardware resources. Subhasish?
+
+&gt;<i> If that's not possible, maybe it's possible to define a generic
+</I>&gt;<i> filtering interface using netlink, and then either do it completely
+</I>&gt;<i> in the kernel, or using the hardware support.
+</I>
+Well, I hesitate to implement an interface especially for such an exotic
+device. Fine if it could be handled by a generic CAN hardware filter
+interface, which is especially useful for normal CAN controllers.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005704.html">[PATCH v4 1/1] can: add pruss CAN driver.
+</A></li>
+	<LI>Next message: <A HREF="005726.html">[PATCH v4 1/1] can: add pruss CAN driver.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5706">[ date ]</a>
+              <a href="thread.html#5706">[ thread ]</a>
+              <a href="subject.html#5706">[ subject ]</a>
+              <a href="author.html#5706">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

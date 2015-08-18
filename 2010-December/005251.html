@@ -1,0 +1,474 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 2/2] can: add driver for Softing card
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%202/2%5D%20can%3A%20add%20driver%20for%20Softing%20card&In-Reply-To=%3C20101223094721.GC325%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005250.html">
+   <LINK REL="Next"  HREF="005249.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 2/2] can: add driver for Softing card</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%202/2%5D%20can%3A%20add%20driver%20for%20Softing%20card&In-Reply-To=%3C20101223094721.GC325%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH net-next-2.6 2/2] can: add driver for Softing card">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Thu Dec 23 10:47:21 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005250.html">[PATCH net-next-2.6 0/2] can: add driver for Softing card
+</A></li>
+        <LI>Next message: <A HREF="005249.html">[PATCH net-next-2.6 1/2] can: add driver for Softing card
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5251">[ date ]</a>
+              <a href="thread.html#5251">[ thread ]</a>
+              <a href="subject.html#5251">[ subject ]</a>
+              <a href="author.html#5251">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch adds the driver that creates a platform:softing device
+from a pcmcia_device
+Note: the Kconfig indicates a dependency on the softing.ko driver,
+but this is purely to make configuration intuitive. This driver will
+work independent, but no CAN network devices appear until softing.ko is
+loaded too.
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+
+---
+ drivers/net/can/softing/Kconfig      |   11 +
+ drivers/net/can/softing/Makefile     |    1 +
+ drivers/net/can/softing/softing_cs.c |  362 ++++++++++++++++++++++++++++++++++
+ 3 files changed, 374 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/can/softing/Kconfig b/drivers/net/can/softing/Kconfig
+index 072f337..d1a6ba9 100644
+--- a/drivers/net/can/softing/Kconfig
++++ b/drivers/net/can/softing/Kconfig
+@@ -14,3 +14,14 @@ config CAN_SOFTING
+ 	  controls the 2 busses on the card together.
+ 	  As such, some actions (start/stop/busoff recovery) on 1 bus
+ 	  must bring down the other bus too temporarily.
++
++config CAN_SOFTING_CS
++	tristate &quot;Softing CAN pcmcia cards&quot;
++	depends on CAN_SOFTING &amp;&amp; PCMCIA
++	---help---
++	  Support for PCMCIA cards from Softing Gmbh &amp; some cards
++	  from Vector Gmbh.
++	  You need firmware for these, which you can get at
++	  <A HREF="http://developer.berlios.de/projects/socketcan/">http://developer.berlios.de/projects/socketcan/</A>
++	  This version of the driver is written against
++	  firmware version 4.6 (softing-fw-4.6-binaries.tar.gz)
+diff --git a/drivers/net/can/softing/Makefile b/drivers/net/can/softing/Makefile
+index 7878b7b..5f0f527 100644
+--- a/drivers/net/can/softing/Makefile
++++ b/drivers/net/can/softing/Makefile
+@@ -1,5 +1,6 @@
+ 
+ softing-y := softing_main.o softing_fw.o
+ obj-$(CONFIG_CAN_SOFTING)        += softing.o
++obj-$(CONFIG_CAN_SOFTING_CS)     += softing_cs.o
+ 
+ ccflags-$(CONFIG_CAN_DEBUG_DEVICES) := -DDEBUG
+diff --git a/drivers/net/can/softing/softing_cs.c b/drivers/net/can/softing/softing_cs.c
+new file mode 100644
+index 0000000..74d6b0e
+--- /dev/null
++++ b/drivers/net/can/softing/softing_cs.c
+@@ -0,0 +1,362 @@
++/*
++ * drivers/net/can/softing/softing_cs.c
++ *
++ * Copyright (C) 2008-2010
++ *
++ * - Kurt Van Dijck, EIA Electronics
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
++ */
++
++#include &lt;linux/module.h&gt;
++#include &lt;linux/kernel.h&gt;
++
++#include &lt;pcmcia/cistpl.h&gt;
++#include &lt;pcmcia/ds.h&gt;
++
++#include &quot;softing_platform.h&quot;
++
++static int softingcs_index;
++static spinlock_t softingcs_index_lock;
++
++static int softingcs_reset(struct platform_device *pdev, int v);
++static int softingcs_enable_irq(struct platform_device *pdev, int v);
++
++/*
++ * platform_data descriptions
++ */
++static const struct softing_platform_data softingcs_platform_data[] = {
++{
++	.name = &quot;CANcard&quot;,
++	.manf = 0x0168, .prod = 0x001,
++	.generation = 1,
++	.nbus = 2,
++	.freq = 16, .max_brp = 32, .max_sjw = 4,
++	.dpram_size = 0x0800,
++	.boot = {0x0000, 0x000000, fw_dir &quot;bcard.bin&quot;,},
++	.load = {0x0120, 0x00f600, fw_dir &quot;ldcard.bin&quot;,},
++	.app = {0x0010, 0x0d0000, fw_dir &quot;cancard.bin&quot;,},
++	.reset = softingcs_reset,
++	.enable_irq = softingcs_enable_irq,
++}, {
++	.name = &quot;CANcard-NEC&quot;,
++	.manf = 0x0168, .prod = 0x002,
++	.generation = 1,
++	.nbus = 2,
++	.freq = 16, .max_brp = 32, .max_sjw = 4,
++	.dpram_size = 0x0800,
++	.boot = {0x0000, 0x000000, fw_dir &quot;bcard.bin&quot;,},
++	.load = {0x0120, 0x00f600, fw_dir &quot;ldcard.bin&quot;,},
++	.app = {0x0010, 0x0d0000, fw_dir &quot;cancard.bin&quot;,},
++	.reset = softingcs_reset,
++	.enable_irq = softingcs_enable_irq,
++}, {
++	.name = &quot;CANcard-SJA&quot;,
++	.manf = 0x0168, .prod = 0x004,
++	.generation = 1,
++	.nbus = 2,
++	.freq = 20, .max_brp = 32, .max_sjw = 4,
++	.dpram_size = 0x0800,
++	.boot = {0x0000, 0x000000, fw_dir &quot;bcard.bin&quot;,},
++	.load = {0x0120, 0x00f600, fw_dir &quot;ldcard.bin&quot;,},
++	.app = {0x0010, 0x0d0000, fw_dir &quot;cansja.bin&quot;,},
++	.reset = softingcs_reset,
++	.enable_irq = softingcs_enable_irq,
++}, {
++	.name = &quot;CANcard-2&quot;,
++	.manf = 0x0168, .prod = 0x005,
++	.generation = 2,
++	.nbus = 2,
++	.freq = 24, .max_brp = 64, .max_sjw = 4,
++	.dpram_size = 0x0800,
++	.boot = {0x0000, 0x000000, fw_dir &quot;bcard2.bin&quot;,},
++	.load = {0x0120, 0x00f600, fw_dir &quot;ldcard2.bin&quot;,},
++	.app = {0x0010, 0x0d0000, fw_dir &quot;cancrd2.bin&quot;,},
++	.reset = softingcs_reset,
++	.enable_irq = 0,
++}, {
++	.name = &quot;Vector-CANcard&quot;,
++	.manf = 0x0168, .prod = 0x081,
++	.generation = 1,
++	.nbus = 2,
++	.freq = 16, .max_brp = 64, .max_sjw = 4,
++	.dpram_size = 0x0800,
++	.boot = {0x0000, 0x000000, fw_dir &quot;bcard.bin&quot;,},
++	.load = {0x0120, 0x00f600, fw_dir &quot;ldcard.bin&quot;,},
++	.app = {0x0010, 0x0d0000, fw_dir &quot;cancard.bin&quot;,},
++	.reset = softingcs_reset,
++	.enable_irq = softingcs_enable_irq,
++}, {
++	.name = &quot;Vector-CANcard-SJA&quot;,
++	.manf = 0x0168, .prod = 0x084,
++	.generation = 1,
++	.nbus = 2,
++	.freq = 20, .max_brp = 32, .max_sjw = 4,
++	.dpram_size = 0x0800,
++	.boot = {0x0000, 0x000000, fw_dir &quot;bcard.bin&quot;,},
++	.load = {0x0120, 0x00f600, fw_dir &quot;ldcard.bin&quot;,},
++	.app = {0x0010, 0x0d0000, fw_dir &quot;cansja.bin&quot;,},
++	.reset = softingcs_reset,
++	.enable_irq = softingcs_enable_irq,
++}, {
++	.name = &quot;Vector-CANcard-2&quot;,
++	.manf = 0x0168, .prod = 0x085,
++	.generation = 2,
++	.nbus = 2,
++	.freq = 24, .max_brp = 64, .max_sjw = 4,
++	.dpram_size = 0x0800,
++	.boot = {0x0000, 0x000000, fw_dir &quot;bcard2.bin&quot;,},
++	.load = {0x0120, 0x00f600, fw_dir &quot;ldcard2.bin&quot;,},
++	.app = {0x0010, 0x0d0000, fw_dir &quot;cancrd2.bin&quot;,},
++	.reset = softingcs_reset,
++	.enable_irq = 0,
++}, {
++	.name = &quot;EDICcard-NEC&quot;,
++	.manf = 0x0168, .prod = 0x102,
++	.generation = 1,
++	.nbus = 2,
++	.freq = 16, .max_brp = 64, .max_sjw = 4,
++	.dpram_size = 0x0800,
++	.boot = {0x0000, 0x000000, fw_dir &quot;bcard.bin&quot;,},
++	.load = {0x0120, 0x00f600, fw_dir &quot;ldcard.bin&quot;,},
++	.app = {0x0010, 0x0d0000, fw_dir &quot;cancard.bin&quot;,},
++	.reset = softingcs_reset,
++	.enable_irq = softingcs_enable_irq,
++}, {
++	.name = &quot;EDICcard-2&quot;,
++	.manf = 0x0168, .prod = 0x105,
++	.generation = 2,
++	.nbus = 2,
++	.freq = 24, .max_brp = 64, .max_sjw = 4,
++	.dpram_size = 0x0800,
++	.boot = {0x0000, 0x000000, fw_dir &quot;bcard2.bin&quot;,},
++	.load = {0x0120, 0x00f600, fw_dir &quot;ldcard2.bin&quot;,},
++	.app = {0x0010, 0x0d0000, fw_dir &quot;cancrd2.bin&quot;,},
++	.reset = softingcs_reset,
++	.enable_irq = 0,
++}, {
++	0, 0,
++},
++};
++
++MODULE_FIRMWARE(fw_dir &quot;bcard.bin&quot;);
++MODULE_FIRMWARE(fw_dir &quot;ldcard.bin&quot;);
++MODULE_FIRMWARE(fw_dir &quot;cancard.bin&quot;);
++MODULE_FIRMWARE(fw_dir &quot;cansja.bin&quot;);
++
++MODULE_FIRMWARE(fw_dir &quot;bcard2.bin&quot;);
++MODULE_FIRMWARE(fw_dir &quot;ldcard2.bin&quot;);
++MODULE_FIRMWARE(fw_dir &quot;cancrd2.bin&quot;);
++
++static const struct softing_platform_data *softingcs_find_platform_data(
++		unsigned int manf, unsigned int prod)
++{
++	const struct softing_platform_data *lp;
++
++	for (lp = softingcs_platform_data; lp-&gt;manf; ++lp) {
++		if ((lp-&gt;manf == manf) &amp;&amp; (lp-&gt;prod == prod))
++			return lp;
++	}
++	return 0;
++}
++
++/*
++ * platformdata callbacks
++ */
++static int softingcs_reset(struct platform_device *pdev, int v)
++{
++	struct pcmcia_device *pcmcia = to_pcmcia_dev(pdev-&gt;dev.parent);
++
++	dev_dbg(&amp;pdev-&gt;dev, &quot;pcmcia config [2] %02x\n&quot;, v ? 0 : 0x20);
++	return pcmcia_write_config_byte(pcmcia, 2, v ? 0 : 0x20);
++}
++
++static int softingcs_enable_irq(struct platform_device *pdev, int v)
++{
++	struct pcmcia_device *pcmcia = to_pcmcia_dev(pdev-&gt;dev.parent);
++
++	dev_dbg(&amp;pdev-&gt;dev, &quot;pcmcia config [0] %02x\n&quot;, v ? 0x60 : 0);
++	return pcmcia_write_config_byte(pcmcia, 0, v ? 0x60 : 0);
++}
++
++/*
++ * pcmcia check
++ */
++static int softingcs_probe_config(struct pcmcia_device *pcmcia,
++		void *priv_data)
++{
++	struct softing_platform_data *pdat = priv_data;
++	struct resource *pres;
++	int memspeed = 0;
++
++	WARN_ON(!pdat);
++	pres = pcmcia-&gt;resource[PCMCIA_IOMEM_0];
++	if (resource_size(pres) &lt; 0x1000)
++		return -ERANGE;
++
++	pres-&gt;flags |= WIN_MEMORY_TYPE_CM | WIN_ENABLE;
++	if (pdat-&gt;generation &lt; 2) {
++		pres-&gt;flags |= WIN_USE_WAIT | WIN_DATA_WIDTH_8;
++		memspeed = 3;
++	} else {
++		pres-&gt;flags |= WIN_DATA_WIDTH_16;
++	}
++	return pcmcia_request_window(pcmcia, pres, memspeed);
++}
++
++static void softingcs_remove(struct pcmcia_device *pcmcia)
++{
++	struct platform_device *pdev = pcmcia-&gt;priv;
++
++	/* free bits */
++	platform_device_unregister(pdev);
++	/* release pcmcia stuff */
++	pcmcia_disable_device(pcmcia);
++}
++
++/*
++ * platform_device wrapper
++ * pdev-&gt;resource has 2 entries: io &amp; irq
++ */
++static void softingcs_pdev_release(struct device *dev)
++{
++	struct platform_device *pdev = to_platform_device(dev);
++	kfree(pdev);
++}
++
++static int softingcs_probe(struct pcmcia_device *pcmcia)
++{
++	int ret;
++	struct platform_device *pdev;
++	const struct softing_platform_data *pdat;
++	struct resource *pres;
++	struct dev {
++		struct platform_device pdev;
++		struct resource res[2];
++	} *dev;
++
++	/* find matching platform_data */
++	pdat = softingcs_find_platform_data(pcmcia-&gt;manf_id, pcmcia-&gt;card_id);
++	if (!pdat)
++		return -ENOTTY;
++
++	/* setup pcmcia device */
++	pcmcia-&gt;config_flags |= CONF_ENABLE_IRQ | CONF_AUTO_SET_IOMEM |
++		CONF_AUTO_SET_VPP | CONF_AUTO_CHECK_VCC;
++	ret = pcmcia_loop_config(pcmcia, softingcs_probe_config, (void *)pdat);
++	if (ret)
++		goto pcmcia_failed;
++
++	ret = pcmcia_enable_device(pcmcia);
++	if (ret &lt; 0)
++		goto pcmcia_failed;
++
++	pres = pcmcia-&gt;resource[PCMCIA_IOMEM_0];
++	if (!pres) {
++		ret = -EBADF;
++		goto pcmcia_bad;
++	}
++
++	/* create softing platform device */
++	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
++	if (!dev) {
++		ret = -ENOMEM;
++		goto mem_failed;
++	}
++	dev-&gt;pdev.resource = dev-&gt;res;
++	dev-&gt;pdev.num_resources = ARRAY_SIZE(dev-&gt;res);
++	dev-&gt;pdev.dev.release = softingcs_pdev_release;
++
++	pdev = &amp;dev-&gt;pdev;
++	pdev-&gt;dev.platform_data = (void *)pdat;
++	pdev-&gt;dev.parent = &amp;pcmcia-&gt;dev;
++	pcmcia-&gt;priv = pdev;
++
++	/* platform device resources */
++	pdev-&gt;resource[0].flags = IORESOURCE_MEM;
++	pdev-&gt;resource[0].start = pres-&gt;start;
++	pdev-&gt;resource[0].end = pres-&gt;end;
++
++	pdev-&gt;resource[1].flags = IORESOURCE_IRQ;
++	pdev-&gt;resource[1].start = pcmcia-&gt;irq;
++	pdev-&gt;resource[1].end = pdev-&gt;resource[1].start;
++
++	/* platform device setup */
++	spin_lock(&amp;softingcs_index_lock);
++	pdev-&gt;id = softingcs_index++;
++	spin_unlock(&amp;softingcs_index_lock);
++	pdev-&gt;name = &quot;softing&quot;;
++	dev_set_name(&amp;pdev-&gt;dev, &quot;softingcs.%i&quot;, pdev-&gt;id);
++	ret = platform_device_register(pdev);
++	if (ret &lt; 0)
++		goto platform_failed;
++
++	dev_info(&amp;pcmcia-&gt;dev, &quot;created %s\n&quot;, dev_name(&amp;pdev-&gt;dev));
++	return 0;
++
++platform_failed:
++	kfree(dev);
++mem_failed:
++pcmcia_bad:
++pcmcia_failed:
++	pcmcia_disable_device(pcmcia);
++	pcmcia-&gt;priv = 0;
++	return ret ?: -ENODEV;
++}
++
++static /*const*/ struct pcmcia_device_id softingcs_ids[] = {
++	/* softing */
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0001),
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0002),
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0004),
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0005),
++	/* vector, manufacturer? */
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0081),
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0084),
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0085),
++	/* EDIC */
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0102),
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0105),
++	PCMCIA_DEVICE_NULL,
++};
++
++MODULE_DEVICE_TABLE(pcmcia, softingcs_ids);
++
++static struct pcmcia_driver softingcs_driver = {
++	.owner		= THIS_MODULE,
++	.name		= &quot;softingcs&quot;,
++	.id_table	= softingcs_ids,
++	.probe		= softingcs_probe,
++	.remove		= softingcs_remove,
++};
++
++static int __init softingcs_start(void)
++{
++	spin_lock_init(&amp;softingcs_index_lock);
++	return pcmcia_register_driver(&amp;softingcs_driver);
++}
++
++static void __exit softingcs_stop(void)
++{
++	pcmcia_unregister_driver(&amp;softingcs_driver);
++}
++
++module_init(softingcs_start);
++module_exit(softingcs_stop);
++
++MODULE_DESCRIPTION(&quot;softing CANcard driver&quot;
++		&quot;, links PCMCIA card to softing driver&quot;);
++MODULE_LICENSE(&quot;GPL&quot;);
++MODULE_SUPPORTED_DEVICE(&quot;softing CANcard2&quot;);
++
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005250.html">[PATCH net-next-2.6 0/2] can: add driver for Softing card
+</A></li>
+	<LI>Next message: <A HREF="005249.html">[PATCH net-next-2.6 1/2] can: add driver for Softing card
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5251">[ date ]</a>
+              <a href="thread.html#5251">[ thread ]</a>
+              <a href="subject.html#5251">[ subject ]</a>
+              <a href="author.html#5251">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

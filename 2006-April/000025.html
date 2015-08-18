@@ -1,0 +1,159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-core] AW: Error handling
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20AW%3A%20Error%20handling&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855D2D%40vwagwox00010.vw.vwg%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000050.html">
+   <LINK REL="Next"  HREF="000027.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-core] AW: Error handling</H1>
+    <B>Hartkopp, Oliver (K-GEFE/E)</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20AW%3A%20Error%20handling&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855D2D%40vwagwox00010.vw.vwg%3E"
+       TITLE="[Socketcan-core] AW: Error handling">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Mon Apr 24 17:03:38 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000050.html">[Socketcan-core] LLCF-2.0-pre2 in socketcan/trunk
+</A></li>
+        <LI>Next message: <A HREF="000027.html">[Socketcan-core] Re: [Socket-can] AW: Error handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25">[ date ]</a>
+              <a href="thread.html#25">[ thread ]</a>
+              <a href="subject.html#25">[ subject ]</a>
+              <a href="author.html#25">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Andrey,
+
+&quot;_PHYSICAL_LAYER_REDUNDANCY_&quot; - cool! You're making strange things, but
+cool!
+
+I had a discussion with our series CAN people and now i'm a bit more clearly
+on some CAN errors.
+
+&gt;<i> 1) On any CAN error condition driver allocate special error frame in
+</I>&gt;<i> addition to a received frame (in case of overrun) and pushed it to
+</I>&gt;<i> a socket layer.
+</I>
+The idea to send some kind of 'error frames' the same way as standard data
+frames is indeed reasonable for all (temporary) errors that can occur. With
+this way you can check after which frame you got the error frame as well as
+you have a valid timestamp for the error condition.
+
+My suggestion is to add an additional flag to the can_id in can.h:
+
+/* special address description flags for the CAN_ID */
+#define CAN_EFF_FLAG 0x80000000U /* EFF/SFF is set in the MSB */
+#define CAN_RTR_FLAG 0x40000000U /* remote transmission request */
+#define CAN_ERR_FLAG 0x20000000U /* error frame */
+
+This leads me to an tiny problem, that this bit is currently used in the
+can_id to identify 'inverse filters' for raw-sockets and in af_can.c. But
+this is not that critical, as i can move the bit-functionality to the
+can_mask easily.
+
+IF an error occures the driver sets the CAN_ERR_FLAG as can_id and
+(suggestion) put the error type in data[0] and additional data describing
+this type of error in data[1] or data [1..7] or whatever.
+
+E.g. 
+data[0] // error type 
+#define ACTIVE_ERROR  1
+#define PASSIVE_ERROR 2
+#define BUS_OFF_ERROR 3
+
+data[1] // error description
+#define BIT_ERROR   1
+#define FORM_ERROR  2
+#define STUFF_ERROR 3
+#define OTHER_ERROR 4
+
+data[2]
+#define START_OF_FRAME 1
+#define DATA_FIELD     2
+#define CRC_DELIMITER  3
+(..)
+
+Something like this.
+
+&gt;<i> 2a) If application open CAN raw socket, then it receive this error frame,
+</I>&gt;<i>     unless it filtered out (by socket option).
+</I>OK. Is opt-out ok for everybody? 
+
+
+&gt;<i> And read-syscall return
+</I>&gt;<i> error codes related _only_ with user actions (if-down as ex.),
+</I>Hm. See my ideas for the bus-off state below.
+
+
+&gt;<i>     but for all CAN errors, syscall always return 0 (for rx/tx-timeouts
+</I>too).
+&gt;<i>     This behavior will useful mainly for development.
+</I>NO! Even if we send a CAN 'error' frame to the user it remains a CAN frame -
+so it has always sizeof(can_frame). If you want to see error frames you have
+to check, if you got one by checking for the CAN_ERR_FLAG.
+
+
+&gt;<i> 2b) If some higher level protocol over CAN exist, then syscall should
+</I>&gt;<i>     return appropriated -E&lt;something&gt; on CAN errors too, and filtered out
+</I>&gt;<i>     all error-frames at protocol-driver level.
+</I>&gt;<i>     As ex., on bus-off state read should return -ENOMEDIUM.
+</I>
+The higher level protocols do not need these detailed problem descriptions
+on internal CAN-specific failures as long the medium seems to be
+'repairable'. BUT the bus-off topic IS interesting - even for higher level
+protocols.
+
+In the Volkswagen specifications the bus-off state causes a
+re-initialisation of the controller after 50ms (the first time) and 200ms
+(the following times). So if we assume all can-drivers behave like this (do
+we?) and the auto-repair functionality works, the bus-off state remains a
+serious problem on the CAN that has to be announced to the user.
+
+So my suggestion ist, that the can-driver sends an error frame with a
+bus-off error type and the (raw, bcm, tpxxx) socket returns a -ENOMEDIUM to
+the user.
+
+So the userland application can react to this error how it want's to.
+
+Isn't this a nice idea?
+
+Greetings,
+
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000050.html">[Socketcan-core] LLCF-2.0-pre2 in socketcan/trunk
+</A></li>
+	<LI>Next message: <A HREF="000027.html">[Socketcan-core] Re: [Socket-can] AW: Error handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25">[ date ]</a>
+              <a href="thread.html#25">[ thread ]</a>
+              <a href="subject.html#25">[ subject ]</a>
+              <a href="author.html#25">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

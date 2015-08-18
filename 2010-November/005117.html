@@ -1,0 +1,288 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v6 07/20] can: EG20T PCH: Improve rx processing.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v6%2007/20%5D%20can%3A%20EG20T%20PCH%3A%20Improve%20rx%20processing.&In-Reply-To=%3C4CF47C43.6080308%40dsn.okisemi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005131.html">
+   <LINK REL="Next"  HREF="005118.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v6 07/20] can: EG20T PCH: Improve rx processing.</H1>
+    <B>Tomoya MORINAGA</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v6%2007/20%5D%20can%3A%20EG20T%20PCH%3A%20Improve%20rx%20processing.&In-Reply-To=%3C4CF47C43.6080308%40dsn.okisemi.com%3E"
+       TITLE="[PATCH net-next-2.6 v6 07/20] can: EG20T PCH: Improve rx processing.">tomoya-linux at dsn.okisemi.com
+       </A><BR>
+    <I>Tue Nov 30 05:23:31 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005131.html">[PATCH net-next-2.6 v6 06/20] can: EG20T PCH: Fix endianness issue
+</A></li>
+        <LI>Next message: <A HREF="005118.html">[PATCH net-next-2.6 v6 08/20] can: EG20T PCH: Rename function/macro	name
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5117">[ date ]</a>
+              <a href="thread.html#5117">[ thread ]</a>
+              <a href="subject.html#5117">[ subject ]</a>
+              <a href="author.html#5117">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Replace complex &quot;goto&quot; to &quot;do~while&quot;.
+
+For easy to read/understand, it divides a rx function into some functions.
+
+Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+---
+ drivers/net/can/pch_can.c |  160 +++++++++++++++++++++++----------------------
+ 1 files changed, 83 insertions(+), 77 deletions(-)
+
+diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+index 98e7e9f..8fb17dc 100644
+--- a/drivers/net/can/pch_can.c
++++ b/drivers/net/can/pch_can.c
+@@ -694,120 +694,126 @@ static irqreturn_t pch_can_interrupt(int irq, void *dev_id)
+ 	return IRQ_HANDLED;
+ }
+ 
+-static int pch_can_rx_normal(struct net_device *ndev, u32 int_stat)
++static void pch_fifo_thresh(struct pch_can_priv *priv, int obj_id)
++{
++	if (obj_id &lt; PCH_FIFO_THRESH) {
++		iowrite32(PCH_CMASK_RDWR | PCH_CMASK_CTRL |
++			  PCH_CMASK_ARB, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
++
++		/* Clearing the Dir bit. */
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].id2, PCH_ID2_DIR);
++
++		/* Clearing NewDat &amp; IntPnd */
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].mcont,
++				  PCH_IF_MCONT_INTPND);
++		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, obj_id);
++	} else if (obj_id &gt; PCH_FIFO_THRESH) {
++		pch_can_int_clr(priv, obj_id);
++	} else if (obj_id == PCH_FIFO_THRESH) {
++		int cnt;
++		for (cnt = 0; cnt &lt; PCH_FIFO_THRESH; cnt++)
++			pch_can_int_clr(priv, cnt + 1);
++	}
++}
++
++static void pch_can_rx_msg_lost(struct net_device *ndev, int obj_id)
++{
++	struct pch_can_priv *priv = netdev_priv(ndev);
++	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
++	struct sk_buff *skb;
++	struct can_frame *cf;
++
++	netdev_dbg(priv-&gt;ndev, &quot;Msg Obj is overwritten.\n&quot;);
++	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].mcont,
++			  PCH_IF_MCONT_MSGLOST);
++	iowrite32(PCH_CMASK_RDWR | PCH_CMASK_CTRL,
++		  &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, obj_id);
++
++	skb = alloc_can_err_skb(ndev, &amp;cf);
++	if (!skb)
++		return;
++
++	cf-&gt;can_id |= CAN_ERR_CRTL;
++	cf-&gt;data[1] = CAN_ERR_CRTL_RX_OVERFLOW;
++	stats-&gt;rx_over_errors++;
++	stats-&gt;rx_errors++;
++
++	netif_receive_skb(skb);
++}
++
++static int pch_can_rx_normal(struct net_device *ndev, u32 obj_num, int quota)
+ {
+ 	u32 reg;
+ 	canid_t id;
+-	u32 ide;
+-	u32 rtr;
+-	int i, k;
+ 	int rcv_pkts = 0;
+ 	struct sk_buff *skb;
+ 	struct can_frame *cf;
+ 	struct pch_can_priv *priv = netdev_priv(ndev);
+ 	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
++	int i;
++	u32 id2;
+ 	u16 data_reg;
+ 
+-	/* Reading the messsage object from the Message RAM */
+-	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+-	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, int_stat);
++	do {
++		/* Reading the messsage object from the Message RAM */
++		iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
++		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, obj_num);
+ 
+-	/* Reading the MCONT register. */
+-	reg = ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].mcont);
+-	reg &amp;= 0xffff;
++		/* Reading the MCONT register. */
++		reg = ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].mcont);
++
++		if (reg &amp; PCH_IF_MCONT_EOB)
++			break;
+ 
+-	for (k = int_stat; !(reg &amp; PCH_IF_MCONT_EOB); k++) {
+ 		/* If MsgLost bit set. */
+ 		if (reg &amp; PCH_IF_MCONT_MSGLOST) {
+-			dev_err(&amp;priv-&gt;ndev-&gt;dev, &quot;Msg Obj is overwritten.\n&quot;);
+-			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].mcont,
+-					  PCH_IF_MCONT_MSGLOST);
+-			iowrite32(PCH_CMASK_RDWR | PCH_CMASK_CTRL,
+-				  &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+-			pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, k);
+-
+-			skb = alloc_can_err_skb(ndev, &amp;cf);
+-			if (!skb)
+-				return -ENOMEM;
+-
+-			priv-&gt;can.can_stats.error_passive++;
+-			priv-&gt;can.state = CAN_STATE_ERROR_PASSIVE;
+-			cf-&gt;can_id |= CAN_ERR_CRTL;
+-			cf-&gt;data[1] |= CAN_ERR_CRTL_RX_OVERFLOW;
+-			cf-&gt;data[2] |= CAN_ERR_PROT_OVERLOAD;
+-			stats-&gt;rx_packets++;
+-			stats-&gt;rx_bytes += cf-&gt;can_dlc;
+-
+-			netif_receive_skb(skb);
++			pch_can_rx_msg_lost(ndev, obj_num);
+ 			rcv_pkts++;
+-			goto RX_NEXT;
++			quota--;
++			obj_num++;
++			continue;
++		} else if (!(reg &amp; PCH_IF_MCONT_NEWDAT)) {
++			obj_num++;
++			continue;
+ 		}
+-		if (!(reg &amp; PCH_IF_MCONT_NEWDAT))
+-			goto RX_NEXT;
+ 
+ 		skb = alloc_can_skb(priv-&gt;ndev, &amp;cf);
+ 		if (!skb)
+ 			return -ENOMEM;
+ 
+ 		/* Get Received data */
+-		ide = ((ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].id2)) &amp; PCH_ID2_XTD) &gt;&gt;
+-									     14;
+-		if (ide) {
++		id2 = ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].id2);
++		if (id2 &amp; PCH_ID2_XTD) {
+ 			id = (ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].id1) &amp; 0xffff);
+-			id |= (((ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].id2)) &amp;
+-					    0x1fff) &lt;&lt; 16);
+-			cf-&gt;can_id = (id &amp; CAN_EFF_MASK) | CAN_EFF_FLAG;
++			id |= (((id2) &amp; 0x1fff) &lt;&lt; 16);
++			cf-&gt;can_id = id | CAN_EFF_FLAG;
+ 		} else {
+-			id = (((ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].id2)) &amp;
+-						     (CAN_SFF_MASK &lt;&lt; 2)) &gt;&gt; 2);
+-			cf-&gt;can_id = (id &amp; CAN_SFF_MASK);
++			id = (id2 &gt;&gt; 2) &amp; CAN_SFF_MASK;
++			cf-&gt;can_id = id;
+ 		}
+ 
+-		rtr = (ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].id2) &amp;  PCH_ID2_DIR);
+-		if (rtr) {
+-			cf-&gt;can_dlc = 0;
++		if (id2 &amp; PCH_ID2_DIR)
+ 			cf-&gt;can_id |= CAN_RTR_FLAG;
+-		} else {
+-			cf-&gt;can_dlc =
+-			      ((ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].mcont)) &amp; 0x0f);
+-		}
++
++		cf-&gt;can_dlc = get_can_dlc((ioread32(&amp;priv-&gt;regs-&gt;
++						    ifregs[0].mcont)) &amp; 0xF);
+ 
+ 		for (i = 0; i &lt; cf-&gt;can_dlc; i += 2) {
+ 			data_reg = ioread16(&amp;priv-&gt;regs-&gt;ifregs[0].data[i / 2]);
+-			cf-&gt;data[i] = data_reg &amp; 0xff;
++			cf-&gt;data[i] = data_reg;
+ 			cf-&gt;data[i + 1] = data_reg &gt;&gt; 8;
+ 		}
+ 
+ 		netif_receive_skb(skb);
+ 		rcv_pkts++;
+ 		stats-&gt;rx_packets++;
++		quota--;
+ 		stats-&gt;rx_bytes += cf-&gt;can_dlc;
+ 
+-		if (k &lt; PCH_FIFO_THRESH) {
+-			iowrite32(PCH_CMASK_RDWR | PCH_CMASK_CTRL |
+-				  PCH_CMASK_ARB, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+-
+-			/* Clearing the Dir bit. */
+-			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].id2,
+-					  PCH_ID2_DIR);
+-
+-			/* Clearing NewDat &amp; IntPnd */
+-			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].mcont,
+-					  PCH_IF_MCONT_INTPND);
+-			pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, k);
+-		} else if (k &gt; PCH_FIFO_THRESH) {
+-			pch_can_int_clr(priv, k);
+-		} else if (k == PCH_FIFO_THRESH) {
+-			int cnt;
+-			for (cnt = 0; cnt &lt; PCH_FIFO_THRESH; cnt++)
+-				pch_can_int_clr(priv, cnt+1);
+-		}
+-RX_NEXT:
+-		/* Reading the messsage object from the Message RAM */
+-		iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+-		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, k);
+-		reg = ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].mcont);
+-	}
++		pch_fifo_thresh(priv, obj_num);
++		obj_num++;
++	} while (quota &gt; 0);
+ 
+ 	return rcv_pkts;
+ }
+@@ -865,7 +871,7 @@ static int pch_can_rx_poll(struct napi_struct *napi, int quota)
+ 		goto end;
+ 
+ 	if ((int_stat &gt;= PCH_RX_OBJ_START) &amp;&amp; (int_stat &lt;= PCH_RX_OBJ_END)) {
+-		rcv_pkts += pch_can_rx_normal(ndev, int_stat);
++		rcv_pkts += pch_can_rx_normal(ndev, int_stat, quota);
+ 		quota -= rcv_pkts;
+ 		if (quota &lt; 0)
+ 			goto end;
+-- 
+1.6.0.6
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005131.html">[PATCH net-next-2.6 v6 06/20] can: EG20T PCH: Fix endianness issue
+</A></li>
+	<LI>Next message: <A HREF="005118.html">[PATCH net-next-2.6 v6 08/20] can: EG20T PCH: Rename function/macro	name
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5117">[ date ]</a>
+              <a href="thread.html#5117">[ thread ]</a>
+              <a href="subject.html#5117">[ subject ]</a>
+              <a href="author.html#5117">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

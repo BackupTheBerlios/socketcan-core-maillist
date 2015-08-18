@@ -1,0 +1,133 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6] can: sja1000 platform data fixes
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%5D%20can%3A%20sja1000%20platform%20data%20fixes&In-Reply-To=%3C4BF151D2.5030906%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004374.html">
+   <LINK REL="Next"  HREF="004372.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6] can: sja1000 platform data fixes</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%5D%20can%3A%20sja1000%20platform%20data%20fixes&In-Reply-To=%3C4BF151D2.5030906%40grandegger.com%3E"
+       TITLE="[PATCH net-next-2.6] can: sja1000 platform data fixes">wg at grandegger.com
+       </A><BR>
+    <I>Mon May 17 16:25:22 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004374.html">[PATCH] Fix SJA1000 command register writes on SMP systems
+</A></li>
+        <LI>Next message: <A HREF="004372.html">[PATCH net-next-2.6] can: sja1000 platform data fixes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4370">[ date ]</a>
+              <a href="thread.html#4370">[ thread ]</a>
+              <a href="subject.html#4370">[ subject ]</a>
+              <a href="author.html#4370">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The member &quot;clock&quot; of struct &quot;sja1000_platform_data&quot; is documented as
+&quot;CAN bus oscillator frequency in Hz&quot; but it's actually used as the CAN
+clock frequency, which is half of it. To avoid further confusion, this
+patch fixes it by renaming the member to &quot;osc_freq&quot;. That way, also
+non mainline users will notice the change. The platform code for the
+relevant boards is updated accordingly. Furthermore, pre-defined
+values are now used for the members &quot;ocr&quot; and &quot;cdr&quot;.
+
+Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+CC: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+
+diff --git a/arch/arm/mach-mx2/pcm970-baseboard.c b/arch/arm/mach-mx2/pcm970-baseboard.c
+index 4aafd5b..f490a40 100644
+--- a/arch/arm/mach-mx2/pcm970-baseboard.c
++++ b/arch/arm/mach-mx2/pcm970-baseboard.c
+@@ -201,9 +201,9 @@ static struct resource pcm970_sja1000_resources[] = {
+ };
+ 
+ struct sja1000_platform_data pcm970_sja1000_platform_data = {
+-	.clock		= 16000000 / 2,
+-	.ocr		= 0x40 | 0x18,
+-	.cdr		= 0x40,
++	.osc_freq	= 16000000,
++	.ocr		= OCR_TX1_PULLDOWN | OCR_TX0_PUSHPULL,
++	.cdr		= CDR_CBP,
+ };
+ 
+ static struct platform_device pcm970_sja1000 = {
+diff --git a/arch/arm/mach-mx3/mach-pcm037.c b/arch/arm/mach-mx3/mach-pcm037.c
+index 2df1ec5..78ecd75 100644
+--- a/arch/arm/mach-mx3/mach-pcm037.c
++++ b/arch/arm/mach-mx3/mach-pcm037.c
+@@ -530,9 +530,9 @@ static struct resource pcm970_sja1000_resources[] = {
+ };
+ 
+ struct sja1000_platform_data pcm970_sja1000_platform_data = {
+-	.clock		= 16000000 / 2,
+-	.ocr		= 0x40 | 0x18,
+-	.cdr		= 0x40,
++	.osc_freq	= 16000000,
++	.ocr		= OCR_TX1_PULLDOWN | OCR_TX0_PUSHPULL,
++	.cdr		= CDR_CBP,
+ };
+ 
+ static struct platform_device pcm970_sja1000 = {
+diff --git a/drivers/net/can/sja1000/sja1000_platform.c b/drivers/net/can/sja1000/sja1000_platform.c
+index b65cabb..d9fadc4 100644
+--- a/drivers/net/can/sja1000/sja1000_platform.c
++++ b/drivers/net/can/sja1000/sja1000_platform.c
+@@ -111,7 +111,8 @@ static int sp_probe(struct platform_device *pdev)
+ 	dev-&gt;irq = res_irq-&gt;start;
+ 	priv-&gt;irq_flags = res_irq-&gt;flags &amp; (IRQF_TRIGGER_MASK | IRQF_SHARED);
+ 	priv-&gt;reg_base = addr;
+-	priv-&gt;can.clock.freq = pdata-&gt;clock;
++	/* The CAN clock frequency is half the oscillator clock frequency */
++	priv-&gt;can.clock.freq = pdata-&gt;osc_freq / 2;
+ 	priv-&gt;ocr = pdata-&gt;ocr;
+ 	priv-&gt;cdr = pdata-&gt;cdr;
+ 
+diff --git a/include/linux/can/platform/sja1000.h b/include/linux/can/platform/sja1000.h
+index 01ee2ae..96f8fcc 100644
+--- a/include/linux/can/platform/sja1000.h
++++ b/include/linux/can/platform/sja1000.h
+@@ -26,7 +26,7 @@
+ #define OCR_TX_SHIFT      2
+ 
+ struct sja1000_platform_data {
+-	u32 clock;	/* CAN bus oscillator frequency in Hz */
++	u32 osc_freq;	/* CAN bus oscillator frequency in Hz */
+ 
+ 	u8 ocr;		/* output control register */
+ 	u8 cdr;		/* clock divider register */
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004374.html">[PATCH] Fix SJA1000 command register writes on SMP systems
+</A></li>
+	<LI>Next message: <A HREF="004372.html">[PATCH net-next-2.6] can: sja1000 platform data fixes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4370">[ date ]</a>
+              <a href="thread.html#4370">[ thread ]</a>
+              <a href="subject.html#4370">[ subject ]</a>
+              <a href="author.html#4370">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

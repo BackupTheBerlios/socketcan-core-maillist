@@ -1,0 +1,883 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 2/4] sysfs: new interface for setting bit-timing parameters
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/4%5D%20sysfs%3A%20new%20interface%20for%20setting%20bit-timing%20parameters&In-Reply-To=%3C48919508.1090007%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001764.html">
+   <LINK REL="Next"  HREF="001770.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 2/4] sysfs: new interface for setting bit-timing parameters</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/4%5D%20sysfs%3A%20new%20interface%20for%20setting%20bit-timing%20parameters&In-Reply-To=%3C48919508.1090007%40grandegger.com%3E"
+       TITLE="[PATCH 2/4] sysfs: new interface for setting bit-timing parameters">wg at grandegger.com
+       </A><BR>
+    <I>Thu Jul 31 12:33:44 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001764.html">[PATCH 1/4] dev: new interface for setting bit-timing parameters
+</A></li>
+        <LI>Next message: <A HREF="001770.html">[PATCH 2/4] sysfs: new interface for setting bit-timing parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1765">[ date ]</a>
+              <a href="thread.html#1765">[ thread ]</a>
+              <a href="subject.html#1765">[ subject ]</a>
+              <a href="author.html#1765">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+ kernel/2.6/drivers/net/can/sysfs.c |  666 +++++++++++++++++--------------------
+ 1 file changed, 317 insertions(+), 349 deletions(-)
+
+Index: trunk/kernel/2.6/drivers/net/can/sysfs.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/sysfs.c
++++ trunk/kernel/2.6/drivers/net/can/sysfs.c
+@@ -1,7 +1,7 @@
+ /*
+  * $Id: dev.c 542 2007-11-07 13:57:16Z thuermann $
+  *
+- * Copyright (C) 2007 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
++ * Copyright (C) 2007-2008 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the version 2 of the GNU General Public License
+@@ -30,111 +30,147 @@
+ #include &quot;sysfs.h&quot;
+ 
+ #ifdef CONFIG_SYSFS
++
+ /*
+- * Functions to set/get CAN properties used by SYSFS
+- *
+- * FIXME: we may want to check for capabilities!
+- *
+- *        if (!capable(CAP_NET_ADMIN))
+- *        	return -EPERM;
++ * SYSFS access functions and attributes. Use same locking as
++ * net/core/net-sysfs.c does.
+  */
+-static int can_get_bitrate(struct net_device *dev, u32 *bitrate)
++static inline int dev_isalive(const struct net_device *dev)
+ {
+-	struct can_priv *priv = netdev_priv(dev);
+-	*bitrate = priv-&gt;bitrate;
++	return dev-&gt;reg_state &lt;= NETREG_REGISTERED;
++}
+ 
+-	return 0;
++/* use same locking rules as GIF* ioctl's */
++static ssize_t can_dev_show(struct device *d,
++			    struct device_attribute *attr, char *buf,
++			    ssize_t (*fmt)(struct net_device *, char *))
++{
++	struct net_device *dev = to_net_dev(d);
++	ssize_t ret = -EINVAL;
++
++	read_lock(&amp;dev_base_lock);
++	if (dev_isalive(dev))
++		ret = (*fmt)(dev, buf);
++	read_unlock(&amp;dev_base_lock);
++
++	return ret;
++}
++
++/* generate a show function for simple field */
++#define CAN_DEV_SHOW(field, fmt_string)					\
++static ssize_t fmt_can_##field(struct net_device *dev, char *buf)	\
++{									\
++	struct can_priv *priv = netdev_priv(dev);			\
++	return sprintf(buf, fmt_string, priv-&gt;field);			\
++}									\
++static ssize_t show_can_##field(struct device *d,			\
++				struct device_attribute *attr,		\
++				char *buf)				\
++{									\
++	return can_dev_show(d, attr, buf, fmt_can_##field);		\
+ }
+ 
+-static int can_set_custombittime(struct net_device *dev,
+-				 struct can_bittime *bt)
++/* use same locking and permission rules as SIF* ioctl's */
++static ssize_t can_dev_store(struct device *d, struct device_attribute *attr,
++			     const char *buf, size_t len,
++			     int (*set)(struct net_device *, unsigned long))
+ {
+-	struct can_priv *priv = netdev_priv(dev);
+-	int err = -ENOTSUPP;
++	struct net_device *dev = to_net_dev(d);
++	unsigned long new;
++	int ret = -EINVAL;
+ 
+-	if (priv-&gt;state != CAN_STATE_STOPPED)
+-		return -EBUSY;
++	if (!capable(CAP_NET_ADMIN))
++		return -EPERM;
+ 
+-	if (priv-&gt;do_set_bittime) {
+-		err = priv-&gt;do_set_bittime(dev, bt);
+-		if (err)
+-			goto out;
+-		priv-&gt;bittime = *bt;
+-		if (bt-&gt;type == CAN_BITTIME_STD &amp;&amp; bt-&gt;std.brp) {
+-			priv-&gt;bitrate = priv-&gt;can_sys_clock /
+-				(bt-&gt;std.brp * (1 + bt-&gt;std.prop_seg +
+-						bt-&gt;std.phase_seg1 +
+-						bt-&gt;std.phase_seg2));
+-		} else
+-			priv-&gt;bitrate = CAN_BITRATE_UNKNOWN;
++	ret = strict_strtoul(buf, 0, &amp;new);
++	if (ret)
++		goto out;
++
++	rtnl_lock();
++	if (dev_isalive(dev)) {
++		ret = (*set)(dev, new);
++		if (!ret)
++			ret = len;
+ 	}
++	rtnl_unlock();
+ out:
+-	return err;
++	return ret;
+ }
+ 
+-static int can_get_custombittime(struct net_device *dev,
+-				 struct can_bittime *bt)
+-{
+-	struct can_priv *priv = netdev_priv(dev);
++#define CAN_CREATE_FILE(_dev, _name)					\
++	if (device_create_file(&amp;_dev-&gt;dev, &amp;dev_attr_##_name))		\
++		dev_err(ND2D(_dev),					\
++			&quot;Couldn't create device file for ##_name\n&quot;)
+ 
+-	*bt = priv-&gt;bittime;
+-	return 0;
+-}
++#define CAN_REMOVE_FILE(_dev, _name)					\
++	device_remove_file(&amp;_dev-&gt;dev, &amp;dev_attr_##_name)		\
+ 
+-static int can_set_ctrlmode(struct net_device *dev, u32 ctrlmode)
++CAN_DEV_SHOW(ctrlmode, &quot;0x%x\n&quot;);
++
++static int change_can_ctrlmode(struct net_device *dev, unsigned long ctrlmode)
+ {
+ 	struct can_priv *priv = netdev_priv(dev);
++	int err = 0;
+ 
+-	if (!priv-&gt;do_set_ctrlmode)
+-		return -ENOTSUPP;
+ 	if (priv-&gt;state != CAN_STATE_STOPPED)
+ 		return -EBUSY;
+ 
+-	return priv-&gt;do_set_ctrlmode(dev, ctrlmode);
++	if (priv-&gt;do_set_ctrlmode)
++		err = priv-&gt;do_set_ctrlmode(dev, ctrlmode);
++
++	if (!err)
++		priv-&gt;ctrlmode = ctrlmode;
++
++	return err;
+ }
+ 
+-static int can_get_ctrlmode(struct net_device *dev, u32 *ctrlmode)
++static ssize_t store_can_ctrlmode(struct device *dev,
++				  struct device_attribute *attr,
++				  const char *buf, size_t len)
+ {
+-	struct can_priv *priv = netdev_priv(dev);
+-
+-	*ctrlmode = priv-&gt;ctrlmode;
+-	return 0;
++	return can_dev_store(dev, attr, buf, len, change_can_ctrlmode);
+ }
+ 
+-static int can_get_state(struct net_device *dev, enum can_state *state)
++static DEVICE_ATTR(can_ctrlmode, S_IRUGO | S_IWUSR,
++		   show_can_ctrlmode, store_can_ctrlmode);
++
++static const char *can_state_names[] = {
++	&quot;active&quot;, &quot;bus-warn&quot;, &quot;bus-pass&quot; , &quot;bus-off&quot;,
++	&quot;stopped&quot;, &quot;sleeping&quot;, &quot;unkown&quot;
++};
++
++static int printf_can_state(struct net_device *dev, char *buf)
+ {
+ 	struct can_priv *priv = netdev_priv(dev);
++	enum can_state state;
++	int err = 0;
+ 
+ 	if (priv-&gt;do_get_state) {
+-		int err = priv-&gt;do_get_state(dev, state);
++		int err = priv-&gt;do_get_state(dev, &amp;state);
+ 		if (err)
+-			return err;
+-		priv-&gt;state = *state;
++			goto out;
++		priv-&gt;state = state;
+ 	} else
+-		*state = priv-&gt;state;
+-	return 0;
++		state = priv-&gt;state;
++
++	if (state &gt;= ARRAY_SIZE(can_state_names))
++		state = ARRAY_SIZE(can_state_names) - 1;
++	err = sprintf(buf, &quot;%s\n&quot;, can_state_names[state]);
++out:
++	return err;
+ }
+ 
+-static int can_set_clock(struct net_device *dev, u32 clock)
++static ssize_t show_can_state(struct device *d,
++			      struct device_attribute *attr, char *buf)
+ {
+-	struct can_priv *priv = netdev_priv(dev);
+-
+-	if (priv-&gt;state != CAN_STATE_STOPPED)
+-		return -EBUSY;
+-
+-	priv-&gt;can_sys_clock = clock;
+-	return 0;
++	return can_dev_show(d, attr, buf, printf_can_state);
+ }
+ 
+-static int can_get_clock(struct net_device *dev, u32 *clock)
+-{
+-	struct can_priv *priv = netdev_priv(dev);
++static DEVICE_ATTR(can_state, S_IRUGO, show_can_state, NULL);
+ 
+-	*clock = priv-&gt;can_sys_clock;
+-	return 0;
+-}
++CAN_DEV_SHOW(restart_ms, &quot;%d\n&quot;);
+ 
+-static int can_set_restart_ms(struct net_device *dev, int ms)
++static int change_can_restart_ms(struct net_device *dev, unsigned long ms)
+ {
+ 	struct can_priv *priv = netdev_priv(dev);
+ 
+@@ -144,15 +180,28 @@ static int can_set_restart_ms(struct net
+ 	return 0;
+ }
+ 
+-static int can_get_restart_ms(struct net_device *dev, int *ms)
++static ssize_t store_can_restart_ms(struct device *dev,
++				    struct device_attribute *attr,
++				    const char *buf, size_t len)
+ {
+-	struct can_priv *priv = netdev_priv(dev);
++	return can_dev_store(dev, attr, buf, len, change_can_restart_ms);
++}
+ 
+-	*ms = priv-&gt;restart_ms;
+-	return 0;
++static DEVICE_ATTR(can_restart_ms, S_IRUGO | S_IWUSR,
++		   show_can_restart_ms, store_can_restart_ms);
++
++static int printf_can_echo(struct net_device *dev, char *buf)
++{
++	return sprintf(buf, &quot;%d\n&quot;, dev-&gt;flags &amp; IFF_ECHO ? 1 : 0);
++}
++
++static ssize_t show_can_echo(struct device *d,
++			  struct device_attribute *attr, char *buf)
++{
++	return can_dev_show(d, attr, buf, printf_can_echo);
+ }
+ 
+-static int can_set_echo(struct net_device *dev, int on)
++static int change_can_echo(struct net_device *dev, unsigned long on)
+ {
+ 	if (on)
+ 		dev-&gt;flags |= IFF_ECHO;
+@@ -161,316 +210,225 @@ static int can_set_echo(struct net_devic
+ 	return 0;
+ }
+ 
+-static int can_get_echo(struct net_device *dev, int *on)
++static ssize_t store_can_echo(struct device *dev,
++			      struct device_attribute *attr,
++			      const char *buf, size_t len)
+ {
+-	*on = dev-&gt;flags &amp; IFF_ECHO ? 1 : 0;
+-	return 0;
++	return can_dev_store(dev, attr, buf, len, change_can_echo);
+ }
+ 
+-/*
+- * SYSFS access functions and attributes.
+- * Use same locking as net/core/net-sysfs.c
+- */
+-static inline int dev_isalive(const struct net_device *dev)
++static DEVICE_ATTR(can_echo, S_IRUGO | S_IWUSR, show_can_echo, store_can_echo);
++
++static int change_can_restart(struct net_device *dev, unsigned long on)
+ {
+-	return dev-&gt;reg_state &lt;= NETREG_REGISTERED;
++	return can_restart_now(dev);
+ }
+ 
+-#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,25)
+-#define CAN_ATTR(_name, _func, _type, _fmt)				\
+-static ssize_t can_show_##_func(struct device *dev,			\
+-				struct device_attribute *attr,		\
+-				char *buf)				\
+-{									\
+-	struct net_device *ndev = to_net_dev(dev);			\
+-	_type val;							\
+-	int ret = -EINVAL;						\
+-	read_lock(&amp;dev_base_lock);					\
+-	if (dev_isalive(ndev)) {					\
+-		can_get_##_func(ndev, &amp;val);				\
+-		ret = snprintf(buf, PAGE_SIZE, _fmt &quot;\n&quot;, val);		\
+-	}								\
+-	read_unlock(&amp;dev_base_lock);					\
+-	return ret;							\
+-}									\
+-static ssize_t can_store_##_func(struct device *dev,			\
+-				 struct device_attribute *attr,		\
+-				 const char *buf, size_t count)		\
+-{									\
+-	struct net_device *ndev = to_net_dev(dev);			\
+-	char *endp;							\
+-	_type val;							\
+-	int ret = -EINVAL;						\
+-	val = simple_strtoul(buf, &amp;endp, 0);				\
+-	if (endp == buf)						\
+-		return ret;						\
+-	rtnl_lock();							\
+-	if (dev_isalive(ndev)) {					\
+-		if ((ret = can_set_##_func(ndev, val)) == 0)		\
+-			ret = count;					\
+-	}								\
+-	rtnl_unlock();							\
+-	return ret;							\
+-}									\
+-static DEVICE_ATTR(_name, S_IRUGO | S_IWUSR, 				\
+-		   can_show_##_func, can_store_##_func)
+-
+-#else /* LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,25) */
+-#define CAN_ATTR(_name, _func, _type, _fmt)				\
+-static ssize_t can_show_##_func(struct device *dev,			\
+-				struct device_attribute *attr,		\
+-				char *buf)				\
+-{									\
+-	struct net_device *ndev = to_net_dev(dev);			\
+-	_type val;							\
+-	int ret = -EINVAL;						\
+-	read_lock(&amp;dev_base_lock);					\
+-	if (dev_isalive(ndev)) {					\
+-		can_get_##_func(ndev, &amp;val);				\
+-		ret = snprintf(buf, PAGE_SIZE, _fmt &quot;\n&quot;, val);		\
+-	}								\
+-	read_unlock(&amp;dev_base_lock);					\
+-	return ret;							\
+-}									\
+-static ssize_t can_store_##_func(struct device *dev,			\
+-				 struct device_attribute *attr,		\
+-				 const char *buf, size_t count)		\
+-{									\
+-	struct net_device *ndev = to_net_dev(dev);			\
+-	_type val;							\
+-	unsigned long input;						\
+-	int ret = -EINVAL;						\
+-	ret = strict_strtoul(buf, 0, &amp;input);				\
+-	if (ret)							\
+-		return ret;						\
+-	val = (_type)input;						\
+-	rtnl_lock();							\
+-	if (dev_isalive(ndev)) {					\
+-		ret = can_set_##_func(ndev, val);			\
+-		if (ret == 0)						\
+-			ret = count;					\
+-	}								\
+-	rtnl_unlock();							\
+-	return ret;							\
+-}									\
+-static DEVICE_ATTR(_name, S_IRUGO | S_IWUSR, 				\
+-		   can_show_##_func, can_store_##_func)
+-#endif /* LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,25) */
+-
+-CAN_ATTR(can_bitrate, bitrate, u32, &quot;%d&quot;);
+-CAN_ATTR(can_restart_ms, restart_ms, int, &quot;%d&quot;);
+-CAN_ATTR(can_clock, clock, u32, &quot;%d&quot;);
+-CAN_ATTR(can_echo, echo, int, &quot;%d&quot;);
+-
+-#define CAN_STATS_ATTR(_name)						\
+-static ssize_t can_stats_show_##_name(struct device *dev,		\
+-				      struct device_attribute *attr,	\
+-				      char *buf)			\
+-{									\
+-	struct net_device *ndev = to_net_dev(dev);			\
+-	struct can_priv *priv = netdev_priv(ndev);			\
+-	int ret = -EINVAL;						\
+-	read_lock(&amp;dev_base_lock);					\
+-	if (dev_isalive(ndev)) {					\
+-		ret = snprintf(buf, PAGE_SIZE, &quot;%d\n&quot;,			\
+-			      priv-&gt;can_stats._name);			\
+-	}								\
+-	read_unlock(&amp;dev_base_lock);					\
+-	return ret;							\
+-}									\
+-static DEVICE_ATTR(_name, S_IRUGO, can_stats_show_##_name, NULL)
+-
+-#define CAN_CREATE_FILE(_dev, _name)					\
+-	if (device_create_file(&amp;_dev-&gt;dev, &amp;dev_attr_##_name))		\
+-		dev_err(ND2D(_dev),					\
+-			&quot;Couldn't create device file for ##_name\n&quot;)
+-
+-#define CAN_REMOVE_FILE(_dev, _name)					\
+-	device_remove_file(&amp;_dev-&gt;dev, &amp;dev_attr_##_name)		\
+-
+-CAN_STATS_ATTR(error_warning);
+-CAN_STATS_ATTR(error_passive);
+-CAN_STATS_ATTR(bus_error);
+-CAN_STATS_ATTR(arbitration_lost);
+-CAN_STATS_ATTR(data_overrun);
+-CAN_STATS_ATTR(wakeup);
+-CAN_STATS_ATTR(restarts);
+-
+-static ssize_t can_store_restart(struct device *dev,
++static ssize_t store_can_restart(struct device *dev,
+ 				 struct device_attribute *attr,
+-				 const char *buf, size_t count)
++				 const char *buf, size_t len)
+ {
+-	struct net_device *ndev = to_net_dev(dev);
+-	int ret = -EINVAL;
+-
+-	rtnl_lock();
+-	if (dev_isalive(ndev)) {
+-		ret = can_restart_now(ndev);
+-		if (!ret)
+-			ret = count;
+-	}
+-	rtnl_unlock();
+-	return ret;
++	return can_dev_store(dev, attr, buf, len, change_can_restart);
+ }
+ 
+-static DEVICE_ATTR(can_restart, S_IWUSR, NULL, can_store_restart);
+-
+-static const char *can_state_names[] = {
+-	&quot;active&quot;, &quot;bus-warn&quot;, &quot;bus-pass&quot; , &quot;bus-off&quot;,
+-	&quot;stopped&quot;, &quot;sleeping&quot;, &quot;unkown&quot;
+-};
++static DEVICE_ATTR(can_restart, S_IWUSR, NULL, store_can_restart);
+ 
+-static ssize_t can_show_state(struct device *dev,
+-			     struct device_attribute *attr,
+-			     char *buf)
++/* Show a given attribute if the CAN bittiming group */
++static ssize_t can_btc_show(const struct device *d,
++			    struct device_attribute *attr, char *buf,
++			    unsigned long offset)
+ {
+-	struct net_device *ndev = to_net_dev(dev);
+-	enum can_state state;
+-	int ret = -EINVAL;
++	struct net_device *dev = to_net_dev(d);
++	struct can_priv *priv = netdev_priv(dev);
++	struct can_bittiming_const *btc = priv-&gt;bittiming_const;
++	ssize_t ret = -EINVAL;
++
++	WARN_ON(offset &gt; sizeof(struct can_bittiming_const) ||
++		offset % sizeof(unsigned long) != 0);
+ 
+ 	read_lock(&amp;dev_base_lock);
+-	if (dev_isalive(ndev)) {
+-		can_get_state(ndev, &amp;state);
++	if (dev_isalive(dev) &amp;&amp; btc)
++		ret = sprintf(buf, &quot;%d\n&quot;,
++			      *(u32 *)(((u8 *)btc) + offset));
+ 
+-		if (state &gt;= ARRAY_SIZE(can_state_names))
+-			state = ARRAY_SIZE(can_state_names) - 1;
+-		ret = snprintf(buf, PAGE_SIZE, &quot;%s\n&quot;, can_state_names[state]);
+-	}
+ 	read_unlock(&amp;dev_base_lock);
+ 	return ret;
+ }
+ 
+-static DEVICE_ATTR(can_state, S_IRUGO, can_show_state, NULL);
++/* Generate a read-only bittiming const attribute */
++#define CAN_BT_CONST_ENTRY(name)					\
++static ssize_t show_##name(struct device *d,				\
++			   struct device_attribute *attr, char *buf) 	\
++{									\
++	return can_btc_show(d, attr, buf,				\
++			    offsetof(struct can_bittiming_const, name));\
++}									\
++static DEVICE_ATTR(name, S_IRUGO, show_##name, NULL)
+ 
+-static ssize_t can_show_ctrlmode(struct device *dev,
+-				 struct device_attribute *attr,
+-				 char *buf)
++CAN_BT_CONST_ENTRY(clock);
++CAN_BT_CONST_ENTRY(tseg1_min);
++CAN_BT_CONST_ENTRY(tseg1_max);
++CAN_BT_CONST_ENTRY(tseg2_min);
++CAN_BT_CONST_ENTRY(tseg2_max);
++CAN_BT_CONST_ENTRY(sjw_max);
++CAN_BT_CONST_ENTRY(brp_min);
++CAN_BT_CONST_ENTRY(brp_max);
++CAN_BT_CONST_ENTRY(brp_inc);
++
++static ssize_t can_bt_show(const struct device *d,
++			   struct device_attribute *attr, char *buf,
++			   unsigned long offset)
+ {
+-	struct net_device *ndev = to_net_dev(dev);
+-	u32 ctrlmode;
+-	int ret = -EINVAL;
++	struct net_device *dev = to_net_dev(d);
++	struct can_priv *priv = netdev_priv(dev);
++	struct can_bittiming *bt = &amp;priv-&gt;bittiming;
++	ssize_t ret = -EINVAL;
++	u32 *ptr, val;
++
++	WARN_ON(offset &gt; sizeof(struct can_bittiming) ||
++		offset % sizeof(unsigned long) != 0);
+ 
+ 	read_lock(&amp;dev_base_lock);
+-	if (dev_isalive(ndev)) {
+-		can_get_ctrlmode(ndev, &amp;ctrlmode);
+-		ret = 0;
+-		if (ctrlmode &amp; CAN_CTRLMODE_LISTENONLY)
+-			ret += sprintf(buf + ret, &quot;listenonly&quot;);
+-		if (ret)
+-			ret += sprintf(buf + ret, &quot; &quot;);
+-		if (ctrlmode &amp; CAN_CTRLMODE_LOOPBACK)
+-			ret += sprintf(buf + ret, &quot;loopback&quot;);
+-		if (ret)
+-			ret += sprintf(buf + ret, &quot;\n&quot;);
++	if (dev_isalive(dev)) {
++		ptr = (u32 *)(((u8 *)bt) + offset);
++		if (ptr == &amp;bt-&gt;sample_point &amp;&amp;
++		    priv-&gt;state != CAN_STATE_STOPPED)
++			val = can_sample_point(bt);
++		else
++			val = *ptr;
++		ret = sprintf(buf, &quot;%d\n&quot;, val);
+ 	}
+ 	read_unlock(&amp;dev_base_lock);
+ 	return ret;
+ }
+ 
+-static ssize_t can_store_ctrlmode(struct device *dev,
+-				  struct device_attribute *attr,
+-				  const char *buf, size_t count)
++static ssize_t can_bt_store(const struct device *d,
++			    struct device_attribute *attr,
++			    const char *buf, size_t count,
++			    unsigned long offset)
+ {
+-	struct net_device *ndev = to_net_dev(dev);
+-	u32 ctrlmode = 0;
+-	int ret = -EINVAL;
+-
+-	if (strstr(buf, &quot;listenonly&quot;))
+-		ctrlmode |= CAN_CTRLMODE_LISTENONLY;
+-	if (strstr(buf, &quot;loopback&quot;))
+-		ctrlmode |= CAN_CTRLMODE_LOOPBACK;
+-
+-	rtnl_lock();
+-	if (dev_isalive(ndev) &amp;&amp; count) {
+-		ret = can_set_ctrlmode(ndev, ctrlmode);
+-		if (!ret)
+-			ret = count;
+-	}
+-	rtnl_unlock();
+-	return ret;
+-}
++	struct net_device *dev = to_net_dev(d);
++	struct can_priv *priv = netdev_priv(dev);
++	struct can_bittiming *bt = &amp;priv-&gt;bittiming;
++	unsigned long new;
++	ssize_t ret = -EINVAL;
++	u32 *ptr;
+ 
+-static DEVICE_ATTR(can_ctrlmode, S_IRUGO | S_IWUSR,
+-		   can_show_ctrlmode, can_store_ctrlmode);
++	if (priv-&gt;state != CAN_STATE_STOPPED)
++		return -EBUSY;
+ 
+-static ssize_t can_show_custombittime(struct device *dev,
+-				      struct device_attribute *attr,
+-				      char *buf)
+-{
+-	struct net_device *ndev = to_net_dev(dev);
+-	struct can_bittime bt;
+-	int ret = -EINVAL;
++	WARN_ON(offset &gt; sizeof(struct can_bittiming) ||
++		offset % sizeof(unsigned long) != 0);
+ 
+-	read_lock(&amp;dev_base_lock);
+-	if (dev_isalive(ndev)) {
+-		can_get_custombittime(ndev, &amp;bt);
++	ret = strict_strtoul(buf, 0, &amp;new);
++	if (ret)
++		goto out;
+ 
+-		if (bt.type == CAN_BITTIME_STD)
+-			ret = snprintf(buf, PAGE_SIZE,
+-				       &quot;std %#x %#x %#x %#x %#x %#x\n&quot;,
+-				       bt.std.brp, bt.std.prop_seg,
+-				       bt.std.phase_seg1, bt.std.phase_seg2,
+-				       bt.std.sjw, bt.std.sam);
+-		else if (bt.type == CAN_BITTIME_BTR)
+-			ret = snprintf(buf, PAGE_SIZE,
+-					&quot;btr %#x %#x\n&quot;,
+-					bt.btr.btr0, bt.btr.btr1);
++	ptr = (u32 *)(((u8 *)bt) + offset);
++	rtnl_lock();
++	if (dev_isalive(dev)) {
++		*ptr = (u32)new;
++		if (ptr == &amp;bt-&gt;bitrate)
++			bt-&gt;tq = 0;
+ 		else
+-			ret = snprintf(buf, PAGE_SIZE, &quot;undefined\n&quot;);
++			bt-&gt;bitrate = 0;
++		ret = count;
+ 	}
+-	read_unlock(&amp;dev_base_lock);
++	rtnl_unlock();
++out:
+ 	return ret;
+ }
+ 
+-static ssize_t can_store_custombittime(struct device *dev,
+-				       struct device_attribute *attr,
+-				       const char *buf, size_t count)
+-{
+-	struct net_device *ndev = to_net_dev(dev);
+-	struct can_bittime bt;
+-	u32 val[6];
+-	int ret = -EINVAL;
++#define CAN_BT_ENTRY(name)						\
++static ssize_t show_##name(struct device *d,				\
++			   struct device_attribute *attr, char *buf) 	\
++{									\
++	return can_bt_show(d, attr, buf,				\
++			   offsetof(struct can_bittiming, name));	\
++}									\
++static ssize_t store_##name(struct device *d,				\
++			    struct device_attribute *attr,		\
++			    const char *buf, size_t count)		\
++{									\
++	return can_bt_store(d, attr, buf, count,			\
++			    offsetof(struct can_bittiming, name));	\
++}									\
++static DEVICE_ATTR(name, S_IRUGO | S_IWUSR, show_##name, store_##name)
+ 
+-	if (!strncmp(buf, &quot;std&quot;, 3)) {
++CAN_BT_ENTRY(bitrate);
++CAN_BT_ENTRY(sample_point);
++CAN_BT_ENTRY(tq);
++CAN_BT_ENTRY(prop_seg);
++CAN_BT_ENTRY(phase_seg1);
++CAN_BT_ENTRY(phase_seg2);
++CAN_BT_ENTRY(sjw);
++
++static struct attribute *can_bittiming_attrs[] = {
++	&amp;dev_attr_clock.attr,
++	&amp;dev_attr_tseg1_min.attr,
++	&amp;dev_attr_tseg1_max.attr,
++	&amp;dev_attr_tseg2_max.attr,
++	&amp;dev_attr_tseg2_min.attr,
++	&amp;dev_attr_sjw_max.attr,
++	&amp;dev_attr_brp_min.attr,
++	&amp;dev_attr_brp_max.attr,
++	&amp;dev_attr_brp_inc.attr,
++	&amp;dev_attr_bitrate.attr,
++	&amp;dev_attr_sample_point.attr,
++	&amp;dev_attr_tq.attr,
++	&amp;dev_attr_prop_seg.attr,
++	&amp;dev_attr_phase_seg1.attr,
++	&amp;dev_attr_phase_seg2.attr,
++	&amp;dev_attr_sjw.attr,
++	NULL
++};
+ 
+-		if (sscanf(buf + 4, &quot;%i %i %i %i %i %i&quot;,
+-			   val, val + 1, val + 2, val + 3,
+-			   val + 4, val + 5) == 6) {
+-			bt.type = CAN_BITTIME_STD;
+-			bt.std.brp = val[0];
+-			bt.std.prop_seg = val[1];
+-			bt.std.phase_seg1 = val[2];
+-			bt.std.phase_seg2 = val[3];
+-			bt.std.sjw = val[4];
+-			bt.std.sam = val[5];
+-		}
++static struct attribute_group can_bittiming_group = {
++	.name = &quot;can_bittiming&quot;,
++	.attrs = can_bittiming_attrs,
++};
+ 
+-	} else if (!strncmp(buf, &quot;btr&quot;, 3)) {
++/* Show a given attribute in the CAN statistics group */
++static ssize_t can_stat_show(const struct device *d,
++			     struct device_attribute *attr, char *buf,
++			     unsigned long offset)
++{
++	struct net_device *dev = to_net_dev(d);
++	struct can_priv *priv = netdev_priv(dev);
++	struct can_device_stats *stats = &amp;priv-&gt;can_stats;
++	ssize_t ret = -EINVAL;
+ 
+-		if (sscanf(buf + 4, &quot;%i %i&quot;, val, val + 1) == 2) {
+-			bt.type = CAN_BITTIME_BTR;
+-			bt.btr.btr0 = val[0];
+-			bt.btr.btr1 = val[1];
+-		}
++	WARN_ON(offset &gt; sizeof(struct can_device_stats) ||
++		offset % sizeof(unsigned long) != 0);
+ 
+-	} else
+-		goto out;
++	read_lock(&amp;dev_base_lock);
++	if (dev_isalive(dev))
++		ret = sprintf(buf, &quot;%ld\n&quot;,
++			      *(unsigned long *)(((u8 *)stats) + offset));
+ 
+-	rtnl_lock();
+-	if (dev_isalive(ndev)) {
+-		ret = can_set_custombittime(ndev, &amp;bt);
+-		if (!ret)
+-			ret = count;
+-	}
+-	rtnl_unlock();
+-out:
++	read_unlock(&amp;dev_base_lock);
+ 	return ret;
+ }
+ 
+-static DEVICE_ATTR(can_custombittime, S_IRUGO | S_IWUSR,
+-		   can_show_custombittime, can_store_custombittime);
++/* Generate a read-only CAN statistics attribute */
++#define CAN_STAT_ENTRY(name)						\
++static ssize_t show_##name(struct device *d,				\
++			   struct device_attribute *attr, char *buf) 	\
++{									\
++	return can_stat_show(d, attr, buf,				\
++			     offsetof(struct can_device_stats, name));	\
++}									\
++static DEVICE_ATTR(name, S_IRUGO, show_##name, NULL)
++
++CAN_STAT_ENTRY(error_warning);
++CAN_STAT_ENTRY(error_passive);
++CAN_STAT_ENTRY(bus_error);
++CAN_STAT_ENTRY(arbitration_lost);
++CAN_STAT_ENTRY(data_overrun);
++CAN_STAT_ENTRY(wakeup);
++CAN_STAT_ENTRY(restarts);
+ 
+-static struct attribute *can_stats_attrs[] = {
++static struct attribute *can_statistics_attrs[] = {
+ 	&amp;dev_attr_error_warning.attr,
+ 	&amp;dev_attr_error_passive.attr,
+ 	&amp;dev_attr_bus_error.attr,
+@@ -481,42 +439,52 @@ static struct attribute *can_stats_attrs
+ 	NULL
+ };
+ 
+-static struct attribute_group can_stats_group = {
++static struct attribute_group can_statistics_group = {
+ 	.name = &quot;can_statistics&quot;,
+-	.attrs = can_stats_attrs,
++	.attrs = can_statistics_attrs,
+ };
+ 
+ void can_create_sysfs(struct net_device *dev)
+ {
++	struct can_priv *priv = netdev_priv(dev);
+ 	int err;
+ 
+-	CAN_CREATE_FILE(dev, can_bitrate);
+-	CAN_CREATE_FILE(dev, can_custombittime);
+-	CAN_CREATE_FILE(dev, can_restart);
+ 	CAN_CREATE_FILE(dev, can_ctrlmode);
++	CAN_CREATE_FILE(dev, can_echo);
++	CAN_CREATE_FILE(dev, can_restart);
+ 	CAN_CREATE_FILE(dev, can_state);
+ 	CAN_CREATE_FILE(dev, can_restart_ms);
+-	CAN_CREATE_FILE(dev, can_clock);
+-	CAN_CREATE_FILE(dev, can_echo);
+ 
+-	err = sysfs_create_group(&amp;(dev-&gt;dev.kobj), &amp;can_stats_group);
++	err = sysfs_create_group(&amp;(dev-&gt;dev.kobj),
++				 &amp;can_statistics_group);
+ 	if (err) {
+ 		printk(KERN_EMERG
+-		       &quot;couldn't create sysfs group for CAN stats\n&quot;);
++		       &quot;couldn't create sysfs group for CAN statistics\n&quot;);
++	}
++
++	if (priv-&gt;bittiming_const) {
++		err = sysfs_create_group(&amp;(dev-&gt;dev.kobj),
++					 &amp;can_bittiming_group);
++		if (err) {
++			printk(KERN_EMERG &quot;couldn't create sysfs &quot;
++			       &quot;group for CAN bittiming\n&quot;);
++		}
+ 	}
+ }
+ 
+ void can_remove_sysfs(struct net_device *dev)
+ {
+-	CAN_REMOVE_FILE(dev, can_bitrate);
+-	CAN_REMOVE_FILE(dev, can_custombittime);
+-	CAN_REMOVE_FILE(dev, can_restart);
++	struct can_priv *priv = netdev_priv(dev);
++
+ 	CAN_REMOVE_FILE(dev, can_ctrlmode);
+-	CAN_REMOVE_FILE(dev, can_state);
+-	CAN_REMOVE_FILE(dev, can_clock);
+ 	CAN_REMOVE_FILE(dev, can_echo);
++	CAN_REMOVE_FILE(dev, can_state);
++	CAN_REMOVE_FILE(dev, can_restart);
++	CAN_REMOVE_FILE(dev, can_restart_ms);
+ 
+-	sysfs_remove_group(&amp;(dev-&gt;dev.kobj), &amp;can_stats_group);
++	sysfs_remove_group(&amp;(dev-&gt;dev.kobj), &amp;can_statistics_group);
++	if (priv-&gt;bittiming_const)
++		sysfs_remove_group(&amp;(dev-&gt;dev.kobj), &amp;can_bittiming_group);
+ }
+ 
+ #endif /* CONFIG_SYSFS */
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001764.html">[PATCH 1/4] dev: new interface for setting bit-timing parameters
+</A></li>
+	<LI>Next message: <A HREF="001770.html">[PATCH 2/4] sysfs: new interface for setting bit-timing parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1765">[ date ]</a>
+              <a href="thread.html#1765">[ thread ]</a>
+              <a href="subject.html#1765">[ subject ]</a>
+              <a href="author.html#1765">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

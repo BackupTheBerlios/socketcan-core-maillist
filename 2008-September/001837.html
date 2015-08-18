@@ -1,0 +1,122 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 1/4]  dev: new interface for setting bit-timing	parameters
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%201/4%5D%20%20dev%3A%20new%20interface%20for%20setting%20bit-timing%0A%09parameters&In-Reply-To=%3C20080917103304.GA4082%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001825.html">
+   <LINK REL="Next"  HREF="001838.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 1/4]  dev: new interface for setting bit-timing	parameters</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%201/4%5D%20%20dev%3A%20new%20interface%20for%20setting%20bit-timing%0A%09parameters&In-Reply-To=%3C20080917103304.GA4082%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH v2 1/4]  dev: new interface for setting bit-timing	parameters">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed Sep 17 12:33:04 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001825.html">[PATCH v2 1/4] dev: new interface for setting bit-timing	parameters
+</A></li>
+        <LI>Next message: <A HREF="001838.html">[PATCH v2 1/4]  dev: new interface for setting bit-timing	parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1837">[ date ]</a>
+              <a href="thread.html#1837">[ thread ]</a>
+              <a href="subject.html#1837">[ subject ]</a>
+              <a href="author.html#1837">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang,
+
+The members of the bittiming structs are u32, while sometimes you mix
+using unsigned long. This is fine on 32bit systems, not on 64bit.
+therefore, I patched a few things, to get it working (= not WARNing).
+As you may notice, The last part of the patch, with the printf, looks
+strange, but the &quot;%ld&quot; expects an unsigned long, which is not
+necessarily u32, therefore, the double cast
+
+Index: wg/kernel/2.6/drivers/net/can/sysfs.c
+===================================================================
+--- wg.orig/kernel/2.6/drivers/net/can/sysfs.c	2008-09-17 12:14:58.000000000 +0200
++++ wg/kernel/2.6/drivers/net/can/sysfs.c	2008-09-17 12:18:18.000000000 +0200
+@@ -243,8 +243,8 @@
+ 	struct can_bittiming_const *btc = priv-&gt;bittiming_const;
+ 	ssize_t ret = -EINVAL;
+ 
+-	WARN_ON(offset &gt; sizeof(struct can_bittiming_const) ||
+-		offset % sizeof(unsigned long) != 0);
++	WARN_ON(offset &gt;= sizeof(struct can_bittiming_const) ||
++		offset % sizeof(u32) != 0);
+ 
+ 	read_lock(&amp;dev_base_lock);
+ 	if (dev_isalive(dev) &amp;&amp; btc)
+@@ -284,8 +284,8 @@
+ 	ssize_t ret = -EINVAL;
+ 	u32 *ptr, val;
+ 
+-	WARN_ON(offset &gt; sizeof(struct can_bittiming) ||
+-		offset % sizeof(unsigned long) != 0);
++	WARN_ON(offset &gt;= sizeof(struct can_bittiming) ||
++		offset % sizeof(u32) != 0);
+ 
+ 	read_lock(&amp;dev_base_lock);
+ 	if (dev_isalive(dev)) {
+@@ -316,8 +316,8 @@
+ 	if (priv-&gt;state != CAN_STATE_STOPPED)
+ 		return -EBUSY;
+ 
+-	WARN_ON(offset &gt; sizeof(struct can_bittiming) ||
+-		offset % sizeof(unsigned long) != 0);
++	WARN_ON(offset &gt;= sizeof(struct can_bittiming) ||
++		offset % sizeof(u32) != 0);
+ 
+ 	ret = strict_strtoul(buf, 0, &amp;new);
+ 	if (ret)
+@@ -409,12 +409,12 @@
+ 	ssize_t ret = -EINVAL;
+ 
+ 	WARN_ON(offset &gt; sizeof(struct can_device_stats) ||
+-		offset % sizeof(unsigned long) != 0);
++		offset % sizeof(u32) != 0);
+ 
+ 	read_lock(&amp;dev_base_lock);
+ 	if (dev_isalive(dev))
+ 		ret = sprintf(buf, &quot;%ld\n&quot;,
+-			      *(unsigned long *)(((u8 *)stats) + offset));
++			      (unsigned long)*(u32 *)(((u8 *)stats) + offset));
+ 
+ 	read_unlock(&amp;dev_base_lock);
+ 	return ret;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001825.html">[PATCH v2 1/4] dev: new interface for setting bit-timing	parameters
+</A></li>
+	<LI>Next message: <A HREF="001838.html">[PATCH v2 1/4]  dev: new interface for setting bit-timing	parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1837">[ date ]</a>
+              <a href="thread.html#1837">[ thread ]</a>
+              <a href="subject.html#1837">[ subject ]</a>
+              <a href="author.html#1837">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

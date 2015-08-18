@@ -1,0 +1,236 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Question about write-syscalls on a stopped CAN-interface
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Question%20about%20write-syscalls%20on%20a%20stopped%20CAN-interface&In-Reply-To=%3C19498453.post%40talk.nabble.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001836.html">
+   <LINK REL="Next"  HREF="001829.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Question about write-syscalls on a stopped CAN-interface</H1>
+    <B>Luis Galdos</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Question%20about%20write-syscalls%20on%20a%20stopped%20CAN-interface&In-Reply-To=%3C19498453.post%40talk.nabble.com%3E"
+       TITLE="Question about write-syscalls on a stopped CAN-interface">luis.galdos at digi.com
+       </A><BR>
+    <I>Mon Sep 15 20:29:20 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001836.html">[HOWTO] Creating virtual CAN devices (with ip tools and others)
+</A></li>
+        <LI>Next message: <A HREF="001829.html">Question about write-syscalls on a stopped CAN-interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1828">[ date ]</a>
+              <a href="thread.html#1828">[ thread ]</a>
+              <a href="subject.html#1828">[ subject ]</a>
+              <a href="author.html#1828">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+Hi all,
+
+at first congratulations for the great project; it's really nice to have the
+CAN-stack included in the vanilla kernel.
+
+I'm currently working on a Linux-module for a CAN-controller and have some
+questions concerning to the write-syscalls. AFAIK, when the CAN-controller
+isn't able to transmit more data, the module should stop the netif-queue by
+calling the function &quot;netif_stop_queue&quot;. And when an user application still
+sends data to the &quot;stopped&quot; interface, at some time point the write-syscall
+returns with an error. Now my first question: What happens if the CAN-module
+is unloaded? In my case, the kernel crashes with a kernel-panic.
+Here are the required steps for reproducing the failure on my system (an
+ARM9 embedded board):
+
+$ modprobe fim-can
+FIM CAN bus driver 0.5
+
+$ ifconfig can0 up
+
+$ x=30; while [ $x -gt 1 ]; do ./tst-raw-sendto -i can0; x=`expr $x - 1`;
+done
+Xmit called
+
+$ rmmod fim-can
+Unregistering the CAN driver
+Unable to handle kernel NULL pointer dereference at virtual address 00000000
+pgd = c05ac000
+[00000000] *pgd=00617031, *pte=00000000, *ppte=00000000
+Internal error: Oops: 17 [#1]
+Modules linked in: fim_can(-)
+CPU: 0    Not tainted  (2.6.26.3-00494-g47faaae-dirty #157)
+PC is at __wake_up_common+0x1c/0x80
+LR is at __wake_up_sync+0x38/0x40
+pc : [&lt;c002bfc4&gt;]    lr : [&lt;c002c0bc&gt;]    psr: 20000093
+sp : c0407dd8  ip : c0407e04  fp : c0407e00
+r10: 4007e1fc  r9 : 00000001  r8 : c063baf8
+r7 : 00000880  r6 : 00000002  r5 : c061cbc0  r4 : fffffff4
+r3 : 00000001  r2 : 00000001  r1 : 00000001  r0 : 00000000
+Flags: nzCv  IRQs off  FIQs on  Mode SVC_32  ISA ARM  Segment user
+Control: 0005317f  Table: 005ac000  DAC: 00000015
+Process rmmod (pid: 308, stack limit = 0xc0406260)
+Stack: (0xc0407dd8 to 0xc0408000)
+7dc0:                                                       a0000013
+c061cbc0 
+7de0: 00000002 00000880 c0021c04 c0406000 4007e1fc c0407e18 c0407e04
+c002c0bc 
+7e00: c002bfb8 00000000 c063bdc8 c0407e2c c0407e1c c0141448 c002c094
+c063bdc8 
+7e20: c0407e40 c0407e30 c0141984 c0141410 c052aaa0 c0407e54 c0407e44
+c01447e4 
+7e40: c014194c c052aaa0 c0407e68 c0407e58 c0144830 c0144770 c061cc4c
+c0407e78 
+7e60: c0407e6c c0144918 c014482c c0407e8c c0407e7c c0144cb8 c01448dc
+c061cc4c 
+7e80: c0407ea8 c0407e90 c0157758 c0144cb0 c0469020 bf0007a0 c0469020
+c0407eb8 
+7ea0: c0407eac c0157808 c0157744 c0407ed4 c0407ebc c0157b24 c01577f8
+c0469020 
+7ec0: bf0007a0 c0406000 c0407ee8 c0407ed8 c0148c10 c0157b10 c0469020
+c0407efc 
+7ee0: c0407eec c014a120 c0148bb4 c0469020 c0407f10 c0407f00 c014a20c
+c014a0ac 
+7f00: c0469020 c0407f24 c0407f14 c014a258 c014a1e4 c0469380 c0407f38
+c0407f28 
+7f20: bf0000f8 c014a24c bf0008a0 c0407fa4 c0407f3c c004f8a0 bf0000dc
+5f6d6966 
+7f40: 006e6163 c0407f50 c0026f2c c0046f74 bec16b68 c0407f84 00000000
+ffffffff 
+7f60: 00001000 00000880 00000000 00000002 00000002 0007e1fc bf0007a0
+00000880 
+7f80: c0407f84 00000000 00000001 bec16ed8 00000880 00000081 00000000
+c0407fa8 
+7fa0: c0021a60 c004f708 00000001 bec16ed8 00095ef8 00000880 00095eff
+00095ef8 
+7fc0: 00000001 bec16ed8 00000880 00000000 00000002 00000002 4007e1fc
+0000f790 
+7fe0: 4006a560 bec16dd0 00019880 4006a568 20000010 00095ef8 00727078
+00000000 
+Backtrace: 
+[&lt;c002bfa8&gt;] (__wake_up_common+0x0/0x80) from [&lt;c002c0bc&gt;]
+(__wake_up_sync+0x38/0x40)
+[&lt;c002c084&gt;] (__wake_up_sync+0x0/0x40) from [&lt;c0141448&gt;]
+(sock_def_write_space+0x48/0x88)
+ r4:c063bdc8
+[&lt;c0141400&gt;] (sock_def_write_space+0x0/0x88) from [&lt;c0141984&gt;]
+(sock_wfree+0x48/0x78)
+ r4:c063bdc8
+[&lt;c014193c&gt;] (sock_wfree+0x0/0x78) from [&lt;c01447e4&gt;]
+(skb_release_all+0x84/0x94)
+ r4:c052aaa0
+[&lt;c0144760&gt;] (skb_release_all+0x0/0x94) from [&lt;c0144830&gt;]
+(__kfree_skb+0x14/0xb0)
+ r4:c052aaa0
+[&lt;c014481c&gt;] (__kfree_skb+0x0/0xb0) from [&lt;c0144918&gt;] (kfree_skb+0x4c/0x50)
+ r4:c061cc4c
+[&lt;c01448cc&gt;] (kfree_skb+0x0/0x50) from [&lt;c0144cb8&gt;]
+(skb_queue_purge+0x18/0x2c)
+[&lt;c0144ca0&gt;] (skb_queue_purge+0x0/0x2c) from [&lt;c0157758&gt;]
+(pfifo_fast_reset+0x24/0x40)
+ r4:c061cc4c
+[&lt;c0157734&gt;] (pfifo_fast_reset+0x0/0x40) from [&lt;c0157808&gt;]
+(qdisc_reset+0x20/0x24)
+ r6:c0469020 r5:bf0007a0 r4:c0469020
+[&lt;c01577e8&gt;] (qdisc_reset+0x0/0x24) from [&lt;c0157b24&gt;]
+(dev_deactivate+0x24/0xe0)
+[&lt;c0157b00&gt;] (dev_deactivate+0x0/0xe0) from [&lt;c0148c10&gt;]
+(dev_close+0x6c/0xac)
+ r6:c0406000 r5:bf0007a0 r4:c0469020
+[&lt;c0148ba4&gt;] (dev_close+0x0/0xac) from [&lt;c014a120&gt;]
+(rollback_registered+0x84/0x138)
+ r4:c0469020
+[&lt;c014a09c&gt;] (rollback_registered+0x0/0x138) from [&lt;c014a20c&gt;]
+(unregister_netdevice+0x38/
+0x68)
+ r4:c0469020
+[&lt;c014a1d4&gt;] (unregister_netdevice+0x0/0x68) from [&lt;c014a258&gt;]
+(unregister_netdev+0x1c/0x2
+4)
+ r4:c0469020
+[&lt;c014a23c&gt;] (unregister_netdev+0x0/0x24) from [&lt;bf0000f8&gt;]
+(fim_can_exit+0x2c/0x40 [fim_c
+an])
+ r4:c0469380
+[&lt;bf0000cc&gt;] (fim_can_exit+0x0/0x40 [fim_can]) from [&lt;c004f8a0&gt;]
+(sys_delete_module+0x1a8/
+0x204)
+ r4:bf0008a0
+[&lt;c004f6f8&gt;] (sys_delete_module+0x0/0x204) from [&lt;c0021a60&gt;]
+(ret_fast_syscall+0x0/0x2c)
+ r7:00000081 r6:00000880 r5:bec16ed8 r4:00000001
+Code: e1a08000 e5900000 e1a09001 e240400c (e594000c) 
+Kernel panic - not syncing: Fatal exception in interrupt
+
+
+
+
+For being sure that the failure isn't coming from my module, I have reduced
+the functions for transmitting and unregistering the CAN-driver as follows:
+
+static int fim_can_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	printk(KERN_INFO &quot;Xmit called\n&quot;);
+	dev_kfree_skb(skb);
+	netif_stop_queue(dev);
+	return NETDEV_TX_OK;
+}
+
+static void unregister_fim_can(struct fim_can_t *port)
+{
+	printk(KERN_INFO &quot;Unregistering the CAN driver\n&quot;);
+	unregister_netdev(port-&gt;dev);
+	free_candev(port-&gt;dev);
+}
+
+
+And here my second question: Can somebody reproduces the above described
+failure, or I'm doing something wrong by unregistering the CAN-interface?
+
+
+Thanks in advance,
+
+
+Luis Galdos
+
+Running system:
+Linux kernel : 2.6.26.3
+Busybox : 1.11.2
+
+
+-- 
+View this message in context: <A HREF="http://www.nabble.com/Question-about-write-syscalls-on-a-stopped-CAN-interface-tp19498453p19498453.html">http://www.nabble.com/Question-about-write-syscalls-on-a-stopped-CAN-interface-tp19498453p19498453.html</A>
+Sent from the Socket-CAN Core mailing list archive at Nabble.com.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001836.html">[HOWTO] Creating virtual CAN devices (with ip tools and others)
+</A></li>
+	<LI>Next message: <A HREF="001829.html">Question about write-syscalls on a stopped CAN-interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1828">[ date ]</a>
+              <a href="thread.html#1828">[ thread ]</a>
+              <a href="subject.html#1828">[ subject ]</a>
+              <a href="author.html#1828">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,128 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6] can: mcp251x: Move to threaded interrupts 	instead of workqueues.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%5D%20can%3A%20mcp251x%3A%20Move%20to%20threaded%20interrupts%20%0A%09instead%20of%20workqueues.&In-Reply-To=%3Ccabda6421001310939g4acd22d2ua8dab4de3322f90e%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003927.html">
+   <LINK REL="Next"  HREF="003930.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6] can: mcp251x: Move to threaded interrupts 	instead of workqueues.</H1>
+    <B>christian pellegrin</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%5D%20can%3A%20mcp251x%3A%20Move%20to%20threaded%20interrupts%20%0A%09instead%20of%20workqueues.&In-Reply-To=%3Ccabda6421001310939g4acd22d2ua8dab4de3322f90e%40mail.gmail.com%3E"
+       TITLE="[PATCH net-next-2.6] can: mcp251x: Move to threaded interrupts 	instead of workqueues.">chripell at fsfe.org
+       </A><BR>
+    <I>Sun Jan 31 18:39:35 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003927.html">[PATCH net-next-2.6] can: mcp251x: Move to threaded interrupts	instead of workqueues.
+</A></li>
+        <LI>Next message: <A HREF="003930.html">[PATCH net-next-2.6 v2] can: mcp251x: Move to threaded interrupts	instead of workqueues.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3929">[ date ]</a>
+              <a href="thread.html#3929">[ thread ]</a>
+              <a href="subject.html#3929">[ subject ]</a>
+              <a href="author.html#3929">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Sat, Jan 30, 2010 at 8:49 PM, Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt; wrote:
+&gt;<i> Hi Christian,
+</I>&gt;<i>
+</I>
+Hi,
+
+&gt;<i>
+</I>&gt;<i> Could you please truncate the lines to the usual 72 (or 80) characters
+</I>&gt;<i> per line?
+</I>&gt;<i>
+</I>
+ack, just reconfigured nano!
+
+&gt;&gt;<i> +static irqreturn_t mcp251x_can_ist(int irq, void *dev_id);
+</I>&gt;&gt;<i> +static void mcp251x_restart_work_handler(struct work_struct *ws);
+</I>&gt;&gt;<i> +static void mcp251x_tx_work_handler(struct work_struct *ws);
+</I>&gt;<i>
+</I>&gt;<i> Any chance to get rid of these forward declarations (by reordering them)?
+</I>&gt;<i>
+</I>
+ack, I was trying to minimize patch size so the reason for not moving
+code. I fixed it.
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160;* This message is worrisome (because it points out
+</I>&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160;* something wrong with locking logic) if seen when
+</I>&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160;* there is no bus-off recovery going on.
+</I>&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160;*/
+</I>&gt;<i>
+</I>&gt;<i> Before it calls netif_carrier_on, it calls the drivers &quot;do_set_mode&quot;
+</I>&gt;<i> callback. See:
+</I>&gt;<i>
+</I>&gt;<i> <A HREF="http://lxr.linux.no/#linux+v2.6.32/drivers/net/can/dev.c#L383">http://lxr.linux.no/#linux+v2.6.32/drivers/net/can/dev.c#L383</A>
+</I>&gt;<i>
+</I>&gt;<i> Is there a way to clear the TX logic in the &quot;do_set_mode&quot; callback?
+</I>&gt;<i>
+</I>
+ack, sorry saw this just now
+
+&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; dev_info(&amp;net-&gt;dev,
+</I>&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;&quot;cannot allocate error skb\n&quot;);
+</I>&gt;<i>
+</I>&gt;<i> dev_err?
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; if (priv-&gt;can.state == CAN_STATE_BUS_OFF) {
+</I>&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; mcp251x_clean(net);
+</I>&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; netif_wake_queue(net);
+</I>&gt;&gt;<i> - &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; return;
+</I>&gt;&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; goto restart_work_unlock;
+</I>&gt;&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; }
+</I>&gt;<i>
+</I>&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;} else { ? To get rid of the label.
+</I>&gt;<i>
+</I>
+ack. I realized that netif_wake_queue here is wrong too or at least
+meaningless: the carrier of the can network interface is declared down
+so we shouldn't reschedule the tx queue anyway. I took it out and
+retested without it.
+
+-- 
+Christian Pellegrin, see <A HREF="http://www.evolware.org/chri/">http://www.evolware.org/chri/</A>
+&quot;Real Programmers don't play tennis, or any other sport which requires
+you to change clothes. Mountain climbing is OK, and Real Programmers
+wear their climbing boots to work in case a mountain should suddenly
+spring up in the middle of the computer room.&quot;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003927.html">[PATCH net-next-2.6] can: mcp251x: Move to threaded interrupts	instead of workqueues.
+</A></li>
+	<LI>Next message: <A HREF="003930.html">[PATCH net-next-2.6 v2] can: mcp251x: Move to threaded interrupts	instead of workqueues.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3929">[ date ]</a>
+              <a href="thread.html#3929">[ thread ]</a>
+              <a href="subject.html#3929">[ subject ]</a>
+              <a href="author.html#3929">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

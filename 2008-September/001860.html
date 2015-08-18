@@ -1,0 +1,269 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v3 4/6] sja1000: new interface for setting bit-timing	parameters
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v3%204/6%5D%20sja1000%3A%20new%20interface%20for%20setting%20bit-timing%0A%09parameters&In-Reply-To=%3C48E08C09.9040306%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001859.html">
+   <LINK REL="Next"  HREF="001863.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v3 4/6] sja1000: new interface for setting bit-timing	parameters</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v3%204/6%5D%20sja1000%3A%20new%20interface%20for%20setting%20bit-timing%0A%09parameters&In-Reply-To=%3C48E08C09.9040306%40grandegger.com%3E"
+       TITLE="[PATCH v3 4/6] sja1000: new interface for setting bit-timing	parameters">wg at grandegger.com
+       </A><BR>
+    <I>Mon Sep 29 10:04:25 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001859.html">[PATCH v3 3/6] mscan: new interface for setting bit-timing parameters
+</A></li>
+        <LI>Next message: <A HREF="001863.html">[PATCH v3 4/6] sja1000: new interface for setting bit-timing	parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1860">[ date ]</a>
+              <a href="thread.html#1860">[ thread ]</a>
+              <a href="subject.html#1860">[ subject ]</a>
+              <a href="author.html#1860">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+ kernel/2.6/drivers/net/can/sja1000/ems_pci.c    |    2 -
+ kernel/2.6/drivers/net/can/sja1000/ems_pcmcia.c |    3 -
+ kernel/2.6/drivers/net/can/sja1000/ixxat_pci.c  |    2 -
+ kernel/2.6/drivers/net/can/sja1000/kvaser_pci.c |    2 -
+ kernel/2.6/drivers/net/can/sja1000/pcm027.c     |    2 -
+ kernel/2.6/drivers/net/can/sja1000/peak_pci.c   |    2 -
+ kernel/2.6/drivers/net/can/sja1000/pipcan.c     |    2 -
+ kernel/2.6/drivers/net/can/sja1000/sja1000.c    |   47 ++++++++++++------------
+ 8 files changed, 32 insertions(+), 30 deletions(-)
+
+Index: trunk/kernel/2.6/drivers/net/can/sja1000/sja1000.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/sja1000/sja1000.c
++++ trunk/kernel/2.6/drivers/net/can/sja1000/sja1000.c
+@@ -71,7 +71,6 @@
+ #include &lt;linux/can/version.h&gt;	/* for RCSID. Removed by mkpatch script */
+ RCSID(&quot;$Id: sja1000.c 531 2007-10-19 07:38:29Z hartkopp $&quot;);
+ 
+-
+ #define DRV_NAME &quot;sja1000&quot;
+ 
+ MODULE_AUTHOR(&quot;Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">oliver.hartkopp at volkswagen.de</A>&gt;&quot;);
+@@ -133,13 +132,23 @@ static const char *ecc_types[] = {
+ };
+ #endif
+ 
++static struct can_bittiming_const sja1000_bittiming_const = {
++	.tseg1_min = 1,
++	.tseg1_max = 16,
++	.tseg2_min = 1,
++	.tseg2_max = 8,
++	.sjw_max = 4,
++	.brp_min = 1,
++	.brp_max = 64,
++	.brp_inc = 1,
++};
++
+ static int debug;
+ 
+ module_param(debug, int, S_IRUGO | S_IWUSR);
+ 
+ MODULE_PARM_DESC(debug, &quot;Set debug mask (default: 0)&quot;);
+ 
+-
+ static int sja1000_probe_chip(struct net_device *dev)
+ {
+ 	struct sja1000_priv *priv = netdev_priv(dev);
+@@ -295,30 +304,18 @@ static int sja1000_get_state(struct net_
+ 	return 0;
+ }
+ 
+-static int sja1000_set_bittime(struct net_device *dev, struct can_bittime *bt)
++static int sja1000_set_bittiming(struct net_device *dev,
++				 struct can_bittiming *bt)
+ {
+ 	struct sja1000_priv *priv = netdev_priv(dev);
+ 	u8 btr0, btr1;
+ 
+-	switch (bt-&gt;type) {
+-	case CAN_BITTIME_BTR:
+-		btr0 = bt-&gt;btr.btr0;
+-		btr1 = bt-&gt;btr.btr1;
+-		break;
++	btr0 = ((bt-&gt;brp - 1) &amp; 0x3f) | (((bt-&gt;sjw - 1) &amp; 0x3) &lt;&lt; 6);
++	btr1 = ((bt-&gt;prop_seg + bt-&gt;phase_seg1 - 1) &amp; 0xf) |
++		(((bt-&gt;phase_seg2 - 1) &amp; 0x7) &lt;&lt; 4) |
++	  ((priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES) &lt;&lt; 7);
+ 
+-	case CAN_BITTIME_STD:
+-		btr0 = ((bt-&gt;std.brp - 1) &amp; 0x3f) |
+-		    (((bt-&gt;std.sjw - 1) &amp; 0x3) &lt;&lt; 6);
+-		btr1 = ((bt-&gt;std.prop_seg +
+-			 bt-&gt;std.phase_seg1 - 1) &amp; 0xf) |
+-		    (((bt-&gt;std.phase_seg2 - 1) &amp; 0x7) &lt;&lt; 4) |
+-		    ((bt-&gt;std.sam &amp; 1) &lt;&lt; 7);
+-		break;
+-
+-	default:
+-		return -EINVAL;
+-	}
+-	DBG(&quot;%s: BTR0 0x%02x BTR1 0x%02x\n&quot;, dev-&gt;name, btr0, btr1);
++	dev_info(ND2D(dev), &quot;BTR0=0x%02x BTR1=0x%02x\n&quot;, btr0, btr1);
+ 
+ 	priv-&gt;write_reg(dev, REG_BTR0, btr0);
+ 	priv-&gt;write_reg(dev, REG_BTR1, btr1);
+@@ -676,6 +673,11 @@ static int sja1000_open(struct net_devic
+ 	/* set chip into reset mode */
+ 	set_reset_mode(dev);
+ 
++	/* determine and set bittime */
++	err = can_set_bittiming(dev);
++	if (err)
++		return err;
++
+ 	/* register interrupt handler, if not done by the device driver */
+ 	if (!(priv-&gt;flags &amp; SJA1000_CUSTOM_IRQ_HANDLER)) {
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,18)
+@@ -758,7 +760,8 @@ int register_sja1000dev(struct net_devic
+ 
+ 	dev-&gt;hard_start_xmit = sja1000_start_xmit;
+ 
+-	priv-&gt;can.do_set_bittime = sja1000_set_bittime;
++	priv-&gt;can.bittiming_const = &amp;sja1000_bittiming_const;
++	priv-&gt;can.do_set_bittiming = sja1000_set_bittiming;
+ 	priv-&gt;can.do_get_state = sja1000_get_state;
+ 	priv-&gt;can.do_set_mode = sja1000_set_mode;
+ 	priv-&gt;dev = dev;
+Index: trunk/kernel/2.6/drivers/net/can/sja1000/ems_pci.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/sja1000/ems_pci.c
++++ trunk/kernel/2.6/drivers/net/can/sja1000/ems_pci.c
+@@ -272,7 +272,7 @@ static int __devinit ems_pci_add_card(st
+ 			priv-&gt;read_reg  = ems_pci_read_reg;
+ 			priv-&gt;write_reg = ems_pci_write_reg;
+ 			priv-&gt;post_irq  = ems_pci_post_irq;
+-			priv-&gt;can.can_sys_clock = EMS_PCI_CAN_CLOCK;
++			priv-&gt;can.bittiming.clock = EMS_PCI_CAN_CLOCK;
+ 			priv-&gt;ocr = EMS_PCI_OCR;
+ 			priv-&gt;cdr = EMS_PCI_CDR;
+ 
+Index: trunk/kernel/2.6/drivers/net/can/sja1000/ems_pcmcia.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/sja1000/ems_pcmcia.c
++++ trunk/kernel/2.6/drivers/net/can/sja1000/ems_pcmcia.c
+@@ -24,7 +24,6 @@
+ #include &lt;linux/can/dev.h&gt;
+ #include &lt;asm/io.h&gt;
+ 
+-#include &lt;pcmcia/version.h&gt;
+ #include &lt;pcmcia/cs_types.h&gt;
+ #include &lt;pcmcia/cs.h&gt;
+ #include &lt;pcmcia/cistpl.h&gt;
+@@ -268,7 +267,7 @@ static int __devinit ems_pcmcia_add_card
+ 		if (ems_pcmcia_check_chan(dev)) {
+ 			priv-&gt;read_reg  = ems_pcmcia_read_reg;
+ 			priv-&gt;write_reg = ems_pcmcia_write_reg;
+-			priv-&gt;can.can_sys_clock = EMS_PCMCIA_CAN_CLOCK;
++			priv-&gt;can.bittiming.clock = EMS_PCMCIA_CAN_CLOCK;
+ 			priv-&gt;ocr = EMS_PCMCIA_OCR;
+ 			priv-&gt;cdr = EMS_PCMCIA_CDR;
+ 			priv-&gt;flags |= SJA1000_CUSTOM_IRQ_HANDLER;
+Index: trunk/kernel/2.6/drivers/net/can/sja1000/ixxat_pci.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/sja1000/ixxat_pci.c
++++ trunk/kernel/2.6/drivers/net/can/sja1000/ixxat_pci.c
+@@ -119,7 +119,7 @@ static struct net_device *ixxat_pci_add_
+ 	priv-&gt;read_reg = ixxat_pci_read_reg;
+ 	priv-&gt;write_reg = ixxat_pci_write_reg;
+ 
+-	priv-&gt;can.can_sys_clock = IXXAT_PCI_CAN_CLOCK;
++	priv-&gt;can.bittiming.clock = IXXAT_PCI_CAN_CLOCK;
+ 
+ 	priv-&gt;ocr = IXXAT_PCI_OCR;
+ 	priv-&gt;cdr = IXXAT_PCI_CDR;
+Index: trunk/kernel/2.6/drivers/net/can/sja1000/kvaser_pci.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/sja1000/kvaser_pci.c
++++ trunk/kernel/2.6/drivers/net/can/sja1000/kvaser_pci.c
+@@ -267,7 +267,7 @@ static int kvaser_pci_add_chan(struct pc
+ 	priv-&gt;read_reg = kvaser_pci_read_reg;
+ 	priv-&gt;write_reg = kvaser_pci_write_reg;
+ 
+-	priv-&gt;can.can_sys_clock = KVASER_PCI_CAN_CLOCK;
++	priv-&gt;can.bittiming.clock = KVASER_PCI_CAN_CLOCK;
+ 
+ 	priv-&gt;ocr = KVASER_PCI_OCR;
+ 	priv-&gt;cdr = KVASER_PCI_CDR;
+Index: trunk/kernel/2.6/drivers/net/can/sja1000/pcm027.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/sja1000/pcm027.c
++++ trunk/kernel/2.6/drivers/net/can/sja1000/pcm027.c
+@@ -89,7 +89,7 @@ static int pcm027_probe(struct platform_
+ 
+ 	priv-&gt;read_reg = pcm027_read_reg;
+ 	priv-&gt;write_reg = pcm027_write_reg;
+-	priv-&gt;can.can_sys_clock = PCM027_CAN_CLOCK;
++	priv-&gt;can.bittiming.clock = PCM027_CAN_CLOCK;
+ 	priv-&gt;ocr = PCM027_OCR;
+ 	priv-&gt;cdr = PCM027_CDR;
+ 
+Index: trunk/kernel/2.6/drivers/net/can/sja1000/peak_pci.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/sja1000/peak_pci.c
++++ trunk/kernel/2.6/drivers/net/can/sja1000/peak_pci.c
+@@ -217,7 +217,7 @@ static int peak_pci_add_chan(struct pci_
+ 	priv-&gt;write_reg = peak_pci_write_reg;
+ 	priv-&gt;post_irq = peak_pci_post_irq;
+ 
+-	priv-&gt;can.can_sys_clock = PEAK_PCI_CAN_CLOCK;
++	priv-&gt;can.bittiming.clock = PEAK_PCI_CAN_CLOCK;
+ 
+ 	priv-&gt;ocr = PEAK_PCI_OCR;
+ 
+Index: trunk/kernel/2.6/drivers/net/can/sja1000/pipcan.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/sja1000/pipcan.c
++++ trunk/kernel/2.6/drivers/net/can/sja1000/pipcan.c
+@@ -80,7 +80,7 @@ static int __init pc_probe(struct platfo
+ 
+ 	priv-&gt;read_reg = pc_read_reg;
+ 	priv-&gt;write_reg = pc_write_reg;
+-	priv-&gt;can.can_sys_clock = PIPCAN_CAN_CLOCK;
++	priv-&gt;can.bittiming.clock = PIPCAN_CAN_CLOCK;
+ 	priv-&gt;ocr = PIPCAN_OCR;
+ 	priv-&gt;cdr = PIPCAN_CDR;
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001859.html">[PATCH v3 3/6] mscan: new interface for setting bit-timing parameters
+</A></li>
+	<LI>Next message: <A HREF="001863.html">[PATCH v3 4/6] sja1000: new interface for setting bit-timing	parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1860">[ date ]</a>
+              <a href="thread.html#1860">[ thread ]</a>
+              <a href="subject.html#1860">[ subject ]</a>
+              <a href="author.html#1860">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

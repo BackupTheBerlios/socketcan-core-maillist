@@ -1,0 +1,268 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 5/4] new interface for setting bit-timing parameters
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%205/4%5D%20new%20interface%20for%20setting%20bit-timing%20parameters&In-Reply-To=%3C4891A886.3040904%40eia.be%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001768.html">
+   <LINK REL="Next"  HREF="001764.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 5/4] new interface for setting bit-timing parameters</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%205/4%5D%20new%20interface%20for%20setting%20bit-timing%20parameters&In-Reply-To=%3C4891A886.3040904%40eia.be%3E"
+       TITLE="[PATCH 5/4] new interface for setting bit-timing parameters">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Thu Jul 31 13:56:54 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001768.html">[PATCH 0/4] new interface for setting bit-timing parameters
+</A></li>
+        <LI>Next message: <A HREF="001764.html">[PATCH 1/4] dev: new interface for setting bit-timing parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1772">[ date ]</a>
+              <a href="thread.html#1772">[ thread ]</a>
+              <a href="subject.html#1772">[ subject ]</a>
+              <a href="author.html#1772">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I modified the softing driver, but _without_ actually testing.
+Getting my setup changed towards the new interface will take too long (almost on holiday).
+On the other hand, the risk is quite low, I think. The biggest changes are in there.
+Kurt
+
+Index: wg/kernel/2.6/drivers/net/can/softing/softing.h
+===================================================================
+--- wg.orig/kernel/2.6/drivers/net/can/softing/softing.h	2008-07-31 13:26:00.000000000 +0200
++++ wg/kernel/2.6/drivers/net/can/softing/softing.h	2008-07-31 13:33:35.000000000 +0200
+@@ -27,6 +27,7 @@
+  		int echo_put;
+  		int echo_get;
+  	} tx;
++	struct can_bittiming_const btr_const;
+  	int index;
+  	u8 sample;
+  	u8 output;
+@@ -35,6 +36,9 @@
+  };
+  #define netdev2softing(netdev)	((struct softing_priv *)netdev_priv(netdev))
+
++/* the 'all cards have the same' fields definition */
++extern const struct can_bittiming_const softing_btr_const;
++
+  struct softing_desc {
+  	unsigned int manf;
+  	unsigned int prod;
+Index: wg/kernel/2.6/drivers/net/can/softing/softing_fw.c
+===================================================================
+--- wg.orig/kernel/2.6/drivers/net/can/softing/softing_fw.c	2008-07-31 13:25:56.000000000 +0200
++++ wg/kernel/2.6/drivers/net/can/softing/softing_fw.c	2008-07-31 13:50:04.000000000 +0200
+@@ -31,6 +31,18 @@
+
+  #define fw_dir &quot;softing-4.6/&quot;
+
++const struct can_bittiming_const softing_btr_const = {
++	.clock = 8000000,
++	.tseg1_min = 1,
++	.tseg1_max = 16,
++	.tseg2_min = 1,
++	.tseg2_max = 8,
++	.sjw_max = 4, /* overruled */
++	.brp_min = 1,
++	.brp_max = 32, /* overruled */
++	.brp_inc = 1,
++};
++
+  static const struct softing_desc carddescs[] = {
+  {
+  	.name = &quot;CANcard&quot;,
+@@ -509,22 +521,22 @@
+  	if (bus0) {
+  		mod_trace(&quot;%s opening at %u kbit&quot;
+  			  &quot; %u %u %u %u %u %u&quot;, card-&gt;bus[0]-&gt;netdev-&gt;name,
+-			  card-&gt;bus[0]-&gt;can.bitrate / 1000,
+-			  card-&gt;bus[0]-&gt;can.bittime.std.brp,
+-			  card-&gt;bus[0]-&gt;can.bittime.std.sjw,
+-			  card-&gt;bus[0]-&gt;can.bittime.std.prop_seg,
+-			  card-&gt;bus[0]-&gt;can.bittime.std.phase_seg1,
+-			  card-&gt;bus[0]-&gt;can.bittime.std.phase_seg2,
+-			  card-&gt;bus[0]-&gt;can.bittime.std.sam);
++			  card-&gt;bus[0]-&gt;can.bittiming.bitrate / 1000,
++			  card-&gt;bus[0]-&gt;can.bittiming.brp,
++			  card-&gt;bus[0]-&gt;can.bittiming.sjw,
++			  card-&gt;bus[0]-&gt;can.bittiming.prop_seg,
++			  card-&gt;bus[0]-&gt;can.bittiming.phase_seg1,
++			  card-&gt;bus[0]-&gt;can.bittiming.phase_seg2,
++			  card-&gt;bus[0]-&gt;sample);
+  		/*init chip */
+-		card-&gt;dpram.fct-&gt;param[1] = card-&gt;bus[0]-&gt;can.bittime.std.brp;
+-		card-&gt;dpram.fct-&gt;param[2] = card-&gt;bus[0]-&gt;can.bittime.std.sjw;
++		card-&gt;dpram.fct-&gt;param[1] = card-&gt;bus[0]-&gt;can.bittiming.brp;
++		card-&gt;dpram.fct-&gt;param[2] = card-&gt;bus[0]-&gt;can.bittiming.sjw;
+  		card-&gt;dpram.fct-&gt;param[3] =
+-			 card-&gt;bus[0]-&gt;can.bittime.std.phase_seg1 +
+-			 card-&gt;bus[0]-&gt;can.bittime.std.prop_seg;
++			 card-&gt;bus[0]-&gt;can.bittiming.phase_seg1 +
++			 card-&gt;bus[0]-&gt;can.bittiming.prop_seg;
+  		card-&gt;dpram.fct-&gt;param[4] =
+-			 card-&gt;bus[0]-&gt;can.bittime.std.phase_seg2;
+-		card-&gt;dpram.fct-&gt;param[5] = card-&gt;bus[0]-&gt;can.bittime.std.sam;
++			 card-&gt;bus[0]-&gt;can.bittiming.phase_seg2;
++		card-&gt;dpram.fct-&gt;param[5] = card-&gt;bus[0]-&gt;sample;
+  		if (softing_fct_cmd(card, 1, 0, &quot;initialize_chip[0]&quot;))
+  			goto failed;
+  		/*set mode */
+@@ -549,22 +561,22 @@
+  	if (bus1) {
+  		mod_trace(&quot;%s opening at %u kbit&quot;
+  			  &quot; %u %u %u %u %u %u&quot;, card-&gt;bus[1]-&gt;netdev-&gt;name,
+-			  card-&gt;bus[0]-&gt;can.bitrate / 1000,
+-			  card-&gt;bus[1]-&gt;can.bittime.std.brp,
+-			  card-&gt;bus[1]-&gt;can.bittime.std.sjw,
+-			  card-&gt;bus[1]-&gt;can.bittime.std.prop_seg,
+-			  card-&gt;bus[1]-&gt;can.bittime.std.phase_seg1,
+-			  card-&gt;bus[1]-&gt;can.bittime.std.phase_seg2,
+-			  card-&gt;bus[1]-&gt;can.bittime.std.sam);
++			  card-&gt;bus[0]-&gt;can.bittiming.bitrate / 1000,
++			  card-&gt;bus[1]-&gt;can.bittiming.brp,
++			  card-&gt;bus[1]-&gt;can.bittiming.sjw,
++			  card-&gt;bus[1]-&gt;can.bittiming.prop_seg,
++			  card-&gt;bus[1]-&gt;can.bittiming.phase_seg1,
++			  card-&gt;bus[1]-&gt;can.bittiming.phase_seg2,
++			  card-&gt;bus[1]-&gt;sample);
+  		/*init chip2 */
+-		card-&gt;dpram.fct-&gt;param[1] = card-&gt;bus[1]-&gt;can.bittime.std.brp;
+-		card-&gt;dpram.fct-&gt;param[2] = card-&gt;bus[1]-&gt;can.bittime.std.sjw;
++		card-&gt;dpram.fct-&gt;param[1] = card-&gt;bus[1]-&gt;can.bittiming.brp;
++		card-&gt;dpram.fct-&gt;param[2] = card-&gt;bus[1]-&gt;can.bittiming.sjw;
+  		card-&gt;dpram.fct-&gt;param[3] =
+-			 card-&gt;bus[1]-&gt;can.bittime.std.phase_seg1 +
+-			 card-&gt;bus[1]-&gt;can.bittime.std.prop_seg;
++			 card-&gt;bus[1]-&gt;can.bittiming.phase_seg1 +
++			 card-&gt;bus[1]-&gt;can.bittiming.prop_seg;
+  		card-&gt;dpram.fct-&gt;param[4] =
+-			 card-&gt;bus[1]-&gt;can.bittime.std.phase_seg2;
+-		card-&gt;dpram.fct-&gt;param[5] = card-&gt;bus[1]-&gt;can.bittime.std.sam;
++			 card-&gt;bus[1]-&gt;can.bittiming.phase_seg2;
++		card-&gt;dpram.fct-&gt;param[5] = card-&gt;bus[1]-&gt;sample;
+  		if (softing_fct_cmd(card, 2, 0, &quot;initialize_chip[1]&quot;))
+  			goto failed;
+  		/*set mode2 */
+Index: wg/kernel/2.6/drivers/net/can/softing/softing_main.c
+===================================================================
+--- wg.orig/kernel/2.6/drivers/net/can/softing/softing_main.c	2008-07-31 13:25:56.000000000 +0200
++++ wg/kernel/2.6/drivers/net/can/softing/softing_main.c	2008-07-31 13:43:08.000000000 +0200
+@@ -426,7 +426,13 @@
+  	struct softing_priv *priv = netdev_priv(ndev);
+  	struct softing *card = priv-&gt;card;
+  	int fw;
++	int ret;
++
+  	mod_trace(&quot;%s&quot;, ndev-&gt;name);
++	/* determine and set bittime */
++	ret = can_set_bittiming(ndev);
++	if (ret)
++		return ret;
+  	if (mutex_lock_interruptible(&amp;card-&gt;fw.lock))
+  		return -ERESTARTSYS;
+  	fw = card-&gt;fw.up;
+@@ -467,27 +473,18 @@
+
+  #define out_of_range(x, min, max) (((x) &lt; min) || ((x) &gt; max))
+
+-static int candev_set_bittime(struct net_device *ndev, struct can_bittime *bt)
++static int candev_set_bittiming(struct net_device *ndev, struct can_bittiming *bt)
+  {
+-	switch (bt-&gt;type) {
+-	case CAN_BITTIME_STD:
+-		/*SJW is test via max_sjw */
+-		if (out_of_range(bt-&gt;std.sjw, 1, 4))
+-			return -EIO;
+-		if (out_of_range(bt-&gt;std.phase_seg1 + bt-&gt;std.prop_seg, 1, 16))
+-			return -EIO;
+-		if (out_of_range(bt-&gt;std.phase_seg2, 1, 8))
+-			return -EIO;
+-		/*BRP is test via max_brp */
+-		if (ndev-&gt;flags &amp; IFF_UP)
+-			return -EBUSY;
+-		break;
+-	case CAN_BITTIME_BTR:
+-	default:
+-		mod_alert(&quot;%s, type %i not supported&quot;, ndev-&gt;name, bt-&gt;type);
+-		return -EINVAL;
+-		break;
+-	}
++	/*SJW is test via max_sjw */
++	if (out_of_range(bt-&gt;sjw, 1, 4))
++		return -EIO;
++	if (out_of_range(bt-&gt;phase_seg1 + bt-&gt;prop_seg, 1, 16))
++		return -EIO;
++	if (out_of_range(bt-&gt;phase_seg2, 1, 8))
++		return -EIO;
++	/*BRP is test via max_brp */
++	if (ndev-&gt;flags &amp; IFF_UP)
++		return -EBUSY;
+  	return 0;
+  }
+
+@@ -895,9 +892,10 @@
+  	priv = netdev_priv(ndev);
+  	priv-&gt;netdev		= ndev;
+  	priv-&gt;card		= card;
+-	priv-&gt;can.can_sys_clock = 8000000UL;
+-	priv-&gt;can.max_brp	= card-&gt;desc-&gt;max_brp;
+-	priv-&gt;can.max_sjw	= card-&gt;desc-&gt;max_sjw;
++	memcpy(&amp;priv-&gt;btr_const, &amp;softing_btr_const, sizeof(priv-&gt;btr_const));
++	priv-&gt;btr_const.brp_max = card-&gt;desc-&gt;max_brp;
++	priv-&gt;btr_const.sjw_max = card-&gt;desc-&gt;max_sjw;
++	priv-&gt;can.bittiming_const = &amp;priv-&gt;btr_const;
+  	priv-&gt;sample		= 1;
+  	priv-&gt;chip		= chip_id;
+  	priv-&gt;output = softing_default_output(card, priv);
+@@ -907,13 +905,10 @@
+  	ndev-&gt;open		= netdev_open;
+  	ndev-&gt;stop		= netdev_stop;
+  	ndev-&gt;hard_start_xmit	= netdev_start_xmit;
+-	priv-&gt;can.do_set_bittime = candev_set_bittime;
++	priv-&gt;can.do_set_bittiming = candev_set_bittiming;
+  	priv-&gt;can.do_get_state	= candev_get_state;
+  	priv-&gt;can.do_set_mode	= candev_set_mode;
+
+-	if (can_set_bitrate(ndev, 250000UL))
+-		mod_alert(&quot;bitrate failed&quot;);
+-
+  	return priv;
+  }
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001768.html">[PATCH 0/4] new interface for setting bit-timing parameters
+</A></li>
+	<LI>Next message: <A HREF="001764.html">[PATCH 1/4] dev: new interface for setting bit-timing parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1772">[ date ]</a>
+              <a href="thread.html#1772">[ thread ]</a>
+              <a href="subject.html#1772">[ subject ]</a>
+              <a href="author.html#1772">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

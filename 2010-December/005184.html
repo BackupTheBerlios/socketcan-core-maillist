@@ -1,0 +1,161 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v8 01/20] CAN : Add flow control processing.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v8%2001/20%5D%20CAN%20%3A%20Add%20flow%20control%20processing.&In-Reply-To=%3C4D04E98E.5090800%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005179.html">
+   <LINK REL="Next"  HREF="005154.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v8 01/20] CAN : Add flow control processing.</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v8%2001/20%5D%20CAN%20%3A%20Add%20flow%20control%20processing.&In-Reply-To=%3C4D04E98E.5090800%40pengutronix.de%3E"
+       TITLE="[PATCH net-next-2.6 v8 01/20] CAN : Add flow control processing.">mkl at pengutronix.de
+       </A><BR>
+    <I>Sun Dec 12 16:26:06 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005179.html">[PATCH net-next-2.6 v8 01/20] CAN : Add flow control processing.
+</A></li>
+        <LI>Next message: <A HREF="005154.html">[PATCH net-next-2.6 v8 02/20] CAN : Divide poll function
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5184">[ date ]</a>
+              <a href="thread.html#5184">[ thread ]</a>
+              <a href="subject.html#5184">[ subject ]</a>
+              <a href="author.html#5184">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 12/07/2010 12:00 PM, Tomoya MORINAGA wrote:
+&gt;<i> Currently, there is no flow control processing.
+</I>&gt;<i> Thus, Add flow control processing as
+</I>&gt;<i> when there is no empty of tx buffer,
+</I>&gt;<i> netif_stop_queue is called.
+</I>&gt;<i> When there is empty buffer, netif_wake_queue is called.
+</I>
+See comment inline.
+
+&gt;<i> Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+</I>&gt;<i> ---
+</I>&gt;<i>  drivers/net/can/pch_can.c |   31 ++++++++++++-------------------
+</I>&gt;<i>  1 files changed, 12 insertions(+), 19 deletions(-)
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+</I>&gt;<i> index a9b6a65..f0f1404 100644
+</I>&gt;<i> --- a/drivers/net/can/pch_can.c
+</I>&gt;<i> +++ b/drivers/net/can/pch_can.c
+</I>&gt;<i> @@ -102,6 +102,10 @@
+</I>&gt;<i>  
+</I>&gt;<i>  #define PCH_FIFO_THRESH		16
+</I>&gt;<i>  
+</I>&gt;<i> +/* TxRqst2 show status of MsgObjNo.17~32 */
+</I>&gt;<i> +#define PCH_TREQ2_TX_MASK	(((1 &lt;&lt; PCH_TX_OBJ_NUM) - 1) &lt;&lt;\
+</I>&gt;<i> +							(PCH_RX_OBJ_END - 16))
+</I>&gt;<i> +
+</I>&gt;<i>  enum pch_ifreg {
+</I>&gt;<i>  	PCH_RX_IFREG,
+</I>&gt;<i>  	PCH_TX_IFREG,
+</I>&gt;<i> @@ -871,6 +875,8 @@ MSG_OBJ:
+</I>&gt;<i>  			dlc = 8;
+</I>&gt;<i>  		stats-&gt;tx_bytes += dlc;
+</I>&gt;<i>  		stats-&gt;tx_packets++;
+</I>&gt;<i> +		if (int_stat == PCH_TX_OBJ_END)
+</I>&gt;<i> +			netif_wake_queue(ndev);
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i>  	int_stat = pch_can_int_pending(priv);
+</I>&gt;<i> @@ -1009,18 +1015,6 @@ static int pch_close(struct net_device *ndev)
+</I>&gt;<i>  	return 0;
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> -static int pch_get_msg_obj_sts(struct net_device *ndev, u32 obj_id)
+</I>&gt;<i> -{
+</I>&gt;<i> -	u32 buffer_status = 0;
+</I>&gt;<i> -	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> -
+</I>&gt;<i> -	/* Getting the message object status. */
+</I>&gt;<i> -	buffer_status = (u32) pch_can_get_buffer_status(priv);
+</I>&gt;<i> -
+</I>&gt;<i> -	return buffer_status &amp; obj_id;
+</I>&gt;<i> -}
+</I>&gt;<i> -
+</I>&gt;<i> -
+</I>&gt;<i>  static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+</I>&gt;<i>  {
+</I>&gt;<i>  	int i, j;
+</I>&gt;<i> @@ -1031,17 +1025,16 @@ static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+</I>&gt;<i>  	if (can_dropped_invalid_skb(ndev, skb))
+</I>&gt;<i>  		return NETDEV_TX_OK;
+</I>&gt;<i>  
+</I>&gt;<i> -	if (priv-&gt;tx_obj == PCH_TX_OBJ_END) { /* Point tail Obj */
+</I>&gt;<i> -		while (pch_get_msg_obj_sts(ndev, (((1 &lt;&lt; PCH_TX_OBJ_NUM)-1) &lt;&lt;
+</I>&gt;<i> -					   PCH_RX_OBJ_NUM)))
+</I>&gt;<i> -			udelay(500);
+</I>&gt;<i> +	if (priv-&gt;tx_obj == PCH_TX_OBJ_END) {
+</I>&gt;<i> +		if (ioread32(&amp;priv-&gt;regs-&gt;treq2) &amp; PCH_TREQ2_TX_MASK)
+</I>&gt;<i> +			netif_stop_queue(ndev);
+</I>
+David asked you in his previous review to implement a pure software
+solution without relying on the hardware because it tends to be racy.
+
+&gt;<i>  
+</I>&gt;<i> -		priv-&gt;tx_obj = PCH_TX_OBJ_START; /* Point head of Tx Obj ID */
+</I>&gt;<i> -		tx_buffer_avail = priv-&gt;tx_obj; /* Point Tail of Tx Obj */
+</I>&gt;<i> +		tx_buffer_avail = priv-&gt;tx_obj;
+</I>&gt;<i> +		priv-&gt;tx_obj = PCH_TX_OBJ_START;
+</I>&gt;<i>  	} else {
+</I>&gt;<i>  		tx_buffer_avail = priv-&gt;tx_obj;
+</I>&gt;<i> +		priv-&gt;tx_obj++;
+</I>&gt;<i>  	}
+</I>&gt;<i> -	priv-&gt;tx_obj++;
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Reading the Msg Obj from the Msg RAM to the Interface register. */
+</I>&gt;<i>  	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+</I>
+cheers, Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101212/bf0bef04/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101212/bf0bef04/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005179.html">[PATCH net-next-2.6 v8 01/20] CAN : Add flow control processing.
+</A></li>
+	<LI>Next message: <A HREF="005154.html">[PATCH net-next-2.6 v8 02/20] CAN : Divide poll function
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5184">[ date ]</a>
+              <a href="thread.html#5184">[ thread ]</a>
+              <a href="subject.html#5184">[ subject ]</a>
+              <a href="author.html#5184">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

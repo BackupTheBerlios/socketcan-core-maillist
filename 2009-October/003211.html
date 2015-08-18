@@ -1,0 +1,137 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 0/2] CAN transceiver control
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/2%5D%20CAN%20transceiver%20control&In-Reply-To=%3C20091005103753.GD273%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003205.html">
+   <LINK REL="Next"  HREF="003213.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 0/2] CAN transceiver control</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/2%5D%20CAN%20transceiver%20control&In-Reply-To=%3C20091005103753.GD273%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH 0/2] CAN transceiver control">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Mon Oct  5 12:37:53 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003205.html">[PATCH 0/2] CAN transceiver control
+</A></li>
+        <LI>Next message: <A HREF="003213.html">[PATCH 0/2] CAN transceiver control
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3211">[ date ]</a>
+              <a href="thread.html#3211">[ thread ]</a>
+              <a href="subject.html#3211">[ subject ]</a>
+              <a href="author.html#3211">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver,
+
+On Sat, Oct 03, 2009 at 02:33:27PM +0200, Oliver Hartkopp wrote:
+&gt;<i> Kurt Van Dijck wrote:
+</I>[...]
+&gt;<i> 
+</I>&gt;<i> i assumed the CAN physical layer would come back into the discussion one day.
+</I>&gt;<i> So thanks for picking it up.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; Currently, my tests have been limited to activation/deactivation, since
+</I>&gt;<i> &gt; only these operations are affected.
+</I>&gt;<i> 
+</I>&gt;<i> The majority of CAN users and CAN hardware developers only know CAN
+</I>&gt;<i> transceivers like the 'dumb' 82C251 (www.nxp.com/pip/PCA82C251_3.html)
+</I>&gt;<i> HighSpeed CAN transceiver, which allows 1MBit/s Bitrate.
+</I>&gt;<i> 
+</I>&gt;<i> But when we look at the TJA1054 (www.nxp.com/pip/TJA1054_3.html) or TJA1041
+</I>&gt;<i> (www.nxp.com/pip/TJA1041_6.html) CAN transceivers, we get in contact with
+</I>&gt;<i> 
+</I>&gt;<i> - fault tolerance, e.g. when one CAN line is shortened to GND
+</I>&gt;<i> - transceiver sleep modes (*)
+</I>&gt;<i> - start up the systems power supply due to CAN traffic
+</I>&gt;<i> - transceiver error notifications
+</I>&gt;<i> - reduced possible bitrates, e.g. the TJA1054 allows only 125 kBit/s
+</I>&gt;<i> - etc
+</I>waauw. I go ask my colleagues about these.
+&gt;<i> 
+</I>&gt;<i> * = especially to access the transceiver mode bits STB, /EN, /WAKE on a
+</I>&gt;<i> TJA1054 or to read the /ERR pin of the TJA1054 need some real gpio pins. And
+</I>&gt;<i> theses gpio pins are heavily hardware deopended!
+</I>Since gpiolib (2.6.2x, drivers/gpio/...), gpio usage for this kind of
+application gets normalized too.
+&gt;<i> 
+</I>&gt;<i> So it's not only 'enabling' and 'disabling' the transceiver, there is need to
+</I>&gt;<i> control and read the transceiver states and get some properties like
+</I>&gt;<i> max_phy_bitrate or something like this.
+</I>&gt;<i> 
+</I>&gt;<i> Does you approach allow these more complex dependencies also?
+</I>My approach does absolutely _not_ address these dependencies.
+&gt;<i> Or is probably the PHY abstraction layer
+</I>&gt;<i> 
+</I>&gt;<i>     linux/Documentation/networking/phy.txt
+</I>&gt;<i> 
+</I>&gt;<i> something, we should take a look at?
+</I>Yes, we should not ignore such resource.
+I just looked into it. It seems like MDIO is a kind of serial bus (like
+I2C) that can have more PHY's on 1 bus, and every PHY have more
+registers. This is way more complex than what I know from CAN.
+
+The CAN chips itself imply a series of link monitoring (busoff etc) inside
+the CAN chip. only a few options live outside (shortcircuit
+detection etc).
+I think this eliminitas the bigger interaction models as seen between
+PHY &amp; ethernet devices.
+An interface would be limited to exposing some properties (max baudrate)
+   at open_candev(), an 'enable()/disable()' hook.
+If I imagine a complex CAN transceiver, I'd implement another
+platform_device, using some GPIO's, ....
+The hard thing is finding the right transceiver for the right CAN chip,
+but I see no elegant solution for that in the PHY infrastructure.
+
+Nevertheless, I feel I'm not the only one having a GPIO for enabling the
+dumb 82C251 (my hardware colleague was proud telling it saves XX mA when
+off), so a more centralised approach could be interesting.
+
+I'll need to give this some time :-)
+&gt;<i> 
+</I>&gt;<i> As i'm not a 'platform' specialist maybe someone (like you) could give some
+</I>&gt;<i> feedback to these requirements.
+</I>
+&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>
+Kurt
+&gt;<i> 
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003205.html">[PATCH 0/2] CAN transceiver control
+</A></li>
+	<LI>Next message: <A HREF="003213.html">[PATCH 0/2] CAN transceiver control
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3211">[ date ]</a>
+              <a href="thread.html#3211">[ thread ]</a>
+              <a href="subject.html#3211">[ subject ]</a>
+              <a href="author.html#3211">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

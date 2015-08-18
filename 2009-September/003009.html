@@ -1,0 +1,190 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> ems_usb: initial revision
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20ems_usb%3A%20initial%20revision&In-Reply-To=%3C4AA6630B.7070707%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003010.html">
+   <LINK REL="Next"  HREF="003011.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>ems_usb: initial revision</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20ems_usb%3A%20initial%20revision&In-Reply-To=%3C4AA6630B.7070707%40hartkopp.net%3E"
+       TITLE="ems_usb: initial revision">socketcan at hartkopp.net
+       </A><BR>
+    <I>Tue Sep  8 15:58:35 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003010.html">ems_usb: initial revision
+</A></li>
+        <LI>Next message: <A HREF="003011.html">ems_usb: initial revision
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3009">[ date ]</a>
+              <a href="thread.html#3009">[ thread ]</a>
+              <a href="subject.html#3009">[ subject ]</a>
+              <a href="author.html#3009">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger wrote:
+&gt;<i> On 09/08/2009 03:10 PM, Oliver Hartkopp wrote:
+</I>&gt;&gt;<i> Sebastian Haas wrote:
+</I>&gt;<i> [snip]
+</I>&gt;&gt;&gt;<i> +    if(msg-&gt;type == CPC_MSG_T_RTR || msg-&gt;type == CPC_MSG_T_XRTR) {
+</I>&gt;&gt;&gt;<i> +        cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;&gt;&gt;<i> +    } else {
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>         *(u64 *) (&amp;cf.data) = 0; /* clear payload */
+</I>&gt;<i> 
+</I>&gt;<i> Hm, do we need to clear the payload at all?
+</I>&gt;<i> 
+</I>
+
+This is a really good point.
+
+Indeed the can_dlc gives the information about the 'valid' items in data[] ...
+
+So we can leave the invalid data untouched (and uninitialized).
+
+I'll remove it in slcan.c, where i stole the sniplet ;-)
+
+
+&gt;<i> [snip]
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static struct can_bittiming_const ems_usb_bittiming_const = {
+</I>&gt;&gt;&gt;<i> +    .name = &quot;ems_usb&quot;,
+</I>&gt;&gt;&gt;<i> +    .tseg1_min = 1,
+</I>&gt;&gt;&gt;<i> +    .tseg1_max = 16,
+</I>&gt;&gt;&gt;<i> +    .tseg2_min = 1,
+</I>&gt;&gt;&gt;<i> +    .tseg2_max = 8,
+</I>&gt;&gt;&gt;<i> +    .sjw_max = 4,
+</I>&gt;&gt;&gt;<i> +    .brp_min = 1,
+</I>&gt;&gt;&gt;<i> +    .brp_max = 64,
+</I>&gt;&gt;&gt;<i> +    .brp_inc = 1,
+</I>&gt;&gt;&gt;<i> +};
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> maybe:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static struct can_bittiming_const ems_usb_sja1000_bittiming_const = {
+</I>&gt;&gt;<i>     .name = &quot;ems_usb_sja1000&quot;,
+</I>&gt;&gt;<i>     .tseg1_min = 1,
+</I>&gt;&gt;<i> (..)
+</I>&gt;&gt;<i> };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static struct can_bittiming_const ems_usb_m16_bittiming_const = {
+</I>&gt;&gt;<i>     .name = &quot;ems_usb_m16&quot;,
+</I>&gt;&gt;<i>     .tseg1_min = 1,
+</I>&gt;&gt;<i> (..)
+</I>&gt;&gt;<i> };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> @Wolfgang: would this be a correct naming scheme as the ems_usb driver
+</I>&gt;&gt;<i> has
+</I>&gt;&gt;<i> different hardware types?
+</I>&gt;<i> 
+</I>&gt;<i> The name should be &quot;sja1000&quot; in case there is no difference to the other
+</I>&gt;<i> SJA1000 CAN controllers.
+</I>
+
+static struct can_bittiming_const sja1000_bittiming_const = {
+	.name = &quot;sja1000&quot;,
+	.tseg1_min = 1,
+(..)
+};
+
+static struct can_bittiming_const m16_bittiming_const = {
+	.name = &quot;m16&quot;,
+	.tseg1_min = 1,
+(..)
+};
+
+Fine.
+
+&gt;<i>  What is &quot;m16&quot;?
+</I>
+It's a M16C processor that sits in the ems_usb hardware sometimes.
+
+There are two possible CPUs in the USB adapter:
+
++static struct usb_device_id ems_usb_table[] = {
++	{USB_DEVICE(USB_CPCUSB_VENDOR_ID, USB_CPCUSB_M16C_PRODUCT_ID)},
++	{USB_DEVICE(USB_CPCUSB_VENDOR_ID, USB_CPCUSB_LPC2119_PRODUCT_ID)},
++	{}			/* Terminating entry */
++};
+
+
+Btw. the SJA1000 is indeed a LPC2119 that has two CAN controllers/makros with
+a SJA1000 layout onboard.
+
+So we could also use 'lpc2119_bittiming_const' which would probably add some
+confusion as everything else looks like a SJA1000 ;-)
+
+
++// CAN params message representation
++typedef struct CPC_CAN_PARAMS {
++	u8 cc_type;	// represents the controller type
++	union {
++		CPC_M16C_BASIC_PARAMS_T m16c_basic;
++		CPC_SJA1000_PARAMS_T sja1000;
++		CPC_PCA82C200_PARAMS_T pca82c200;
++	} cc_params;
++} CPC_CAN_PARAMS_T;
+
+
+&gt;<i> 
+</I>&gt;<i> There are more issues, e.g. &quot;__u8&quot; -&gt; &quot;u8&quot;, no typedefs, lowercase names
+</I>&gt;<i> for structs, ...
+</I>
+Yep.
+
+&gt;<i> 
+</I>&gt;<i> Also I don't like that we introduce another set of SJA1000 register
+</I>&gt;<i> definitions and offsets. Furthermore, there are many UBS based SJA1000
+</I>&gt;<i> devices on the market and we should think if we could provide a common
+</I>&gt;<i> interface for these, if feasible. E.g. sja1000_usb.c similar to sja1000.c.
+</I>&gt;<i> 
+</I>
+The problem is, that each of them defines a proprietary struct for the usb
+communication as they are always talking to 'helper' CPUs and not directly to
+the SJA1000. So a sja1000_usb.c will never become true ...
+
+This definition of 'struct CPC_SJA1000_PARAMS' might look superfluous but it
+isn't. It's just needed to build the correct message to *this* USB adapter.
+
+Regards,
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003010.html">ems_usb: initial revision
+</A></li>
+	<LI>Next message: <A HREF="003011.html">ems_usb: initial revision
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3009">[ date ]</a>
+              <a href="thread.html#3009">[ thread ]</a>
+              <a href="subject.html#3009">[ subject ]</a>
+              <a href="author.html#3009">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

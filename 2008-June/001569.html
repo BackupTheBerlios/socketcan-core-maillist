@@ -1,0 +1,672 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 1/1]: Support EMS CPC-CARD
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%201/1%5D%3A%20Support%20EMS%20CPC-CARD&In-Reply-To=%3C485A144A.5050004%40volkswagen.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001571.html">
+   <LINK REL="Next"  HREF="001570.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 1/1]: Support EMS CPC-CARD</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%201/1%5D%3A%20Support%20EMS%20CPC-CARD&In-Reply-To=%3C485A144A.5050004%40volkswagen.de%3E"
+       TITLE="[PATCH 1/1]: Support EMS CPC-CARD">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Thu Jun 19 10:09:46 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001571.html">[PATCH 1/1]: Support EMS CPC-CARD
+</A></li>
+        <LI>Next message: <A HREF="001570.html">[PATCH 1/1]: Support EMS CPC-CARD
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1569">[ date ]</a>
+              <a href="thread.html#1569">[ thread ]</a>
+              <a href="subject.html#1569">[ subject ]</a>
+              <a href="author.html#1569">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+The final patch for review:
+
+Regards,
+Oliver
+
+
+Index: Makefile
+===================================================================
+--- Makefile    (revision 782)
++++ Makefile    (working copy)
+@@ -10,6 +10,7 @@
+ export CONFIG_CAN_I82527_OLD=m
+ export CONFIG_CAN_SJA1000=m
+ export CONFIG_CAN_EMS_PCI=m
++export CONFIG_CAN_EMS_PCMCIA=m
+ export CONFIG_CAN_PIPCAN=m
+ 
+ export CONFIG_CAN=m
+Index: drivers/net/can/Kconfig
+===================================================================
+--- drivers/net/can/Kconfig    (revision 782)
++++ drivers/net/can/Kconfig    (working copy)
+@@ -67,6 +67,14 @@
+     This driver is for the one or two channel CPC-PCI and CPC-PCIe
+     cards from EMS Dr. Thomas Wuensche (<A HREF="http://www.ems-wuensche.de">http://www.ems-wuensche.de</A>).
+ 
++config CAN_EMS_PCMCIA
++    tristate &quot;EMS CPC-CARD Card&quot;
++    depends on PCMCIA &amp;&amp; CAN_SJA1000
++    help
++
++    This driver is for the one or two channel CPC-CARD cards from
++    EMS Dr. Thomas Wuensche (<A HREF="http://www.ems-wuensche.de">http://www.ems-wuensche.de</A>).
++
+ config CAN_IXXAT_PCI
+     tristate &quot;IXXAT PCI Card&quot;
+     depends on PCI &amp;&amp; CAN_SJA1000
+Index: drivers/net/can/sja1000/sja1000.c
+===================================================================
+--- drivers/net/can/sja1000/sja1000.c    (revision 782)
++++ drivers/net/can/sja1000/sja1000.c    (working copy)
+@@ -606,14 +606,8 @@
+     return 0;
+ }
+ 
+-#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,19)
+-static irqreturn_t sja1000_interrupt(int irq, void *dev_id,
+-                     struct pt_regs *regs)
+-#else
+-static irqreturn_t sja1000_interrupt(int irq, void *dev_id)
+-#endif
++int handle_irq_sja1000dev(struct net_device *dev)
+ {
+-    struct net_device *dev = (struct net_device *)dev_id;
+     struct sja1000_priv *priv = netdev_priv(dev);
+     struct net_device_stats *stats = dev-&gt;get_stats(dev);
+     uint8_t isrc, status;
+@@ -667,9 +661,24 @@
+     if (priv-&gt;post_irq)
+         priv-&gt;post_irq(dev);
+ 
+-    return n == 0 ? IRQ_NONE : IRQ_HANDLED;
++    return n;
+ }
++EXPORT_SYMBOL_GPL(handle_irq_sja1000dev);
+ 
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,19)
++static irqreturn_t sja1000_interrupt(int irq, void *dev_id,
++                     struct pt_regs *regs)
++#else
++static irqreturn_t sja1000_interrupt(int irq, void *dev_id)
++#endif
++{
++    struct net_device *dev = (struct net_device *)dev_id;
++
++    return handle_irq_sja1000dev(dev) ? IRQ_HANDLED : IRQ_NONE;
++}
++
++
++
+ static int sja1000_open(struct net_device *dev)
+ {
+     struct sja1000_priv *priv = netdev_priv(dev);
+@@ -678,16 +687,18 @@
+     /* set chip into reset mode */
+     set_reset_mode(dev);
+ 
+-    /* register interrupt handler */
++    /* register interrupt handler, if not done by the device driver */
++    if (!(priv-&gt;flags &amp; SJA1000_CUSTOM_IRQ_HANDLER)) {
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,18)
+-    err = request_irq(dev-&gt;irq, &amp;sja1000_interrupt, SA_SHIRQ,
+-              dev-&gt;name, (void *)dev);
++        err = request_irq(dev-&gt;irq, &amp;sja1000_interrupt, SA_SHIRQ,
++                  dev-&gt;name, (void *)dev);
+ #else
+-    err = request_irq(dev-&gt;irq, &amp;sja1000_interrupt, IRQF_SHARED,
+-              dev-&gt;name, (void *)dev);
++        err = request_irq(dev-&gt;irq, &amp;sja1000_interrupt, IRQF_SHARED,
++                  dev-&gt;name, (void *)dev);
+ #endif
+-    if (err)
+-        return -EAGAIN;
++        if (err)
++            return -EAGAIN;
++    }
+ 
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+     /* clear statistics */
+@@ -711,8 +722,10 @@
+     netif_stop_queue(dev);
+     priv-&gt;open_time = 0;
+     can_close_cleanup(dev);
+-    free_irq(dev-&gt;irq, (void *)dev);
+ 
++    if (!(priv-&gt;flags &amp; SJA1000_CUSTOM_IRQ_HANDLER))
++        free_irq(dev-&gt;irq, (void *)dev);
++
+     return 0;
+ }
+ 
+Index: drivers/net/can/sja1000/ems_pcmcia.c
+===================================================================
+--- drivers/net/can/sja1000/ems_pcmcia.c    (revision 0)
++++ drivers/net/can/sja1000/ems_pcmcia.c    (revision 0)
+@@ -0,0 +1,422 @@
++/*
++ * Copyright (C) 2008 Sebastian Haas &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">haas at ems-wuensche.com</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software Foundation,
++ * Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
++ */
++
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/delay.h&gt;
++#include &lt;linux/can.h&gt;
++#include &lt;linux/can/dev.h&gt;
++#include &lt;asm/io.h&gt;
++
++#include &lt;pcmcia/version.h&gt;
++#include &lt;pcmcia/cs_types.h&gt;
++#include &lt;pcmcia/cs.h&gt;
++#include &lt;pcmcia/cistpl.h&gt;
++#include &lt;pcmcia/ciscode.h&gt;
++#include &lt;pcmcia/ds.h&gt;
++#include &lt;pcmcia/cisreg.h&gt;
++
++#include &quot;sja1000.h&quot;
++
++#define DRV_NAME  &quot;ems_pcmcia&quot;
++
++MODULE_AUTHOR(&quot;Sebastian Haas &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">haas at ems-wuenche.com</A>&gt;&quot;);
++MODULE_DESCRIPTION(&quot;Socket-CAN driver for EMS CPC-CARD cards&quot;);
++MODULE_SUPPORTED_DEVICE(&quot;EMS CPC-CARD CAN card&quot;);
++MODULE_LICENSE(&quot;GPL v2&quot;);
++
++static int debug;
++
++module_param(debug, int, S_IRUGO | S_IWUSR);
++
++MODULE_PARM_DESC(debug, &quot;Set debug level (default: 0)&quot;);
++
++#define EMS_PCMCIA_MAX_CHAN 2
++
++struct ems_pcmcia_card {
++    int channels;
++
++    struct pcmcia_device *pcmcia_dev;
++    struct net_device *net_dev[EMS_PCMCIA_MAX_CHAN];
++
++    void __iomem *base_addr;
++};
++
++#define EMS_PCMCIA_CAN_CLOCK (16000000 / 2)
++
++/*
++ * The board configuration is probably following:
++ * RX1 is connected to ground.
++ * TX1 is not connected.
++ * CLKO is not connected.
++ * Setting the OCR register to 0xDA is a good idea.
++ * This means  normal output mode , push-pull and the correct polarity.
++ */
++#define EMS_PCMCIA_OCR         (OCR_TX0_PUSHPULL | OCR_TX1_PUSHPULL)
++
++/*
++ * In the CDR register, you should set CBP to 1.
++ * You will probably also want to set the clock divider value to 7
++ * (meaning direct oscillator output) because the second SJA1000 chip
++ * is driven by the first one CLKOUT output.
++ */
++#define EMS_PCMCIA_CDR             (CDR_CBP | CDR_CLKOUT_MASK)
++#define EMS_PCMCIA_MEM_SIZE        4096  /* Size of the remapped 
+io-memory */
++#define EMS_PCMCIA_CAN_BASE_OFFSET 0x100 /* Offset where controllers 
+starts */
++#define EMS_PCMCIA_CAN_CTRL_SIZE   0x80  /* Memory size for each 
+controller */
++
++#define EMS_CMD_RESET 0x00  /* Perform a reset of the card */
++#define EMS_CMD_MAP   0x03  /* Map CAN controllers into card' memory */
++#define EMS_CMD_UMAP  0x02  /* Unmap CAN controllers from card' memory */
++
++static struct pcmcia_device_id ems_pcmcia_tbl[] = {
++    PCMCIA_DEVICE_PROD_ID123(&quot;EMS_T_W&quot;, &quot;CPC-Card&quot;, &quot;V2.0&quot;, 0xeab1ea23,
++                 0xa338573f, 0xe4575800),
++    PCMCIA_DEVICE_NULL,
++};
++
++MODULE_DEVICE_TABLE (pcmcia, ems_pcmcia_tbl);
++
++static void ems_pcmcia_config(struct pcmcia_device *dev);
++
++static u8 ems_pcmcia_read_reg(struct net_device *dev, int port)
++{
++    return readb((void __iomem *)dev-&gt;base_addr + port);
++}
++
++static void ems_pcmcia_write_reg(struct net_device *dev, int port, u8 val)
++{
++    writeb(val, (void __iomem *)dev-&gt;base_addr + port);
++}
++
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,19)
++static irqreturn_t ems_pcmcia_interrupt(int irq, void *dev_id,
++                    struct pt_regs *regs)
++#else
++static irqreturn_t ems_pcmcia_interrupt(int irq, void *dev_id)
++#endif
++{
++    struct ems_pcmcia_card *card = dev_id;
++    irqreturn_t retval = IRQ_NONE;
++    int i, again;
++
++    do {
++        again = 0;
++
++        /* Check interrupt for each channel */
++        for (i = 0; i &lt; EMS_PCMCIA_MAX_CHAN; i++)
++            if (card-&gt;net_dev[i] &amp;&amp;
++                handle_irq_sja1000dev(card-&gt;net_dev[i]))
++                again = 1;
++
++        /* At least one channel handled the interrupt */
++        if (again)
++            retval = IRQ_HANDLED;
++
++    } while (again);
++
++    return retval;
++}
++
++/*
++ * Check if a CAN controller is present at the specified location
++ * by trying to set 'em into the PeliCAN mode
++ */
++static inline int ems_pcmcia_check_chan(struct net_device *dev)
++{
++    unsigned char res;
++
++    /* Make sure SJA1000 is in reset mode */
++    ems_pcmcia_write_reg(dev, REG_MOD, 1);
++
++    ems_pcmcia_write_reg(dev, REG_CDR, CDR_PELICAN);
++
++    /* read reset-values */
++    res = ems_pcmcia_read_reg(dev, REG_CDR);
++
++    if (res == CDR_PELICAN)
++        return 1;
++
++    return 0;
++}
++
++static void ems_pcmcia_del_card(struct pcmcia_device *pdev)
++{
++    struct ems_pcmcia_card *card = pdev-&gt;priv;
++    struct net_device *dev;
++    int i = 0;
++
++    if (!card)
++        return;
++
++    free_irq(pdev-&gt;irq.AssignedIRQ, card);
++
++    for (i = 0; i &lt; card-&gt;channels; i++) {
++        dev = card-&gt;net_dev[i];
++
++        if (!dev)
++            continue;
++
++        printk(KERN_INFO &quot;%s: removing channel #%d\n&quot;, DRV_NAME, i);
++        unregister_sja1000dev(dev);
++        free_sja1000dev(dev);
++    }
++
++    writeb(EMS_CMD_UMAP, card-&gt;base_addr);
++
++    if (card-&gt;base_addr != NULL )
++        iounmap(card-&gt;base_addr);
++
++    kfree(card);
++
++    pdev-&gt;priv = NULL;
++}
++
++static void ems_pcmcia_card_reset(struct ems_pcmcia_card *card)
++{
++    /* Request board reset */
++    writeb(EMS_CMD_RESET, card-&gt;base_addr);
++}
++
++/*
++ * Probe PCI device for EMS CAN signature and register each available
++ * CAN channel to SJA1000 Socket-CAN subsystem.
++ */
++static int __devinit ems_pcmcia_add_card(struct pcmcia_device *pdev,
++                     unsigned long base)
++{
++    struct sja1000_priv *priv;
++    struct net_device *dev;
++    struct ems_pcmcia_card *card;
++    int err, i;
++
++    /* Allocating card structures to hold addresses, ... */
++    card = kzalloc(sizeof(struct ems_pcmcia_card), GFP_KERNEL);
++    if (card == NULL) {
++        printk(KERN_ERR &quot;%s: unable to allocate memory\n&quot;, DRV_NAME);
++        return -ENOMEM;
++    }
++
++    pdev-&gt;priv = card;
++
++    card-&gt;channels = 0;
++
++    card-&gt;base_addr = ioremap(base, EMS_PCMCIA_MEM_SIZE);
++    if (card-&gt;base_addr == NULL) {
++        err = -ENOMEM;
++        goto failure_cleanup;
++    }
++
++    /* Check for unique EMS CAN signature */
++    if (readw(card-&gt;base_addr) != 0xAA55) {
++        printk(KERN_ERR &quot;%s: No EMS CPC Card hardware found.\n&quot;,
++               DRV_NAME);
++
++        err = -ENODEV;
++        goto failure_cleanup;
++    }
++
++    ems_pcmcia_card_reset(card);
++
++    /* Make sure CAN controllers are mapped into card's memory space */
++    writeb(EMS_CMD_MAP, card-&gt;base_addr);
++
++    /* Detect available channels */
++    for (i = 0; i &lt; EMS_PCMCIA_MAX_CHAN; i++) {
++        dev = alloc_sja1000dev(0);
++        if (dev == NULL) {
++            err = -ENOMEM;
++            goto failure_cleanup;
++        }
++
++        card-&gt;net_dev[i] = dev;
++        priv = netdev_priv(dev);
++        priv-&gt;priv = card;
++
++        dev-&gt;irq = pdev-&gt;irq.AssignedIRQ;
++        dev-&gt;base_addr = (unsigned long)(card-&gt;base_addr
++                    + EMS_PCMCIA_CAN_BASE_OFFSET
++                    + (i * EMS_PCMCIA_CAN_CTRL_SIZE));
++
++        /* Check if channel is present */
++        if (ems_pcmcia_check_chan(dev)) {
++            priv-&gt;read_reg  = ems_pcmcia_read_reg;
++            priv-&gt;write_reg = ems_pcmcia_write_reg;
++            priv-&gt;can.can_sys_clock = EMS_PCMCIA_CAN_CLOCK;
++            priv-&gt;ocr = EMS_PCMCIA_OCR;
++            priv-&gt;cdr = EMS_PCMCIA_CDR;
++            priv-&gt;flags |= SJA1000_CUSTOM_IRQ_HANDLER;
++
++            /* Register SJA1000 device */
++            err = register_sja1000dev(dev);
++            if (err) {
++                printk(KERN_INFO &quot;%s: registering device &quot;
++                       &quot;failed (err=%d)\n&quot;, DRV_NAME, err);
++                free_sja1000dev(dev);
++                goto failure_cleanup;
++            }
++
++            card-&gt;channels++;
++
++            printk(KERN_INFO &quot;%s: channel #%d at %lX, irq %d\n&quot;,
++                   DRV_NAME, i + 1,    dev-&gt;base_addr, dev-&gt;irq);
++        } else {
++            free_sja1000dev(dev);
++        }
++    }
++
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,18)
++    err = request_irq(dev-&gt;irq, &amp;ems_pcmcia_interrupt, SA_SHIRQ,
++        DRV_NAME, (void *)card);
++#else
++    err = request_irq(dev-&gt;irq, &amp;ems_pcmcia_interrupt, IRQF_SHARED,
++        DRV_NAME, (void *)card);
++#endif
++    if (err) {
++        printk(KERN_INFO &quot;Registering device failed (err=%d)\n&quot;, err);
++
++        goto failure_cleanup;
++    }
++
++    return 0;
++
++failure_cleanup:
++    printk(KERN_ERR &quot;Error: %d. Cleaning Up.\n&quot;, err);
++
++    ems_pcmcia_del_card(pdev);
++
++    return err;
++}
++
++/*
++ * Setup PCMCIA socket and probe for EMS CPC-CARD
++ */
++static int __devinit ems_pcmcia_probe(struct pcmcia_device *dev)
++{
++    /* The io structure describes IO port mapping */
++    dev-&gt;io.NumPorts1 = 16;
++    dev-&gt;io.Attributes1 = IO_DATA_PATH_WIDTH_8;
++    dev-&gt;io.NumPorts2 = 16;
++    dev-&gt;io.Attributes2 = IO_DATA_PATH_WIDTH_16;
++    dev-&gt;io.IOAddrLines = 5;
++
++    /* Interrupt setup */
++    dev-&gt;irq.Attributes = IRQ_TYPE_DYNAMIC_SHARING;
++    dev-&gt;irq.IRQInfo1 = IRQ_LEVEL_ID;
++
++    /* General socket configuration */
++    dev-&gt;conf.Attributes = CONF_ENABLE_IRQ;
++    dev-&gt;conf.IntType = INT_MEMORY_AND_IO;
++    dev-&gt;conf.ConfigIndex = 1;
++    dev-&gt;conf.Present = PRESENT_OPTION;
++
++    dev-&gt;win = NULL;
++
++    ems_pcmcia_config(dev);
++
++    return 0;
++}
++
++/*
++ * Configure PCMCIA socket
++ */
++static void ems_pcmcia_config(struct pcmcia_device *dev)
++{
++    win_req_t req;
++    memreq_t mem;
++
++    int csval;
++
++    /* Allocate a memory window */
++    req.Attributes = WIN_DATA_WIDTH_8|WIN_MEMORY_TYPE_CM|WIN_ENABLE;
++    req.Base = req.Size = 0;
++    req.AccessSpeed = 0;
++
++    csval = pcmcia_request_window(&amp;dev, &amp;req, &amp;dev-&gt;win);
++    if (csval != CS_SUCCESS) {
++        cs_error(dev, RequestWindow, csval);
++        return;
++    }
++
++    mem.CardOffset = mem.Page = 0;
++    mem.CardOffset = dev-&gt;conf.ConfigBase;
++
++    csval = pcmcia_map_mem_page(dev-&gt;win, &amp;mem);
++    if (csval != CS_SUCCESS) {
++        cs_error(dev, MapMemPage, csval);
++        return;
++    }
++
++    csval = pcmcia_request_irq(dev, &amp;dev-&gt;irq);
++    if (csval != CS_SUCCESS) {
++        cs_error(dev, RequestIRQ, csval);
++        return;
++    }
++
++    /* This actually configures the PCMCIA socket */
++    csval = pcmcia_request_configuration(dev, &amp;dev-&gt;conf);
++    if (csval != CS_SUCCESS) {
++        cs_error(dev, RequestConfiguration, csval);
++        return;
++    }
++
++    ems_pcmcia_add_card(dev, req.Base);
++}
++
++/*
++ * Release claimed resources
++ */
++static void ems_pcmcia_remove(struct pcmcia_device *dev)
++{
++    ems_pcmcia_del_card(dev);
++
++    pcmcia_disable_device(dev);
++}
++
++/*
++ * The dev_info variable is the &quot;key&quot; that is used to match up this
++ * device driver with appropriate cards, through the card configuration
++ * database.
++ */
++static dev_info_t dev_info = &quot;can-ems-pcmcia&quot;;
++
++static struct pcmcia_driver ems_pcmcia_driver = {
++    .drv = {
++        .name = dev_info,
++        },
++
++    .probe = ems_pcmcia_probe,
++    .remove = ems_pcmcia_remove,
++
++    .id_table = ems_pcmcia_tbl,
++};
++
++static int __init ems_pcmcia_init(void)
++{
++    return pcmcia_register_driver(&amp;ems_pcmcia_driver);
++}
++
++static void __exit ems_pcmcia_exit(void)
++{
++    pcmcia_unregister_driver(&amp;ems_pcmcia_driver);
++}
++
++module_init(ems_pcmcia_init);
++module_exit(ems_pcmcia_exit);
++
+Index: drivers/net/can/sja1000/sja1000.h
+===================================================================
+--- drivers/net/can/sja1000/sja1000.h    (revision 782)
++++ drivers/net/can/sja1000/sja1000.h    (working copy)
+@@ -167,27 +167,40 @@
+ #define OCR_TX1_PULLUP    0x80
+ #define OCR_TX1_PUSHPULL  0xc0
+ 
++
+ /*
++ * Flags for sja1000priv.flags
++ */
++
++#define SJA1000_CUSTOM_IRQ_HANDLER 0x1
++
++
++/*
+  * SJA1000 private data structure
+  */
+ struct sja1000_priv {
+     struct can_priv can;    /* must be the first member! */
+     long open_time;
+     struct sk_buff *echo_skb;
++
+     u8 (*read_reg) (struct net_device *dev, int reg);
+     void (*write_reg) (struct net_device *dev, int reg, u8 val);
+     void (*pre_irq) (struct net_device *dev);
+     void (*post_irq) (struct net_device *dev);
++
+     void *priv;        /* for board-specific data */
+     struct net_device *dev;
++
+     u8 ocr;
+     u8 cdr;
++    u32 flags;
+ };
+ 
+ struct net_device *alloc_sja1000dev(int sizeof_priv);
+ void free_sja1000dev(struct net_device *dev);
+ int register_sja1000dev(struct net_device *dev);
+ void unregister_sja1000dev(struct net_device *dev);
++int handle_irq_sja1000dev(struct net_device *dev);
+ 
+ #if 0
+ void can_proc_create(const char *drv_name);
+Index: drivers/net/can/sja1000/Makefile
+===================================================================
+--- drivers/net/can/sja1000/Makefile    (revision 782)
++++ drivers/net/can/sja1000/Makefile    (working copy)
+@@ -57,6 +57,7 @@
+ 
+ obj-$(CONFIG_CAN_SJA1000) += sja1000.o
+ obj-$(CONFIG_CAN_EMS_PCI) += ems_pci.o
++obj-$(CONFIG_CAN_EMS_PCMCIA) += ems_pcmcia.o
+ obj-$(CONFIG_CAN_IXXAT_PCI) += ixxat_pci.o
+ obj-$(CONFIG_CAN_PEAK_PCI) += peak_pci.o
+ obj-$(CONFIG_CAN_PCM027) += pcm027.o
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001571.html">[PATCH 1/1]: Support EMS CPC-CARD
+</A></li>
+	<LI>Next message: <A HREF="001570.html">[PATCH 1/1]: Support EMS CPC-CARD
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1569">[ date ]</a>
+              <a href="thread.html#1569">[ thread ]</a>
+              <a href="subject.html#1569">[ subject ]</a>
+              <a href="author.html#1569">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

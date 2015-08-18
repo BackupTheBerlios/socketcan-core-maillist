@@ -1,0 +1,270 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Hardware independant bittiming
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Hardware%20independant%20bittiming&In-Reply-To=%3C4857DC8F.7010903%40eia.be%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001572.html">
+   <LINK REL="Next"  HREF="001536.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Hardware independant bittiming</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Hardware%20independant%20bittiming&In-Reply-To=%3C4857DC8F.7010903%40eia.be%3E"
+       TITLE="Hardware independant bittiming">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Tue Jun 17 17:47:27 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001572.html">[PATCH 1/1]: Support EMS CPC-CARD
+</A></li>
+        <LI>Next message: <A HREF="001536.html">Hardware independant bittiming
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1532">[ date ]</a>
+              <a href="thread.html#1532">[ thread ]</a>
+              <a href="subject.html#1532">[ subject ]</a>
+              <a href="author.html#1532">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hey,
+
+I'm trying to move existing work to socketcan since inclusion in the 
+standard kernel.
+I read a lot of your discussion last month on hardware independant bit 
+timing.
+
+I worked 9 years with CAN. This is no guarantee, but I'll give you my view.
+1) I dislike putting btr regs in sysfs. It exports chip complexity to 
+the user, mostly not understanding it.
+2) We (my collegues &amp; I) talked on CAN in terms of mainly the bitrate, 
+and sample point. Stuff like SJW mostly stayed the same, the Propagation 
+delay is a independant variable of the bus, whhich influences the sample 
+point.
+
+I pathed the trunk of the subversion code. What I did was:
+* respect the seperation of prop_seg as a seperate part of phase_seg1.
+* make an extra sysfs field, samplept.
+* take samplept into account during bittime calculation.
+
+IMHO, de can_calc_bittime function is very hardware independant, as it 
+calculates the CAN bus parameters, resulting in brp, sjw, tseg1, tseg2. 
+All CAN interfaces I worked with (3) used a configuration based on these 
+4 parameters (to respect the prop_seg value, I just add it to tseg1). I 
+think it makes sense to have it there, even when not used by _every_ driver.
+
+I preset the samplept value at 87.5 %, I did not test with high bitrates 
+(I need mostly 250k).
+After applying these patches, I got myself the results I wanted.
+
+Kind regards,
+Kurt Van Dijck
+Developer
+EIA Electronics
+
+PS: I have no clue where to put the patch, so I just put it here
+
+Index: kernel/2.6/include/linux/can/dev.h
+===================================================================
+--- kernel/2.6/include/linux/can/dev.h	(revision 782)
++++ kernel/2.6/include/linux/can/dev.h	(working copy)
+@@ -126,6 +126,7 @@
+  	u8 max_sjw;
+
+  	u32 bitrate;
++	u32 samplept; /* expressed as 0.1 % */
+  	struct can_bittime bittime;
+
+  	spinlock_t irq_lock;
+@@ -163,6 +164,7 @@
+
+  int can_restart_now(struct net_device *dev);
+  int can_set_bitrate(struct net_device *dev, u32 bitrate);
++int can_set_samplept(struct net_device *dev, u32 samplept);
+
+  void can_bus_off(struct net_device *dev);
+
+Index: kernel/2.6/drivers/net/can/sysfs.c
+===================================================================
+--- kernel/2.6/drivers/net/can/sysfs.c	(revision 782)
++++ kernel/2.6/drivers/net/can/sysfs.c	(working copy)
+@@ -46,6 +46,13 @@
+  	return 0;
+  }
+
++static int can_get_samplept(struct net_device *dev, u32 *samplept)
++{
++   struct can_priv *priv = netdev_priv(dev);
++   *samplept = priv-&gt;samplept;
++
++   return 0;
++}
+  static int can_set_custombittime(struct net_device *dev,
+  				 struct can_bittime *bt)
+  {
+@@ -258,6 +265,7 @@
+  #endif /* LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,25) */
+
+  CAN_ATTR(can_bitrate, bitrate, u32, &quot;%d&quot;);
++CAN_ATTR(can_samplept, samplept, u32, &quot;%d&quot;);
+  CAN_ATTR(can_restart_ms, restart_ms, int, &quot;%d&quot;);
+  CAN_ATTR(can_clock, clock, u32, &quot;%d&quot;);
+  CAN_ATTR(can_echo, echo, int, &quot;%d&quot;);
+@@ -491,6 +499,7 @@
+  	int err;
+
+  	CAN_CREATE_FILE(dev, can_bitrate);
++	CAN_CREATE_FILE(dev, can_samplept);
+  	CAN_CREATE_FILE(dev, can_custombittime);
+  	CAN_CREATE_FILE(dev, can_restart);
+  	CAN_CREATE_FILE(dev, can_ctrlmode);
+@@ -509,6 +518,7 @@
+  void can_remove_sysfs(struct net_device *dev)
+  {
+  	CAN_REMOVE_FILE(dev, can_bitrate);
++	CAN_REMOVE_FILE(dev, can_samplept);
+  	CAN_REMOVE_FILE(dev, can_custombittime);
+  	CAN_REMOVE_FILE(dev, can_restart);
+  	CAN_REMOVE_FILE(dev, can_ctrlmode);
+Index: kernel/2.6/drivers/net/can/dev.c
+===================================================================
+--- kernel/2.6/drivers/net/can/dev.c	(revision 782)
++++ kernel/2.6/drivers/net/can/dev.c	(working copy)
+@@ -67,13 +67,14 @@
+  #define MAX_PHASE_SEG1	8U
+  #define MAX_PHASE_SEG2	8U
+
+-int can_calc_bittime(struct can_priv *can, u32 bitrate,
++int can_calc_bittime(struct can_priv *can, u32 bitrate, u32 samplept,
+  		     struct can_bittime_std *bittime)
+  {
+  	int best_error = -1;	/* Ariphmetic error */
+  	int df, best_df = -1;	/* oscillator's tolerance range,
+  				   greater is better */
+  	u32 quanta;		/* in tq units */
++	u32 tq_samplept; /* tq units before configured samplept */
+  	u32 brp, phase_seg1, phase_seg2, sjw, prop_seg;
+  	u32 brp_min, brp_max, brp_expected;
+  	u64 tmp;
+@@ -105,8 +106,9 @@
+  			quanta++;
+  		if (quanta &lt; MIN_BITTIME || quanta &gt; MAX_BITTIME)
+  			continue;
++		tq_samplept = quanta * samplept / 1000;
+
+-		phase_seg2 = min((quanta - 3) / 2, MAX_PHASE_SEG2);
++		phase_seg2 = min((quanta - tq_samplept), MAX_PHASE_SEG2);
+  		for (sjw = can-&gt;max_sjw; sjw &gt; 0; sjw--) {
+  			for (; phase_seg2 &gt; sjw; phase_seg2--) {
+  				u32 err1, err2;
+@@ -120,10 +122,14 @@
+  				 * cheap oscillators (i.e. bigger
+  				 * df/phase_seg1/phase_seg2)
+  				 */
++				if (prop_seg &gt; MAX_PROP_SEG) {
++					prop_seg = MAX_PROP_SEG;
++					phase_seg1 = quanta - 1 -phase_seg2 - prop_seg;
++					if (phase_seg1 &gt; MAX_PHASE_SEG1)
++						goto next_brp;
++				}
+  				if (prop_seg &lt; phase_seg1)
+  					continue;
+-				if (prop_seg &gt; MAX_PROP_SEG)
+-					goto next_brp;
+
+  				err1 = phase_seg1 * brp * 500 * 1000 /
+  				    (13 * brp_expected -
+@@ -177,13 +183,14 @@
+  	if (priv-&gt;do_set_bittime) {
+  		if (priv-&gt;do_set_bittime) {
+  			struct can_bittime bittime;
+-			err = can_calc_bittime(priv, bitrate, &amp;bittime.std);
++			err = can_calc_bittime(priv, bitrate, priv-&gt;samplept, &amp;bittime.std);
+  			if (err)
+  				goto out;
+  			bittime.type = CAN_BITTIME_STD;
+  			err = priv-&gt;do_set_bittime(dev, &amp;bittime);
+  			if (!err) {
+  				priv-&gt;bitrate = bitrate;
++				priv-&gt;samplept = priv-&gt;samplept;
+  				priv-&gt;bittime = bittime;
+  			}
+  		}
+@@ -193,6 +200,35 @@
+  }
+  EXPORT_SYMBOL(can_set_bitrate);
+
++int can_set_samplept(struct net_device *dev, u32 samplept)
++{
++	struct can_priv *priv = netdev_priv(dev);
++	int err = -ENOTSUPP;
++
++	if (priv-&gt;state != CAN_STATE_STOPPED)
++		return -EBUSY;
++
++	if (priv-&gt;do_set_bittime) {
++		if (priv-&gt;do_set_bittime) {
++			struct can_bittime bittime;
++			err = can_calc_bittime(priv, priv-&gt;bitrate, samplept, &amp;bittime.std);
++			if (err)
++				goto out;
++			bittime.type = CAN_BITTIME_STD;
++			err = priv-&gt;do_set_bittime(dev, &amp;bittime);
++			if (!err) {
++				priv-&gt;bitrate = priv-&gt;bitrate;
++				priv-&gt;samplept = samplept;
++				priv-&gt;bittime = bittime;
++			}
++		}
++	}
++out:
++	return err;
++}
++EXPORT_SYMBOL(can_set_samplept);
++/* 
+---------------------------------------------------------------------------- 
+*/
++
+  #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+  static struct net_device_stats *can_get_stats(struct net_device *dev)
+  {
+@@ -236,6 +272,7 @@
+  	/* Default values can be overwritten by the device driver */
+  	priv-&gt;restart_ms = restart_ms;
+  	priv-&gt;bitrate = CAN_BITRATE_UNCONFIGURED;
++	priv-&gt;samplept = 875; /* default */
+  	priv-&gt;state = CAN_STATE_STOPPED;
+  	priv-&gt;max_brp = DEFAULT_MAX_BRP;
+  	priv-&gt;max_sjw = DEFAULT_MAX_SJW;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001572.html">[PATCH 1/1]: Support EMS CPC-CARD
+</A></li>
+	<LI>Next message: <A HREF="001536.html">Hardware independant bittiming
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1532">[ date ]</a>
+              <a href="thread.html#1532">[ thread ]</a>
+              <a href="subject.html#1532">[ subject ]</a>
+              <a href="author.html#1532">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

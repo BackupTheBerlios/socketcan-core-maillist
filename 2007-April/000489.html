@@ -1,0 +1,117 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-users] socketcan on 2.6.13 kernel
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-users%5D%20socketcan%20on%202.6.13%20kernel&In-Reply-To=%3Cygfk5w8ag2s.fsf%40janus.isnogud.escape.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000486.html">
+   <LINK REL="Next"  HREF="000493.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-users] socketcan on 2.6.13 kernel</H1>
+    <B>Urs Thuermann</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-users%5D%20socketcan%20on%202.6.13%20kernel&In-Reply-To=%3Cygfk5w8ag2s.fsf%40janus.isnogud.escape.de%3E"
+       TITLE="[Socketcan-users] socketcan on 2.6.13 kernel">urs at isnogud.escape.de
+       </A><BR>
+    <I>Thu Apr 19 11:06:35 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000486.html">r210 - trunk/kernel/2.6/drivers/net/can
+</A></li>
+        <LI>Next message: <A HREF="000493.html">[Socketcan-users] socketcan on 2.6.13 kernel
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#489">[ date ]</a>
+              <a href="thread.html#489">[ thread ]</a>
+              <a href="subject.html#489">[ subject ]</a>
+              <a href="author.html#489">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&quot;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">simon.kallweit at intefo.ch</A>&quot; &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">simon.kallweit at intefo.ch</A>&gt; writes:
+
+&gt;<i> kernel BUG at include/linux/module.h:357!
+</I>&gt;<i> Unable to handle kernel NULL pointer dereference at virtual address 00000000
+</I>
+&gt;<i> Backtrace:
+</I>&gt;<i> [&lt;c0020e94&gt;] (__bug+0x0/0x54) from [&lt;c0146094&gt;] (sk_alloc+0xa0/0xf8)
+</I>&gt;<i> [&lt;c0145ff4&gt;] (sk_alloc+0x0/0xf8) from [&lt;bf024388&gt;] (can_create+0xe8/0x1bc [can])
+</I>&gt;<i> [&lt;bf0242a0&gt;] (can_create+0x0/0x1bc [can]) from [&lt;c01442b4&gt;] (__sock_create+0x178/0x324)
+</I>&gt;<i> [&lt;c014413c&gt;] (__sock_create+0x0/0x324) from [&lt;c014447c&gt;] (sock_create+0x1c/0x20)
+</I>&gt;<i> [&lt;c0144460&gt;] (sock_create+0x0/0x20) from [&lt;c01444b8&gt;] (sys_socket+0x18/0x44)
+</I>&gt;<i> [&lt;c01444a0&gt;] (sys_socket+0x0/0x44) from [&lt;c014520c&gt;] (sys_socketcall+0xd8/0x1e4)
+</I>&gt;<i> [&lt;c0145134&gt;] (sys_socketcall+0x0/0x1e4) from [&lt;c001b100&gt;] (ret_fast_syscall+0x0/0x2c)
+</I>
+Hm, after reading some the old kernel sources (2.6.11 - 2.6.14) this
+seems to be a bug in 2.6.12 and 2.6.13.  The sk_alloc() function
+changed in 2.6.12 in that it takes an additional argument pointing to
+the struct proto structure the new struct sock should be allocated
+for.  sk_alloc() then calls __module_get(prot-&gt;owner) which in turn
+checks that the module reference count is not 0 and increments it by
+one.  If it's not 0, you get the BUG() message seen above.
+
+In case of our CAN protocols, CAN_RAW and CAN_BCM, compiled as a
+module, prot-&gt;owner points to the can-raw or can-bcm module,
+respectively.  When the first socket is opened, the module reference
+count is still 0 and you see the BUG message.
+
+In 2.6.14, the sk_alloc() function was changed to call
+try_module_get() instead of __module_get().  This function does not
+check for the reference count to be non-null.
+
+The reason, this does happen to our CAN protocols, but not to
+e.g. af_packet is not completely clear to me.  I think it may have to
+do with the fact, that af_packet has two -&gt;owner pointers to the
+af_packet module, one in the packet_familiy_ops and one in
+packet_proto.  Maybe the module reference count is already incremented
+when packet_create() is called via the packet_familiy_ops, that is
+before sk_alloc() is called with the pointer to packet_proto.
+
+In our CAN implementation this is different, because the
+can_familiy_ops.owner points to the can module while raw_proto.owner
+points to the can-raw module.  Therefore, can_create() does not
+increment the module reference count of the can-raw module before
+sk_alloc() is called.
+
+The fact, that this behavior introduced in 2.6.12 was changed in
+2.6.14 suggests to me, that this is to be considered a bug in
+2.6.12/13.
+
+So it's probably best for you to use a newer kernel, preferably a
+current one, like Robert has also suggested.  Or do you have strong
+reasons to stay with the really old 2.6.13?  Even Debian stable has
+2.6.18 today.
+
+
+urs
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000486.html">r210 - trunk/kernel/2.6/drivers/net/can
+</A></li>
+	<LI>Next message: <A HREF="000493.html">[Socketcan-users] socketcan on 2.6.13 kernel
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#489">[ date ]</a>
+              <a href="thread.html#489">[ thread ]</a>
+              <a href="subject.html#489">[ subject ]</a>
+              <a href="author.html#489">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

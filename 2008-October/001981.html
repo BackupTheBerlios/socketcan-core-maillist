@@ -1,0 +1,330 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] [CAN] convert pcm027 into generic platform driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20%5BCAN%5D%20convert%20pcm027%20into%20generic%20platform%20driver&In-Reply-To=%3C48F59835.1020009%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001992.html">
+   <LINK REL="Next"  HREF="001984.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] [CAN] convert pcm027 into generic platform driver</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20%5BCAN%5D%20convert%20pcm027%20into%20generic%20platform%20driver&In-Reply-To=%3C48F59835.1020009%40grandegger.com%3E"
+       TITLE="[PATCH] [CAN] convert pcm027 into generic platform driver">wg at grandegger.com
+       </A><BR>
+    <I>Wed Oct 15 09:13:57 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001992.html">RFC platform.h - was Re: [PATCH] [CAN] convert pcm027 into generic	platform driver
+</A></li>
+        <LI>Next message: <A HREF="001984.html">[PATCH] [CAN] convert pcm027 into generic platform driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1981">[ date ]</a>
+              <a href="thread.html#1981">[ thread ]</a>
+              <a href="subject.html#1981">[ subject ]</a>
+              <a href="author.html#1981">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Marc,
+
+just a few issues. I'm aware that they might be legacy and I might even
+be the author of the criticized code ;-).
+
+Marc Kleine-Budde wrote:
+&gt;<i> This patch converts the pcm027 specific sja1000 driver
+</I>&gt;<i> into a generic platform driver.
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+</I>&gt;<i> ---
+</I>&gt;<i>  drivers/net/can/sja1000/sja1000_platform.c |  179 ++++++++++++++++++++++++++++
+</I>&gt;<i>  include/linux/can/sja1000_platform.h       |   11 ++
+</I>&gt;<i>  2 files changed, 190 insertions(+), 0 deletions(-)
+</I>&gt;<i>  create mode 100644 drivers/net/can/sja1000/sja1000_platform.c
+</I>&gt;<i>  create mode 100644 include/linux/can/sja1000_platform.h
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/sja1000/sja1000_platform.c b/drivers/net/can/sja1000/sja1000_platform.c
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..c502052
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/sja1000/sja1000_platform.c
+</I>&gt;<i> @@ -0,0 +1,179 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Copyright (C) 2005 Sascha Hauer, Pengutronix
+</I>&gt;<i> + * Copyright (C) 2007 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is free software; you can redistribute it and/or modify
+</I>&gt;<i> + * it under the terms of the version 2 of the GNU General Public License
+</I>&gt;<i> + * as published by the Free Software Foundation
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is distributed in the hope that it will be useful,
+</I>&gt;<i> + * but WITHOUT ANY WARRANTY; without even the implied warranty of
+</I>&gt;<i> + * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+</I>&gt;<i> + * GNU General Public License for more details.
+</I>&gt;<i> + *
+</I>&gt;<i> + * You should have received a copy of the GNU General Public License
+</I>&gt;<i> + * along with this program; if not, write to the Free Software
+</I>&gt;<i> + * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;linux/kernel.h&gt;
+</I>&gt;<i> +#include &lt;linux/module.h&gt;
+</I>&gt;<i> +#include &lt;linux/interrupt.h&gt;
+</I>&gt;<i> +#include &lt;linux/netdevice.h&gt;
+</I>&gt;<i> +#include &lt;linux/delay.h&gt;
+</I>&gt;<i> +#include &lt;linux/pci.h&gt;
+</I>&gt;<i> +#include &lt;linux/platform_device.h&gt;
+</I>&gt;<i> +#include &lt;linux/irq.h&gt;
+</I>&gt;<i> +#include &lt;linux/can.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/dev.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/sja1000_platform.h&gt;
+</I>&gt;<i> +#include &lt;linux/io.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &quot;sja1000.h&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +#define DRV_NAME &quot;sja1000&quot;
+</I>
+Please choose a more descriptive name for the driver. &quot;sja1000&quot; is used
+for the SJA1000 controller driver. Other device use:
+
+  &quot;can-&lt;device-name&gt;&quot;, e.g. &quot;can-ems-pci&quot;
+
+&quot;can-sja1000-platform&quot; might then be logical. But I'm relaxed to use a
+different naming scheme. Other proposals are welcome.
+
+&gt;<i> +
+</I>&gt;<i> +MODULE_AUTHOR(&quot;Sascha Hauer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;&quot;);
+</I>&gt;<i> +MODULE_DESCRIPTION(&quot;Socket-CAN driver for SJA1000 on the platform bus&quot;);
+</I>&gt;<i> +MODULE_LICENSE(&quot;GPL v2&quot;);
+</I>&gt;<i> +
+</I>&gt;<i> +static u8 sp_read_reg(struct net_device *dev, int reg)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return ioread8((void __iomem *)(dev-&gt;base_addr + reg));
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void sp_write_reg(struct net_device *dev, int reg, u8 val)
+</I>&gt;<i> +{
+</I>&gt;<i> +	iowrite8(val, (void __iomem *)(dev-&gt;base_addr + reg));
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int sp_probe(struct platform_device *pdev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int err, irq;
+</I>&gt;<i> +	void __iomem *addr;
+</I>&gt;<i> +	struct net_device *dev;
+</I>&gt;<i> +	struct sja1000_priv *priv;
+</I>&gt;<i> +	struct resource *res_mem, *res_irq;
+</I>&gt;<i> +	struct sja1000_platform_data *pdata;
+</I>&gt;<i> +
+</I>&gt;<i> +	err = -ENODEV;
+</I>&gt;<i> +	pdata = pdev-&gt;dev.platform_data;
+</I>&gt;<i> +	if (!pdata) {
+</I>&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;No platform data provided!\n&quot;);
+</I>&gt;<i> +		goto exit;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	err = -ENODEV;
+</I>&gt;<i> +	res_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+</I>&gt;<i> +	res_irq = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
+</I>&gt;<i> +	if (!res_mem || !res_irq)
+</I>&gt;<i> +		goto exit;
+</I>
+I actually prefer the &quot;err =&quot; within the if block:
+
+	if (!res_mem || !res_irq) {
+	        err = -ENODEV;
+		goto exit;
+        }
+
+&gt;<i> +	err = -EBUSY;
+</I>&gt;<i> +	if (!request_mem_region(res_mem-&gt;start,
+</I>&gt;<i> +				res_mem-&gt;end - res_mem-&gt;start + 1,
+</I>&gt;<i> +				DRV_NAME))
+</I>&gt;<i> +		goto exit;
+</I>
+Ditto.
+
+&gt;<i> +	err = -ENOMEM;
+</I>&gt;<i> +	addr = ioremap_nocache(res_mem-&gt;start, res_mem-&gt;end - res_mem-&gt;start + 1);
+</I>&gt;<i> +	if (!addr)
+</I>&gt;<i> +		goto exit_release;
+</I>
+Ditto
+
+&gt;<i> +
+</I>&gt;<i> +	irq = res_irq-&gt;start;
+</I>&gt;<i> +	if (res_irq-&gt;flags &amp; IRQF_TRIGGER_MASK)
+</I>&gt;<i> +		set_irq_type(irq, res_irq-&gt;flags &amp; IRQF_TRIGGER_MASK);
+</I>&gt;<i> +
+</I>&gt;<i> +	dev = alloc_sja1000dev(0);
+</I>&gt;<i> +	if (!dev)
+</I>&gt;<i> +		goto exit_iounmap;
+</I>
+Ditto
+
+&gt;<i> +	priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	priv-&gt;read_reg = sp_read_reg;
+</I>&gt;<i> +	priv-&gt;write_reg = sp_write_reg;
+</I>&gt;<i> +	priv-&gt;can.bittiming.clock = pdata-&gt;can_sys_clock;
+</I>&gt;<i> +	priv-&gt;ocr = pdata-&gt;ocr;
+</I>&gt;<i> +	priv-&gt;cdr = pdata-&gt;cdr;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev-&gt;irq = irq;
+</I>&gt;<i> +	dev-&gt;base_addr = (unsigned long)addr;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_set_drvdata(&amp;pdev-&gt;dev, dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	err = register_sja1000dev(dev);
+</I>&gt;<i> +	if (err) {
+</I>&gt;<i> +		dev_err(&amp;pdev-&gt;dev, &quot;registering %s failed (err=%d)\n&quot;,
+</I>&gt;<i> +			DRV_NAME, err);
+</I>&gt;<i> +		goto exit_free;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_info(&amp;pdev-&gt;dev, &quot;%s device registered (base_addr=%#lx, irq=%d)\n&quot;,
+</I>&gt;<i> +		 DRV_NAME, dev-&gt;base_addr, dev-&gt;irq);
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +
+</I>&gt;<i> + exit_free:
+</I>&gt;<i> +	free_sja1000dev(dev);
+</I>&gt;<i> + exit_iounmap:
+</I>&gt;<i> +	iounmap(addr);
+</I>&gt;<i> + exit_release:
+</I>&gt;<i> +	release_mem_region(res_mem-&gt;start, res_mem-&gt;end - res_mem-&gt;start + 1);
+</I>&gt;<i> + exit:
+</I>&gt;<i> +	return err;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int sp_remove(struct platform_device *pdev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *dev = dev_get_drvdata(&amp;pdev-&gt;dev);
+</I>&gt;<i> +	struct resource *res;
+</I>&gt;<i> +
+</I>&gt;<i> +	unregister_sja1000dev(dev);
+</I>&gt;<i> +	dev_set_drvdata(&amp;pdev-&gt;dev, NULL);
+</I>&gt;<i> +	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+</I>&gt;<i> +	release_mem_region(res-&gt;start, res-&gt;end - res-&gt;start + 1);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (dev-&gt;base_addr)
+</I>&gt;<i> +		iounmap((void __iomem *)dev-&gt;base_addr);
+</I>&gt;<i> +
+</I>&gt;<i> +	free_sja1000dev(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int sp_suspend(struct platform_device *pdev,
+</I>&gt;<i> +		      pm_message_t state)
+</I>&gt;<i> +{
+</I>&gt;<i> +	dev_err(&amp;pdev-&gt;dev, &quot;suspend not implented\n&quot;);
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +
+</I>&gt;<i> +static int sp_resume(struct platform_device *pdev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	dev_err(&amp;pdev-&gt;dev, &quot;resume not implemented\n&quot;);
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>
+We agreed to remove these dummy functions.
+
+&gt;<i> +static struct platform_driver sp_driver = {
+</I>&gt;<i> +	.probe = sp_probe,
+</I>&gt;<i> +	.remove = sp_remove,
+</I>&gt;<i> +	.suspend = sp_suspend,
+</I>&gt;<i> +	.resume = sp_resume,
+</I>
+Ditto.
+
+&gt;<i> +	.driver = {
+</I>&gt;<i> +		.name = DRV_NAME,
+</I>&gt;<i> +		.owner = THIS_MODULE,
+</I>&gt;<i> +	},
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static int __init sp_init(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return platform_driver_register(&amp;sp_driver);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void __exit sp_exit(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	platform_driver_unregister(&amp;sp_driver);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +module_init(sp_init);
+</I>&gt;<i> +module_exit(sp_exit);
+</I>&gt;<i> diff --git a/include/linux/can/sja1000_platform.h b/include/linux/can/sja1000_platform.h
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..a4c998b
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/include/linux/can/sja1000_platform.h
+</I>&gt;<i> @@ -0,0 +1,11 @@
+</I>&gt;<i> +#ifndef _CAN_SJA1000_PLATFORM_H_
+</I>&gt;<i> +#define _CAN_SJA1000_PLATFORM_H_
+</I>&gt;<i> +
+</I>&gt;<i> +struct sja1000_platform_data {
+</I>&gt;<i> +	u32 can_sys_clock;	/* CAN bus oscillator frequency in Hz */
+</I>
+        u32  clock;
+
+Shorter name? The name of the struct can_priv field &quot;can_sys_clock&quot; has
+been changed recently as well.
+
+&gt;<i> +
+</I>&gt;<i> +	u8 ocr;
+</I>&gt;<i> +	u8 cdr;
+</I>
+Commenting ocr and cdr would be a nice to have
+
+
+&gt;<i> +	u32 can_sys_clock;	/* CAN bus oscillator frequency in Hz */
+</I>&gt;<i> +
+</I>&gt;<i> +	u8 ocr;
+</I>&gt;<i> +	u8 cdr;
+</I>
+&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +#endif	/* !_CAN_SJA1000_PLATFORM_H_ */
+</I>
+I'm going to post my similar sja1000_of_platform driver soon.
+
+Thanks,
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001992.html">RFC platform.h - was Re: [PATCH] [CAN] convert pcm027 into generic	platform driver
+</A></li>
+	<LI>Next message: <A HREF="001984.html">[PATCH] [CAN] convert pcm027 into generic platform driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1981">[ date ]</a>
+              <a href="thread.html#1981">[ thread ]</a>
+              <a href="subject.html#1981">[ subject ]</a>
+              <a href="author.html#1981">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

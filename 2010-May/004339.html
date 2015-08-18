@@ -1,0 +1,221 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> SJA1000 SMP issue with command register
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SJA1000%20SMP%20issue%20with%20command%20register&In-Reply-To=%3C201005092357.37631.klaus.hitschler%40gmx.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004321.html">
+   <LINK REL="Next"  HREF="004322.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>SJA1000 SMP issue with command register</H1>
+    <B>Klaus Hitschler</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SJA1000%20SMP%20issue%20with%20command%20register&In-Reply-To=%3C201005092357.37631.klaus.hitschler%40gmx.de%3E"
+       TITLE="SJA1000 SMP issue with command register">klaus.hitschler at gmx.de
+       </A><BR>
+    <I>Sun May  9 23:57:37 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004321.html">SJA1000 SMP issue with command register
+</A></li>
+        <LI>Next message: <A HREF="004322.html">SJA1000 SMP issue with command register
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4339">[ date ]</a>
+              <a href="thread.html#4339">[ thread ]</a>
+              <a href="subject.html#4339">[ subject ]</a>
+              <a href="author.html#4339">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Oliver,
+
+this is not a special Peak problem, the behavior can hit all SJA1000 chips 
+conected to fast hardware busses. 
+
+When the command register is written it needs a little bit of time - about 125 
+nsec - to digest the command. 125 nsecs are a long time for modern processors. 
+(see SJA1000 manual, 6.4.4)
+
+If the SJA1000 is used on a single core machine the driver's code is solely 
+interrupted by the same core. In this scenario the switch into the interrupt 
+handler may take the necessary time.
+
+But if the same scenario  runs on a multicore machine it may be that the 
+driver's non-interrupt-handler code runs in parallel on one core and the 
+driver's interrupt handler code runs on another core.
+
+If both code paths access the SJA1000's command register it can happen that a 
+second command register access hits a bus  cycle later after the first command 
+register access. With PCI this may be down to 33 nsec.
+
+Then it seems that the last register access never had happend.
+
+So you need some mechanism to prevent this situation. I've done it with 
+guarded_write() in my driver's code.
+
+I appreciate if you adopt the socketcan's SJA1000 code, so I need not to worry 
+about this when I link this code part to future drivers.
+
+Kind regards,
+
+Klaus
+
+
+Am Freitag, 7. Mai 2010, um 17:26:47 schrieben Sie:
+&gt;<i> On 07.05.2010 12:29, Matthias Fuchs wrote:
+</I>&gt;<i> &gt; Hi Oliver,
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; we have many many SJA1000 based boards and I never heard of a general
+</I>&gt;<i> &gt; problem with back to back writes to the command register. Actually I
+</I>&gt;<i> &gt; won't invent when patching the PEAK driver that way but please don't do
+</I>&gt;<i> &gt; so with the other SJA1000 boards :-)
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Also I did not see the situation where back-to-back writes to the command
+</I>&gt;<i> &gt; register happen.
+</I>&gt;<i> 
+</I>&gt;<i> Hi Matthias,
+</I>&gt;<i> 
+</I>&gt;<i> thanks for your opinion on this topic.
+</I>&gt;<i> 
+</I>&gt;<i> So far i also did not see this kind of problems. But the shown patch fixed
+</I>&gt;<i> the problem of the write stalls with the BerliOS peak_pci.c driver in the
+</I>&gt;<i> setup with the PEAK PCI card of my colleague. Maybe it is a timing issue
+</I>&gt;<i> with the PCI adapter chip on the PEAK PCI card.
+</I>&gt;<i> 
+</I>&gt;<i> Maybe Klaus can give us a better insight, why the special treatment was
+</I>&gt;<i> only necessary for the COMMAND register ?!?
+</I>&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>&gt;<i> 
+</I>&gt;<i> &gt; On Wednesday 28 April 2010 20:10, Oliver Hartkopp wrote:
+</I>&gt;<i> &gt;&gt; Hello Wolfgang,
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; today i got the information from a colleague from IAV regarding the
+</I>&gt;<i> &gt;&gt; peak_pci driver that the sending traffic stopped reproducible on a SMP
+</I>&gt;<i> &gt;&gt; system with a 2.6.31 ...
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; As the PEAK driver did not produce this problem, he suggested to check
+</I>&gt;<i> &gt;&gt; the changes between PEAK driver v6.11 and v6.13 having the Changelog:
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; &quot;By preventing accidental back-to-back writes to the command register of
+</I>&gt;<i> &gt;&gt; the SJA1000 chip in conjunction with multicore processors write stalls
+</I>&gt;<i> &gt;&gt; were successfully removed&quot;
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; See: <A HREF="http://www.peak-system.com/fileadmin/media/linux/index.htm">http://www.peak-system.com/fileadmin/media/linux/index.htm</A>
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; The change in the v6.13 PEAK driver only cares about the command
+</I>&gt;<i> &gt;&gt; register and so i cooked the patch below that really fixed the issue in
+</I>&gt;<i> &gt;&gt; the setup of the colleague.
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; In a 'real' patch it would probably make more sense to introduce a
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt;       write_reg_guarded() or write_cmd_reg()
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; instead of checking for the command register value each time ...
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; Do you already know about this SJA1000 problem? Any thoughts about the
+</I>&gt;<i> &gt;&gt; patch?
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; Regards,
+</I>&gt;<i> &gt;&gt; Oliver
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; Index: drivers/net/can/sja1000/peak_pci.c
+</I>&gt;<i> &gt;&gt; ===================================================================
+</I>&gt;<i> &gt;&gt; --- drivers/net/can/sja1000/peak_pci.c	(Revision 1174)
+</I>&gt;<i> &gt;&gt; +++ drivers/net/can/sja1000/peak_pci.c	(Arbeitskopie)
+</I>&gt;<i> &gt;&gt; @@ -91,10 +91,20 @@
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt;   	return readb(priv-&gt;reg_base + (port&lt;&lt;  2));
+</I>&gt;<i> &gt;&gt;   
+</I>&gt;<i> &gt;&gt;   }
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; -static void peak_pci_write_reg(const struct sja1000_priv *priv,
+</I>&gt;<i> &gt;&gt; +static void peak_pci_write_reg(struct sja1000_priv *priv,
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt;   			       int port, u8 val)
+</I>&gt;<i> &gt;&gt;   
+</I>&gt;<i> &gt;&gt;   {
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; -	writeb(val, priv-&gt;reg_base + (port&lt;&lt;  2));
+</I>&gt;<i> &gt;&gt; +	if (port != REG_CMR)
+</I>&gt;<i> &gt;&gt; +		writeb(val, priv-&gt;reg_base + (port&lt;&lt;  2));
+</I>&gt;<i> &gt;&gt; +	else {
+</I>&gt;<i> &gt;&gt; +		/* The command register needs some locking in SMP */
+</I>&gt;<i> &gt;&gt; +		unsigned long flags;
+</I>&gt;<i> &gt;&gt; +
+</I>&gt;<i> &gt;&gt; +		spin_lock_irqsave(&amp;priv-&gt;wr_reg_lock, flags);
+</I>&gt;<i> &gt;&gt; +		writeb(val, priv-&gt;reg_base + (REG_CMR&lt;&lt;  2));
+</I>&gt;<i> &gt;&gt; +		readb(priv-&gt;reg_base + (REG_SR&lt;&lt;  2));
+</I>&gt;<i> &gt;&gt; +		spin_unlock_irqrestore(&amp;priv-&gt;wr_reg_lock, flags);
+</I>&gt;<i> &gt;&gt; +	}
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt;   }
+</I>&gt;<i> &gt;&gt;   
+</I>&gt;<i> &gt;&gt;   static void peak_pci_post_irq(const struct sja1000_priv *priv)
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; Index: drivers/net/can/sja1000/sja1000.h
+</I>&gt;<i> &gt;&gt; ===================================================================
+</I>&gt;<i> &gt;&gt; --- drivers/net/can/sja1000/sja1000.h	(Revision 1174)
+</I>&gt;<i> &gt;&gt; +++ drivers/net/can/sja1000/sja1000.h	(Arbeitskopie)
+</I>&gt;<i> &gt;&gt; @@ -158,7 +158,7 @@
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt;   	/* the lower-layer is responsible for appropriate locking */
+</I>&gt;<i> &gt;&gt;   	u8 (*read_reg) (const struct sja1000_priv *priv, int reg);
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; -	void (*write_reg) (const struct sja1000_priv *priv, int reg, u8 
+</I>val);
+&gt;<i> &gt;&gt; +	void (*write_reg) (struct sja1000_priv *priv, int reg, u8 val);
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt;   	void (*pre_irq) (const struct sja1000_priv *priv);
+</I>&gt;<i> &gt;&gt;   	void (*post_irq) (const struct sja1000_priv *priv);
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; @@ -168,6 +168,7 @@
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt;   	void __iomem *reg_base;	 /* ioremap'ed address to registers */
+</I>&gt;<i> &gt;&gt;   	unsigned long irq_flags; /* for request_irq() */
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; +	spinlock_t wr_reg_lock; /* lock for concurrent register writes */
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt;   	u16 flags;		/* custom mode flags */
+</I>&gt;<i> &gt;&gt;   	u8 ocr;			/* output control register */
+</I>&gt;<i> &gt;&gt;   	u8 cdr;			/* clock divider register */
+</I>&gt;<i> &gt;&gt; 
+</I>&gt;<i> &gt;&gt; _______________________________________________
+</I>&gt;<i> &gt;&gt; Socketcan-core mailing list
+</I>&gt;<i> &gt;&gt; <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> &gt;&gt; <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004321.html">SJA1000 SMP issue with command register
+</A></li>
+	<LI>Next message: <A HREF="004322.html">SJA1000 SMP issue with command register
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4339">[ date ]</a>
+              <a href="thread.html#4339">[ thread ]</a>
+              <a href="subject.html#4339">[ subject ]</a>
+              <a href="author.html#4339">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

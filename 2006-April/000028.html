@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> AW: [Socketcan-core] Re: [Socket-can] AW: Error handling
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20AW%3A%20%5BSocketcan-core%5D%20Re%3A%20%5BSocket-can%5D%20AW%3A%20Error%20handling&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855D31%40vwagwox00010.vw.vwg%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000029.html">
+   <LINK REL="Next"  HREF="000031.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>AW: [Socketcan-core] Re: [Socket-can] AW: Error handling</H1>
+    <B>Hartkopp, Oliver (K-GEFE/E)</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20AW%3A%20%5BSocketcan-core%5D%20Re%3A%20%5BSocket-can%5D%20AW%3A%20Error%20handling&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855D31%40vwagwox00010.vw.vwg%3E"
+       TITLE="AW: [Socketcan-core] Re: [Socket-can] AW: Error handling">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Tue Apr 25 09:31:27 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000029.html">[Socketcan-core] Re: AW: Error handling
+</A></li>
+        <LI>Next message: <A HREF="000031.html">AW: [Socketcan-core] Re: [Socket-can] AW: Error handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#28">[ date ]</a>
+              <a href="thread.html#28">[ thread ]</a>
+              <a href="subject.html#28">[ subject ]</a>
+              <a href="author.html#28">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Wolfgang,
+
+
+&gt;<i> E.g., MSCAN does not report most of the errors above. Therefore we may 
+</I>&gt;<i> also distinguish between general/common errors, like bus-off, and 
+</I>&gt;<i> controller specific errors.
+</I>
+Yes of course we should define a superset of errors that are known to happen
+in CAN-controllers and on CAN-busses. I was additionally thinking on
+CAN-transceiver problems that can occur with fault tolerant CAN-tranceivers
+like the TJA1054:
+
+/* operating status of CAN-transceiver */
+#define TRXSTATUS_OK                 0x000
+#define TRXSTATUS_SLEEP              0x001
+#define TRXSTATUS_CANH_NO_WIRE       0x002
+#define TRXSTATUS_CANH_SHORT_TO_BAT  0x004
+#define TRXSTATUS_CANH_SHORT_TO_VCC  0x008
+#define TRXSTATUS_CANH_SHORT_TO_GND  0x010
+#define TRXSTATUS_CANL_NO_WIRE       0x020
+#define TRXSTATUS_CANL_SHORT_TO_BAT  0x040
+#define TRXSTATUS_CANL_SHORT_TO_VCC  0x080
+#define TRXSTATUS_CANL_SHORT_TO_GND  0x100
+#define TRXSTATUS_CANL_SHORT_TO_CANH 0x200
+
+I was putting this into my (currently unused) can_ioctl.h but after this
+error discussion we should check where it really belongs to (maybe
+can_error.h?) and how it should really look like.
+
+It seems that we have three classes of possible errors:
+
+- physical layer errors (with the transceivers)
+- CAN-protocol errors (CRC, bit-stuffing, etc)
+- controller internal errors (overflows, error levels, bus-off, etc)
+
+Any additional ideas?
+
+
+
+&gt;&gt;<i> In the Volkswagen specifications the bus-off state causes a
+</I>&gt;&gt;<i> re-initialisation of the controller after 50ms (the first time) and 200ms
+</I>&gt;&gt;<i> (the following times). So if we assume all can-drivers behave like this
+</I>(do
+&gt;&gt;<i> we?) and the auto-repair functionality works, the bus-off state remains a
+</I>&gt;&gt;<i> serious problem on the CAN that has to be announced to the user.
+</I>
+&gt;<i> I realized the bus-off-recovery code in the socket-can drivers and asked 
+</I>&gt;<i> myself, if this is always the intended behavior (or should the 
+</I>&gt;<i> application handle it).
+</I>
+Hm i think you do not have this detailed problem-handling and application
+information in other network-drivers in the kernel because you would always
+need at least ONE application, that handles a network-problem that can be
+easily solved within the driver. But it is definitely important, that the
+application gets informed on these problems to react on application issues.
+
+ 
+&gt;&gt;<i> So my suggestion ist, that the can-driver sends an error frame with a
+</I>&gt;&gt;<i> bus-off error type and the (raw, bcm, tpxxx) socket returns a -ENOMEDIUM
+</I>to
+&gt;&gt;<i> the user.
+</I>
+&gt;<i> No (..) 
+</I>&gt;<i> The read, recvfrom, etc. should return the number of bytes returned into 
+</I>&gt;<i> buf. The application should then check CAN_ERR_FLAG and react accordingly.
+</I>
+Sorry i was a bit unclear here. I mixed up the RAW-sockets requirements and
+the higher level protocol sockets:
+
+I thought on sockets for transport-protocols and the broadcast-manager that
+are typically not dealing with 'repairable' CAN-errors. If we classify the
+bus-off as something 'repairable' (where i'm currently tending to) the
+'higher level' protocols should detect their errors only on their own
+timeouts. So if an application want's to deal with any kind of
+'CAN-problems' you have to open an (additional) RAW-socket and get this
+information from there.
+
+
+&gt;<i> I think it would also be nice, if the error frames could be disabled via 
+</I>&gt;<i> socket or filter option (or enabled).
+</I>
+As you can have multiple raw_filters on one socket (that may contradict) it
+is the best solution to define an extra socket option. Maybe there should be
+some error filter possibility in the setsockopt() also as mentioned before:
+
+- physical layer errors (with the transceivers)
+- CAN-protocol errors (CRC, bit-stuffing, etc)
+- controller internal errors (overflows, error levels, bus-off, etc)
+
+What is your opinion for the default behaviour? Should all errors come
+through the RAW-socket by default OR should we have to enable the errors by
+hand?
+
+Greetings,
+
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000029.html">[Socketcan-core] Re: AW: Error handling
+</A></li>
+	<LI>Next message: <A HREF="000031.html">AW: [Socketcan-core] Re: [Socket-can] AW: Error handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#28">[ date ]</a>
+              <a href="thread.html#28">[ thread ]</a>
+              <a href="subject.html#28">[ subject ]</a>
+              <a href="author.html#28">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

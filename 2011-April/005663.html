@@ -1,0 +1,4813 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v4 3/5] can-j1939: Import SAE J1939 stack
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v4%203/5%5D%20can-j1939%3A%20Import%20SAE%20J1939%20stack&In-Reply-To=%3C20110427085847.GD757%40kurt.e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005662.html">
+   <LINK REL="Next"  HREF="005664.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v4 3/5] can-j1939: Import SAE J1939 stack</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v4%203/5%5D%20can-j1939%3A%20Import%20SAE%20J1939%20stack&In-Reply-To=%3C20110427085847.GD757%40kurt.e-circ.dyndns.org%3E"
+       TITLE="[PATCH v4 3/5] can-j1939: Import SAE J1939 stack">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed Apr 27 10:58:47 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005662.html">[PATCH v4 2/5] can: add rtnetlink support
+</A></li>
+        <LI>Next message: <A HREF="005664.html">[PATCH v4 4/5] can-j1939: add documentation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5663">[ date ]</a>
+              <a href="thread.html#5663">[ thread ]</a>
+              <a href="subject.html#5663">[ subject ]</a>
+              <a href="author.html#5663">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Import SAE J1939
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+---
+ include/linux/can/Kbuild      |    1 +
+ include/linux/can/j1939.h     |   99 +++
+ net/can/Kconfig               |    1 +
+ net/can/Makefile              |    2 +
+ net/can/j1939/Kconfig         |   22 +
+ net/can/j1939/Makefile        |   14 +
+ net/can/j1939/address-claim.c |  227 +++++++
+ net/can/j1939/bus.c           |  523 +++++++++++++++
+ net/can/j1939/filter.c        |   76 +++
+ net/can/j1939/j1939-priv.h    |  314 +++++++++
+ net/can/j1939/main.c          |  458 +++++++++++++
+ net/can/j1939/proc.c          |  104 +++
+ net/can/j1939/promisc.c       |   43 ++
+ net/can/j1939/rtnl.c          |  308 +++++++++
+ net/can/j1939/socket.c        |  969 +++++++++++++++++++++++++++
+ net/can/j1939/transport.c     | 1449 +++++++++++++++++++++++++++++++++++++++++
+ 16 files changed, 4610 insertions(+), 0 deletions(-)
+ create mode 100644 include/linux/can/j1939.h
+ create mode 100644 net/can/j1939/Kconfig
+ create mode 100644 net/can/j1939/Makefile
+ create mode 100644 net/can/j1939/address-claim.c
+ create mode 100644 net/can/j1939/bus.c
+ create mode 100644 net/can/j1939/filter.c
+ create mode 100644 net/can/j1939/j1939-priv.h
+ create mode 100644 net/can/j1939/main.c
+ create mode 100644 net/can/j1939/proc.c
+ create mode 100644 net/can/j1939/promisc.c
+ create mode 100644 net/can/j1939/rtnl.c
+ create mode 100644 net/can/j1939/socket.c
+ create mode 100644 net/can/j1939/transport.c
+
+diff --git a/include/linux/can/Kbuild b/include/linux/can/Kbuild
+index 8cb05aa..0364eef 100644
+--- a/include/linux/can/Kbuild
++++ b/include/linux/can/Kbuild
+@@ -2,3 +2,4 @@ header-y += raw.h
+ header-y += bcm.h
+ header-y += error.h
+ header-y += netlink.h
++header-y += j1939.h
+diff --git a/include/linux/can/j1939.h b/include/linux/can/j1939.h
+new file mode 100644
+index 0000000..7ff419e
+--- /dev/null
++++ b/include/linux/can/j1939.h
+@@ -0,0 +1,99 @@
++/*
++ * j1939.h
++ *
++ * Copyright (c) 2010-2011 EIA Electronics
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ */
++
++#ifndef _J1939_H_
++#define _J1939_H_
++
++#include &lt;linux/types.h&gt;
++#include &lt;linux/socket.h&gt;
++#include &lt;linux/can.h&gt;
++
++#define J1939_IDLE_ADDR	0xfe
++#define J1939_NO_ADDR	0xff
++#define J1939_NO_NAME	0
++#define J1939_NO_PGN	0x40000
++/*
++ * J1939 Parameter Group Number
++ *
++ * bit 0-7	: PDU Specific (PS)
++ * bit 8-15	: PDU Format (PF)
++ * bit 16	: Data Page (DP)
++ * bit 17	: Reserved (R)
++ * bit 19-31	: set to zero
++ */
++typedef __u32 pgn_t;
++
++/*
++ * J1939 Priority
++ *
++ * bit 0-2	: Priority (P)
++ * bit 3-7	: set to zero
++ */
++typedef __u8 priority_t;
++
++/*
++ * J1939 NAME
++ *
++ * bit 0-20	: Identity Number
++ * bit 21-31	: Manufacturer Code
++ * bit 32-34	: ECU Instance
++ * bit 35-39	: Function Instance
++ * bit 40-47	: Function
++ * bit 48	: Reserved
++ * bit 49-55	: Vehicle System
++ * bit 56-59	: Vehicle System Instance
++ * bit 60-62	: Industry Group
++ * bit 63	: Arbitrary Address Capable
++ */
++typedef __u64 name_t;
++
++/*
++ * J1939 socket options
++ */
++#define SOL_CAN_J1939 (SOL_CAN_BASE + CAN_J1939)
++enum {
++	SO_J1939_FILTER = 1,	/* set filters */
++	SO_J1939_PROMISC = 2,	/* set/clr promiscuous mode */
++	SO_J1939_RECV_OWN = 3,
++	SO_J1939_SEND_PRIO = 4,
++};
++
++enum {
++	SCM_J1939_DEST_ADDR = 1,
++	SCM_J1939_DEST_NAME = 2,
++	SCM_J1939_PRIO = 3,
++};
++
++struct j1939_filter {
++	name_t name;
++	name_t name_mask;
++	__u8 addr;
++	__u8 addr_mask;
++	pgn_t pgn;
++	pgn_t pgn_mask;
++};
++
++/*
++ * RTNETLINK
++ */
++enum {
++	IFLA_J1939_UNSPEC,
++	IFLA_J1939_ENABLE,
++	IFLA_J1939_MAX,
++};
++
++enum {
++	IFA_J1939_UNSPEC,
++	IFA_J1939_ADDR,
++	IFA_J1939_NAME,
++	IFA_J1939_MAX,
++};
++
++#endif /* _J1939_H_ */
+diff --git a/net/can/Kconfig b/net/can/Kconfig
+index 89395b2..7feb58c 100644
+--- a/net/can/Kconfig
++++ b/net/can/Kconfig
+@@ -40,5 +40,6 @@ config CAN_BCM
+	  CAN messages are used on the bus (e.g. in automotive environments).
+	  To use the Broadcast Manager, use AF_CAN with protocol CAN_BCM.
+ 
++source &quot;net/can/j1939/Kconfig&quot;
+ 
+ source &quot;drivers/net/can/Kconfig&quot;
+diff --git a/net/can/Makefile b/net/can/Makefile
+index 2d3894b..953d851 100644
+--- a/net/can/Makefile
++++ b/net/can/Makefile
+@@ -10,3 +10,5 @@ can-raw-y		:= raw.o
+ 
+ obj-$(CONFIG_CAN_BCM)	+= can-bcm.o
+ can-bcm-y		:= bcm.o
++
++obj-$(CONFIG_CAN_J1939)	+= j1939/
+diff --git a/net/can/j1939/Kconfig b/net/can/j1939/Kconfig
+new file mode 100644
+index 0000000..74d2a86
+--- /dev/null
++++ b/net/can/j1939/Kconfig
+@@ -0,0 +1,22 @@
++#
++# SAE J1939 network layer core configuration
++#
++
++config CAN_J1939
++	tristate &quot;SAE J1939&quot;
++	depends on CAN
++	---help---
++	  SAE J1939
++	  Say Y to have in-kernel support for j1939 socket type. This
++	  allows communication according to SAE j1939.
++	  The relevant parts in kernel are
++	  SAE j1939-21 (datalink &amp; transport protocol)
++	  &amp; SAE j1939-81 (network management).
++
++config CAN_J1939_DEBUG
++	bool &quot;debug SAE J1939&quot;
++	depends on CAN_J1939
++	default n
++	---help---
++	  Say Y to add extra debug code (via printk) in the j1939 stack
++
+diff --git a/net/can/j1939/Makefile b/net/can/j1939/Makefile
+new file mode 100644
+index 0000000..7ca2fc9
+--- /dev/null
++++ b/net/can/j1939/Makefile
+@@ -0,0 +1,14 @@
++
++obj-$(CONFIG_CAN_J1939)	+= can-j1939.o
++
++can-j1939-objs := main.o \
++	proc.o bus.o \
++	rtnl.o \
++	socket.o \
++	address-claim.o transport.o \
++	promisc.o filter.o
++
++ifeq ($(CONFIG_CAN_J1939_DEBUG),y)
++	EXTRA_CFLAGS += -DDEBUG
++endif
++
+diff --git a/net/can/j1939/address-claim.c b/net/can/j1939/address-claim.c
+new file mode 100644
+index 0000000..826c7e9
+--- /dev/null
++++ b/net/can/j1939/address-claim.c
+@@ -0,0 +1,227 @@
++/*
++ * Copyright (c) 2010-2011 EIA Electronics
++ *
++ * Authors:
++ * Pieter Beyens &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">pieter.beyens at eia.be</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ */
++
++/*
++ * J1939 Address Claiming.
++ * Address Claiming in the kernel
++ * - keeps track of the AC states of ECU's,
++ * - resolves NAME&lt;=&gt;SA taking into account the AC states of ECU's.
++ *
++ * All Address Claim msgs (including host-originated msg) are processed
++ * at the receive path (a sent msg is always received again via CAN echo).
++ * As such, the processing of AC msgs is done in the order on which msgs
++ * are sent on the bus.
++ *
++ * This module doesn't send msgs itself (e.g. replies on Address Claims),
++ * this is the responsibility of a user space application or daemon.
++ */
++
++#include &lt;linux/skbuff.h&gt;
++#include &lt;linux/byteorder/generic.h&gt;
++
++#include &quot;j1939-priv.h&quot;
++
++#define CANDATA2NAME(data) le64_to_cpup((uint64_t *)data)
++
++static inline int ac_msg_is_request_for_ac(struct sk_buff *skb)
++{
++	struct j1939_sk_buff_cb *sk_addr = (void *)skb-&gt;cb;
++	int req_pgn;
++
++	if ((skb-&gt;len &lt; 3) || (sk_addr-&gt;pgn != PGN_REQUEST))
++		return 0;
++	req_pgn = skb-&gt;data[0] | (skb-&gt;data[1] &lt;&lt; 8) | (skb-&gt;data[2] &lt;&lt; 16);
++	return req_pgn = PGN_ADDRESS_CLAIMED;
++}
++
++static int j1939_verify_outgoing_address_claim(struct sk_buff *skb)
++{
++	struct j1939_sk_buff_cb *sk_addr = (void *)skb-&gt;cb;
++
++	if (skb-&gt;len != 8) {
++		j1939_notice(&quot;tx address claim with dlc %i\n&quot;, skb-&gt;len);
++		return -EPROTO;
++	}
++
++	if (sk_addr-&gt;src.name != CANDATA2NAME(skb-&gt;data)) {
++		j1939_notice(&quot;tx address claim with different name\n&quot;);
++		return -EPROTO;
++	}
++
++	if (sk_addr-&gt;src.addr == J1939_NO_ADDR) {
++		j1939_notice(&quot;tx address claim with broadcast sa\n&quot;);
++		return -EPROTO;
++	}
++
++	/* ac must always be a broadcast */
++	if (sk_addr-&gt;dst.name || (sk_addr-&gt;dst.addr != J1939_NO_ADDR)) {
++		j1939_notice(&quot;tx address claim with dest, not broadcast\n&quot;);
++		return -EPROTO;
++	}
++	return 0;
++}
++
++int j1939_send_address_claim(struct sk_buff *skb)
++{
++	int ret, sa;
++	struct j1939_sk_buff_cb *sk_addr = (void *)skb-&gt;cb;
++
++	/* network mgmt: address claiming msgs */
++	if (sk_addr-&gt;pgn == PGN_ADDRESS_CLAIMED) {
++		struct j1939_ecu *ecu;
++
++		ret = j1939_verify_outgoing_address_claim(skb);
++		/* return both when failure &amp; when successfull */
++		if (ret &lt; 0)
++			return ret;
++		ecu = j1939_ecu_find_by_name(sk_addr-&gt;src.name,
++				sk_addr-&gt;ifindex);
++		if (!ecu)
++			return -ENODEV;
++		if (!(ecu-&gt;flags &amp; ECUFLAG_LOCAL)) {
++			put_j1939_ecu(ecu);
++			return -EREMOTE;
++		}
++
++		if (ecu-&gt;sa != sk_addr-&gt;src.addr)
++			/* hold further traffic for ecu, remove from parent */
++			j1939_ecu_remove_sa(ecu);
++		put_j1939_ecu(ecu);
++	} else if (sk_addr-&gt;src.name) {
++		/* assign source address */
++		sa = j1939_name_to_sa(sk_addr-&gt;src.name, sk_addr-&gt;ifindex);
++		if (!j1939_address_is_unicast(sa) &amp;&amp;
++				!ac_msg_is_request_for_ac(skb)) {
++			j1939_notice(&quot;tx drop: invalid sa for name &quot;
++					&quot;0x%016llx\n&quot;, sk_addr-&gt;src.name);
++			return -EADDRNOTAVAIL;
++		}
++		sk_addr-&gt;src.addr = sa;
++	}
++
++	/* assign destination address */
++	if (sk_addr-&gt;dst.name) {
++		sa = j1939_name_to_sa(sk_addr-&gt;dst.name, sk_addr-&gt;ifindex);
++		if (!j1939_address_is_unicast(sa)) {
++			j1939_notice(&quot;tx drop: invalid da for name &quot;
++					&quot;0x%016llx\n&quot;, sk_addr-&gt;dst.name);
++			return -EADDRNOTAVAIL;
++		}
++		sk_addr-&gt;dst.addr = sa;
++	}
++	return 0;
++}
++
++static struct j1939_ecu *j1939_process_address_claim(struct sk_buff *skb)
++{
++	struct j1939_sk_buff_cb *sk_addr = (void *)skb-&gt;cb;
++	struct j1939_ecu *ecu, *dut, **pref;
++	name_t name;
++
++	if (skb-&gt;len &lt; 8) {
++		j1939_notice(&quot;rx address claim with wrong dlc %i\n&quot;, skb-&gt;len);
++		return ERR_PTR(-EPROTO);
++	}
++
++	name = CANDATA2NAME(skb-&gt;data);
++	if (!name) {
++		j1939_notice(&quot;rx address claim without name\n&quot;);
++		return ERR_PTR(-EPROTO);
++	}
++
++	if (!j1939_address_is_valid(sk_addr-&gt;src.addr)) {
++		j1939_notice(&quot;rx address claim with broadcast sa\n&quot;);
++		return ERR_PTR(-EPROTO);
++	}
++
++	ecu = j1939_ecu_get_register(name, sk_addr-&gt;ifindex, ECUFLAG_REMOTE, 1);
++	if (IS_ERR(ecu))
++		return ecu;
++	if ((ecu-&gt;flags &amp; ECUFLAG_LOCAL) &amp;&amp; !skb-&gt;sk)
++		j1939_warning(&quot;duplicate name on the bus %016llx!\n&quot;,
++				(long long)name);
++
++	if (sk_addr-&gt;src.addr &gt;= J1939_IDLE_ADDR) {
++		j1939_ecu_remove_sa(ecu);
++		if (ecu-&gt;flags &amp; ECUFLAG_REMOTE)
++			/* extra put =&gt; schedule removal */
++			j1939_ecu_unregister(ecu);
++		return ecu;
++	}
++
++	write_lock_bh(&amp;ecu-&gt;parent-&gt;lock);
++	/* save new SA */
++	if (sk_addr-&gt;src.addr != ecu-&gt;sa)
++		j1939_ecu_remove_sa_locked(ecu);
++	ecu-&gt;sa = sk_addr-&gt;src.addr;
++	/* iterate this segment */
++	list_for_each_entry(dut, &amp;ecu-&gt;parent-&gt;ecus, list) {
++		/* cancel pending claims for this SA */
++		/* this includes myself ! */
++		if (ecu-&gt;sa == dut-&gt;sa)
++			/*
++			 * cancel pending claims for our new SA
++			 * this includes 'ecu', since we will
++			 * schedule a timer soon now
++			 */
++			hrtimer_try_to_cancel(&amp;dut-&gt;ac_timer);
++		if (dut-&gt;name &gt; ecu-&gt;name)
++			dut-&gt;sa = J1939_IDLE_ADDR;
++	}
++
++	pref = &amp;ecu-&gt;parent-&gt;ents[sk_addr-&gt;src.addr].ecu;
++	if (*pref &amp;&amp; ((*pref)-&gt;name &gt; ecu-&gt;name))
++		*pref = NULL;
++
++	/* schedule timer in 250 msec to commit address change */
++	hrtimer_start(&amp;ecu-&gt;ac_timer, ktime_set(0, 250000000),
++			HRTIMER_MODE_REL);
++	write_unlock_bh(&amp;ecu-&gt;parent-&gt;lock);
++
++	return ecu;
++}
++
++int j1939_recv_address_claim(struct sk_buff *skb)
++{
++	struct j1939_sk_buff_cb *sk_addr = (void *)skb-&gt;cb;
++	struct j1939_ecu *ecu;
++
++	/*
++	 * network mgmt
++	 */
++	if (sk_addr-&gt;pgn == PGN_ADDRESS_CLAIMED) {
++		ecu = j1939_process_address_claim(skb);
++		if (IS_ERR(ecu))
++			return PTR_ERR(ecu);
++	} else if (j1939_address_is_unicast(sk_addr-&gt;src.addr)) {
++		ecu = j1939_ecu_find_by_addr(sk_addr-&gt;src.addr,
++				sk_addr-&gt;ifindex);
++	} else {
++		ecu = NULL;
++	}
++
++	/* assign source stuff */
++	if (ecu) {
++		ecu-&gt;rxtime = ktime_get();
++		sk_addr-&gt;src.flags = ecu-&gt;flags;
++		sk_addr-&gt;src.name = ecu-&gt;name;
++		put_j1939_ecu(ecu);
++	}
++	/* assign destination stuff */
++	ecu = j1939_ecu_find_by_addr(sk_addr-&gt;dst.addr, sk_addr-&gt;ifindex);
++	if (ecu) {
++		sk_addr-&gt;dst.flags = ecu-&gt;flags;
++		sk_addr-&gt;dst.name = ecu-&gt;name;
++		put_j1939_ecu(ecu);
++	}
++	return 0;
++}
++
+diff --git a/net/can/j1939/bus.c b/net/can/j1939/bus.c
+new file mode 100644
+index 0000000..c51245d
+--- /dev/null
++++ b/net/can/j1939/bus.c
+@@ -0,0 +1,523 @@
++/*
++ * Copyright (c) 2010-2011 EIA Electronics
++ *
++ * Authors:
++ * Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ */
++
++/*
++ * j1939-bus.c - bus for j1939 remote devices
++ * Since rtnetlink, no real bus is used.
++ */
++
++#include &lt;linux/version.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/init.h&gt;
++#include &lt;linux/err.h&gt;
++#include &lt;linux/workqueue.h&gt;
++
++#include &quot;j1939-priv.h&quot;
++
++#define jseg_dbg(jseg, fmt, ...) \
++	pr_debug(&quot;j1939-%i: &quot; fmt, (jseg)-&gt;ifindex, ##__VA_ARGS__)
++
++#define ecu_dbg(ecu, fmt, ...) \
++	pr_debug(&quot;j1939-%i,%016llx,%02x: &quot; fmt, (ecu)-&gt;parent-&gt;ifindex, \
++		(ecu)-&gt;name, (ecu)-&gt;sa, ##__VA_ARGS__)
++#define ecu_alert(ecu, fmt, ...) \
++	pr_alert(&quot;j1939-%i,%016llx,%02x: &quot; fmt, (ecu)-&gt;parent-&gt;ifindex, \
++		(ecu)-&gt;name, (ecu)-&gt;sa, ##__VA_ARGS__)
++
++static struct {
++	struct list_head list;
++	spinlock_t lock;
++} segments;
++
++struct j1939_segment *j1939_segment_find(int ifindex)
++{
++	struct j1939_segment *jseg;
++
++	spin_lock_bh(&amp;segments.lock);
++	list_for_each_entry(jseg, &amp;segments.list, flist) {
++		if (jseg-&gt;ifindex == ifindex) {
++			get_j1939_segment(jseg);
++			goto found;
++		}
++	}
++	jseg = NULL;
++found:
++	spin_unlock_bh(&amp;segments.lock);
++	return jseg;
++}
++
++/*
++ * iterate over ECU's,
++ * and register flagged ecu's on their claimed SA
++ */
++static void j1939_segment_ac_task(unsigned long val)
++{
++	struct j1939_segment *jseg = (void *)val;
++	struct j1939_ecu *ecu;
++
++	write_lock_bh(&amp;jseg-&gt;lock);
++	list_for_each_entry(ecu, &amp;jseg-&gt;ecus, list) {
++		/* next 2 (read &amp; set) could be merged into xxx? */
++		if (!atomic_read(&amp;ecu-&gt;ac_delay_expired))
++			continue;
++		atomic_set(&amp;ecu-&gt;ac_delay_expired, 0);
++		if (j1939_address_is_unicast(ecu-&gt;sa))
++			ecu-&gt;parent-&gt;ents[ecu-&gt;sa].ecu = ecu;
++	}
++	write_unlock_bh(&amp;jseg-&gt;lock);
++}
++/*
++ * segment device interface
++ */
++static void cb_put_j1939_segment(struct kref *kref)
++{
++	struct j1939_segment *jseg =
++		container_of(kref, struct j1939_segment, kref);
++
++	tasklet_disable_nosync(&amp;jseg-&gt;ac_task);
++	kfree(jseg);
++}
++
++void put_j1939_segment(struct j1939_segment *segment)
++{
++	kref_put(&amp;segment-&gt;kref, cb_put_j1939_segment);
++}
++
++int j1939_segment_register(struct net_device *netdev)
++{
++	int ret;
++	struct j1939_segment *jseg;
++
++	jseg = j1939_segment_find(netdev-&gt;ifindex);
++	if (jseg) {
++		put_j1939_segment(jseg);
++		ret = -EALREADY;
++		goto fail_exist;
++	}
++	jseg = kzalloc(sizeof(*jseg), GFP_KERNEL);
++	if (!jseg) {
++		ret = -ENOMEM;
++		goto fail_malloc;
++	}
++	tasklet_init(&amp;jseg-&gt;ac_task, j1939_segment_ac_task,
++			(unsigned long)jseg);
++	rwlock_init(&amp;jseg-&gt;lock);
++	INIT_LIST_HEAD(&amp;jseg-&gt;ecus);
++	INIT_LIST_HEAD(&amp;jseg-&gt;flist);
++	jseg-&gt;ifindex = netdev-&gt;ifindex;
++
++	kref_init(&amp;jseg-&gt;kref);
++
++	spin_lock_bh(&amp;segments.lock);
++	list_add_tail(&amp;jseg-&gt;flist, &amp;segments.list);
++	spin_unlock_bh(&amp;segments.lock);
++
++	jseg_dbg(jseg, &quot;register\n&quot;);
++	return 0;
++
++fail_malloc:
++fail_exist:
++	return ret;
++}
++
++void j1939_segment_unregister(struct j1939_segment *jseg)
++{
++	struct j1939_ecu *ecu;
++
++	if (!jseg)
++		return;
++
++	spin_lock_bh(&amp;segments.lock);
++	list_del_init(&amp;jseg-&gt;flist);
++	spin_unlock_bh(&amp;segments.lock);
++
++	write_lock_bh(&amp;jseg-&gt;lock);
++	while (!list_empty(&amp;jseg-&gt;ecus)) {
++		ecu = list_first_entry(&amp;jseg-&gt;ecus, struct j1939_ecu, list);
++		write_unlock_bh(&amp;jseg-&gt;lock);
++		j1939_ecu_unregister(ecu);
++		write_lock_bh(&amp;jseg-&gt;lock);
++	}
++	write_unlock_bh(&amp;jseg-&gt;lock);
++	jseg_dbg(jseg, &quot;unregister\n&quot;);
++	put_j1939_segment(jseg);
++}
++
++/*
++ * ECU device interface
++ */
++static enum hrtimer_restart j1939_ecu_timer_handler(struct hrtimer *hrtimer)
++{
++	struct j1939_ecu *ecu =
++		container_of(hrtimer, struct j1939_ecu, ac_timer);
++
++	atomic_set(&amp;ecu-&gt;ac_delay_expired, 1);
++	tasklet_schedule(&amp;ecu-&gt;parent-&gt;ac_task);
++	return HRTIMER_NORESTART;
++}
++
++static void cb_put_j1939_ecu(struct kref *kref)
++{
++	struct j1939_ecu *ecu =container_of(kref, struct j1939_ecu, kref);
++
++	kfree(ecu);
++}
++void put_j1939_ecu(struct j1939_ecu *ecu)
++{
++	kref_put(&amp;ecu-&gt;kref, cb_put_j1939_ecu);
++}
++
++struct j1939_ecu *j1939_ecu_get_register(name_t name, int ifindex, int flags,
++		int return_existing)
++{
++	struct j1939_segment *parent;
++	struct j1939_ecu *ecu, *dut;
++
++	if (!ifindex || !name) {
++		pr_alert(&quot;%s(%i, %016llx) invalid\n&quot;,
++				__func__, ifindex, (long long)name);
++		return ERR_PTR(-EINVAL);
++	}
++
++	parent = j1939_segment_find(ifindex);
++	if (!parent) {
++		pr_alert(&quot;%s %i: segment not found\n&quot;, __func__, ifindex);
++		return ERR_PTR(-EINVAL);
++	}
++	if (return_existing) {
++		read_lock_bh(&amp;parent-&gt;lock);
++		/* test for existing name */
++		list_for_each_entry(dut, &amp;parent-&gt;ecus, list) {
++			if (dut-&gt;name == name) {
++				get_j1939_ecu(dut);
++				read_unlock_bh(&amp;parent-&gt;lock);
++				return dut;
++			}
++		}
++		read_unlock_bh(&amp;parent-&gt;lock);
++	}
++	/* alloc */
++	ecu = kzalloc(sizeof(*ecu), gfp_any());
++	if (!ecu)
++		/* should we look for an existing ecu */
++		return ERR_PTR(-ENOMEM);
++	kref_init(&amp;ecu-&gt;kref);
++	ecu-&gt;sa = J1939_IDLE_ADDR;
++	ecu-&gt;name = name;
++	ecu-&gt;flags = flags;
++
++	hrtimer_init(&amp;ecu-&gt;ac_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
++	ecu-&gt;ac_timer.function = j1939_ecu_timer_handler;
++	INIT_LIST_HEAD(&amp;ecu-&gt;list);
++
++	/* first add to internal list */
++	write_lock_bh(&amp;parent-&gt;lock);
++	/* test for duplicate name */
++	list_for_each_entry(dut, &amp;parent-&gt;ecus, list) {
++		if (dut-&gt;name == ecu-&gt;name)
++			goto duplicate;
++	}
++	get_j1939_ecu(ecu);
++	/* a ref to parent is held */
++	ecu-&gt;parent = parent;
++	list_add_tail(&amp;ecu-&gt;list, &amp;parent-&gt;ecus);
++	write_unlock_bh(&amp;parent-&gt;lock);
++	ecu_dbg(ecu, &quot;register\n&quot;);
++	return ecu;
++
++duplicate:
++	get_j1939_ecu(dut);
++	write_unlock_bh(&amp;parent-&gt;lock);
++	put_j1939_segment(parent);
++	if (return_existing)
++		return dut;
++	ecu_alert(ecu, &quot;duplicate name\n&quot;);
++	put_j1939_ecu(ecu);
++	return ERR_PTR(-EEXIST);
++}
++
++void j1939_ecu_unregister(struct j1939_ecu *ecu)
++{
++	BUG_ON(!ecu);
++	ecu_dbg(ecu, &quot;unregister\n&quot;);
++	hrtimer_try_to_cancel(&amp;ecu-&gt;ac_timer);
++
++	write_lock_bh(&amp;ecu-&gt;parent-&gt;lock);
++	j1939_ecu_remove_sa_locked(ecu);
++	list_del_init(&amp;ecu-&gt;list);
++	write_unlock_bh(&amp;ecu-&gt;parent-&gt;lock);
++	/* put segment, reverting the effect done by ..._register() */
++	put_j1939_segment(ecu-&gt;parent);
++	put_j1939_ecu(ecu);
++}
++
++struct j1939_ecu *j1939_ecu_find_by_addr(int sa, int ifindex)
++{
++	struct j1939_ecu *ecu;
++	struct j1939_segment *parent;
++
++	if (!j1939_address_is_unicast(sa))
++		return NULL;
++	parent = j1939_segment_find(ifindex);
++	if (!parent)
++		return NULL;
++	read_lock_bh(&amp;parent-&gt;lock);
++	ecu = parent-&gt;ents[sa].ecu;
++	if (ecu)
++		get_j1939_ecu(ecu);
++	read_unlock_bh(&amp;parent-&gt;lock);
++	put_j1939_segment(parent);
++	return ecu;
++}
++
++int j1939_name_to_sa(uint64_t name, int ifindex)
++{
++	struct j1939_ecu *ecu;
++	struct j1939_segment *parent;
++	int sa;
++
++	if (!name)
++		return J1939_IDLE_ADDR;
++	parent = j1939_segment_find(ifindex);
++	if (!parent)
++		return J1939_IDLE_ADDR;
++
++	sa = J1939_IDLE_ADDR;
++	read_lock_bh(&amp;parent-&gt;lock);
++	list_for_each_entry(ecu, &amp;parent-&gt;ecus, list) {
++		if (ecu-&gt;name == name) {
++			if ((sa == J1939_IDLE_ADDR) &amp;&amp;
++			    (parent-&gt;ents[ecu-&gt;sa].ecu == ecu))
++				/* ecu's SA is registered */
++				sa = ecu-&gt;sa;
++			break;
++		}
++	}
++	read_unlock_bh(&amp;parent-&gt;lock);
++	put_j1939_segment(parent);
++	return sa;
++}
++
++struct j1939_ecu *j1939_ecu_find_segment_default_tx(int ifindex,
++		name_t *name, uint8_t *addr)
++{
++	struct j1939_ecu *ecu;
++	struct j1939_segment *parent;
++	struct addr_ent *paddr;
++	int j;
++
++	if (ifindex &lt;= 0)
++		return ERR_PTR(-EINVAL);
++	parent = j1939_segment_find(ifindex);
++	if (!parent)
++		return ERR_PTR(-ENETUNREACH);
++	read_lock_bh(&amp;parent-&gt;lock);
++	list_for_each_entry(ecu, &amp;parent-&gt;ecus, list) {
++		if (ecu-&gt;flags &amp; ECUFLAG_LOCAL) {
++			get_j1939_ecu(ecu);
++			if (name)
++				*name = ecu-&gt;name;
++			if (addr)
++				*addr = ecu-&gt;sa;
++			goto found;
++		}
++	}
++	ecu = NULL;
++	for (j = 0, paddr = parent-&gt;ents; j &lt; J1939_IDLE_ADDR; ++j, ++paddr) {
++		if (paddr-&gt;ecu)
++			continue;
++		if (paddr-&gt;flags &amp; ECUFLAG_LOCAL) {
++			if (name)
++				*name = 0;
++			if (addr)
++				*addr = j;
++			goto found;
++		}
++	}
++	ecu = ERR_PTR(-EHOSTDOWN);
++found:
++	read_unlock_bh(&amp;parent-&gt;lock);
++	put_j1939_segment(parent);
++	return ecu;
++}
++
++/* ecu lookup helper */
++static struct j1939_ecu *_j1939_ecu_find_by_name(name_t name,
++		struct j1939_segment *jseg)
++{
++	struct j1939_ecu *ecu;
++
++	read_lock_bh(&amp;jseg-&gt;lock);
++	list_for_each_entry(ecu, &amp;jseg-&gt;ecus, list) {
++		if (ecu-&gt;name == name) {
++			get_j1939_ecu(ecu);
++			goto found_on_intf;
++		}
++	}
++	ecu = NULL;
++found_on_intf:
++	read_unlock_bh(&amp;jseg-&gt;lock);
++	return ecu;
++}
++
++/* ecu lookup by name */
++struct j1939_ecu *j1939_ecu_find_by_name(name_t name, int ifindex)
++{
++	struct j1939_ecu *ecu;
++	struct j1939_segment *jseg;
++
++	if (!name)
++		return NULL;
++	if (ifindex) {
++		jseg = j1939_segment_find(ifindex);
++		if (!jseg)
++			return NULL;
++		ecu = _j1939_ecu_find_by_name(name, jseg);
++		put_j1939_segment(jseg);
++		return ecu;
++	}
++	/* iterate segments */
++	spin_lock_bh(&amp;segments.lock);
++	list_for_each_entry(jseg, &amp;segments.list, flist) {
++		get_j1939_segment(jseg);
++		ecu = _j1939_ecu_find_by_name(name, jseg);
++		put_j1939_segment(jseg);
++		if (ecu)
++			goto found;
++	}
++	ecu = NULL;
++found:
++	spin_unlock_bh(&amp;segments.lock);
++	return ecu;
++}
++
++/* PROC */
++static int j1939_proc_addr(struct seq_file *sqf, void *v)
++{
++	struct j1939_segment *jseg;
++	struct net_device *netdev;
++	struct addr_ent *paddr;
++	int j, flags;
++	ktime_t now;
++	struct timeval tv;
++
++	now = ktime_get();
++	seq_printf(sqf, &quot;iface\tSA\tflags\trxtime\n&quot;);
++	spin_lock_bh(&amp;segments.lock);
++	list_for_each_entry(jseg, &amp;segments.list, flist) {
++		get_j1939_segment(jseg);
++		netdev = dev_get_by_index(&amp;init_net, jseg-&gt;ifindex);
++		if (!netdev) {
++			pr_alert(&quot;j1939 proc: ifindex %i not found\n&quot;,
++				jseg-&gt;ifindex);
++			put_j1939_segment(jseg);
++			continue;
++		}
++		read_lock_bh(&amp;jseg-&gt;lock);
++		for (j = 0, paddr = jseg-&gt;ents; j &lt; J1939_IDLE_ADDR;
++				++j, ++paddr) {
++			flags = paddr-&gt;flags;
++			if (paddr-&gt;ecu)
++				flags |= paddr-&gt;ecu-&gt;flags;
++			tv = ktime_to_timeval(ktime_sub(now, paddr-&gt;rxtime));
++			if (!paddr-&gt;flags &amp;&amp; !paddr-&gt;ecu)
++				continue;
++			seq_printf(sqf, &quot;%s\t%02x\t%c%c%c%c\t-%lu.%06lu\n&quot;,
++				netdev-&gt;name, j,
++				(flags &amp; ECUFLAG_LOCAL) ? 'L' : '-',
++				(flags &amp; ECUFLAG_REMOTE) ? 'R' : '-',
++				(paddr-&gt;flags) ? 'S' : '-',
++				paddr-&gt;ecu ? 'E' : '-',
++				tv.tv_sec, tv.tv_usec);
++		}
++		read_unlock_bh(&amp;jseg-&gt;lock);
++		dev_put(netdev);
++		put_j1939_segment(jseg);
++	}
++	spin_unlock_bh(&amp;segments.lock);
++	return 0;
++}
++
++static int j1939_proc_ecu(struct seq_file *sqf, void *v)
++{
++	struct j1939_segment *jseg;
++	struct j1939_ecu *ecu;
++	struct net_device *netdev;
++	ktime_t now;
++	struct timeval tv;
++	char sa[4];
++
++	now = ktime_get();
++	seq_printf(sqf, &quot;iface\taddr\tname\tflags\trxtime\n&quot;);
++	spin_lock_bh(&amp;segments.lock);
++	list_for_each_entry(jseg, &amp;segments.list, flist) {
++		get_j1939_segment(jseg);
++		netdev = dev_get_by_index(&amp;init_net, jseg-&gt;ifindex);
++		if (!netdev) {
++			pr_alert(&quot;j1939 proc: ifindex %i not found\n&quot;,
++				jseg-&gt;ifindex);
++			put_j1939_segment(jseg);
++			continue;
++		}
++		read_lock_bh(&amp;jseg-&gt;lock);
++		list_for_each_entry(ecu, &amp;jseg-&gt;ecus, list) {
++			tv = ktime_to_timeval(ktime_sub(now, ecu-&gt;rxtime));
++			if (j1939_address_is_unicast(ecu-&gt;sa) &amp;&amp;
++				(ecu-&gt;parent-&gt;ents[ecu-&gt;sa].ecu == ecu))
++				snprintf(sa, sizeof(sa), &quot;%02x&quot;, ecu-&gt;sa);
++			else
++				strcpy(sa, &quot;-&quot;);
++			seq_printf(sqf, &quot;%s\t%s\t%016llx\t%c\t-%lu.%06lu\n&quot;,
++				netdev-&gt;name, sa,
++				(unsigned long long)ecu-&gt;name,
++				(ecu-&gt;flags &amp; ECUFLAG_LOCAL) ? 'L' : 'R',
++				tv.tv_sec, tv.tv_usec);
++		}
++		read_unlock_bh(&amp;jseg-&gt;lock);
++		dev_put(netdev);
++		put_j1939_segment(jseg);
++	}
++	spin_unlock_bh(&amp;segments.lock);
++	return 0;
++}
++
++/* exported init */
++int __init j1939bus_module_init(void)
++{
++	INIT_LIST_HEAD(&amp;segments.list);
++	spin_lock_init(&amp;segments.lock);
++	j1939_proc_add(&quot;addr&quot;, j1939_proc_addr, NULL);
++	j1939_proc_add(&quot;ecu&quot;, j1939_proc_ecu, NULL);
++	return 0;
++}
++
++void j1939bus_module_exit(void)
++{
++	struct j1939_segment *jseg;
++	struct net_device *netdev;
++
++	spin_lock_bh(&amp;segments.lock);
++	while (!list_empty(&amp;segments.list)) {
++		jseg = list_first_entry(&amp;segments.list,
++				struct j1939_segment, flist);
++		netdev = dev_get_by_index(&amp;init_net, jseg-&gt;ifindex);
++		spin_unlock_bh(&amp;segments.lock);
++		j1939_segment_detach(netdev);
++		dev_put(netdev);
++		spin_lock_bh(&amp;segments.lock);
++	}
++	spin_unlock_bh(&amp;segments.lock);
++
++	j1939_proc_remove(&quot;ecu&quot;);
++	j1939_proc_remove(&quot;addr&quot;);
++}
++
++
+diff --git a/net/can/j1939/filter.c b/net/can/j1939/filter.c
+new file mode 100644
+index 0000000..c10f7b9
+--- /dev/null
++++ b/net/can/j1939/filter.c
+@@ -0,0 +1,76 @@
++/*
++ * Copyright (c) 2010-2011 EIA Electronics
++ *
++ * Authors:
++ * Pieter Beyens &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">pieter.beyens at eia.be</A>&gt;
++ * Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ */
++
++#include &lt;linux/list.h&gt;
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/slab.h&gt;
++#include &lt;linux/skbuff.h&gt;
++#include &lt;linux/spinlock.h&gt;
++
++#include &quot;j1939-priv.h&quot;
++
++static LIST_HEAD(filters);
++DEFINE_RWLOCK(j1939_receiver_rwlock); /* protects the filter list */
++
++struct filter {
++	struct list_head list;
++	void *vp;
++	void (*fn)(struct sk_buff *, void *);
++};
++
++int j1939_recv_distribute(struct sk_buff *skb)
++{
++	struct filter *filter;
++
++	read_lock_bh(&amp;j1939_receiver_rwlock);
++	list_for_each_entry(filter, &amp;filters, list)
++		filter-&gt;fn(skb, filter-&gt;vp);
++	read_unlock_bh(&amp;j1939_receiver_rwlock);
++
++	return 0;
++}
++
++int j1939_recv_add(void *vp, void (*fn)(struct sk_buff *, void *))
++{
++	struct filter *f;
++
++	f = kzalloc(sizeof(*f), GFP_KERNEL);
++	if (!f)
++		return -ENOMEM;
++
++	f-&gt;vp = vp;
++	f-&gt;fn = fn;
++
++	j1939_recv_suspend();
++	list_add(&amp;f-&gt;list, &amp;filters);
++	j1939_recv_resume();
++	return 0;
++}
++
++int j1939_recv_remove(void *vp, void (*fn)(struct sk_buff *, void *))
++{
++	struct filter *filter;
++	int found = 0;
++
++	j1939_recv_suspend();
++	list_for_each_entry(filter, &amp;filters, list) {
++		if ((filter-&gt;vp == vp) &amp;&amp; (filter-&gt;fn == fn)) {
++			list_del_init(&amp;filter-&gt;list);
++			kfree(filter);
++			found = 1;
++			break;
++		}
++	}
++	j1939_recv_resume();
++	return found ? 0 : -ENOENT;
++}
++
+diff --git a/net/can/j1939/j1939-priv.h b/net/can/j1939/j1939-priv.h
+new file mode 100644
+index 0000000..3531ee5
+--- /dev/null
++++ b/net/can/j1939/j1939-priv.h
+@@ -0,0 +1,314 @@
++/*
++ * j1939-priv.h
++ *
++ * Copyright (c) 2010-2011 EIA Electronics
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ */
++
++#ifndef _J1939_PRIV_H_
++#define _J1939_PRIV_H_
++
++#include &lt;linux/kref.h&gt;
++#include &lt;linux/list.h&gt;
++#include &lt;net/sock.h&gt;
++
++#include &lt;linux/seq_file.h&gt;
++#include &lt;linux/proc_fs.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/can/j1939.h&gt;
++#include &lt;linux/atomic.h&gt;
++
++/* TODO: return ENETRESET on busoff. */
++
++#define ECUFLAG_LOCAL	0x01
++#define ECUFLAG_REMOTE	0x02
++
++#define PGN_REQUEST		0x0ea00
++#define PGN_ADDRESS_CLAIMED	0x0ee00
++#define PGN_MAX			0x3ffff
++
++#define SA_MAX_UNICAST	0xfd
++/*
++ * j1939 devices
++ */
++struct j1939_ecu {
++	struct list_head list;
++	ktime_t rxtime;
++	name_t name;
++	int flags;
++	uint8_t sa;
++	/*
++	 * atomic flag, set by ac_timer
++	 * cleared/processed by segment's tasklet
++	 * indicates that this ecu successfully claimed @sa as its address
++	 * By communicating this from the ac_timer event to segments tasklet,
++	 * a context locking problem is solved. All other 'ecu readers'
++	 * must only lock with _bh, not with _irq.
++	 */
++	atomic_t ac_delay_expired;
++	struct hrtimer ac_timer;
++	struct kref kref;
++	struct j1939_segment *parent;
++};
++#define to_j1939_ecu(x) container_of((x), struct j1939_ecu, dev)
++
++struct j1939_segment {
++	struct list_head ecus; /*
++	 * local list entry in parent
++	 * These allow irq (&amp; softirq) context lookups on j1939 devices
++	 * This approach (seperate lists) is done as the other 2 alternatives
++	 * are not easier or even wrong
++	 * 1) using the pure kobject methods involves mutexes, which are not
++	 *    allowed in irq context.
++	 * 2) duplicating data structures would require a lot of synchronization
++	 *    code
++	 * usage:
++	 */
++	rwlock_t lock; /*
++	 * segments need a lock to protect the above list
++	 */
++	struct list_head flist; /*
++	 * list entry for use by interrupt lookup routines
++	 */
++	int ifindex;
++	struct addr_ent {
++		ktime_t rxtime;
++		struct j1939_ecu *ecu;
++		int flags;
++	} ents[256];
++
++	/*
++	 * tasklet to process ecu address claimed events.
++	 * These events raise in hardirq context. Signalling the event
++	 * and scheduling this tasklet successfully moves the
++	 * event to softirq context
++	 */
++	struct tasklet_struct ac_task;
++	/*
++	 * list of 256 ecu ptrs, that cache the claimed addresses.
++	 * also protected by the above lock
++	 * don't use directly, use j1939_ecu_set_address() instead
++	 */
++	struct kref kref;
++};
++#define to_j1939_segment(x) container_of((x), struct j1939_segment, dev)
++
++extern void put_j1939_ecu(struct j1939_ecu *ecu);
++extern void put_j1939_segment(struct j1939_segment *segment);
++static inline struct j1939_ecu *get_j1939_ecu(struct j1939_ecu *dut)
++{
++	kref_get(&amp;dut-&gt;kref);
++	return dut;
++}
++static inline struct j1939_segment *get_j1939_segment(struct j1939_segment *dut)
++{
++	kref_get(&amp;dut-&gt;kref);
++	return dut;
++}
++
++/*
++ * conversion function between (struct sock | struct sk_buff)-&gt;sk_priority
++ * from linux and j1939 priority field
++ */
++static inline int j1939_prio(int sk_priority)
++{
++	if (sk_priority &lt; 0)
++		return 6; /* default */
++	else if (sk_priority &gt; 7)
++		return 0;
++	else
++		return 7 - sk_priority;
++}
++static inline int j1939_to_sk_priority(int j1939_prio)
++{
++	return 7 - j1939_prio;
++}
++
++static inline int j1939_address_is_valid(uint8_t sa)
++{
++	return sa != J1939_NO_ADDR;
++}
++
++static inline int j1939_address_is_unicast(uint8_t sa)
++{
++	return sa &lt;= SA_MAX_UNICAST;
++}
++
++static inline int pgn_is_pdu1(pgn_t pgn)
++{
++	/* ignore dp &amp; res bits for this */
++	return (pgn &amp; 0xff00) &lt; 0xf000;
++}
++
++static inline int pgn_is_valid(pgn_t pgn)
++{
++	return pgn &lt;= PGN_MAX;
++}
++
++/* utility to correctly unregister a SA */
++static inline void j1939_ecu_remove_sa_locked(struct j1939_ecu *ecu)
++{
++	if (!j1939_address_is_unicast(ecu-&gt;sa))
++		return;
++	if (ecu-&gt;parent-&gt;ents[ecu-&gt;sa].ecu == ecu)
++		ecu-&gt;parent-&gt;ents[ecu-&gt;sa].ecu = NULL;
++}
++
++static inline void j1939_ecu_remove_sa(struct j1939_ecu *ecu)
++{
++	if (!j1939_address_is_unicast(ecu-&gt;sa))
++		return;
++	write_lock_bh(&amp;ecu-&gt;parent-&gt;lock);
++	j1939_ecu_remove_sa_locked(ecu);
++	write_unlock_bh(&amp;ecu-&gt;parent-&gt;lock);
++}
++
++extern int j1939_name_to_sa(uint64_t name, int ifindex);
++extern struct j1939_ecu *j1939_ecu_find_by_addr(int sa, int ifindex);
++extern struct j1939_ecu *j1939_ecu_find_by_name(name_t name, int ifindex);
++/* find_by_name, with kref &amp; read_lock taken */
++extern struct j1939_ecu *j1939_ecu_find_segment_default_tx(
++		int ifindex, name_t *pname, uint8_t *paddr);
++
++extern void j1939_put_promisc_receiver(int ifindex);
++extern void j1939_get_promisc_receiver(int ifindex);
++
++extern int j1939_proc_add(const char *file,
++		int (*seq_show)(struct seq_file *sqf, void *v),
++		write_proc_t write);
++extern void j1939_proc_remove(const char *file);
++
++extern const char j1939_procname[];
++/* j1939 printk */
++#define j1939_printk(level, ...) printk(level &quot;J1939 &quot; __VA_ARGS__)
++
++#define j1939_err(...)		j1939_printk(KERN_ERR , __VA_ARGS__)
++#define j1939_warning(...)	j1939_printk(KERN_WARNING , __VA_ARGS__)
++#define j1939_notice(...)	j1939_printk(KERN_NOTICE , __VA_ARGS__)
++#define j1939_info(...)		j1939_printk(KERN_INFO , __VA_ARGS__)
++#ifdef DEBUG
++#define j1939_debug(...)	j1939_printk(KERN_DEBUG , __VA_ARGS__)
++#else
++#define j1939_debug(...)
++#endif
++
++struct sk_buff;
++
++/* control buffer of the sk_buff */
++struct j1939_sk_buff_cb {
++	int ifindex;
++	priority_t priority;
++	struct {
++		name_t name;
++		uint8_t addr;
++		int flags;
++	} src, dst;
++	pgn_t pgn;
++	int msg_flags;
++	/* for tx, MSG_SYN will be used to sync on sockets */
++};
++#define J1939_MSG_RESERVED	MSG_SYN
++#define J1939_MSG_SYNC		MSG_SYN
++
++static inline int j1939cb_is_broadcast(const struct j1939_sk_buff_cb *cb)
++{
++	return (!cb-&gt;dst.name &amp;&amp; (cb-&gt;dst.addr &gt;= 0xff));
++}
++
++/* J1939 stack */
++enum {
++	j1939_level_can,
++	j1939_level_transport,
++	j1939_level_sky,
++};
++
++#define RESULT_STOP	1
++/*
++ * return RESULT_STOP when stack processing may stop.
++ * it is up to the stack entry itself to kfree_skb() the sk_buff
++ */
++
++extern int j1939_send(struct sk_buff *, int level);
++extern int j1939_recv(struct sk_buff *, int level);
++
++/* stack entries */
++extern int j1939_recv_promisc(struct sk_buff *);
++extern int j1939_send_transport(struct sk_buff *);
++extern int j1939_recv_transport(struct sk_buff *);
++extern int j1939_send_address_claim(struct sk_buff *);
++extern int j1939_recv_address_claim(struct sk_buff *);
++
++extern int j1939_recv_distribute(struct sk_buff *);
++
++/* network management */
++/*
++ * j1939_ecu_get_register
++ * 'create' &amp; 'register' &amp; 'get' new ecu
++ * when a matching ecu already exists, the behaviour depends
++ * on @return_existing.
++ * when @return_existing is 0, -EEXISTS is returned
++ * when @return_exsiting is 1, that ecu is 'get' &amp; returned.
++ * @flags is only used when creating new ecu.
++ */
++extern struct j1939_ecu *j1939_ecu_get_register(name_t name, int ifindex,
++		int flags, int return_existing);
++extern void j1939_ecu_unregister(struct j1939_ecu *);
++
++extern int j1939_segment_attach(struct net_device *);
++extern int j1939_segment_detach(struct net_device *);
++
++extern int j1939_segment_register(struct net_device *);
++extern void j1939_segment_unregister(struct j1939_segment *);
++extern struct j1939_segment *j1939_segment_find(int ifindex);
++
++extern void j1939sk_netdev_event(int ifindex, int error_code);
++
++/* add/remove receiver */
++extern int j1939_recv_add(void *vp, void (*fn)(struct sk_buff *, void *));
++extern int j1939_recv_remove(void *vp, void (*fn)(struct sk_buff *, void *));
++
++/*
++ * provide public access to this lock
++ * so sparse can verify the context balance
++ */
++extern rwlock_t j1939_receiver_rwlock;
++static inline void j1939_recv_suspend(void)
++{
++	write_lock_bh(&amp;j1939_receiver_rwlock);
++}
++
++static inline void j1939_recv_resume(void)
++{
++	write_unlock_bh(&amp;j1939_receiver_rwlock);
++}
++
++/* locks the recv module */
++extern void j1939_recv_suspend(void);
++extern void j1939_recv_resume(void);
++
++/*
++ * decrement pending skb for a j1939 socket
++ */
++extern void j1939_sock_pending_del(struct sock *sk);
++
++/* seperate module-init/modules-exit's */
++extern __init int j1939_proc_module_init(void);
++extern __init int j1939bus_module_init(void);
++extern __init int j1939sk_module_init(void);
++extern __init int j1939tp_module_init(void);
++
++extern void j1939_proc_module_exit(void);
++extern void j1939bus_module_exit(void);
++extern void j1939sk_module_exit(void);
++extern void j1939tp_module_exit(void);
++
++/* rtnetlink */
++extern const struct rtnl_af_ops j1939_rtnl_af_ops;
++extern int j1939rtnl_new_addr(struct sk_buff *, struct nlmsghdr *, void *arg);
++extern int j1939rtnl_del_addr(struct sk_buff *, struct nlmsghdr *, void *arg);
++extern int j1939rtnl_dump_addr(struct sk_buff *, struct netlink_callback *);
++
++#endif /* _J1939_PRIV_H_ */
+diff --git a/net/can/j1939/main.c b/net/can/j1939/main.c
+new file mode 100644
+index 0000000..7edf843
+--- /dev/null
++++ b/net/can/j1939/main.c
+@@ -0,0 +1,458 @@
++/*
++ * Copyright (c) 2010-2011 EIA Electronics
++ *
++ * Authors:
++ * Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ * Pieter Beyens &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">pieter.beyens at eia.be</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ */
++
++/*
++ * Core of can-j1939 that links j1939 to CAN.
++ */
++
++#include &lt;linux/version.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/init.h&gt;
++#include &lt;linux/socket.h&gt;
++#include &lt;linux/list.h&gt;
++#include &lt;linux/if_arp.h&gt;
++#include &lt;net/tcp_states.h&gt;
++
++#include &lt;linux/can.h&gt;
++#include &lt;linux/can/core.h&gt;
++#include &quot;j1939-priv.h&quot;
++
++MODULE_DESCRIPTION(&quot;PF_CAN SAE J1939&quot;);
++MODULE_LICENSE(&quot;GPL v2&quot;);
++MODULE_AUTHOR(&quot;EIA Electronics (Kurt Van Dijck &amp; Pieter Beyens)&quot;);
++
++static struct {
++	struct notifier_block notifier;
++} s;
++
++/* LOWLEVEL CAN interface */
++
++/* CAN_HDR: #bytes before can_frame data part */
++#define CAN_HDR	(offsetof(struct can_frame, data))
++/* CAN_FTR: #bytes beyond data part */
++#define CAN_FTR	(sizeof(struct can_frame)-CAN_HDR-\
++		sizeof(((struct can_frame *)0)-&gt;data))
++
++static void j1939_recv_ecu_flags(struct sk_buff *skb, void *data)
++{
++	struct j1939_segment *jseg = data;
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++	struct addr_ent *paddr;
++
++	if (!jseg)
++		return;
++	write_lock_bh(&amp;jseg-&gt;lock);
++	if (j1939_address_is_unicast(cb-&gt;src.addr)) {
++		paddr = &amp;jseg-&gt;ents[cb-&gt;src.addr];
++		paddr-&gt;rxtime = ktime_get();
++		if (0x0ee00 == cb-&gt;pgn) {
++			/* do not touch many things for Address claims */
++		} else if (paddr-&gt;ecu) {
++			paddr-&gt;ecu-&gt;rxtime = paddr-&gt;rxtime;
++			cb-&gt;src.flags = paddr-&gt;ecu-&gt;flags;
++		} else {
++			if (!paddr-&gt;flags)
++				paddr-&gt;flags |= ECUFLAG_REMOTE;
++			cb-&gt;src.flags = paddr-&gt;flags;
++		}
++	}
++
++	if (j1939_address_is_unicast(cb-&gt;dst.addr)) {
++		paddr = &amp;jseg-&gt;ents[cb-&gt;dst.addr];
++		if (paddr-&gt;ecu)
++			cb-&gt;dst.flags = paddr-&gt;ecu-&gt;flags;
++		else
++			cb-&gt;dst.flags = paddr-&gt;flags ?: ECUFLAG_REMOTE;
++	}
++	write_unlock_bh(&amp;jseg-&gt;lock);
++}
++
++/* lowest layer */
++static void j1939_can_recv(struct sk_buff *skb, void *data)
++{
++	int orig_len;
++	struct j1939_sk_buff_cb *sk_addr;
++	struct can_frame *msg;
++	uint8_t saved_cb[sizeof(skb-&gt;cb)];
++
++	BUILD_BUG_ON(sizeof(*sk_addr) &gt; sizeof(skb-&gt;cb));
++	/*
++	 * get a pointer to the header of the skb
++	 * the skb payload (pointer) is moved, so that the next skb_data
++	 * returns the actual payload
++	 */
++	msg = (void *)skb-&gt;data;
++	orig_len = skb-&gt;len;
++	skb_pull(skb, CAN_HDR);
++	/* fix length, set to dlc, with 8 maximum */
++	skb_trim(skb, min_t(uint8_t, msg-&gt;can_dlc, 8));
++
++	/* set addr */
++	sk_addr = (struct j1939_sk_buff_cb *)skb-&gt;cb;
++	memcpy(saved_cb, sk_addr, sizeof(saved_cb));
++	memset(sk_addr, 0, sizeof(*sk_addr));
++	if (skb-&gt;dev)
++		sk_addr-&gt;ifindex = skb-&gt;dev-&gt;ifindex;
++	sk_addr-&gt;priority = (msg-&gt;can_id &amp; 0x1c000000) &gt;&gt; 26;
++	sk_addr-&gt;src.addr = msg-&gt;can_id &amp; 0xff;
++	sk_addr-&gt;pgn = (msg-&gt;can_id &amp; 0x3ffff00) &gt;&gt; 8;
++	if (pgn_is_pdu1(sk_addr-&gt;pgn)) {
++		/* Type 1: with destination address */
++		sk_addr-&gt;dst.addr = sk_addr-&gt;pgn &amp; 0xff;
++		/* normalize pgn: strip dst address */
++		sk_addr-&gt;pgn &amp;= 0x3ff00;
++	} else {
++		/* set broadcast address */
++		sk_addr-&gt;dst.addr = J1939_NO_ADDR;
++	}
++	j1939_recv_ecu_flags(skb, data);
++	j1939_recv(skb, j1939_level_can);
++
++	/* restore the original skb, should always work */
++	skb_push(skb, CAN_HDR);
++	/* no safety check, it just restores the skbuf's contents */
++	__skb_trim(skb, orig_len);
++	memcpy(sk_addr, saved_cb, sizeof(saved_cb));
++}
++
++static int j1939_send_can(struct sk_buff *skb)
++{
++	int ret, dlc;
++	canid_t canid;
++	struct j1939_sk_buff_cb *sk_addr;
++	struct net_device *netdev = NULL;
++	struct can_frame *msg;
++
++	dlc = skb-&gt;len;
++	if (dlc &gt; 8)
++		return -EMSGSIZE;
++	ret = pskb_expand_head(skb, SKB_DATA_ALIGN(CAN_HDR),
++			CAN_FTR + (8-dlc), GFP_ATOMIC);
++	if (ret &lt; 0)
++		return ret;
++
++	msg = (void *)skb_push(skb, CAN_HDR);
++	BUG_ON(!msg);
++	/* make it a full can frame */
++	skb_put(skb, CAN_FTR + (8 - dlc));
++
++	sk_addr = (struct j1939_sk_buff_cb *)skb-&gt;cb;
++	canid = CAN_EFF_FLAG |
++		(sk_addr-&gt;src.addr &amp; 0xff) |
++		((sk_addr-&gt;priority &amp; 0x7) &lt;&lt; 26);
++	if (pgn_is_pdu1(sk_addr-&gt;pgn))
++		canid |= ((sk_addr-&gt;pgn &amp; 0x3ff00) &lt;&lt; 8) |
++			((sk_addr-&gt;dst.addr &amp; 0xff) &lt;&lt; 8);
++	else
++		canid |= ((sk_addr-&gt;pgn &amp; 0x3ffff) &lt;&lt; 8);
++
++	msg-&gt;can_id = canid;
++	msg-&gt;can_dlc = dlc;
++
++	/* set net_device */
++	ret = -ENODEV;
++	if (!skb-&gt;dev) {
++		if (!sk_addr-&gt;ifindex)
++			goto failed;
++		netdev = dev_get_by_index(&amp;init_net, sk_addr-&gt;ifindex);
++		if (!netdev)
++			goto failed;
++		skb-&gt;dev = netdev;
++	}
++
++	/* fix the 'always free' policy of can_send */
++	skb = skb_get(skb);
++	ret = can_send(skb, 1);
++	if (!ret) {
++		/* free when can_send succeeded */
++		kfree_skb(skb);
++		/* is this necessary ? */
++		ret = RESULT_STOP;
++	}
++failed:
++	if (netdev)
++		dev_put(netdev);
++	return ret;
++}
++
++static int j1939_send_normalize(struct sk_buff *skb)
++{
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++	struct j1939_segment *jseg;
++	struct addr_ent *paddr;
++	struct j1939_ecu *ecu;
++	int ret = 0;
++
++	/* apply sanity checks */
++	cb-&gt;pgn &amp;= (pgn_is_pdu1(cb-&gt;pgn)) ? 0x3ff00 : 0x3ffff;
++	if (cb-&gt;priority &gt; 7)
++		cb-&gt;priority = 6;
++
++	/* verify source */
++	if (!cb-&gt;ifindex)
++		return -ENETUNREACH;
++	jseg = j1939_segment_find(cb-&gt;ifindex);
++	if (!jseg)
++		return -ENETUNREACH;
++	read_lock_bh(&amp;jseg-&gt;lock);
++	/* verify source */
++	if (cb-&gt;src.name) {
++		ecu = j1939_ecu_find_by_name(cb-&gt;src.name, cb-&gt;ifindex);
++		cb-&gt;src.flags = ecu ? ecu-&gt;flags : 0;
++		if (ecu)
++			put_j1939_ecu(ecu);
++	} else if (j1939_address_is_unicast(cb-&gt;src.addr)) {
++		paddr = &amp;jseg-&gt;ents[cb-&gt;src.addr];
++		cb-&gt;src.flags = paddr-&gt;flags;
++	} else if (cb-&gt;src.addr == J1939_IDLE_ADDR) {
++		/* allow always */
++		cb-&gt;src.flags = ECUFLAG_LOCAL;
++	} else {
++		/* J1939_NO_ADDR */
++		cb-&gt;src.flags = 0;
++	}
++	if (cb-&gt;src.flags &amp; ECUFLAG_REMOTE) {
++		ret = -EREMOTE;
++		goto failed;
++	} else if (!(cb-&gt;src.flags &amp; ECUFLAG_LOCAL)) {
++		ret = -EADDRNOTAVAIL;
++		goto failed;
++	}
++
++	/* verify destination */
++	if (cb-&gt;dst.name) {
++		ecu = j1939_ecu_find_by_name(cb-&gt;dst.name, cb-&gt;ifindex);
++		if (!ecu) {
++			ret = -EADDRNOTAVAIL;
++			goto failed;
++		}
++		cb-&gt;dst.flags = ecu-&gt;flags;
++		put_j1939_ecu(ecu);
++	} else if (cb-&gt;dst.addr == J1939_IDLE_ADDR) {
++		/* not a valid destination */
++		ret = -EADDRNOTAVAIL;
++		goto failed;
++	} else if (j1939_address_is_unicast(cb-&gt;dst.addr)) {
++		paddr = &amp;jseg-&gt;ents[cb-&gt;dst.addr];
++		cb-&gt;dst.flags = paddr-&gt;flags;
++	} else {
++		cb-&gt;dst.flags = 0;
++	}
++
++	ret = 0;
++failed:
++	read_unlock_bh(&amp;jseg-&gt;lock);
++	put_j1939_segment(jseg);
++	return ret;
++}
++
++/* TOPLEVEL interface */
++int j1939_recv(struct sk_buff *skb, int level)
++{
++	int ret;
++
++	/* this stack operates with fallthrough switch statement */
++	switch (level) {
++	default:
++		WARN_ONCE(1, &quot;%s: unsupported level %i\n&quot;, __func__, level);
++		return 0;
++	case j1939_level_can:
++		ret = j1939_recv_address_claim(skb);
++		if (unlikely(ret))
++			break;
++		ret = j1939_recv_promisc(skb);
++		if (unlikely(ret))
++			break;
++		ret = j1939_recv_transport(skb);
++		if (unlikely(ret))
++			break;
++	case j1939_level_transport:
++	case j1939_level_sky:
++		ret = j1939_recv_distribute(skb);
++		break;
++	}
++	if (ret == RESULT_STOP)
++		return 0;
++	return ret;
++
++}
++EXPORT_SYMBOL_GPL(j1939_recv);
++
++int j1939_send(struct sk_buff *skb, int level)
++{
++	int ret;
++	struct sock *sk = NULL;
++
++	/* this stack operates with fallthrough switch statement */
++	switch (level) {
++	default:
++		WARN_ONCE(1, &quot;%s: unsupported level %i\n&quot;, __func__, level);
++	case j1939_level_sky:
++		sk = skb-&gt;sk;
++		if (sk)
++			sock_hold(sk);
++		ret = j1939_send_normalize(skb);
++		if (unlikely(ret))
++			break;
++		ret = j1939_send_transport(skb);
++		if (unlikely(ret))
++			break;
++	case j1939_level_transport:
++		ret = j1939_send_address_claim(skb);
++		if (unlikely(ret))
++			break;
++	case j1939_level_can:
++		ret = j1939_send_can(skb);
++		if (RESULT_STOP == ret)
++			/* don't mark as stopped, it can't be better */
++			ret = 0;
++		break;
++	}
++	if (ret == RESULT_STOP)
++		ret = 0;
++	else if (!ret &amp;&amp; sk)
++		j1939_sock_pending_del(sk);
++	if (sk)
++		sock_put(sk);
++	return ret;
++
++}
++EXPORT_SYMBOL_GPL(j1939_send);
++
++/* NETDEV MANAGEMENT */
++
++#define J1939_CAN_ID	CAN_EFF_FLAG
++#define J1939_CAN_MASK	(CAN_EFF_FLAG | CAN_RTR_FLAG)
++int j1939_segment_attach(struct net_device *netdev)
++{
++	int ret;
++	struct j1939_segment *jseg;
++
++	if (!netdev)
++		return -ENODEV;
++	if (netdev-&gt;type != ARPHRD_CAN)
++		return -EAFNOSUPPORT;
++
++	ret = j1939_segment_register(netdev);
++	if (ret &lt; 0)
++		goto fail_register;
++	jseg = j1939_segment_find(netdev-&gt;ifindex);
++	ret = can_rx_register(netdev, J1939_CAN_ID, J1939_CAN_MASK,
++			j1939_can_recv, jseg, &quot;j1939&quot;);
++	if (ret &lt; 0)
++		goto fail_can_rx;
++	return 0;
++
++fail_can_rx:
++	j1939_segment_unregister(jseg);
++	put_j1939_segment(jseg);
++fail_register:
++	return ret;
++}
++
++int j1939_segment_detach(struct net_device *netdev)
++{
++	struct j1939_segment *jseg;
++
++	BUG_ON(!netdev);
++	jseg = j1939_segment_find(netdev-&gt;ifindex);
++	if (!jseg)
++		return -EHOSTDOWN;
++	can_rx_unregister(netdev, J1939_CAN_ID, J1939_CAN_MASK,
++			j1939_can_recv, jseg);
++	j1939_segment_unregister(jseg);
++	put_j1939_segment(jseg);
++	j1939sk_netdev_event(netdev-&gt;ifindex, EHOSTDOWN);
++	return 0;
++}
++
++static int j1939_notifier(struct notifier_block *nb,
++			unsigned long msg, void *data)
++{
++	struct net_device *netdev = (struct net_device *)data;
++	struct j1939_segment *jseg;
++
++	if (!net_eq(dev_net(netdev), &amp;init_net))
++		return NOTIFY_DONE;
++
++	if (netdev-&gt;type != ARPHRD_CAN)
++		return NOTIFY_DONE;
++
++	switch (msg) {
++	case NETDEV_UNREGISTER:
++		jseg = j1939_segment_find(netdev-&gt;ifindex);
++		if (!jseg)
++			break;
++		j1939_segment_unregister(jseg);
++		j1939sk_netdev_event(netdev-&gt;ifindex, ENODEV);
++		break;
++
++	case NETDEV_DOWN:
++		j1939sk_netdev_event(netdev-&gt;ifindex, ENETDOWN);
++		break;
++	}
++
++	return NOTIFY_DONE;
++}
++
++/* MODULE interface */
++
++static __init int j1939_module_init(void)
++{
++	int ret;
++
++	pr_info(&quot;can: SAE J1939\n&quot;);
++
++	ret = j1939_proc_module_init();
++	if (ret &lt; 0)
++		goto fail_proc;
++
++	s.notifier.notifier_call = j1939_notifier;
++	register_netdevice_notifier(&amp;s.notifier);
++
++	ret = j1939bus_module_init();
++	if (ret &lt; 0)
++		goto fail_bus;
++	ret = j1939sk_module_init();
++	if (ret &lt; 0)
++		goto fail_sk;
++	ret = j1939tp_module_init();
++	if (ret &lt; 0)
++		goto fail_tp;
++	return 0;
++
++	j1939tp_module_exit();
++fail_tp:
++	j1939sk_module_exit();
++fail_sk:
++	j1939bus_module_exit();
++fail_bus:
++	unregister_netdevice_notifier(&amp;s.notifier);
++
++	j1939_proc_module_exit();
++fail_proc:
++	return ret;
++}
++
++static __exit void j1939_module_exit(void)
++{
++	j1939tp_module_exit();
++	j1939sk_module_exit();
++	j1939bus_module_exit();
++
++	unregister_netdevice_notifier(&amp;s.notifier);
++
++	j1939_proc_module_exit();
++}
++
++module_init(j1939_module_init);
++module_exit(j1939_module_exit);
+diff --git a/net/can/j1939/proc.c b/net/can/j1939/proc.c
+new file mode 100644
+index 0000000..76acfa0
+--- /dev/null
++++ b/net/can/j1939/proc.c
+@@ -0,0 +1,104 @@
++/*
++ * Copyright (c) 2010-2011 EIA Electronics
++ *
++ * Authors:
++ * Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ */
++
++#include &lt;linux/version.h&gt;
++#include &lt;linux/string.h&gt;
++#include &lt;linux/seq_file.h&gt;
++#include &lt;linux/proc_fs.h&gt;
++#include &lt;linux/uaccess.h&gt;
++
++#include &quot;j1939-priv.h&quot;
++
++const char j1939_procname[] = &quot;can-j1939&quot;;
++
++static struct proc_dir_entry *rootdir;
++
++static int j1939_proc_open(struct inode *inode, struct file *file)
++{
++	struct proc_dir_entry *pde = PDE(inode);
++	int (*fn)(struct seq_file *sqf, void *v) = pde-&gt;data;
++
++	return single_open(file, fn, pde);
++}
++
++/* copied from fs/proc/generic.c */
++static ssize_t
++proc_file_write(struct file *file, const char __user *buffer,
++		size_t count, loff_t *ppos)
++{
++	struct inode *inode = file-&gt;f_path.dentry-&gt;d_inode;
++	struct proc_dir_entry *dp;
++
++	dp = PDE(inode);
++
++	if (!dp-&gt;write_proc)
++		return -EIO;
++
++	/* FIXME: does this routine need ppos?  probably... */
++	return dp-&gt;write_proc(file, buffer, count, dp-&gt;data);
++}
++
++static const struct file_operations j1939_proc_ops = {
++	.owner		= THIS_MODULE,
++	.open		= j1939_proc_open,
++	.read		= seq_read,
++	.write		= proc_file_write,
++	.llseek		= seq_lseek,
++	.release	= single_release,
++};
++
++int j1939_proc_add(const char *file,
++		int (*seq_show)(struct seq_file *sqf, void *v),
++		write_proc_t write)
++{
++	struct proc_dir_entry *pde;
++	int mode = 0;
++
++	if (seq_show)
++		mode |= 0444;
++	if (write)
++		mode |= 0200;
++
++	if (!rootdir)
++		return -ENODEV;
++	pde = proc_create(file, mode, rootdir, &amp;j1939_proc_ops);
++	if (!pde)
++		goto fail_create;
++	pde-&gt;data = seq_show;
++	pde-&gt;write_proc = write;
++	return 0;
++
++fail_create:
++	return -ENOENT;
++}
++EXPORT_SYMBOL(j1939_proc_add);
++
++void j1939_proc_remove(const char *file)
++{
++	remove_proc_entry(file, rootdir);
++}
++EXPORT_SYMBOL(j1939_proc_remove);
++
++__init int j1939_proc_module_init(void)
++{
++	/* create /proc/net/can directory */
++	rootdir = proc_mkdir(j1939_procname, init_net.proc_net);
++	if (!rootdir)
++		return -EINVAL;
++	return 0;
++}
++
++void j1939_proc_module_exit(void)
++{
++	if (rootdir)
++		proc_net_remove(&amp;init_net, j1939_procname);
++}
++
+diff --git a/net/can/j1939/promisc.c b/net/can/j1939/promisc.c
+new file mode 100644
+index 0000000..14be755
+--- /dev/null
++++ b/net/can/j1939/promisc.c
+@@ -0,0 +1,43 @@
++/*
++ * Copyright (c) 2010-2011 EIA Electronics
++ *
++ * Authors:
++ * Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ */
++
++#include &lt;linux/version.h&gt;
++#include &lt;linux/skbuff.h&gt;
++#include &lt;linux/sysctl.h&gt;
++#include &quot;j1939-priv.h&quot;
++
++static atomic_t n_promisc = ATOMIC_INIT(0);
++
++void j1939_get_promisc_receiver(int ifindex)
++{
++	atomic_inc(&amp;n_promisc);
++}
++EXPORT_SYMBOL_GPL(j1939_get_promisc_receiver);
++
++void j1939_put_promisc_receiver(int ifindex)
++{
++	atomic_dec(&amp;n_promisc);
++}
++EXPORT_SYMBOL_GPL(j1939_put_promisc_receiver);
++
++int j1939_recv_promisc(struct sk_buff *skb)
++{
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++
++	if ((cb-&gt;src.flags &amp; ECUFLAG_REMOTE) &amp;&amp;
++		(cb-&gt;dst.flags &amp; ECUFLAG_REMOTE)) {
++		if (!atomic_read(&amp;n_promisc))
++			/* stop receive path */
++			return RESULT_STOP;
++	}
++	return 0;
++}
++
+diff --git a/net/can/j1939/rtnl.c b/net/can/j1939/rtnl.c
+new file mode 100644
+index 0000000..851060f
+--- /dev/null
++++ b/net/can/j1939/rtnl.c
+@@ -0,0 +1,308 @@
++/*
++ * Copyright (c) 2011 EIA Electronics
++ *
++ * Authors:
++ * Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ */
++
++/*
++ * j1939-rtnl.c - netlink addressing interface
++ */
++
++#include &lt;linux/version.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/init.h&gt;
++#include &lt;linux/err.h&gt;
++#include &lt;linux/if_arp.h&gt;
++
++#include &quot;j1939-priv.h&quot;
++
++static const struct nla_policy j1939_ifa_policy[IFA_J1939_MAX] = {
++	[IFA_J1939_ADDR] = { .type = NLA_U8, },
++	[IFA_J1939_NAME] = { .type = NLA_U64, },
++};
++
++int j1939rtnl_del_addr(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg)
++{
++	int ret;
++	struct ifaddrmsg *ifm;
++	struct j1939_segment *jseg;
++	uint8_t jaddr = J1939_NO_ADDR;
++	uint64_t jname = J1939_NO_NAME;
++
++	struct nlattr *nla, *tb[IFA_J1939_MAX];
++
++	if (!net_eq(sock_net(skb-&gt;sk), &amp;init_net))
++		return -EINVAL;
++
++	nla = nlmsg_find_attr(nlh, sizeof(*ifm), IFA_LOCAL);
++	if (!nla)
++		return -EINVAL;
++
++	nla_parse_nested(tb, IFA_J1939_MAX-1, nla, j1939_ifa_policy);
++	if (tb[IFA_J1939_ADDR])
++		jaddr = nla_get_u8(tb[IFA_J1939_ADDR]);
++	if (tb[IFA_J1939_NAME])
++		jname = be64_to_cpu(nla_get_u64(tb[IFA_J1939_NAME]));
++
++	ifm = nlmsg_data(nlh);
++	jseg = j1939_segment_find(ifm-&gt;ifa_index);
++	if (!jseg)
++		return -EHOSTDOWN;
++
++	ret = 0;
++	if (j1939_address_is_unicast(jaddr)) {
++		struct addr_ent *ent;
++
++		ent = &amp;jseg-&gt;ents[jaddr];
++		write_lock_bh(&amp;jseg-&gt;lock);
++		if (!ent-&gt;flags)
++			ret = -EADDRNOTAVAIL;
++		else if (!(ent-&gt;flags &amp; ECUFLAG_LOCAL))
++			ret = -EREMOTE;
++		else
++			ent-&gt;flags = 0;
++		write_unlock_bh(&amp;jseg-&gt;lock);
++	} else if (jname) {
++		struct j1939_ecu *ecu;
++
++		ecu = j1939_ecu_find_by_name(jname, ifm-&gt;ifa_index);
++		if (ecu) {
++			if (ecu-&gt;flags &amp; ECUFLAG_LOCAL) {
++				j1939_ecu_unregister(ecu);
++				put_j1939_ecu(ecu);
++			} else {
++				ret = -EREMOTE;
++			}
++		} else {
++			ret = -ENODEV;
++		}
++	}
++	put_j1939_segment(jseg);
++	return ret;
++}
++
++int j1939rtnl_new_addr(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg)
++{
++	struct ifaddrmsg *ifm;
++	struct j1939_segment *jseg;
++	uint8_t jaddr = J1939_NO_ADDR;
++	uint64_t jname = J1939_NO_NAME;
++	struct addr_ent *ent;
++	int ret;
++	struct nlattr *nla, *tb[IFA_J1939_MAX];
++
++	if (!net_eq(sock_net(skb-&gt;sk), &amp;init_net))
++		return -EINVAL;
++
++	nla = nlmsg_find_attr(nlh, sizeof(*ifm), IFA_LOCAL);
++	if (!nla)
++		return -EINVAL;
++
++	ifm = nlmsg_data(nlh);
++	jseg = j1939_segment_find(ifm-&gt;ifa_index);
++	if (!jseg)
++		return -EHOSTDOWN;
++
++	nla_parse_nested(tb, IFA_J1939_MAX-1, nla, j1939_ifa_policy);
++	if (tb[IFA_J1939_ADDR])
++		jaddr = nla_get_u8(tb[IFA_J1939_ADDR]);
++	if (tb[IFA_J1939_NAME])
++		jname = be64_to_cpu(nla_get_u64(tb[IFA_J1939_NAME]));
++
++
++	ret = 0;
++	if (j1939_address_is_unicast(jaddr)) {
++		ent = &amp;jseg-&gt;ents[jaddr];
++		write_lock_bh(&amp;jseg-&gt;lock);
++		if ((ent-&gt;ecu &amp;&amp; (ent-&gt;ecu-&gt;flags &amp; ECUFLAG_REMOTE)) ||
++				(ent-&gt;flags &amp; ECUFLAG_REMOTE))
++			ret = -EREMOTE;
++		else
++			ent-&gt;flags |= ECUFLAG_LOCAL;
++		write_unlock_bh(&amp;jseg-&gt;lock);
++	} else if (jname) {
++		struct j1939_ecu *ecu;
++
++		ecu = j1939_ecu_get_register(jname, ifm-&gt;ifa_index,
++				ECUFLAG_LOCAL, 0);
++		if (IS_ERR(ecu))
++			ret = PTR_ERR(ecu);
++		else
++			put_j1939_ecu(ecu);
++	}
++	put_j1939_segment(jseg);
++	return ret;
++}
++
++static int j1939rtnl_fill_ifaddr(struct sk_buff *skb, int ifindex,
++		uint8_t addr, uint64_t name, int j1939_flags,
++		u32 pid, u32 seq, int event, unsigned int flags)
++{
++	struct ifaddrmsg *ifm;
++	struct nlmsghdr *nlh;
++	struct nlattr *nla;
++
++	nlh = nlmsg_put(skb, pid, seq, event, sizeof(*ifm), flags);
++	if (nlh == NULL)
++		return -EMSGSIZE;
++
++	ifm = nlmsg_data(nlh);
++	ifm-&gt;ifa_family = AF_CAN;
++	ifm-&gt;ifa_prefixlen = CAN_J1939;
++	ifm-&gt;ifa_flags = name ? 0 : IFA_F_PERMANENT;
++	ifm-&gt;ifa_scope = RT_SCOPE_LINK;
++	ifm-&gt;ifa_index = ifindex;
++
++	nla = nla_nest_start(skb, IFA_LOCAL);
++	if (j1939_address_is_unicast(addr))
++		NLA_PUT_U8(skb, IFA_J1939_ADDR, addr);
++	if (name)
++		NLA_PUT_U64(skb, IFA_J1939_NAME, cpu_to_be64(name));
++	nla_nest_end(skb, nla);
++
++	return nlmsg_end(skb, nlh);
++
++nla_put_failure:
++	nlmsg_cancel(skb, nlh);
++	return -EMSGSIZE;
++}
++
++int j1939rtnl_dump_addr(struct sk_buff *skb, struct netlink_callback *cb)
++{
++	int ndev, addr, ret, sa;
++	struct net_device *netdev;
++	struct j1939_segment *jseg;
++	struct j1939_ecu *ecu;
++	struct addr_ent *ent;
++
++	if (!net_eq(sock_net(skb-&gt;sk), &amp;init_net))
++		return 0;
++
++	ndev = 0;
++	for_each_netdev(&amp;init_net, netdev) {
++		++ndev;
++		if (ndev &lt; cb-&gt;args[1])
++			continue;
++		if (netdev-&gt;type != ARPHRD_CAN)
++			continue;
++
++		jseg = j1939_segment_find(netdev-&gt;ifindex);
++		if (!jseg)
++			continue;
++
++		read_lock_bh(&amp;jseg-&gt;lock);
++		for (addr = cb-&gt;args[2]; addr &lt; J1939_IDLE_ADDR; ++addr) {
++			ent = &amp;jseg-&gt;ents[addr];
++			if (!ent-&gt;flags)
++				continue;
++			ret = j1939rtnl_fill_ifaddr(skb, netdev-&gt;ifindex, addr,
++					0, ent-&gt;flags, NETLINK_CB(cb-&gt;skb).pid,
++					cb-&gt;nlh-&gt;nlmsg_seq, RTM_NEWADDR,
++					NLM_F_MULTI);
++			if (ret &lt; 0) {
++				read_unlock_bh(&amp;jseg-&gt;lock);
++				goto done;
++			}
++			cb-&gt;args[2] = addr + 1;
++		}
++
++		if (addr &gt; J1939_IDLE_ADDR)
++			addr = J1939_IDLE_ADDR;
++		list_for_each_entry(ecu, &amp;jseg-&gt;ecus, list) {
++			if (addr++ &lt; cb-&gt;args[2])
++				continue;
++			if (!(ecu-&gt;flags &amp; ECUFLAG_LOCAL))
++				continue;
++			sa = ecu-&gt;sa;
++			if (ecu-&gt;parent-&gt;ents[sa].ecu != ecu)
++				sa = J1939_IDLE_ADDR;
++			ret = j1939rtnl_fill_ifaddr(skb, netdev-&gt;ifindex,
++					sa, ecu-&gt;name, ecu-&gt;flags,
++					NETLINK_CB(cb-&gt;skb).pid,
++					cb-&gt;nlh-&gt;nlmsg_seq, RTM_NEWADDR,
++					NLM_F_MULTI);
++			if (ret &lt; 0) {
++				read_unlock_bh(&amp;jseg-&gt;lock);
++				goto done;
++			}
++			cb-&gt;args[2] = addr;
++		}
++		read_unlock_bh(&amp;jseg-&gt;lock);
++		/* reset first address for device */
++		cb-&gt;args[2] = 0;
++	}
++	++ndev;
++done:
++	cb-&gt;args[1] = ndev;
++
++	return skb-&gt;len;
++}
++
++/*
++ * rtnl_link_ops
++ */
++
++static const struct nla_policy j1939_ifla_policy[IFLA_J1939_MAX] = {
++	[IFLA_J1939_ENABLE] = { .type = NLA_U8, },
++};
++
++static size_t j1939_get_link_af_size(const struct net_device *dev)
++{
++	return nla_policy_len(j1939_ifla_policy, IFLA_J1939_MAX-1);
++}
++
++static int j1939_validate_link_af(const struct net_device *dev,
++				 const struct nlattr *nla)
++{
++	return nla_validate_nested(nla, IFLA_J1939_MAX-1, j1939_ifla_policy);
++}
++
++static int j1939_fill_link_af(struct sk_buff *skb, const struct net_device *dev)
++{
++	struct j1939_segment *jseg;
++
++	if (!dev)
++		return -ENODEV;
++	jseg = j1939_segment_find(dev-&gt;ifindex);
++	if (jseg)
++		put_j1939_segment(jseg);
++	NLA_PUT_U8(skb, IFLA_J1939_ENABLE, jseg ? 1 : 0);
++	return 0;
++
++nla_put_failure:
++	return -EMSGSIZE;
++}
++
++static int j1939_set_link_af(struct net_device *dev, const struct nlattr *nla)
++{
++	int ret;
++	struct nlattr *tb[IFLA_J1939_MAX];
++
++	ret = nla_parse_nested(tb, IFLA_J1939_MAX-1, nla, j1939_ifla_policy);
++	if (ret &lt; 0)
++		return ret;
++
++	if (tb[IFLA_J1939_ENABLE]) {
++		if (nla_get_u8(tb[IFLA_J1939_ENABLE]))
++			ret = j1939_segment_attach(dev);
++		else
++			ret = j1939_segment_detach(dev);
++		if (ret &lt; 0)
++			return ret;
++	}
++	return 0;
++}
++
++const struct rtnl_af_ops j1939_rtnl_af_ops = {
++	.family		  = AF_CAN,
++	.fill_link_af	  = j1939_fill_link_af,
++	.get_link_af_size = j1939_get_link_af_size,
++	.validate_link_af = j1939_validate_link_af,
++	.set_link_af	  = j1939_set_link_af,
++};
++
+diff --git a/net/can/j1939/socket.c b/net/can/j1939/socket.c
+new file mode 100644
+index 0000000..e41cb31
+--- /dev/null
++++ b/net/can/j1939/socket.c
+@@ -0,0 +1,969 @@
++/*
++ * Copyright (c) 2010-2011 EIA Electronics
++ *
++ * Authors:
++ * Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ * Pieter Beyens &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">pieter.beyens at eia.be</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ */
++
++#include &lt;linux/version.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/init.h&gt;
++#include &lt;linux/socket.h&gt;
++#include &lt;linux/list.h&gt;
++#include &lt;linux/if_arp.h&gt;
++#include &lt;net/tcp_states.h&gt;
++
++#include &lt;linux/can/core.h&gt;
++#include &lt;linux/can/j1939.h&gt;
++#include &quot;j1939-priv.h&quot;
++
++struct j1939_sock {
++	struct sock sk; /* must be first to skip with memset */
++	struct list_head list;
++
++	int state;
++	#define JSK_BOUND	BIT(0)
++	#define JSK_CONNECTED	BIT(1)
++	#define PROMISC		BIT(2)
++	#define RECV_OWN	BIT(3)
++
++	struct {
++		name_t src, dst;
++		pgn_t pgn;
++
++		uint8_t sa, da;
++	} addr;
++
++	struct j1939_filter *filters;
++	int nfilters;
++
++	int skb_pending;
++	spinlock_t lock;
++	wait_queue_head_t waitq;
++};
++
++static inline struct j1939_sock *j1939_sk(const struct sock *sk)
++{
++	return container_of(sk, struct j1939_sock, sk);
++}
++
++/* skb_pending issues */
++static inline int j1939_sock_pending_add_first(struct sock *sk)
++{
++	int saved;
++	struct j1939_sock *jsk = j1939_sk(sk);
++
++	spin_lock_bh(&amp;jsk-&gt;lock);
++	if (!jsk-&gt;skb_pending) {
++		++jsk-&gt;skb_pending;
++		saved = 1;
++	} else
++		saved = 0;
++	spin_unlock_bh(&amp;jsk-&gt;lock);
++	return saved;
++}
++
++static inline void j1939_sock_pending_add(struct sock *sk)
++{
++	struct j1939_sock *jsk = j1939_sk(sk);
++
++	spin_lock_bh(&amp;jsk-&gt;lock);
++	++jsk-&gt;skb_pending;
++	spin_unlock_bh(&amp;jsk-&gt;lock);
++}
++
++void j1939_sock_pending_del(struct sock *sk)
++{
++	struct j1939_sock *jsk = j1939_sk(sk);
++	int saved;
++
++	spin_lock_bh(&amp;jsk-&gt;lock);
++	--jsk-&gt;skb_pending;
++	saved = jsk-&gt;skb_pending;
++	spin_unlock_bh(&amp;jsk-&gt;lock);
++	if (!saved)
++		wake_up(&amp;jsk-&gt;waitq);
++}
++
++
++static inline int j1939_no_address(const struct sock *sk)
++{
++	const struct j1939_sock *jsk = j1939_sk(sk);
++	return (jsk-&gt;addr.sa == J1939_NO_ADDR) &amp;&amp; !jsk-&gt;addr.src;
++}
++
++/*
++ * list of sockets
++ */
++static struct {
++	struct mutex lock;
++	struct list_head socks;
++} s;
++
++/* matches skb control buffer (addr) with a j1939 filter */
++static inline int packet_match(const struct j1939_sk_buff_cb *cb,
++		const struct j1939_filter *f, int nfilter)
++{
++	if (!nfilter)
++		/* receive all when no filters are assigned */
++		return 1;
++	/*
++	 * Filters relying on the addr for static addressing _should_ get
++	 * packets from dynamic addressed ECU's too if they match their SA.
++	 * Sockets using dynamic addressing in their filters should not set it.
++	 */
++	for (; nfilter; ++f, --nfilter) {
++		if ((cb-&gt;pgn &amp; f-&gt;pgn_mask) != (f-&gt;pgn &amp; f-&gt;pgn_mask))
++			continue;
++		if ((cb-&gt;src.addr &amp; f-&gt;addr_mask) != (f-&gt;addr &amp; f-&gt;addr_mask))
++			continue;
++		if ((cb-&gt;src.name &amp; f-&gt;name_mask) != (f-&gt;name &amp; f-&gt;name_mask))
++			continue;
++		return 1;
++	}
++	return 0;
++}
++
++/*
++ * callback per socket, called from filter infrastructure
++ */
++static void j1939sk_recv_skb(struct sk_buff *oskb, void *data)
++{
++	struct sk_buff *skb;
++	struct j1939_sock *jsk = (struct j1939_sock *)data;
++	struct j1939_sk_buff_cb *cb = (void *)oskb-&gt;cb;
++
++	if (jsk-&gt;sk.sk_bound_dev_if &amp;&amp; (jsk-&gt;sk.sk_bound_dev_if != cb-&gt;ifindex))
++		/* this socket does not take packets from this iface */
++		return;
++	if (!(jsk-&gt;state &amp; PROMISC)) {
++		if (cb-&gt;dst.flags &amp; ECUFLAG_REMOTE)
++			/*
++			 * this msg was destined for an ECU associated
++			 * with this socket
++			 */
++			return;
++		if (jsk-&gt;addr.src) {
++			if (cb-&gt;dst.name &amp;&amp;
++				(cb-&gt;dst.name != jsk-&gt;addr.src))
++				/*
++				 * the msg is not destined for the name
++				 * that the socket is bound to
++				 */
++				return;
++		} else if (j1939_address_is_unicast(jsk-&gt;addr.sa)) {
++			if (j1939_address_is_unicast(cb-&gt;dst.addr) &amp;&amp;
++				(cb-&gt;dst.addr != jsk-&gt;addr.sa))
++				/*
++				 * the msg is not destined for the name
++				 * that the socket is bound to
++				 */
++				return;
++		}
++	}
++
++	if ((oskb-&gt;sk == &amp;jsk-&gt;sk) &amp;&amp; !(jsk-&gt;state &amp; RECV_OWN))
++		/* own message */
++		return;
++
++	if (!packet_match(cb, jsk-&gt;filters, jsk-&gt;nfilters))
++		return;
++
++	skb = skb_clone(oskb, GFP_ATOMIC);
++	if (!skb) {
++		j1939_warning(&quot;skb clone failed\n&quot;);
++		return;
++	}
++	cb = (void *)skb-&gt;cb;
++	cb-&gt;msg_flags &amp;= ~(MSG_DONTROUTE | MSG_CONFIRM);
++	if (oskb-&gt;sk)
++		cb-&gt;msg_flags |= MSG_DONTROUTE;
++	if (oskb-&gt;sk == &amp;jsk-&gt;sk)
++		cb-&gt;msg_flags |= MSG_CONFIRM;
++
++	skb-&gt;sk = &amp;jsk-&gt;sk;
++	if (sock_queue_rcv_skb(&amp;jsk-&gt;sk, skb) &lt; 0)
++		kfree_skb(skb);
++}
++
++static int j1939sk_init(struct sock *sk)
++{
++	struct j1939_sock *jsk = j1939_sk(sk);
++
++	INIT_LIST_HEAD(&amp;jsk-&gt;list);
++	spin_lock_init(&amp;jsk-&gt;lock);
++	init_waitqueue_head(&amp;jsk-&gt;waitq);
++	jsk-&gt;sk.sk_priority = j1939_to_sk_priority(6);
++	jsk-&gt;sk.sk_reuse = 1; /* per default */
++	jsk-&gt;addr.sa = J1939_NO_ADDR;
++	jsk-&gt;addr.da = J1939_NO_ADDR;
++	return 0;
++}
++
++/*
++ * helper: return &lt;0 for error, &gt;0 for error to notify
++ */
++static int j1939sk_bind_netdev_helper(struct socket *sock)
++{
++	struct j1939_sock *jsk = j1939_sk(sock-&gt;sk);
++	int ret;
++	struct net_device *netdev;
++	struct j1939_segment *jseg;
++
++	if (!jsk-&gt;sk.sk_bound_dev_if)
++		return 0;
++	ret = 0;
++
++	netdev = dev_get_by_index(&amp;init_net, jsk-&gt;sk.sk_bound_dev_if);
++	if (!netdev) {
++		ret = -ENODEV;
++		goto fail_netdev;
++	}
++
++	/* no need to test for CAN device,
++	 * implicitely done by j1939_segment
++	 */
++	jseg = j1939_segment_find(netdev-&gt;ifindex);
++	if (!jseg) {
++		ret = -EHOSTDOWN;
++		goto fail_segment;
++	}
++
++	if (!(netdev-&gt;flags &amp; IFF_UP)) {
++		sock-&gt;sk-&gt;sk_err = ENETDOWN;
++		sock-&gt;sk-&gt;sk_error_report(sock-&gt;sk);
++	}
++	put_j1939_segment(jseg);
++fail_segment:
++	dev_put(netdev);
++fail_netdev:
++	return ret;
++}
++
++static int j1939sk_bind(struct socket *sock, struct sockaddr *uaddr, int len)
++{
++	struct sockaddr_can *addr = (struct sockaddr_can *)uaddr;
++	struct j1939_sock *jsk = j1939_sk(sock-&gt;sk);
++	struct j1939_ecu *ecu = NULL;
++	int ret, old_state;
++
++	if (len &lt; required_size(can_addr.j1939, *addr))
++		return -EINVAL;
++	if (addr-&gt;can_family != AF_CAN)
++		return -EINVAL;
++
++	/* lock s.lock first, to avoid circular lock dependancy */
++	mutex_lock(&amp;s.lock);
++	lock_sock(sock-&gt;sk);
++	if (jsk-&gt;state &amp; JSK_BOUND) {
++		ret = -EBUSY;
++		if (addr-&gt;can_ifindex &amp;&amp;
++				(addr-&gt;can_ifindex != jsk-&gt;sk.sk_bound_dev_if))
++			goto fail_locked;
++		/*
++		 * do not allow to change addres after first bind(),
++		 * (it would require updating the j1939_ecu list)
++		 * but allow the change SA when using dynaddr,
++		 * and allow to change PGN
++		 */
++		if (!jsk-&gt;addr.src ||
++			(jsk-&gt;addr.src != addr-&gt;can_addr.j1939.name) ||
++			(jsk-&gt;addr.pgn != addr-&gt;can_addr.j1939.pgn))
++			goto fail_locked;
++		/* set to be able to send address claims */
++		jsk-&gt;addr.sa = addr-&gt;can_addr.j1939.addr;
++		/* since this socket is bound already, we can skip a lot */
++		release_sock(sock-&gt;sk);
++		mutex_unlock(&amp;s.lock);
++		return 0;
++	}
++
++	/* do netdev */
++	if (jsk-&gt;sk.sk_bound_dev_if &amp;&amp; addr-&gt;can_ifindex &amp;&amp;
++			(jsk-&gt;sk.sk_bound_dev_if != addr-&gt;can_ifindex)) {
++		ret = -EBADR;
++		goto fail_locked;
++	}
++	if (!jsk-&gt;sk.sk_bound_dev_if)
++		jsk-&gt;sk.sk_bound_dev_if = addr-&gt;can_ifindex;
++
++	ret = j1939sk_bind_netdev_helper(sock);
++	if (ret &lt; 0)
++		goto fail_locked;
++
++	/* bind name/addr */
++	if (addr-&gt;can_addr.j1939.name) {
++		ecu = j1939_ecu_find_by_name(addr-&gt;can_addr.j1939.name,
++				jsk-&gt;sk.sk_bound_dev_if);
++		if (!ecu) {
++			ret = -EADDRNOTAVAIL;
++			goto fail_locked;
++		} else if (ecu-&gt;flags &amp; ECUFLAG_REMOTE) {
++			ret = -EREMOTE;
++			goto fail_with_ecu;
++		} else if (jsk-&gt;sk.sk_bound_dev_if != ecu-&gt;parent-&gt;ifindex) {
++			ret = -EHOSTUNREACH;
++			goto fail_with_ecu;
++		}
++		jsk-&gt;addr.src = ecu-&gt;name;
++		jsk-&gt;addr.sa = addr-&gt;can_addr.j1939.addr;
++	} else if (j1939_address_is_unicast(addr-&gt;can_addr.j1939.addr)) {
++		struct j1939_segment *jseg;
++		struct addr_ent *paddr;
++		int flags;
++
++		/* static addressing, netdev is required */
++		if (!jsk-&gt;sk.sk_bound_dev_if) {
++			ret = -EINVAL;
++			goto fail_locked;
++		}
++		jseg = j1939_segment_find(jsk-&gt;sk.sk_bound_dev_if);
++		if (!jseg) {
++			ret = -ENETUNREACH;
++			goto fail_locked;
++		}
++		paddr = &amp;jseg-&gt;ents[addr-&gt;can_addr.j1939.addr];
++		ret = 0;
++		read_lock_bh(&amp;jseg-&gt;lock);
++		flags = paddr-&gt;flags;
++		read_unlock_bh(&amp;jseg-&gt;lock);
++		put_j1939_segment(jseg);
++		if (!(flags &amp; ECUFLAG_LOCAL)) {
++			ret = -EADDRNOTAVAIL;
++			goto fail_locked;
++		}
++		jsk-&gt;addr.sa = addr-&gt;can_addr.j1939.addr;
++	} else if (addr-&gt;can_addr.j1939.addr == J1939_IDLE_ADDR) {
++		/* static addressing, netdev is required */
++		if (!jsk-&gt;sk.sk_bound_dev_if) {
++			ret = -EINVAL;
++			goto fail_locked;
++		}
++		jsk-&gt;addr.sa = addr-&gt;can_addr.j1939.addr;
++	} else {
++		/* no name, no addr */
++	}
++
++	/* set default transmit pgn/priority */
++	jsk-&gt;addr.pgn = addr-&gt;can_addr.j1939.pgn;
++
++	old_state = jsk-&gt;state;
++	jsk-&gt;state |= JSK_BOUND;
++
++	if (!(old_state &amp; (JSK_BOUND | JSK_CONNECTED))) {
++		list_add_tail(&amp;jsk-&gt;list, &amp;s.socks);
++		j1939_recv_add(jsk, j1939sk_recv_skb);
++	}
++
++	ret = 0;
++
++fail_with_ecu:
++	if (ecu &amp;&amp; !IS_ERR(ecu))
++		put_j1939_ecu(ecu);
++fail_locked:
++	release_sock(sock-&gt;sk);
++	mutex_unlock(&amp;s.lock);
++	return ret;
++}
++
++static int j1939sk_connect(struct socket *sock, struct sockaddr *uaddr,
++		int len, int flags)
++{
++	int ret, old_state;
++	struct sockaddr_can *addr = (struct sockaddr_can *)uaddr;
++	struct j1939_sock *jsk = j1939_sk(sock-&gt;sk);
++	struct j1939_ecu *ecu;
++	int ifindex;
++
++	if (!uaddr)
++		return -EDESTADDRREQ;
++
++	if (len &lt; required_size(can_addr.j1939, *addr))
++		return -EINVAL;
++	if (addr-&gt;can_family != AF_CAN)
++		return -EINVAL;
++
++	mutex_lock(&amp;s.lock);
++	lock_sock(sock-&gt;sk);
++	if (jsk-&gt;state &amp; JSK_CONNECTED) {
++		ret = -EISCONN;
++		goto fail_locked;
++	}
++
++	ifindex = jsk-&gt;sk.sk_bound_dev_if;
++	if (ifindex &amp;&amp; addr-&gt;can_ifindex &amp;&amp; (ifindex != addr-&gt;can_ifindex)) {
++		ret = -ECONNREFUSED;
++		goto fail_locked;
++	}
++	if (!ifindex)
++		ifindex = addr-&gt;can_ifindex;
++
++	/* lookup destination */
++	if (addr-&gt;can_addr.j1939.name) {
++		ecu = j1939_ecu_find_by_name(addr-&gt;can_addr.j1939.name,
++				ifindex);
++		if (!ecu) {
++			ret = -EADDRNOTAVAIL;
++			goto fail_locked;
++		}
++		if (ifindex &amp;&amp; (ifindex != ecu-&gt;parent-&gt;ifindex)) {
++			ret = -EHOSTUNREACH;
++			goto fail_locked;
++		}
++		ifindex = ecu-&gt;parent-&gt;ifindex;
++		jsk-&gt;addr.dst = ecu-&gt;name;
++		jsk-&gt;addr.da = ecu-&gt;sa;
++		put_j1939_ecu(ecu);
++	} else {
++		/* broadcast */
++		jsk-&gt;addr.dst = 0;
++		jsk-&gt;addr.da = addr-&gt;can_addr.j1939.addr;
++	}
++	/*
++	 * take a default source when not present, so connected sockets
++	 * will stick to the same source ECU
++	 */
++	if (!jsk-&gt;addr.src &amp;&amp; !j1939_address_is_valid(jsk-&gt;addr.sa)) {
++		ecu = j1939_ecu_find_segment_default_tx(ifindex,
++				&amp;jsk-&gt;addr.src, &amp;jsk-&gt;addr.sa);
++		if (IS_ERR(ecu)) {
++			ret = PTR_ERR(ecu);
++			goto fail_locked;
++		}
++		put_j1939_ecu(ecu);
++	}
++
++	/* start assigning, no problem can occur at this point anymore */
++	jsk-&gt;sk.sk_bound_dev_if = ifindex;
++
++	if (!(jsk-&gt;state &amp; JSK_BOUND) || !pgn_is_valid(jsk-&gt;addr.pgn)) {
++		/*
++		 * bind() takes precedence over connect() for the
++		 * pgn to use ourselve
++		 */
++		jsk-&gt;addr.pgn = addr-&gt;can_addr.j1939.pgn;
++	}
++
++	old_state = jsk-&gt;state;
++	jsk-&gt;state |= JSK_CONNECTED;
++
++	if (!(old_state &amp; (JSK_BOUND | JSK_CONNECTED))) {
++		list_add_tail(&amp;jsk-&gt;list, &amp;s.socks);
++		j1939_recv_add(jsk, j1939sk_recv_skb);
++	}
++	release_sock(sock-&gt;sk);
++	mutex_unlock(&amp;s.lock);
++	return 0;
++
++fail_locked:
++	release_sock(sock-&gt;sk);
++	mutex_unlock(&amp;s.lock);
++	return ret;
++}
++
++static void j1939sk_sock2sockaddr_can(struct sockaddr_can *addr,
++		const struct j1939_sock *jsk, int peer)
++{
++	addr-&gt;can_family = AF_CAN;
++	addr-&gt;can_ifindex = jsk-&gt;sk.sk_bound_dev_if;
++	addr-&gt;can_addr.j1939.name = peer ? jsk-&gt;addr.dst : jsk-&gt;addr.src;
++	addr-&gt;can_addr.j1939.pgn = jsk-&gt;addr.pgn;
++	addr-&gt;can_addr.j1939.addr = peer ? jsk-&gt;addr.da : jsk-&gt;addr.sa;
++}
++
++static int j1939sk_getname(struct socket *sock, struct sockaddr *uaddr,
++		int *len, int peer)
++{
++	struct sockaddr_can *addr = (struct sockaddr_can *)uaddr;
++	struct sock *sk = sock-&gt;sk;
++	struct j1939_sock *jsk = j1939_sk(sk);
++	int ret = 0;
++
++	lock_sock(sk);
++
++	if (peer &amp;&amp; !(jsk-&gt;state &amp; JSK_CONNECTED)) {
++		ret = -EADDRNOTAVAIL;
++		goto failure;
++	}
++
++	j1939sk_sock2sockaddr_can(addr, jsk, peer);
++	*len = sizeof(*addr);
++
++failure:
++	release_sock(sk);
++
++	return ret;
++}
++
++static int j1939sk_release(struct socket *sock)
++{
++	struct sock *sk = sock-&gt;sk;
++	struct j1939_sock *jsk;
++
++	if (!sk)
++		return 0;
++	jsk = j1939_sk(sk);
++	j1939_recv_remove(jsk, j1939sk_recv_skb);
++	mutex_lock(&amp;s.lock);
++	list_del_init(&amp;jsk-&gt;list);
++	mutex_unlock(&amp;s.lock);
++
++	lock_sock(sk);
++	if (jsk-&gt;state &amp; PROMISC)
++		j1939_put_promisc_receiver(jsk-&gt;sk.sk_bound_dev_if);
++
++	sock_orphan(sk);
++	sock-&gt;sk = NULL;
++
++	release_sock(sk);
++	sock_put(sk);
++
++	return 0;
++}
++
++static int j1939sk_setsockopt_flag(struct j1939_sock *jsk,
++		char __user *optval, unsigned int optlen, int flag)
++{
++	int tmp;
++
++	if (optlen != sizeof(tmp))
++		return -EINVAL;
++	if (copy_from_user(&amp;tmp, optval, optlen))
++		return -EFAULT;
++	lock_sock(&amp;jsk-&gt;sk);
++	if (tmp)
++		jsk-&gt;state |= flag;
++	else
++		jsk-&gt;state &amp;= ~flag;
++	release_sock(&amp;jsk-&gt;sk);
++	return tmp;
++}
++
++static int j1939sk_setsockopt(struct socket *sock, int level, int optname,
++		char __user *optval, unsigned int optlen)
++{
++	struct sock *sk = sock-&gt;sk;
++	struct j1939_sock *jsk = j1939_sk(sk);
++	int ret = 0, tmp, count;
++	struct j1939_filter *filters, *ofilters;
++
++	if (level != SOL_CAN_J1939)
++		return -EINVAL;
++
++	switch (optname) {
++	case SO_J1939_FILTER:
++		if (optval) {
++			if (optlen % sizeof(*filters) != 0)
++				return -EINVAL;
++			count = optlen / sizeof(*filters);
++			filters = kmalloc(optlen, GFP_KERNEL);
++			if (!filters)
++				return -ENOMEM;
++			if (copy_from_user(filters, optval, optlen)) {
++				kfree(filters);
++				return -EFAULT;
++			}
++		} else {
++			filters = NULL;
++			count = 0;
++		}
++
++		j1939_recv_suspend();
++		ofilters = jsk-&gt;filters;
++		jsk-&gt;filters = filters;
++		jsk-&gt;nfilters = count;
++		j1939_recv_resume();
++		if (ofilters)
++			kfree(ofilters);
++		break;
++	case SO_J1939_PROMISC:
++		tmp = jsk-&gt;state &amp; PROMISC;
++		ret = j1939sk_setsockopt_flag(jsk, optval, optlen, PROMISC);
++		if (ret &amp;&amp; !tmp)
++			j1939_get_promisc_receiver(jsk-&gt;sk.sk_bound_dev_if);
++		else if (!ret &amp;&amp; tmp)
++			j1939_put_promisc_receiver(jsk-&gt;sk.sk_bound_dev_if);
++		ret = 0;
++		break;
++	case SO_J1939_RECV_OWN:
++		j1939sk_setsockopt_flag(jsk, optval, optlen, RECV_OWN);
++		break;
++	case SO_J1939_SEND_PRIO:
++		if (optlen != sizeof(tmp))
++			return -EINVAL;
++		if (copy_from_user(&amp;tmp, optval, optlen))
++			return -EFAULT;
++		if ((tmp &lt; 0) || (tmp &gt; 7))
++			return -EDOM;
++		if ((tmp &lt; 2) &amp;&amp; !capable(CAP_NET_ADMIN))
++			return -EPERM;
++		lock_sock(&amp;jsk-&gt;sk);
++		jsk-&gt;sk.sk_priority = j1939_to_sk_priority(tmp);
++		release_sock(&amp;jsk-&gt;sk);
++		break;
++	default:
++		return -ENOPROTOOPT;
++	}
++
++	return ret;
++}
++
++static int j1939sk_getsockopt(struct socket *sock, int level, int optname,
++		char __user *optval, int __user *optlen)
++{
++	struct sock *sk = sock-&gt;sk;
++	struct j1939_sock *jsk = j1939_sk(sk);
++	int ret, ulen;
++	/* set defaults for using 'int' properties */
++	int tmp = 0;
++	int len = sizeof(tmp);
++	void *val = &tmp;
++
++	if (level != SOL_CAN_J1939)
++		return -EINVAL;
++	if (get_user(ulen, optlen))
++		return -EFAULT;
++	if (ulen &lt; 0)
++		return -EINVAL;
++
++	lock_sock(&amp;jsk-&gt;sk);
++	switch (optname) {
++	case SO_J1939_PROMISC:
++		tmp = (jsk-&gt;state &amp; PROMISC) ? 1 : 0;
++		break;
++	case SO_J1939_RECV_OWN:
++		tmp = (jsk-&gt;state &amp; RECV_OWN) ? 1 : 0;
++		break;
++	case SO_J1939_SEND_PRIO:
++		tmp = j1939_prio(jsk-&gt;sk.sk_priority);
++		break;
++	default:
++		ret = -ENOPROTOOPT;
++		goto no_copy;
++	}
++
++	/*
++	 * copy to user, based on 'len' &amp; 'val'
++	 * but most sockopt's are 'int' properties, and have 'len' &amp; 'val'
++	 * left unchanged, but instead modified 'tmp'
++	 */
++	if (len &gt; ulen)
++		ret = -EFAULT;
++	else if (put_user(len, optlen))
++		ret = -EFAULT;
++	else if (copy_to_user(optval, val, len))
++		ret = -EFAULT;
++	else
++		ret = 0;
++no_copy:
++	release_sock(&amp;jsk-&gt;sk);
++	return ret;
++}
++
++static int j1939sk_recvmsg(struct kiocb *iocb, struct socket *sock,
++			 struct msghdr *msg, size_t size, int flags)
++{
++	struct sock *sk = sock-&gt;sk;
++	struct sk_buff *skb;
++	struct j1939_sk_buff_cb *sk_addr;
++	int ret = 0;
++
++	skb = skb_recv_datagram(sk, flags, 0, &amp;ret);
++	if (!skb)
++		return ret;
++
++	if (size &lt; skb-&gt;len)
++		msg-&gt;msg_flags |= MSG_TRUNC;
++	else
++		size = skb-&gt;len;
++
++	ret = memcpy_toiovec(msg-&gt;msg_iov, skb-&gt;data, size);
++	if (ret &lt; 0)
++		goto failed_with_skb;
++
++	sock_recv_timestamp(msg, sk, skb);
++	sk_addr = (void *)skb-&gt;cb;
++
++	if (j1939_address_is_valid(sk_addr-&gt;dst.addr))
++		put_cmsg(msg, SOL_CAN_J1939, SCM_J1939_DEST_ADDR,
++				sizeof(sk_addr-&gt;dst.addr), &amp;sk_addr-&gt;dst.addr);
++
++	if (sk_addr-&gt;dst.name)
++		put_cmsg(msg, SOL_CAN_J1939, SCM_J1939_DEST_NAME,
++				sizeof(sk_addr-&gt;dst.name), &amp;sk_addr-&gt;dst.name);
++
++	put_cmsg(msg, SOL_CAN_J1939, SCM_J1939_PRIO,
++			sizeof(sk_addr-&gt;priority), &amp;sk_addr-&gt;priority);
++
++	if (msg-&gt;msg_name) {
++		struct sockaddr_can *paddr = msg-&gt;msg_name;
++
++		msg-&gt;msg_namelen = required_size(can_addr.j1939, *paddr);
++		memset(msg-&gt;msg_name, 0, msg-&gt;msg_namelen);
++		paddr-&gt;can_family = AF_CAN;
++		paddr-&gt;can_ifindex = sk_addr-&gt;ifindex;
++		paddr-&gt;can_addr.j1939.name = sk_addr-&gt;src.name;
++		paddr-&gt;can_addr.j1939.addr = sk_addr-&gt;src.addr;
++		paddr-&gt;can_addr.j1939.pgn = sk_addr-&gt;pgn;
++	}
++
++	skb_free_datagram(sk, skb);
++
++	return size;
++
++failed_with_skb:
++	skb_kill_datagram(sk, skb, flags);
++	return ret;
++}
++
++static int j1939sk_sendmsg(struct kiocb *iocb, struct socket *sock,
++		       struct msghdr *msg, size_t size)
++{
++	struct sock *sk = sock-&gt;sk;
++	struct j1939_sock *jsk = j1939_sk(sk);
++	struct j1939_sk_buff_cb *skb_cb;
++	struct sk_buff *skb;
++	struct net_device *dev;
++	struct j1939_ecu *ecu;
++	int ifindex;
++	int ret;
++
++	if (!(jsk-&gt;state | JSK_BOUND))
++		return -ENOTCONN;
++
++	if (msg-&gt;msg_name &amp;&amp; (msg-&gt;msg_namelen &lt;
++			required_size(can_addr.j1939, struct sockaddr_can)))
++		return -EINVAL;
++
++	ifindex = jsk-&gt;sk.sk_bound_dev_if;
++	if (msg-&gt;msg_name) {
++		struct sockaddr_can *addr = msg-&gt;msg_name;
++		if (msg-&gt;msg_namelen &lt; required_size(can_addr.j1939, *addr))
++			return -EFAULT;
++		if (addr-&gt;can_family != AF_CAN)
++			return -EINVAL;
++		if (ifindex &amp;&amp; addr-&gt;can_ifindex &amp;&amp;
++			(ifindex != addr-&gt;can_ifindex))
++			return -ENONET;
++		if (!ifindex)
++			/* take destination intf when intf not yet set */
++			ifindex = addr-&gt;can_ifindex;
++	}
++
++	if (!ifindex)
++		return -EDESTADDRREQ;
++	if (j1939_no_address(&amp;jsk-&gt;sk)) {
++		lock_sock(&amp;jsk-&gt;sk);
++		ecu = j1939_ecu_find_segment_default_tx(
++				jsk-&gt;sk.sk_bound_dev_if,
++				&amp;jsk-&gt;addr.src, &amp;jsk-&gt;addr.sa);
++		release_sock(&amp;jsk-&gt;sk);
++		if (IS_ERR(ecu))
++			return PTR_ERR(ecu);
++	}
++
++	dev = dev_get_by_index(&amp;init_net, ifindex);
++	if (!dev)
++		return -ENXIO;
++
++	skb = sock_alloc_send_skb(sk, size,
++			msg-&gt;msg_flags &amp; MSG_DONTWAIT, &amp;ret);
++	if (!skb)
++		goto put_dev;
++
++	ret = memcpy_fromiovec(skb_put(skb, size), msg-&gt;msg_iov, size);
++	if (ret &lt; 0)
++		goto free_skb;
++	skb-&gt;dev = dev;
++	skb-&gt;sk  = sk;
++
++	BUILD_BUG_ON(sizeof(skb-&gt;cb) &lt; sizeof(*skb_cb));
++
++	skb_cb = (void *) skb-&gt;cb;
++	memset(skb_cb, 0, sizeof(*skb_cb));
++	skb_cb-&gt;msg_flags = msg-&gt;msg_flags;
++	skb_cb-&gt;ifindex = ifindex;
++	skb_cb-&gt;src.name = jsk-&gt;addr.src;
++	skb_cb-&gt;dst.name = jsk-&gt;addr.dst;
++	skb_cb-&gt;pgn = jsk-&gt;addr.pgn;
++	skb_cb-&gt;priority = j1939_prio(jsk-&gt;sk.sk_priority);
++	skb_cb-&gt;src.addr = jsk-&gt;addr.sa;
++	skb_cb-&gt;dst.addr = jsk-&gt;addr.da;
++
++	if (msg-&gt;msg_name) {
++		struct sockaddr_can *addr = msg-&gt;msg_name;
++		if (addr-&gt;can_addr.j1939.name) {
++			ecu = j1939_ecu_find_by_name(addr-&gt;can_addr.j1939.name,
++					ifindex);
++			if (!ecu)
++				return -EADDRNOTAVAIL;
++			skb_cb-&gt;dst.name = ecu-&gt;name;
++			skb_cb-&gt;dst.addr = ecu-&gt;sa;
++			put_j1939_ecu(ecu);
++		} else {
++			skb_cb-&gt;dst.name = 0;
++			skb_cb-&gt;dst.addr = addr-&gt;can_addr.j1939.addr;
++		}
++		if (pgn_is_valid(addr-&gt;can_addr.j1939.pgn))
++			skb_cb-&gt;pgn = addr-&gt;can_addr.j1939.pgn;
++	}
++
++	if (skb_cb-&gt;msg_flags &amp; J1939_MSG_SYNC) {
++		if (skb_cb-&gt;msg_flags &amp; MSG_DONTWAIT) {
++			ret = j1939_sock_pending_add_first(&amp;jsk-&gt;sk);
++			if (ret &gt; 0)
++				ret = -EAGAIN;
++		} else {
++			ret = wait_event_interruptible(jsk-&gt;waitq,
++					j1939_sock_pending_add_first(&amp;jsk-&gt;sk));
++		}
++		if (ret &lt; 0)
++			goto free_skb;
++	} else {
++		j1939_sock_pending_add(&amp;jsk-&gt;sk);
++	}
++
++	ret = j1939_send(skb, j1939_level_sky);
++	if (ret &lt; 0)
++		goto decrement_pending;
++
++	dev_put(dev);
++	return size;
++
++decrement_pending:
++	j1939_sock_pending_del(&amp;jsk-&gt;sk);
++free_skb:
++	kfree_skb(skb);
++put_dev:
++	dev_put(dev);
++	return ret;
++}
++
++/* PROC */
++static int j1939sk_proc_show(struct seq_file *sqf, void *v)
++{
++	struct j1939_sock *jsk;
++	struct net_device *netdev;
++
++	seq_printf(sqf, &quot;iface\tflags\tlocal\tremote\tpgn\tprio\tpending\n&quot;);
++	mutex_lock(&amp;s.lock);
++	list_for_each_entry(jsk, &amp;s.socks, list) {
++		lock_sock(&amp;jsk-&gt;sk);
++		netdev = NULL;
++		if (jsk-&gt;sk.sk_bound_dev_if)
++			netdev = dev_get_by_index(&amp;init_net,
++				jsk-&gt;sk.sk_bound_dev_if);
++		seq_printf(sqf, &quot;%s\t&quot;, netdev ? netdev-&gt;name : &quot;-&quot;);
++		if (netdev)
++			dev_put(netdev);
++		seq_printf(sqf, &quot;%c%c%c%c\t&quot;,
++			(jsk-&gt;state &amp; JSK_BOUND) ? 'b' : '-',
++			(jsk-&gt;state &amp; JSK_CONNECTED) ? 'c' : '-',
++			(jsk-&gt;state &amp; PROMISC) ? 'P' : '-',
++			(jsk-&gt;state &amp; RECV_OWN) ? 'o' : '-');
++		if (jsk-&gt;addr.src)
++			seq_printf(sqf, &quot;%016llx&quot;, (long long)jsk-&gt;addr.src);
++		else if (j1939_address_is_unicast(jsk-&gt;addr.sa))
++			seq_printf(sqf, &quot;%02x&quot;, jsk-&gt;addr.sa);
++		else
++			seq_printf(sqf, &quot;-&quot;);
++		seq_printf(sqf, &quot;\t&quot;);
++		if (jsk-&gt;addr.dst)
++			seq_printf(sqf, &quot;%016llx&quot;, (long long)jsk-&gt;addr.dst);
++		else if (j1939_address_is_unicast(jsk-&gt;addr.da))
++			seq_printf(sqf, &quot;%02x&quot;, jsk-&gt;addr.da);
++		else
++			seq_printf(sqf, &quot;-&quot;);
++		seq_printf(sqf, &quot;\t%05x&quot;, jsk-&gt;addr.pgn);
++		seq_printf(sqf, &quot;\t%u&quot;, j1939_prio(jsk-&gt;sk.sk_priority));
++		seq_printf(sqf, &quot;\t%u&quot;, jsk-&gt;skb_pending);
++		release_sock(&amp;jsk-&gt;sk);
++		seq_printf(sqf, &quot;\n&quot;);
++	}
++	mutex_unlock(&amp;s.lock);
++	return 0;
++}
++
++void j1939sk_netdev_event(int ifindex, int error_code)
++{
++	struct j1939_sock *jsk;
++
++	mutex_lock(&amp;s.lock);
++	list_for_each_entry(jsk, &amp;s.socks, list) {
++		if (jsk-&gt;sk.sk_bound_dev_if != ifindex)
++			continue;
++		jsk-&gt;sk.sk_err = error_code;
++		if (!sock_flag(&amp;jsk-&gt;sk, SOCK_DEAD))
++			jsk-&gt;sk.sk_error_report(&amp;jsk-&gt;sk);
++		/* do not remove filters here */
++	}
++	mutex_unlock(&amp;s.lock);
++}
++
++static const struct proto_ops j1939_ops = {
++	.family = PF_CAN,
++	.release = j1939sk_release,
++	.bind = j1939sk_bind,
++	.connect = j1939sk_connect,
++	.socketpair = sock_no_socketpair,
++	.accept = sock_no_accept,
++	.getname = j1939sk_getname,
++	.poll = datagram_poll,
++	.ioctl = can_ioctl,
++	.listen = sock_no_listen,
++	.shutdown = sock_no_shutdown,
++	.setsockopt = j1939sk_setsockopt,
++	.getsockopt = j1939sk_getsockopt,
++	.sendmsg = j1939sk_sendmsg,
++	.recvmsg = j1939sk_recvmsg,
++	.mmap = sock_no_mmap,
++	.sendpage = sock_no_sendpage,
++};
++
++static struct proto j1939_proto __read_mostly = {
++	.name = &quot;CAN_J1939&quot;,
++	.owner = THIS_MODULE,
++	.obj_size = sizeof(struct j1939_sock),
++	.init = j1939sk_init,
++};
++
++static const struct can_proto j1939_can_proto = {
++	.type = SOCK_DGRAM,
++	.protocol = CAN_J1939,
++	.ops = &amp;j1939_ops,
++	.prot = &amp;j1939_proto,
++
++	.rtnl_link_ops = &amp;j1939_rtnl_af_ops,
++	.rtnl_new_addr = j1939rtnl_new_addr,
++	.rtnl_del_addr = j1939rtnl_del_addr,
++	.rtnl_dump_addr = j1939rtnl_dump_addr,
++};
++
++__init int j1939sk_module_init(void)
++{
++	int ret;
++
++	INIT_LIST_HEAD(&amp;s.socks);
++	mutex_init(&amp;s.lock);
++
++	ret = can_proto_register(&amp;j1939_can_proto);
++	if (ret &lt; 0)
++		pr_err(&quot;can: registration of j1939 protocol failed\n&quot;);
++	else
++		j1939_proc_add(&quot;sock&quot;, j1939sk_proc_show, NULL);
++	return ret;
++}
++
++void j1939sk_module_exit(void)
++{
++	j1939_proc_remove(&quot;sock&quot;);
++	can_proto_unregister(&amp;j1939_can_proto);
++}
++
++MODULE_ALIAS(&quot;can-proto-&quot; __stringify(CAN_J1939));
++
+diff --git a/net/can/j1939/transport.c b/net/can/j1939/transport.c
+new file mode 100644
+index 0000000..9f723c6
+--- /dev/null
++++ b/net/can/j1939/transport.c
+@@ -0,0 +1,1449 @@
++/*
++ * Copyright (c) 2010-2011 EIA Electronics
++ *
++ * Authors:
++ * Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ */
++
++#include &lt;linux/skbuff.h&gt;
++#include &lt;linux/hrtimer.h&gt;
++#include &lt;linux/version.h&gt;
++#include &lt;linux/if_arp.h&gt;
++#include &lt;linux/wait.h&gt;
++#include &quot;j1939-priv.h&quot;
++
++#define REGULAR		0
++#define EXTENDED	1
++
++#define etp_pgn_ctl	0xc800
++#define etp_pgn_dat	0xc700
++#define tp_pgn_ctl	0xec00
++#define tp_pgn_dat	0xeb00
++
++#define  tp_cmd_bam	0x20
++#define  tp_cmd_rts	0x10
++#define  tp_cmd_cts	0x11
++#define  tp_cmd_eof	0x13
++#define  tp_cmd_abort	0xff
++
++#define etp_cmd_rts	0x14
++#define etp_cmd_cts	0x15
++#define etp_cmd_dpo	0x16
++#define etp_cmd_eof	0x17
++#define etp_cmd_abort	0xff
++
++#define ABORT_BUSY	1
++#define ABORT_RESOURCE	2
++#define ABORT_TIMEOUT	3
++#define ABORT_GENERIC	4
++#define ABORT_FAULT	5
++
++#define MAX_TP_PACKET_SIZE	(7*255)
++#define MAX_ETP_PACKET_SIZE	(7*0xffffff)
++
++static int block = 255;
++static int max_packet_size = 1024*100;
++static int retry_ms = 20;
++
++struct session {
++	struct list_head list;
++	atomic_t refs;
++	spinlock_t lock;
++
++	struct j1939_sk_buff_cb *cb; /*
++	 * ifindex, src, dst, pgn define the session block
++	 * the are _never_ modified after insertion in the list
++	 * this decreases locking problems a _lot_
++	 */
++	struct sk_buff *skb;
++
++	/*
++	 * all tx related stuff (last_txcmd, pkt.tx)
++	 * is protected (modified only) with the txtask tasklet
++	 * 'total' &amp; 'block' are never changed,
++	 * last_cmd, last &amp; block are protected by -&gt;lock
++	 * this means that the tx may run after cts is received that should
++	 * have stopped tx, but this time discrepancy is never avoided anyhow
++	 */
++	uint8_t last_cmd, last_txcmd;
++	uint8_t transmission;
++	uint8_t extd;
++	struct {
++		/*
++		 * these do not require 16 bit, they should fit in uint8_t
++		 * but putting in int makes it easier to deal with
++		 */
++		unsigned int total, done, last, tx;
++		unsigned int block; /* for TP */
++		unsigned int dpo; /* for ETP */
++	} pkt;
++	struct hrtimer txtimer, rxtimer;
++	/* tasklets for execution of tx/rx timer hander in softirq */
++	struct tasklet_struct txtask, rxtask;
++};
++
++static struct j1939tp {
++	spinlock_t lock;
++	struct list_head sessionq;
++	struct list_head extsessionq;
++	struct {
++		struct list_head sessionq;
++		spinlock_t lock;
++		struct work_struct work;
++	} del;
++	wait_queue_head_t wait;
++	struct notifier_block notifier;
++} s;
++
++static struct session *j1939session_new(struct sk_buff *skb);
++static struct session *j1939session_fresh_new(int size,
++		struct j1939_sk_buff_cb *rel_cb, pgn_t pgn);
++
++static inline void fix_cb(struct j1939_sk_buff_cb *cb)
++{
++	cb-&gt;msg_flags &amp;= ~J1939_MSG_RESERVED;
++}
++
++static inline struct list_head *sessionq(int extd)
++{
++	return extd ? &amp;s.extsessionq : &amp;s.sessionq;
++}
++
++static inline void j1939session_destroy(struct session *session)
++{
++	if (session-&gt;skb)
++		kfree_skb(session-&gt;skb);
++	hrtimer_cancel(&amp;session-&gt;rxtimer);
++	hrtimer_cancel(&amp;session-&gt;txtimer);
++	tasklet_disable(&amp;session-&gt;rxtask);
++	tasklet_disable(&amp;session-&gt;txtask);
++	kfree(session);
++}
++
++/* clean up work queue */
++static void j1939tp_del_work(struct work_struct *work)
++{
++	struct session *session;
++	int cnt = 0;
++
++	do {
++		session = NULL;
++		spin_lock_bh(&amp;s.del.lock);
++		if (list_empty(&amp;s.del.sessionq)) {
++			spin_unlock_bh(&amp;s.del.lock);
++			break;
++		}
++		session = list_first_entry(&amp;s.del.sessionq,
++				struct session, list);
++		list_del_init(&amp;session-&gt;list);
++		spin_unlock_bh(&amp;s.del.lock);
++		j1939session_destroy(session);
++		++cnt;
++	} while (1);
++}
++/* reference counter */
++static inline void get_session(struct session *session)
++{
++	atomic_inc(&amp;session-&gt;refs);
++}
++
++static void put_session(struct session *session)
++{
++	BUG_ON(!session);
++	if (atomic_add_return(-1, &amp;session-&gt;refs) &gt;= 0)
++		/* not the last one */
++		return;
++	/* it should have been removed from any list long time ago */
++	BUG_ON(!list_empty(&amp;session-&gt;list));
++
++	hrtimer_try_to_cancel(&amp;session-&gt;rxtimer);
++	hrtimer_try_to_cancel(&amp;session-&gt;txtimer);
++	tasklet_disable_nosync(&amp;session-&gt;rxtask);
++	tasklet_disable_nosync(&amp;session-&gt;txtask);
++
++	if (in_interrupt()) {
++		spin_lock_bh(&amp;s.del.lock);
++		list_add_tail(&amp;session-&gt;list, &amp;s.del.sessionq);
++		spin_unlock_bh(&amp;s.del.lock);
++		schedule_work(&amp;s.del.work);
++	} else {
++		/* destroy session right here */
++		j1939session_destroy(session);
++	}
++}
++
++/* transport status locking */
++static inline void session_lock(struct session *session)
++{
++	get_session(session); /* safety measure */
++	spin_lock_bh(&amp;session-&gt;lock);
++}
++
++static inline void session_unlock(struct session *session)
++{
++	spin_unlock_bh(&amp;session-&gt;lock);
++	put_session(session);
++}
++
++static inline void sessionlist_lock(void)
++{
++	spin_lock_bh(&amp;s.lock);
++}
++
++static inline void sessionlist_unlock(void)
++{
++	spin_unlock_bh(&amp;s.lock);
++}
++
++/*
++ * see if we are receiver
++ * returns 0 for broadcasts, although we will receive them
++ */
++static inline int j1939tp_im_receiver(const struct j1939_sk_buff_cb *cb)
++{
++	return (cb-&gt;dst.flags &amp; ECUFLAG_LOCAL) ? 1 : 0;
++}
++
++/* see if we are sender */
++static inline int j1939tp_im_transmitter(const struct j1939_sk_buff_cb *cb)
++{
++	return (cb-&gt;src.flags &amp; ECUFLAG_LOCAL) ? 1 : 0;
++}
++
++/* see if we are involved as either receiver or transmitter */
++/* reverse = -1 means : any direction */
++static int j1939tp_im_involved(const struct j1939_sk_buff_cb *cb, int reverse)
++{
++	if (reverse &lt; 0) {
++		return ((cb-&gt;src.flags | cb-&gt;dst.flags) &amp; ECUFLAG_LOCAL)
++			? 1 : 0;
++	} else if (reverse) {
++		return j1939tp_im_receiver(cb);
++	} else {
++		return j1939tp_im_transmitter(cb);
++	}
++}
++
++/* extract pgn from flow-ctl message */
++static inline pgn_t j1939xtp_ctl_to_pgn(const uint8_t *dat)
++{
++	pgn_t pgn;
++
++	pgn = (dat[7] &lt;&lt; 16) | (dat[6] &lt;&lt; 8) | (dat[5] &lt;&lt; 0);
++	if (pgn_is_pdu1(pgn))
++		pgn &amp;= 0xffff00;
++	return pgn;
++}
++
++static inline unsigned int j1939tp_ctl_to_size(const uint8_t *dat)
++{
++	return (dat[2] &lt;&lt; 8) + (dat[1] &lt;&lt; 0);
++}
++static inline unsigned int j1939etp_ctl_to_packet(const uint8_t *dat)
++{
++	return (dat[4] &lt;&lt; 16) | (dat[3] &lt;&lt; 8) | (dat[2] &lt;&lt; 0);
++}
++static inline unsigned int j1939etp_ctl_to_size(const uint8_t *dat)
++{
++	return (dat[4] &lt;&lt; 24) | (dat[3] &lt;&lt; 16) |
++		(dat[2] &lt;&lt; 8) | (dat[1] &lt;&lt; 0);
++}
++
++/*
++ * find existing session:
++ * reverse: swap cb's src &amp; dst
++ * there is no problem with matching broadcasts, since
++ * broadcasts (no dst, no da) would never call this
++ * with reverse==1
++ */
++static int j1939tp_match(const struct j1939_sk_buff_cb *a,
++		const struct j1939_sk_buff_cb *b, int reverse)
++{
++	if (a-&gt;ifindex != b-&gt;ifindex)
++		return 0;
++	if (!reverse) {
++		if (a-&gt;src.name) {
++			if (a-&gt;src.name != b-&gt;src.name)
++				return 0;
++		} else if (a-&gt;src.addr != b-&gt;src.addr)
++			return 0;
++		if (a-&gt;dst.name) {
++			if (a-&gt;dst.name != b-&gt;dst.name)
++				return 0;
++		} else if (a-&gt;dst.addr != b-&gt;dst.addr)
++			return 0;
++	} else {
++		if (a-&gt;src.name) {
++			if (a-&gt;src.name != b-&gt;dst.name)
++				return 0;
++		} else if (a-&gt;src.addr != b-&gt;dst.addr)
++			return 0;
++		if (a-&gt;dst.name) {
++			if (a-&gt;dst.name != b-&gt;src.name)
++				return 0;
++		} else if (a-&gt;dst.addr != b-&gt;src.addr)
++			return 0;
++	}
++	return 1;
++}
++
++static struct session *_j1939tp_find(struct list_head *root,
++		const struct j1939_sk_buff_cb *cb, int reverse)
++{
++	struct session *session;
++
++	list_for_each_entry(session, root, list) {
++		get_session(session);
++		if (j1939tp_match(session-&gt;cb, cb, reverse))
++			return session;
++		put_session(session);
++	}
++	return NULL;
++}
++
++static struct session *j1939tp_find(struct list_head *root,
++		const struct j1939_sk_buff_cb *cb, int reverse)
++{
++	struct session *session;
++	sessionlist_lock();
++	session = _j1939tp_find(root, cb, reverse);
++	sessionlist_unlock();
++	return session;
++}
++
++static void j1939_skbcb_swap(struct j1939_sk_buff_cb *cb)
++{
++	name_t name;
++	uint8_t addr;
++	int flags;
++
++	name = cb-&gt;dst.name;
++	cb-&gt;dst.name = cb-&gt;src.name;
++	cb-&gt;src.name = name;
++
++	addr = cb-&gt;dst.addr;
++	cb-&gt;dst.addr = cb-&gt;src.addr;
++	cb-&gt;src.addr = addr;
++
++	flags = cb-&gt;dst.flags;
++	cb-&gt;dst.flags = cb-&gt;src.flags;
++	cb-&gt;src.flags = flags;
++}
++/* TP transmit packet functions */
++static int j1939tp_tx_dat(struct session *related,
++		const uint8_t *dat, int len)
++{
++	int ret;
++	struct sk_buff *skb;
++	struct j1939_sk_buff_cb *skb_cb;
++	uint8_t *skdat;
++
++	skb = dev_alloc_skb(8);
++	if (unlikely(!skb)) {
++		pr_alert(&quot;%s: out of memory?\n&quot;, __func__);
++		return -ENOMEM;
++	}
++	skb-&gt;protocol = related-&gt;skb-&gt;protocol;
++	skb-&gt;pkt_type = related-&gt;skb-&gt;pkt_type;
++	skb-&gt;ip_summed = related-&gt;skb-&gt;ip_summed;
++	skb-&gt;sk	= related-&gt;skb-&gt;sk;
++
++	skb_cb = (void *)skb-&gt;cb;
++	*skb_cb = *(related-&gt;cb);
++	fix_cb(skb_cb);
++	/* fix pgn */
++	skb_cb-&gt;pgn = related-&gt;extd ? etp_pgn_dat : tp_pgn_dat;
++
++	skdat = skb_put(skb, len);
++	memcpy(skdat, dat, len);
++	ret = j1939_send(skb, j1939_level_transport);
++	if (ret &lt; 0)
++		kfree_skb(skb);
++	return ret;
++}
++
++static int j1939xtp_do_tx_ctl(struct sk_buff *related, int extd,
++		int swap_src_dst, pgn_t pgn, const uint8_t dat[5])
++{
++	int ret;
++	struct sk_buff *skb;
++	struct j1939_sk_buff_cb *skb_cb, *rel_cb;
++	uint8_t *skdat;
++
++	rel_cb = (void *)related-&gt;cb;
++	if (!j1939tp_im_involved(rel_cb, swap_src_dst))
++		return 0;
++
++	skb = dev_alloc_skb(8);
++	if (unlikely(!skb)) {
++		pr_alert(&quot;%s: out of memory?\n&quot;, __func__);
++		return -ENOMEM;
++	}
++	skb-&gt;protocol = related-&gt;protocol;
++	skb-&gt;pkt_type = related-&gt;pkt_type;
++	skb-&gt;ip_summed = related-&gt;ip_summed;
++	skb-&gt;sk	= related-&gt;sk;
++
++	skb_cb = (void *)skb-&gt;cb;
++	*skb_cb = *rel_cb;
++	fix_cb(skb_cb);
++	if (swap_src_dst)
++		j1939_skbcb_swap(skb_cb);
++	skb_cb-&gt;pgn = extd ? etp_pgn_ctl : tp_pgn_ctl;
++
++	skdat = skb_put(skb, 8);
++	memcpy(skdat, dat, 5);
++	skdat[7] = (pgn &gt;&gt; 16) &amp; 0xff;
++	skdat[6] = (pgn &gt;&gt;  8) &amp; 0xff;
++	skdat[5] = (pgn &gt;&gt;  0) &amp; 0xff;
++
++	ret = j1939_send(skb, j1939_level_transport);
++	if (ret)
++		kfree_skb(skb);
++	return ret;
++}
++
++static inline int j1939tp_tx_ctl(struct session *session,
++		int swap_src_dst, const uint8_t dat[8])
++{
++	return j1939xtp_do_tx_ctl(session-&gt;skb, session-&gt;extd, swap_src_dst,
++			session-&gt;cb-&gt;pgn, dat);
++}
++
++static int j1939xtp_tx_abort(struct sk_buff *related, int extd,
++		int swap_src_dst, int err, pgn_t pgn)
++{
++	struct j1939_sk_buff_cb *cb = (void *)related-&gt;cb;
++	uint8_t dat[5];
++
++	if (!j1939tp_im_involved(cb, swap_src_dst))
++		return 0;
++
++	memset(dat, 0xff, sizeof(dat));
++	dat[0] = tp_cmd_abort;
++	if (!extd)
++		dat[1] = err ?: ABORT_GENERIC;
++	return j1939xtp_do_tx_ctl(related, extd, swap_src_dst, pgn, dat);
++}
++
++/* timer &amp; scheduler functions */
++static inline void j1939session_schedule_txnow(struct session *session)
++{
++	tasklet_schedule(&amp;session-&gt;txtask);
++}
++static enum hrtimer_restart j1939tp_txtimer(struct hrtimer *hrtimer)
++{
++	struct session *session =
++		container_of(hrtimer, struct session, txtimer);
++	j1939session_schedule_txnow(session);
++	return HRTIMER_NORESTART;
++}
++static inline void j1939tp_schedule_txtimer(struct session *session, int msec)
++{
++	hrtimer_start(&amp;session-&gt;txtimer,
++			ktime_set(msec / 1000, (msec % 1000)*1000000UL),
++			HRTIMER_MODE_REL);
++}
++static inline void j1939tp_set_rxtimeout(struct session *session, int msec)
++{
++	hrtimer_start(&amp;session-&gt;rxtimer,
++			ktime_set(msec / 1000, (msec % 1000)*1000000UL),
++			HRTIMER_MODE_REL);
++}
++
++/*
++ * session completion functions
++ */
++/*
++ * j1939session_drop
++ * removes a session from open session list
++ */
++static inline void j1939session_drop(struct session *session)
++{
++	sessionlist_lock();
++	list_del_init(&amp;session-&gt;list);
++	sessionlist_unlock();
++
++	if (session-&gt;transmission) {
++		if (session-&gt;skb &amp;&amp; session-&gt;skb-&gt;sk)
++			j1939_sock_pending_del(session-&gt;skb-&gt;sk);
++		wake_up_all(&amp;s.wait);
++	}
++	put_session(session);
++}
++
++static inline void j1939session_completed(struct session *session)
++{
++	j1939_recv(session-&gt;skb, j1939_level_transport);
++	j1939session_drop(session);
++}
++
++static void j1939session_cancel(struct session *session, int err)
++{
++	if ((err &gt;= 0) &amp;&amp; j1939tp_im_involved(session-&gt;cb, -1)) {
++		if (!j1939cb_is_broadcast(session-&gt;cb)) {
++			/* do not send aborts on incoming broadcasts */
++			j1939xtp_tx_abort(session-&gt;skb, session-&gt;extd,
++				!j1939tp_im_transmitter(session-&gt;cb),
++				err, session-&gt;cb-&gt;pgn);
++		}
++	}
++	j1939session_drop(session);
++}
++
++static enum hrtimer_restart j1939tp_rxtimer(struct hrtimer *hrtimer)
++{
++	struct session *session =
++		container_of(hrtimer, struct session, rxtimer);
++	tasklet_schedule(&amp;session-&gt;rxtask);
++	return HRTIMER_NORESTART;
++}
++
++static void j1939tp_rxtask(unsigned long val)
++{
++	struct session *session = (void *)val;
++
++	get_session(session);
++	pr_alert(&quot;%s: timeout on %i\n&quot;, __func__, session-&gt;cb-&gt;ifindex);
++	j1939session_cancel(session, ABORT_TIMEOUT);
++	put_session(session);
++}
++
++/*
++ * receive packet functions
++ */
++static void _j1939xtp_rx_bad_message(struct sk_buff *skb, int extd)
++{
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++	struct session *session;
++	pgn_t pgn;
++
++	pgn = j1939xtp_ctl_to_pgn(skb-&gt;data);
++	session = j1939tp_find(sessionq(extd), cb, 0);
++	if (session /*&amp;&amp; (session-&gt;cb-&gt;pgn == pgn)*/) {
++		/* do not allow TP control messages on 2 pgn's */
++		j1939session_cancel(session, ABORT_FAULT);
++		put_session(session); /* ~j1939tp_find */
++		return;
++	}
++	j1939xtp_tx_abort(skb, extd, 0, ABORT_FAULT, pgn);
++	if (!session)
++		return;
++	put_session(session); /* ~j1939tp_find */
++}
++
++/* abort packets may come in 2 directions */
++static void j1939xtp_rx_bad_message(struct sk_buff *skb, int extd)
++{
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++
++	pr_info(&quot;%s, pgn %05x\n&quot;, __func__, j1939xtp_ctl_to_pgn(skb-&gt;data));
++	_j1939xtp_rx_bad_message(skb, extd);
++	j1939_skbcb_swap(cb);
++	_j1939xtp_rx_bad_message(skb, extd);
++	/* restore skb */
++	j1939_skbcb_swap(cb);
++	return;
++}
++
++static void _j1939xtp_rx_abort(struct sk_buff *skb, int extd)
++{
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++	struct session *session;
++	pgn_t pgn;
++
++	pgn = j1939xtp_ctl_to_pgn(skb-&gt;data);
++	session = j1939tp_find(sessionq(extd), cb, 0);
++	if (!session)
++		return;
++	if (session-&gt;transmission &amp;&amp; !session-&gt;last_txcmd) {
++		/*
++		 * empty block:
++		 * do not drop session when a transmit session did not
++		 * start yet
++		 */
++	} else if (session-&gt;cb-&gt;pgn == pgn)
++		j1939session_drop(session);
++	/* another PGN had a bad message */
++	/*
++	 * TODO: maybe cancel current connection
++	 * as another pgn was communicated
++	 */
++	put_session(session); /* ~j1939tp_find */
++}
++/* abort packets may come in 2 directions */
++static inline void j1939xtp_rx_abort(struct sk_buff *skb, int extd)
++{
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++
++	pr_info(&quot;%s %i, %05x\n&quot;, __func__, cb-&gt;ifindex,
++			j1939xtp_ctl_to_pgn(skb-&gt;data));
++	_j1939xtp_rx_abort(skb, extd);
++	j1939_skbcb_swap(cb);
++	_j1939xtp_rx_abort(skb, extd);
++	/* restore skb */
++	j1939_skbcb_swap(cb);
++	return;
++}
++
++static void j1939xtp_rx_eof(struct sk_buff *skb, int extd)
++{
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++	struct session *session;
++	pgn_t pgn;
++
++	/* end of tx cycle */
++	pgn = j1939xtp_ctl_to_pgn(skb-&gt;data);
++	session = j1939tp_find(sessionq(extd), cb, 1);
++	if (!session)
++		/*
++		 * strange, we had EOF on closed connection
++		 * do nothing, as EOF closes the connection anyway
++		 */
++		return;
++
++	if (session-&gt;cb-&gt;pgn != pgn) {
++		j1939xtp_tx_abort(skb, extd, 1, ABORT_BUSY, pgn);
++		j1939session_cancel(session, ABORT_BUSY);
++	} else {
++		/* transmitted without problems */
++		j1939session_completed(session);
++	}
++	put_session(session); /* ~j1939tp_find */
++}
++
++static void j1939xtp_rx_cts(struct sk_buff *skb, int extd)
++{
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++	struct session *session;
++	pgn_t pgn;
++	unsigned int pkt;
++	const uint8_t *dat;
++
++	dat = skb-&gt;data;
++	pgn = j1939xtp_ctl_to_pgn(skb-&gt;data);
++	session = j1939tp_find(sessionq(extd), cb, 1);
++	if (!session) {
++		/* 'CTS shall be ignored' */
++		return;
++	}
++	if (session-&gt;cb-&gt;pgn != pgn) {
++		/* what to do? */
++		j1939xtp_tx_abort(skb, extd, 1, ABORT_BUSY, pgn);
++		j1939session_cancel(session, ABORT_BUSY);
++		put_session(session); /* ~j1939tp_find */
++		return;
++	}
++	session_lock(session);
++	pkt = extd ? j1939etp_ctl_to_packet(dat) : dat[2];
++	if (!dat[0])
++		hrtimer_cancel(&amp;session-&gt;txtimer);
++	else if (!pkt)
++		goto bad_fmt;
++	else if (dat[1] &gt; session-&gt;pkt.block /* 0xff for etp */)
++		goto bad_fmt;
++	else {
++		/* set packet counters only when not CTS(0) */
++		session-&gt;pkt.done = pkt - 1;
++		session-&gt;pkt.last = session-&gt;pkt.done + dat[1];
++		if (session-&gt;pkt.last &gt; session-&gt;pkt.total)
++			/* safety measure */
++			session-&gt;pkt.last = session-&gt;pkt.total;
++		/* TODO: do not set tx here, do it in txtask */
++		session-&gt;pkt.tx = session-&gt;pkt.done;
++	}
++	session-&gt;last_cmd = dat[0];
++	session_unlock(session);
++	if (dat[1]) {
++		j1939tp_set_rxtimeout(session, 1250);
++		if (j1939tp_im_transmitter(session-&gt;cb))
++			j1939session_schedule_txnow(session);
++	} else {
++		/* CTS(0) */
++		j1939tp_set_rxtimeout(session, 550);
++	}
++	put_session(session); /* ~j1939tp_find */
++	return;
++bad_fmt:
++	session_unlock(session);
++	j1939session_cancel(session, ABORT_FAULT);
++	put_session(session); /* ~j1939tp_find */
++}
++
++static void j1939xtp_rx_rts(struct sk_buff *skb, int extd)
++{
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++	struct session *session;
++	int len;
++	const uint8_t *dat;
++	pgn_t pgn;
++
++	dat = skb-&gt;data;
++	pgn = j1939xtp_ctl_to_pgn(dat);
++
++	if ((tp_cmd_rts == dat[0]) &amp;&amp; j1939cb_is_broadcast(cb)) {
++		pr_alert(&quot;%s: rts without destination (%i %02x)\n&quot;, __func__,
++			cb-&gt;ifindex, cb-&gt;src.addr);
++		return;
++	}
++	/*
++	 * TODO: abort RTS when a similar
++	 * TP is pending in the other direction
++	 */
++	session = j1939tp_find(sessionq(extd), cb, 0);
++	if (session &amp;&amp; !j1939tp_im_transmitter(cb)) {
++		/* RTS on pending connection */
++		j1939session_cancel(session, ABORT_BUSY);
++		if ((pgn != session-&gt;cb-&gt;pgn) &amp;&amp; (tp_cmd_bam != dat[0]))
++			j1939xtp_tx_abort(skb, extd, 1, ABORT_BUSY, pgn);
++		put_session(session); /* ~j1939tp_find */
++		return;
++	} else if (!session &amp;&amp; j1939tp_im_transmitter(cb)) {
++		pr_alert(&quot;%s: I should tx (%i %02x %02x)\n&quot;, __func__,
++			cb-&gt;ifindex, cb-&gt;src.addr, cb-&gt;dst.addr);
++		return;
++	}
++	if (session &amp;&amp; (0 != session-&gt;last_cmd)) {
++		/* we received a second rts on the same connection */
++		pr_alert(&quot;%s: connection exists (%i %02x %02x)\n&quot;, __func__,
++				cb-&gt;ifindex, cb-&gt;src.addr, cb-&gt;dst.addr);
++		j1939session_cancel(session, ABORT_BUSY);
++		put_session(session); /* ~j1939tp_find */
++		return;
++	}
++	if (session) {
++		/*
++		 * make sure 'sa' &amp; 'da' are correct !
++		 * They may be 'not filled in yet' for sending
++		 * skb's, since they did not pass the Address Claim ever.
++		 */
++		session-&gt;cb-&gt;src.addr = cb-&gt;src.addr;
++		session-&gt;cb-&gt;dst.addr = cb-&gt;dst.addr;
++	} else {
++		int abort = 0;
++		if (extd) {
++			len = j1939etp_ctl_to_size(dat);
++			if (len &gt; (max_packet_size ?: MAX_ETP_PACKET_SIZE))
++				abort = ABORT_RESOURCE;
++			else if (len &lt;= MAX_TP_PACKET_SIZE)
++				abort = ABORT_FAULT;
++		} else {
++			len = j1939tp_ctl_to_size(dat);
++			if (len &gt; MAX_TP_PACKET_SIZE)
++				abort = ABORT_FAULT;
++			else if (max_packet_size &amp;&amp; (len &gt; max_packet_size))
++				abort = ABORT_RESOURCE;
++		}
++		if (abort) {
++			j1939xtp_tx_abort(skb, extd, 1, abort, pgn);
++			return;
++		}
++		session = j1939session_fresh_new(len, cb, pgn);
++		if (!session) {
++			j1939xtp_tx_abort(skb, extd, 1, ABORT_RESOURCE, pgn);
++			return;
++		}
++		session-&gt;extd = extd;
++		/* initialize the control buffer: plain copy */
++		session-&gt;pkt.total = (len+6)/7;
++		session-&gt;pkt.block = 0xff;
++		if (!extd) {
++			if (dat[3] != session-&gt;pkt.total)
++				pr_alert(&quot;%s: strange total,&quot;
++						&quot; %u != %u\n&quot;, __func__,
++						session-&gt;pkt.total, dat[3]);
++			session-&gt;pkt.total = dat[3];
++			session-&gt;pkt.block = dat[4];
++		}
++		session-&gt;pkt.done = session-&gt;pkt.tx = 0;
++		get_session(session); /* equivalent to j1939tp_find() */
++		sessionlist_lock();
++		list_add_tail(&amp;session-&gt;list, sessionq(extd));
++		sessionlist_unlock();
++	}
++	session-&gt;last_cmd = dat[0];
++
++	j1939tp_set_rxtimeout(session, 1250);
++
++	if (j1939tp_im_receiver(session-&gt;cb)) {
++		if (extd || (tp_cmd_bam != dat[0]))
++			j1939session_schedule_txnow(session);
++	}
++	/*
++	 * as soon as it's inserted, things can go fast
++	 * protect against a long delay
++	 * between spin_unlock &amp; next statement
++	 * so, only release here, at the end
++	 */
++	put_session(session); /* ~j1939tp_find */
++	return;
++}
++
++static void j1939xtp_rx_dpo(struct sk_buff *skb, int extd)
++{
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++	struct session *session;
++	pgn_t pgn;
++	const uint8_t *dat = skb-&gt;data;
++
++	pgn = j1939xtp_ctl_to_pgn(dat);
++	session = j1939tp_find(sessionq(extd), cb, 0);
++	if (!session) {
++		pr_info(&quot;%s: %s\n&quot;, __func__, &quot;no connection found&quot;);
++		return;
++	}
++
++	if (session-&gt;cb-&gt;pgn != pgn) {
++		pr_info(&quot;%s: different pgn\n&quot;, __func__);
++		j1939xtp_tx_abort(skb, 1, 1, ABORT_BUSY, pgn);
++		j1939session_cancel(session, ABORT_BUSY);
++		put_session(session); /* ~j1939tp_find */
++		return;
++	}
++	/* transmitted without problems */
++	session-&gt;pkt.dpo = j1939etp_ctl_to_packet(skb-&gt;data);
++	session-&gt;last_cmd = dat[0];
++	j1939tp_set_rxtimeout(session, 750);
++	put_session(session); /* ~j1939tp_find */
++}
++
++static void j1939xtp_rx_dat(struct sk_buff *skb, int extd)
++{
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++	struct session *session;
++	const uint8_t *dat;
++	uint8_t *tpdat;
++	int offset;
++	int nbytes;
++	int final;
++	int do_cts_eof;
++	int packet;
++
++	session = j1939tp_find(sessionq(extd), cb, 0);
++	if (!session) {
++		pr_info(&quot;%s:%s\n&quot;, __func__, &quot;no connection found&quot;);
++		return;
++	}
++	dat = skb-&gt;data;
++	if (skb-&gt;len &lt;= 1)
++		/* makes no sense */
++		goto strange_packet_unlocked;
++
++	session_lock(session);
++
++	switch (session-&gt;last_cmd) {
++	case 0xff:
++		break;
++	case etp_cmd_dpo:
++		if (extd)
++			break;
++	case tp_cmd_bam:
++	case tp_cmd_cts:
++		if (!extd)
++			break;
++	default:
++		pr_info(&quot;%s: last %02x\n&quot;, __func__,
++				session-&gt;last_cmd);
++		goto strange_packet;
++	}
++
++	packet = (dat[0]-1+session-&gt;pkt.dpo);
++	offset = packet * 7;
++	if ((packet &gt; session-&gt;pkt.total) ||
++			(session-&gt;pkt.done+1) &gt; session-&gt;pkt.total) {
++		pr_info(&quot;%s: should have been completed\n&quot;, __func__);
++		goto strange_packet;
++	}
++	nbytes = session-&gt;skb-&gt;len - offset;
++	if (nbytes &gt; 7)
++		nbytes = 7;
++	if ((nbytes &lt;= 0) || ((nbytes + 1) &gt; skb-&gt;len)) {
++		pr_info(&quot;%s: nbytes %i, len %i\n&quot;, __func__, nbytes,
++				skb-&gt;len);
++		goto strange_packet;
++	}
++	tpdat = session-&gt;skb-&gt;data;
++	memcpy(&amp;tpdat[offset], &amp;dat[1], nbytes);
++	if (packet == session-&gt;pkt.done)
++		++session-&gt;pkt.done;
++
++	if (!extd &amp;&amp; j1939cb_is_broadcast(session-&gt;cb)) {
++		final = session-&gt;pkt.done &gt;= session-&gt;pkt.total;
++		do_cts_eof = 0;
++	} else {
++		final = 0; /* never final, an EOF must follow */
++		do_cts_eof = (session-&gt;pkt.done &gt;= session-&gt;pkt.last);
++	}
++	session_unlock(session);
++	if (final) {
++		j1939session_completed(session);
++	} else if (do_cts_eof) {
++		j1939tp_set_rxtimeout(session, 1250);
++		if (j1939tp_im_receiver(session-&gt;cb))
++			j1939session_schedule_txnow(session);
++	} else {
++		j1939tp_set_rxtimeout(session, 250);
++	}
++	session-&gt;last_cmd = 0xff;
++	put_session(session); /* ~j1939tp_find */
++	return;
++
++strange_packet:
++	/* unlock session (spinlock) before trying to send */
++	session_unlock(session);
++strange_packet_unlocked:
++	j1939session_cancel(session, ABORT_FAULT);
++	put_session(session); /* ~j1939tp_find */
++}
++
++/*
++ * transmit function
++ */
++static int j1939tp_txnext(struct session *session)
++{
++	uint8_t dat[8];
++	const uint8_t *tpdat;
++	int ret, offset, len, pkt_done, pkt_end;
++	unsigned int pkt;
++
++	memset(dat, 0xff, sizeof(dat));
++	get_session(session); /* do not loose it */
++
++	switch (session-&gt;last_cmd) {
++	case 0:
++		if (!j1939tp_im_transmitter(session-&gt;cb))
++			break;
++		dat[1] = (session-&gt;skb-&gt;len &gt;&gt; 0) &amp; 0xff;
++		dat[2] = (session-&gt;skb-&gt;len &gt;&gt; 8) &amp; 0xff;
++		dat[3] = session-&gt;pkt.total;
++		if (session-&gt;extd) {
++			dat[0] = etp_cmd_rts;
++			dat[1] = (session-&gt;skb-&gt;len &gt;&gt;  0) &amp; 0xff;
++			dat[2] = (session-&gt;skb-&gt;len &gt;&gt;  8) &amp; 0xff;
++			dat[3] = (session-&gt;skb-&gt;len &gt;&gt; 16) &amp; 0xff;
++			dat[4] = (session-&gt;skb-&gt;len &gt;&gt; 24) &amp; 0xff;
++		} else if (j1939cb_is_broadcast(session-&gt;cb)) {
++			dat[0] = tp_cmd_bam;
++			/* fake cts for broadcast */
++			session-&gt;pkt.tx = 0;
++		} else {
++			dat[0] = tp_cmd_rts;
++			dat[4] = dat[3];
++		}
++		if (dat[0] == session-&gt;last_txcmd)
++			/* done already */
++			break;
++		ret = j1939tp_tx_ctl(session, 0, dat);
++		if (ret &lt; 0)
++			goto failed;
++		session-&gt;last_txcmd = dat[0];
++		/* must lock? */
++		if (tp_cmd_bam == dat[0])
++			j1939tp_schedule_txtimer(session, 50);
++		j1939tp_set_rxtimeout(session, 1250);
++		break;
++	case tp_cmd_rts:
++	case etp_cmd_rts:
++		if (!j1939tp_im_receiver(session-&gt;cb))
++			break;
++tx_cts:
++		ret = 0;
++		len = session-&gt;pkt.total - session-&gt;pkt.done;
++		if (len &gt; 255)
++			len = 255;
++		if (len &gt; session-&gt;pkt.block)
++			len = session-&gt;pkt.block;
++		if (block &amp;&amp; (len &gt; block))
++			len = block;
++
++		if (session-&gt;extd) {
++			pkt = session-&gt;pkt.done+1;
++			dat[0] = etp_cmd_cts;
++			dat[1] = len;
++			dat[2] = (pkt &gt;&gt;  0) &amp; 0xff;
++			dat[3] = (pkt &gt;&gt;  8) &amp; 0xff;
++			dat[4] = (pkt &gt;&gt; 16) &amp; 0xff;
++		} else {
++			dat[0] = tp_cmd_cts;
++			dat[1] = len;
++			dat[2] = session-&gt;pkt.done+1;
++		}
++		if (dat[0] == session-&gt;last_txcmd)
++			/* done already */
++			break;
++		ret = j1939tp_tx_ctl(session, 1, dat);
++		if (ret &lt; 0)
++			goto failed;
++		if (len)
++			/* only mark cts done when len is set */
++			session-&gt;last_txcmd = dat[0];
++		j1939tp_set_rxtimeout(session, 1250);
++		break;
++	case etp_cmd_cts:
++		if (j1939tp_im_transmitter(session-&gt;cb) &amp;&amp; session-&gt;extd &amp;&amp;
++		    (etp_cmd_dpo != session-&gt;last_txcmd)) {
++			/* do dpo */
++			dat[0] = etp_cmd_dpo;
++			session-&gt;pkt.dpo = session-&gt;pkt.done;
++			pkt = session-&gt;pkt.dpo;
++			dat[1] = session-&gt;pkt.last - session-&gt;pkt.done;
++			dat[2] = (pkt &gt;&gt;  0) &amp; 0xff;
++			dat[3] = (pkt &gt;&gt;  8) &amp; 0xff;
++			dat[4] = (pkt &gt;&gt; 16) &amp; 0xff;
++			ret = j1939tp_tx_ctl(session, 0, dat);
++			if (ret &lt; 0)
++				goto failed;
++			session-&gt;last_txcmd = dat[0];
++			j1939tp_set_rxtimeout(session, 1250);
++			session-&gt;pkt.tx = session-&gt;pkt.done;
++		}
++	case tp_cmd_cts:
++	case 0xff: /* did some data */
++	case etp_cmd_dpo:
++		if ((session-&gt;extd || !j1939cb_is_broadcast(session-&gt;cb)) &amp;&amp;
++		     j1939tp_im_receiver(session-&gt;cb)) {
++			if (session-&gt;pkt.done &gt;= session-&gt;pkt.total) {
++				if (session-&gt;extd) {
++					dat[0] = etp_cmd_eof;
++					dat[1] = session-&gt;skb-&gt;len &gt;&gt; 0;
++					dat[2] = session-&gt;skb-&gt;len &gt;&gt; 8;
++					dat[3] = session-&gt;skb-&gt;len &gt;&gt; 16;
++					dat[4] = session-&gt;skb-&gt;len &gt;&gt; 24;
++				} else {
++					dat[0] = tp_cmd_eof;
++					dat[1] = session-&gt;skb-&gt;len;
++					dat[2] = session-&gt;skb-&gt;len &gt;&gt; 8;
++					dat[3] = session-&gt;pkt.total;
++				}
++				if (dat[0] == session-&gt;last_txcmd)
++					/* done already */
++					break;
++				ret = j1939tp_tx_ctl(session, 1, dat);
++				if (ret &lt; 0)
++					goto failed;
++				session-&gt;last_txcmd = dat[0];
++				j1939tp_set_rxtimeout(session, 1250);
++				/* wait for the EOF packet to come in */
++				break;
++			} else if (session-&gt;pkt.done &gt;= session-&gt;pkt.last) {
++				session-&gt;last_txcmd = 0;
++				goto tx_cts;
++			}
++		}
++	case tp_cmd_bam:
++		if (!j1939tp_im_transmitter(session-&gt;cb))
++			break;
++		tpdat = session-&gt;skb-&gt;data;
++		ret = 0;
++		pkt_done = 0;
++		pkt_end = (!session-&gt;extd &amp;&amp; j1939cb_is_broadcast(session-&gt;cb))
++			? session-&gt;pkt.total : session-&gt;pkt.last;
++
++		while (session-&gt;pkt.tx &lt; pkt_end) {
++			dat[0] = session-&gt;pkt.tx - session-&gt;pkt.dpo+1;
++			offset = session-&gt;pkt.tx * 7;
++			len = session-&gt;skb-&gt;len - offset;
++			if (len &gt; 7)
++				len = 7;
++			memcpy(&amp;dat[1], &amp;tpdat[offset], len);
++			ret = j1939tp_tx_dat(session, dat, len+1);
++			if (ret &lt; 0)
++				break;
++			session-&gt;last_txcmd = 0xff;
++			++pkt_done;
++			++session-&gt;pkt.tx;
++			if (j1939cb_is_broadcast(session-&gt;cb)) {
++				if (session-&gt;pkt.tx &lt; session-&gt;pkt.total)
++					j1939tp_schedule_txtimer(session, 50);
++				break;
++			}
++		}
++		if (pkt_done)
++			j1939tp_set_rxtimeout(session, 250);
++		if (ret)
++			goto failed;
++		break;
++	}
++	put_session(session);
++	return 0;
++failed:
++	put_session(session);
++	return ret;
++}
++
++static void j1939tp_txtask(unsigned long val)
++{
++	struct session *session = (void *)val;
++	int ret;
++
++	get_session(session);
++	ret = j1939tp_txnext(session);
++	if (ret &lt; 0)
++		j1939tp_schedule_txtimer(session, retry_ms);
++	put_session(session);
++}
++
++static inline int j1939tp_tx_initial(struct session *session)
++{
++	int ret;
++
++	get_session(session);
++	ret = j1939tp_txnext(session);
++	/* set nonblocking for further packets */
++	session-&gt;cb-&gt;msg_flags |= MSG_DONTWAIT;
++	put_session(session);
++	return ret;
++}
++
++/* this call is to be used as probe within wait_event_xxx() */
++static int j1939session_insert(struct session *session)
++{
++	struct session *pending;
++
++	sessionlist_lock();
++	pending = _j1939tp_find(sessionq(session-&gt;extd), session-&gt;cb, 0);
++	if (pending)
++		/* revert the effect of find() */
++		put_session(pending);
++	else
++		list_add_tail(&amp;session-&gt;list, sessionq(session-&gt;extd));
++	sessionlist_unlock();
++	return pending ? 0 : 1;
++}
++/*
++ * j1939 main intf
++ */
++int j1939_send_transport(struct sk_buff *skb)
++{
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++	struct session *session;
++	int ret;
++
++	if ((tp_pgn_dat == cb-&gt;pgn) || (tp_pgn_ctl == cb-&gt;pgn) ||
++	    (etp_pgn_dat == cb-&gt;pgn) || (etp_pgn_ctl == cb-&gt;pgn))
++		/* avoid conflict */
++		return -EDOM;
++	if (skb-&gt;len &lt;= 8)
++		return 0;
++	else if (skb-&gt;len &gt; (max_packet_size ?: MAX_ETP_PACKET_SIZE))
++		return -EMSGSIZE;
++
++	if (skb-&gt;len &gt; MAX_TP_PACKET_SIZE) {
++		if (j1939cb_is_broadcast(cb))
++			return -EDESTADDRREQ;
++	}
++
++	/* prepare new session */
++	session = j1939session_new(skb);
++	if (!session)
++		return -ENOMEM;
++
++	session-&gt;extd = (skb-&gt;len &gt; MAX_TP_PACKET_SIZE) ? EXTENDED : REGULAR;
++	session-&gt;transmission = 1;
++	session-&gt;pkt.total = (skb-&gt;len + 6)/7;
++	session-&gt;pkt.block = session-&gt;extd ? 255 :
++		(block ?: session-&gt;pkt.total);
++	if (j1939cb_is_broadcast(session-&gt;cb))
++		/* set the end-packet for broadcast */
++		session-&gt;pkt.last = session-&gt;pkt.total;
++
++	/* insert into queue, but avoid collision with pending session */
++	if (session-&gt;cb-&gt;msg_flags &amp; MSG_DONTWAIT)
++		ret = j1939session_insert(session) ? 0 : -EAGAIN;
++	else
++		ret = wait_event_interruptible(s.wait,
++				j1939session_insert(session));
++	if (ret &lt; 0)
++		goto failed;
++
++	ret = j1939tp_tx_initial(session);
++	if (!ret)
++		/* transmission started */
++		return RESULT_STOP;
++	sessionlist_lock();
++	list_del_init(&amp;session-&gt;list);
++	sessionlist_unlock();
++failed:
++	/*
++	 * hide the skb from j1939session_drop, as it would
++	 * kfree_skb, but our caller will kfree_skb(skb) too.
++	 */
++	session-&gt;skb = NULL;
++	j1939session_drop(session);
++	return ret;
++}
++
++int j1939_recv_transport(struct sk_buff *skb)
++{
++	struct j1939_sk_buff_cb *cb = (void *)skb-&gt;cb;
++	const uint8_t *dat;
++
++	switch (cb-&gt;pgn) {
++	case etp_pgn_dat:
++		j1939xtp_rx_dat(skb, EXTENDED);
++		break;
++	case etp_pgn_ctl:
++		if (skb-&gt;len &lt; 8) {
++			j1939xtp_rx_bad_message(skb, EXTENDED);
++			break;
++		}
++		dat = skb-&gt;data;
++		switch (*dat) {
++		case etp_cmd_rts:
++			j1939xtp_rx_rts(skb, EXTENDED);
++			break;
++		case etp_cmd_cts:
++			j1939xtp_rx_cts(skb, EXTENDED);
++			break;
++		case etp_cmd_dpo:
++			j1939xtp_rx_dpo(skb, EXTENDED);
++			break;
++		case etp_cmd_eof:
++			j1939xtp_rx_eof(skb, EXTENDED);
++			break;
++		case etp_cmd_abort:
++			j1939xtp_rx_abort(skb, EXTENDED);
++			break;
++		default:
++			j1939xtp_rx_bad_message(skb, EXTENDED);
++			break;
++		}
++		break;
++	case tp_pgn_dat:
++		j1939xtp_rx_dat(skb, REGULAR);
++		break;
++	case tp_pgn_ctl:
++		if (skb-&gt;len &lt; 8) {
++			j1939xtp_rx_bad_message(skb, REGULAR);
++			break;
++		}
++		dat = skb-&gt;data;
++		switch (*dat) {
++		case tp_cmd_bam:
++		case tp_cmd_rts:
++			j1939xtp_rx_rts(skb, REGULAR);
++			break;
++		case tp_cmd_cts:
++			j1939xtp_rx_cts(skb, REGULAR);
++			break;
++		case tp_cmd_eof:
++			j1939xtp_rx_eof(skb, REGULAR);
++			break;
++		case tp_cmd_abort:
++			j1939xtp_rx_abort(skb, REGULAR);
++			break;
++		default:
++			j1939xtp_rx_bad_message(skb, REGULAR);
++			break;
++		}
++		break;
++	default:
++		return 0;
++	}
++	return RESULT_STOP;
++}
++
++static struct session *j1939session_fresh_new(int size,
++		struct j1939_sk_buff_cb *rel_cb, pgn_t pgn)
++{
++	struct sk_buff *skb;
++	struct j1939_sk_buff_cb *cb;
++	struct session *session;
++
++	skb = dev_alloc_skb(size);
++	if (!skb)
++		return NULL;
++	cb = (void *)skb-&gt;cb;
++	*cb = *rel_cb;
++	fix_cb(cb);
++	cb-&gt;pgn = pgn;
++
++	session = j1939session_new(skb);
++	if (!session) {
++		kfree(skb);
++		return NULL;
++	}
++	/* alloc data area */
++	skb_put(skb, size);
++	return session;
++}
++static struct session *j1939session_new(struct sk_buff *skb)
++{
++	struct session *session;
++
++	session = kzalloc(sizeof(*session), gfp_any());
++	if (!session)
++		return NULL;
++	INIT_LIST_HEAD(&amp;session-&gt;list);
++	spin_lock_init(&amp;session-&gt;lock);
++	session-&gt;skb = skb;
++
++	session-&gt;cb = (void *)session-&gt;skb-&gt;cb;
++	hrtimer_init(&amp;session-&gt;txtimer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
++	session-&gt;txtimer.function = j1939tp_txtimer;
++	hrtimer_init(&amp;session-&gt;rxtimer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
++	session-&gt;rxtimer.function = j1939tp_rxtimer;
++	tasklet_init(&amp;session-&gt;txtask, j1939tp_txtask, (unsigned long)session);
++	tasklet_init(&amp;session-&gt;rxtask, j1939tp_rxtask, (unsigned long)session);
++	return session;
++}
++
++static int j1939tp_notifier(struct notifier_block *nb,
++			unsigned long msg, void *data)
++{
++	struct net_device *netdev = (struct net_device *)data;
++	struct session *session, *saved;
++
++	if (!net_eq(dev_net(netdev), &amp;init_net))
++		return NOTIFY_DONE;
++
++	if (netdev-&gt;type != ARPHRD_CAN)
++		return NOTIFY_DONE;
++
++	if (msg != NETDEV_UNREGISTER)
++		return NOTIFY_DONE;
++
++	sessionlist_lock();
++	list_for_each_entry_safe(session, saved, &amp;s.sessionq, list) {
++		if (session-&gt;cb-&gt;ifindex != netdev-&gt;ifindex)
++			continue;
++		list_del_init(&amp;session-&gt;list);
++		put_session(session);
++	}
++	list_for_each_entry_safe(session, saved, &amp;s.extsessionq, list) {
++		if (session-&gt;cb-&gt;ifindex != netdev-&gt;ifindex)
++			continue;
++		list_del_init(&amp;session-&gt;list);
++		put_session(session);
++	}
++	sessionlist_unlock();
++	return NOTIFY_DONE;
++}
++
++/* SYSCTL */
++static struct ctl_table_header *j1939tp_table_header;
++
++static int min_block = 1;
++static int max_block = 255;
++static int min_packet = 8;
++static int max_packet = ((2 &lt;&lt; 24)-1)*7;
++
++static int min_retry = 5;
++static int max_retry = 5000;
++
++static ctl_table j1939tp_table[] = {
++	{
++		.procname	= &quot;transport_cts_nr_of_frames&quot;,
++		.data		= &amp;block,
++		.maxlen		= sizeof(block),
++		.mode		= 0644,
++		.proc_handler	= &amp;proc_dointvec_minmax,
++		.extra1		= &amp;min_block,
++		.extra2		= &amp;max_block,
++	},
++	{
++		.procname	= &quot;transport_max_payload_in_bytes&quot;,
++		.data		= &amp;max_packet_size,
++		.maxlen		= sizeof(max_packet_size),
++		.mode		= 0644,
++		.proc_handler	= &amp;proc_dointvec_minmax,
++		.extra1		= &amp;min_packet,
++		.extra2		= &amp;max_packet,
++	},
++	{
++		.procname	= &quot;transport_tx_retry_ms&quot;,
++		.data		= &amp;retry_ms,
++		.maxlen		= sizeof(retry_ms),
++		.mode		= 0644,
++		.proc_handler	= &amp;proc_dointvec_minmax,
++		.extra1		= &amp;min_retry,
++		.extra2		= &amp;max_retry,
++	},
++	{ },
++};
++
++static struct ctl_path j1939tp_path[] = {
++	{ .procname = &quot;net&quot;, },
++	{ .procname = j1939_procname, },
++	{ }
++};
++
++/* PROC */
++static int j1939tp_proc_show_session(struct seq_file *sqf,
++		struct session *session)
++{
++	seq_printf(sqf, &quot;%i&quot;, session-&gt;cb-&gt;ifindex);
++	if (session-&gt;cb-&gt;src.name)
++		seq_printf(sqf, &quot;\t%016llx&quot;, session-&gt;cb-&gt;src.name);
++	else
++		seq_printf(sqf, &quot;\t%02x&quot;, session-&gt;cb-&gt;src.addr);
++	if (session-&gt;cb-&gt;dst.name)
++		seq_printf(sqf, &quot;\t%016llx&quot;, session-&gt;cb-&gt;dst.name);
++	else if (j1939_address_is_unicast(session-&gt;cb-&gt;dst.addr))
++		seq_printf(sqf, &quot;\t%02x&quot;, session-&gt;cb-&gt;dst.addr);
++	else
++		seq_printf(sqf, &quot;\t-&quot;);
++	seq_printf(sqf, &quot;\t%05x\t%u/%u\n&quot;, session-&gt;cb-&gt;pgn,
++			session-&gt;pkt.done*7, session-&gt;skb-&gt;len);
++	return 0;
++}
++
++static int j1939tp_proc_show(struct seq_file *sqf, void *v)
++{
++	struct session *session;
++
++	seq_printf(sqf, &quot;iface\tsrc\tdst\tpgn\tdone/total\n&quot;);
++	sessionlist_lock();
++	list_for_each_entry(session, &amp;s.sessionq, list)
++		j1939tp_proc_show_session(sqf, session);
++	list_for_each_entry(session, &amp;s.extsessionq, list)
++		j1939tp_proc_show_session(sqf, session);
++	sessionlist_unlock();
++	return 0;
++}
++
++int __init j1939tp_module_init(void)
++{
++	spin_lock_init(&amp;s.lock);
++	INIT_LIST_HEAD(&amp;s.sessionq);
++	INIT_LIST_HEAD(&amp;s.extsessionq);
++	spin_lock_init(&amp;s.del.lock);
++	INIT_LIST_HEAD(&amp;s.del.sessionq);
++	INIT_WORK(&amp;s.del.work, j1939tp_del_work);
++
++	s.notifier.notifier_call = j1939tp_notifier;
++	register_netdevice_notifier(&amp;s.notifier);
++
++	j1939_proc_add(&quot;transport&quot;, j1939tp_proc_show, NULL);
++	j1939tp_table_header =
++		register_sysctl_paths(j1939tp_path, j1939tp_table);
++	init_waitqueue_head(&amp;s.wait);
++	return 0;
++}
++
++void j1939tp_module_exit(void)
++{
++	struct session *session, *saved;
++
++	wake_up_all(&amp;s.wait);
++
++	unregister_sysctl_table(j1939tp_table_header);
++	unregister_netdevice_notifier(&amp;s.notifier);
++	j1939_proc_remove(&quot;transport&quot;);
++	sessionlist_lock();
++	list_for_each_entry_safe(session, saved, &amp;s.extsessionq, list) {
++		list_del_init(&amp;session-&gt;list);
++		put_session(session);
++	}
++	list_for_each_entry_safe(session, saved, &amp;s.sessionq, list) {
++		list_del_init(&amp;session-&gt;list);
++		put_session(session);
++	}
++	sessionlist_unlock();
++	flush_scheduled_work();
++}
++
+-- 
+1.7.2.5
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005662.html">[PATCH v4 2/5] can: add rtnetlink support
+</A></li>
+	<LI>Next message: <A HREF="005664.html">[PATCH v4 4/5] can-j1939: add documentation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5663">[ date ]</a>
+              <a href="thread.html#5663">[ thread ]</a>
+              <a href="subject.html#5663">[ subject ]</a>
+              <a href="author.html#5663">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

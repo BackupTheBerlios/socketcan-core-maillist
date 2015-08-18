@@ -1,0 +1,174 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/10%5D%20SJA1000DEV%20using%20device%20interface%20and%20further%20fixes%0A%09and%20improvements&In-Reply-To=%3C47449209.5030603%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000855.html">
+   <LINK REL="Next"  HREF="000833.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/10%5D%20SJA1000DEV%20using%20device%20interface%20and%20further%20fixes%0A%09and%20improvements&In-Reply-To=%3C47449209.5030603%40grandegger.com%3E"
+       TITLE="[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements">wg at grandegger.com
+       </A><BR>
+    <I>Wed Nov 21 21:16:09 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000855.html">[PATCH 0/10] SJA1000DEV using device interface and further	fixes	and improvements
+</A></li>
+        <LI>Next message: <A HREF="000833.html">[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#831">[ date ]</a>
+              <a href="thread.html#831">[ thread ]</a>
+              <a href="subject.html#831">[ subject ]</a>
+              <a href="author.html#831">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Sam Ravnborg wrote:
+&gt;<i> Hi Wolfgang.
+</I>&gt;<i> 
+</I>&gt;<i> A few comments..
+</I>&gt;<i> 
+</I>&gt;&gt;<i> o sja1000-dev-interface.patch
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   It provides the improved driver for the SJA1000 using the existing
+</I>&gt;&gt;<i>   CAN device interface in &quot;drivers/net/can/sja1000dev&quot;. I have some
+</I>&gt;&gt;<i>   further improvements concerning names in mind (prefixes), but that's
+</I>&gt;&gt;<i>   a minor issue. I didn't want to change to much.
+</I>&gt;<i> 
+</I>&gt;<i> The kernel approach is use keep drives in the same directory unless they
+</I>&gt;<i> are complicated (as in &gt; 3 files).
+</I>
+OK, but there are more than 3 files in sja1000de.
+
+&gt;<i> +#define CONFIG_CAN_DEBUG_DEVICES
+</I>&gt;<i> +#ifdef CONFIG_CAN_DEBUG_DEVICES
+</I>&gt;<i> +#define DBG(args...)   ((priv-&gt;debug &gt; 0) ? printk(args) : 0)
+</I>&gt;<i> +/* logging in interrupt context! */
+</I>&gt;<i> +#define iDBG(args...)  ((priv-&gt;debug &gt; 1) ? printk(args) : 0)
+</I>&gt;<i> +#define iiDBG(args...) ((priv-&gt;debug &gt; 2) ? printk(args) : 0)
+</I>&gt;<i> +#else
+</I>&gt;<i> +#define DBG(args...)
+</I>&gt;<i> +#define iDBG(args...)
+</I>&gt;<i> +#define iiDBG(args...)
+</I>&gt;<i> +#endif
+</I>&gt;<i> Should use one of the existing driver debug message frameworks.
+</I>
+Yes, and debugging should also be simplified. That's true for all other
+drivers as well but do not care in the first place.
+
+&gt;<i> +module_param(speed, int, 0);
+</I>&gt;<i> +module_param(btr, int, 0);
+</I>&gt;<i> +module_param(debug, int, 0);
+</I>&gt;<i> +module_param(restart_ms, int, 0);
+</I>&gt;<i> 
+</I>&gt;<i> Why '0' in permission here?
+</I>
+Good question. Oliver?
+
+&gt;<i> +static void can_restart_dev(unsigned long data);
+</I>&gt;<i> +static void chipset_init(struct net_device *dev, int wake);
+</I>&gt;<i> +static void chipset_init_trx(struct net_device *dev);
+</I>&gt;<i> +int set_reset_mode(struct net_device *dev);
+</I>&gt;<i> 
+</I>&gt;<i> It is often good practice to arrange functions so forward declarations are not needed.
+</I>
+I agree.
+
+&gt;<i> +int set_reset_mode(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +       struct sja1000_priv *priv = netdev_priv(dev);
+</I>&gt;<i> static?
+</I>
+Yes.
+
+&gt;<i> +       unsigned char status = priv-&gt;read_reg(dev, REG_MOD);
+</I>&gt;<i> +       int i;
+</I>&gt;<i> +
+</I>&gt;<i> +       priv-&gt;can.can_stats.bus_error_at_init = priv-&gt;can.can_stats.bus_error;
+</I>&gt;<i> +
+</I>&gt;<i> locking around access to can_stats?
+</I>&gt;&gt;<i>From can/dev.h:
+</I>&gt;<i> /* Please hold this lock when touching net_stats/can_stats*/
+</I>&gt;<i> 	spinlock_t stats_lock;
+</I>
+The above assignment is atomic, I think. Anyway, bus_error_at_init is
+SJA1000 specific and might be removed from the common can_stats. To be
+discussed!
+
+&gt;<i> +#ifdef CONFIG_CAN_DEBUG_DEVICES
+</I>&gt;<i> +                       if (i &gt; 1) {
+</I>&gt;<i> +                               struct sja1000_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +                               iDBG(KERN_INFO &quot;%s: %s looped %d times\n&quot;,
+</I>&gt;<i> +                                    dev-&gt;name, __FUNCTION__, i);
+</I>&gt;<i> +                       }
+</I>&gt;<i> +#endif
+</I>&gt;<i> Why fetching priv again. And the first var is shadowed.
+</I>
+Will fix.
+
+&gt;<i> +       priv-&gt;write_reg(dev, REG_CMR, CMD_TR);
+</I>&gt;<i> +
+</I>&gt;<i> +       stats-&gt;tx_bytes += dlc;
+</I>&gt;<i> +
+</I>&gt;<i> +       dev-&gt;trans_start = jiffies;
+</I>&gt;<i> 
+</I>&gt;<i> Locking around access to stats?
+</I>
+You a right.
+
+&gt;<i> This goes again in several places for net_stats and can_stats.
+</I>
+OK.
+
+&gt;<i> --- trunk.orig/kernel/2.6/net/can/proc.c
+</I>&gt;<i> +++ trunk/kernel/2.6/net/can/proc.c
+</I>&gt;<i> @@ -46,6 +46,8 @@
+</I>&gt;<i> 
+</I>&gt;<i> General comment.. The direction is to restrict /proc to process
+</I>&gt;<i> information and keep info such as what the CAN subsystem provides
+</I>&gt;<i> in dedicated &quot;one-value-per-file&quot; sysfs files.
+</I>
+I have heard that as well and sysfs is also on my wish list but I would
+implement it later on (currently low priority).
+
+&gt;<i> I wonder if this topic was already brought up on netdev?
+</I>
+Don't know.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000855.html">[PATCH 0/10] SJA1000DEV using device interface and further	fixes	and improvements
+</A></li>
+	<LI>Next message: <A HREF="000833.html">[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#831">[ date ]</a>
+              <a href="thread.html#831">[ thread ]</a>
+              <a href="subject.html#831">[ subject ]</a>
+              <a href="author.html#831">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

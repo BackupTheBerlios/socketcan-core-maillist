@@ -1,0 +1,146 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> feature request: one-shot mode for mcp251x
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20feature%20request%3A%20one-shot%20mode%20for%20mcp251x&In-Reply-To=%3C4B387707.5060608%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003708.html">
+   <LINK REL="Next"  HREF="003702.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>feature request: one-shot mode for mcp251x</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20feature%20request%3A%20one-shot%20mode%20for%20mcp251x&In-Reply-To=%3C4B387707.5060608%40grandegger.com%3E"
+       TITLE="feature request: one-shot mode for mcp251x">wg at grandegger.com
+       </A><BR>
+    <I>Mon Dec 28 10:14:47 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003708.html">feature request: one-shot mode for mcp251x
+</A></li>
+        <LI>Next message: <A HREF="003702.html">[PATCH] can/netlink: add CAN_CTRLMODE_ONE_SHOT
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3711">[ date ]</a>
+              <a href="thread.html#3711">[ thread ]</a>
+              <a href="subject.html#3711">[ subject ]</a>
+              <a href="author.html#3711">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Marc,
+
+Marc Kleine-Budde wrote:
+&gt;<i> christian pellegrin wrote:
+</I>&gt;&gt;<i> Hi,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I'm attaching the patch that implements the OSM for the mcp2515.
+</I>&gt;&gt;<i> Unfortunately right now I have just a mcp2510 available for testing
+</I>&gt;&gt;<i> which doesn't support OSM, so if someone acknowledges it's OK I'll
+</I>&gt;&gt;<i> send a proper patch. I should have an mcp2515 on a new hardware on mid
+</I>&gt;&gt;<i> January to test it myself, but, you know, never trust the deadlines
+</I>&gt;&gt;<i> that the hardware guy has told you ;-).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> BTW it's a pity that OSM is implemented only on the mcp2515 and not on
+</I>&gt;&gt;<i> the mcp2510. Perhaps it could be a best default mode of operation
+</I>&gt;&gt;<i> because it gives more control to the software to account for the bus
+</I>&gt;&gt;<i> state.
+</I>&gt;<i> 
+</I>&gt;<i> Do you want to make one-shot mode default on the mcp2515? What does the
+</I>&gt;<i> CAN spec define?
+</I>
+Why do you think it's the default? CAN_CTRLMODE_ONE_SHOT must be set by
+the user/app first.
+
+&gt;&gt;<i> ---8&lt;----- against SVN trunk ------
+</I>&gt;&gt;<i> --- kernel/2.6/drivers/net/can/mcp251x.c	(revision 1095)
+</I>&gt;&gt;<i> +++ kernel/2.6/drivers/net/can/mcp251x.c	(working copy)
+</I>&gt;&gt;<i> @@ -539,6 +539,7 @@
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>  static void mcp251x_set_normal_mode(struct spi_device *spi)
+</I>&gt;&gt;<i>  {
+</I>&gt;&gt;<i> +	struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
+</I>&gt;&gt;<i>  	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
+</I>&gt;&gt;<i>  	unsigned long timeout;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> @@ -553,7 +554,10 @@
+</I>&gt;&gt;<i>  		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_LOOPBACK);
+</I>&gt;&gt;<i>  	} else {
+</I>&gt;&gt;<i>  		/* Put device into normal mode */
+</I>&gt;&gt;<i> -		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_NORMAL);
+</I>&gt;&gt;<i> +		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_NORMAL |
+</I>&gt;&gt;<i> +				  ((pdata-&gt;model == CAN_MCP251X_MCP2515 &amp;&amp;
+</I>&gt;&gt;<i> +				    priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_ONE_SHOT) ?
+</I>&gt;&gt;<i> +				   CANCTRL_OSM : 0));
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>  		/* Wait for the device to enter normal mode */
+</I>&gt;&gt;<i>  		timeout = jiffies + HZ;
+</I>&gt;&gt;<i> ---8&lt;----- against 2.6.33-rc1 ------
+</I>&gt;&gt;<i> diff --git a/drivers/net/can/mcp251x.c b/drivers/net/can/mcp251x.c
+</I>&gt;&gt;<i> index 9c5a153..68ec171 100644
+</I>&gt;&gt;<i> --- a/drivers/net/can/mcp251x.c
+</I>&gt;&gt;<i> +++ b/drivers/net/can/mcp251x.c
+</I>&gt;&gt;<i> @@ -531,6 +531,7 @@ static int mcp251x_do_set_mode(struct net_device
+</I>&gt;&gt;<i> *net, enum can_mode mode)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>  static void mcp251x_set_normal_mode(struct spi_device *spi)
+</I>&gt;&gt;<i>  {
+</I>&gt;&gt;<i> +	struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
+</I>&gt;&gt;<i>  	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
+</I>&gt;&gt;<i>  	unsigned long timeout;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> @@ -545,7 +546,10 @@ static void mcp251x_set_normal_mode(struct spi_device *spi)
+</I>&gt;&gt;<i>  		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_LOOPBACK);
+</I>&gt;&gt;<i>  	} else {
+</I>&gt;&gt;<i>  		/* Put device into normal mode */
+</I>&gt;&gt;<i> -		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_NORMAL);
+</I>&gt;&gt;<i> +		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_NORMAL |
+</I>&gt;&gt;<i> +				  ((pdata-&gt;model == CAN_MCP251X_MCP2515 &amp;&amp;
+</I>&gt;&gt;<i> +				    priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_ONE_SHOT) ?
+</I>&gt;&gt;<i> +				   CANCTRL_OSM : 0));
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>  		/* Wait for the device to enter normal mode */
+</I>&gt;&gt;<i>  		timeout = jiffies + HZ;
+</I>&gt;<i> 
+</I>&gt;<i> What about returning some error value if the adapter doesn't support the
+</I>&gt;<i> settings.
+</I>
+This would indeed make sense here, as the MPC2510 does not support
+one-shot. In general, we do not yet check the capabilities of a CAN
+controller, like loopback or listen-only. This could be done in a common
+way be introducing &quot;priv-&gt;can.ctrlmode_supported&quot;. The driver can then
+set the bits for the supported features to allow common code to do the
+checking. Just some quick brainstorming.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003708.html">feature request: one-shot mode for mcp251x
+</A></li>
+	<LI>Next message: <A HREF="003702.html">[PATCH] can/netlink: add CAN_CTRLMODE_ONE_SHOT
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3711">[ date ]</a>
+              <a href="thread.html#3711">[ thread ]</a>
+              <a href="subject.html#3711">[ subject ]</a>
+              <a href="author.html#3711">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

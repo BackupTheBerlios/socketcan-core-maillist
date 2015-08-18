@@ -1,0 +1,204 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: improve and consolidate state change and bus-off handling
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20improve%20and%20consolidate%20state%20change%20and%20bus-off%20handling&In-Reply-To=%3C4ED8A2A7.4060902%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006226.html">
+   <LINK REL="Next"  HREF="006230.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: improve and consolidate state change and bus-off handling</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20improve%20and%20consolidate%20state%20change%20and%20bus-off%20handling&In-Reply-To=%3C4ED8A2A7.4060902%40grandegger.com%3E"
+       TITLE="RFC: improve and consolidate state change and bus-off handling">wg at grandegger.com
+       </A><BR>
+    <I>Fri Dec  2 11:04:23 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006226.html">RFC: improve and consolidate state change and bus-off handling
+</A></li>
+        <LI>Next message: <A HREF="006230.html">[PATCH 0/4] import kernel header files into tree
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6227">[ date ]</a>
+              <a href="thread.html#6227">[ thread ]</a>
+              <a href="subject.html#6227">[ subject ]</a>
+              <a href="author.html#6227">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 12/02/2011 10:41 AM, Marc Kleine-Budde wrote:
+&gt;<i> On 12/02/2011 10:04 AM, Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> Hello,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> as you might know, our handling of CAN state changes and bus-off is
+</I>&gt;&gt;<i> not consistent, weak or even incorrect. Therefore I'm making an effort
+</I>&gt;&gt;<i> to improve, consolidate and *unify* it. Most things are straight-
+</I>&gt;&gt;<i> forward, but others need more attention and especially for the bus-off
+</I>&gt;&gt;<i> recovery I would appreciate some CAN expert advice (more below). I have
+</I>&gt;&gt;<i> already some patches implementing:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> - Add missing do_get_berr_counter() callbacks (for ti_hecc, etc.).
+</I>&gt;<i> 
+</I>&gt;<i> +1
+</I>&gt;<i> 
+</I>&gt;&gt;<i> - Add error counters to the data fields 6..7 of *any* CAN error message
+</I>&gt;&gt;<i>   automatically in alloc_can_err_skb():
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>        if (priv-&gt;do_get_berr_counter) {
+</I>&gt;&gt;<i>                struct can_berr_counter bec;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>                priv-&gt;do_get_berr_counter(dev, &amp;bec);
+</I>&gt;&gt;<i>                (*cf)-&gt;data[6] = bec.txerr;
+</I>&gt;&gt;<i>                (*cf)-&gt;data[7] = bec.rxerr;
+</I>&gt;&gt;<i>        }
+</I>&gt;<i> 
+</I>&gt;<i> What about some not directly connected devices like the mcp251x. At
+</I>&gt;<i> least the mcp2515 driver (which is not mainline, though) needs a spi
+</I>&gt;<i> transfer for that.
+</I>&gt;<i> 
+</I>&gt;<i> Do we need a flag in the driver to indicate not to read the berr_counter?
+</I>
+We could introduce a return code for the do_get_berr_counter callback
+and handle it.
+
+&gt;&gt;<i> - Allow state changes going down including &quot;back to error active&quot;:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   Therefore I added:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     $ cat include/linux/can/error.h
+</I>&gt;&gt;<i>     ...
+</I>&gt;&gt;<i>     #define CAN_ERR_STATE_CHANGE 0x00000200U /* CAN error state change / data[1] */
+</I>&gt;&gt;<i>     ...
+</I>&gt;&gt;<i>     #define CAN_ERR_CRTL_ACTIVE      0x40 /* recovered to error active state */
+</I>&gt;&gt;<i>  
+</I>&gt;&gt;<i>   For any state change the CAN_ERR_STATE_CHANGE will be set in the
+</I>&gt;&gt;<i>   can_id. If the state gets worse, CAN_ERR_CRTL is set as usual
+</I>&gt;&gt;<i>   also for backward compatibility. The state change management will
+</I>&gt;&gt;<i>   be done by a common &quot;can_change_state()&quot; function doing all the bit
+</I>&gt;<i> 
+</I>&gt;<i> yeah! common function! +1
+</I>&gt;<i> 
+</I>&gt;&gt;<i>   settings and counter increments. For the SJA1000 &quot;candump -e&quot; will
+</I>&gt;&gt;<i>   then report for recovery from the error passive state (no cable):
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     can0  20000204  [8] 00 08 00 00 00 00 60 00   ERRORFRAME
+</I>&gt;&gt;<i> 	controller-problem{tx-error-warning}
+</I>&gt;&gt;<i> 	state-change{tx-error-warning}
+</I>&gt;&gt;<i> 	error-counter-tx-rx{{96}{0}}
+</I>&gt;&gt;<i>     can0  20000204  [8] 00 30 00 00 00 00 80 00   ERRORFRAME
+</I>&gt;&gt;<i> 	controller-problem{tx-error-passive}
+</I>&gt;&gt;<i> 	state-change{tx-error-passive}
+</I>&gt;&gt;<i> 	error-counter-tx-rx{{128}{0}}
+</I>&gt;&gt;<i>     can0  124  [3] 12 34 56
+</I>&gt;&gt;<i>     ...
+</I>&gt;&gt;<i>     can0  124  [3] 12 34 56
+</I>&gt;&gt;<i>     can0  20000200  [8] 00 08 00 00 00 00 7F 00   ERRORFRAME
+</I>&gt;&gt;<i> 	state-change{tx-error-warning}
+</I>&gt;&gt;<i> 	error-counter-tx-rx{{127}{0}}
+</I>&gt;&gt;<i>     can0  124  [3] 12 34 56
+</I>&gt;&gt;<i>     ...
+</I>&gt;&gt;<i>     can0  124  [3] 12 34 56
+</I>&gt;&gt;<i>     can0  20000200  [8] 00 40 00 00 00 00 5F 00   ERRORFRAME
+</I>&gt;&gt;<i> 	state-change{back-to-error-active}
+</I>&gt;&gt;<i> 	error-counter-tx-rx{{95}{0}}
+</I>&gt;&gt;<i>  
+</I>&gt;&gt;<i>    Updating all drivers correctly is a challenge, especially because I
+</I>&gt;&gt;<i>    do not have all hardware. Help and comments are appreciated.
+</I>&gt;<i> 
+</I>&gt;<i> I can test the at91_can, flexcan and if we're lucky we've a mcp251x in
+</I>&gt;<i> the office.
+</I>
+Good, I can test here MSCAN/MPC5200 and maybe MPC51xx , CC770/I82527 on
+my old MPC8xx board and SJA1000. And maybe also Flexcan on a i.MX28.
+
+&gt;&gt;<i> - Bus-off recovery:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   Currently, I think, we do not handle bus-off recovery correctly for
+</I>&gt;&gt;<i>   most controllers. We brute-force stop and restart the controller.
+</I>&gt;&gt;<i>   The controller will do the recovery cycle anyway and we may send
+</I>&gt;&gt;<i>   messages to early. Instead the software should handle the bus-off
+</I>&gt;&gt;<i>   recovery cycle as shown below:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   * bus-off happens
+</I>&gt;&gt;<i>     - call netif_stop_queue() and maybe disable interrupts
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   * automatic or manual restart is done
+</I>&gt;&gt;<i>     - trigger bus-off recovery sequence by resetting the init bit
+</I>&gt;&gt;<i>       (on SJA1000) and maybe re-enable the interrupts
+</I>&gt;&gt;<i>     - await the controller going back to error-active state
+</I>&gt;&gt;<i>       (signaled via interrupt).
+</I>&gt;<i> 
+</I>&gt;<i> I'm not sure if all controllers signal correctly that they are back in
+</I>&gt;<i> error active. My observation is that bus off handling is a bit like
+</I>&gt;<i> climbing the mount Everest, the air is quite thin and things can lock up
+</I>&gt;<i> quite fast.
+</I>
+I know, unfortunately. But SJA1000, CC770/i82527 and MSCAN behave like
+expected and for the controller doing the recovery automatically in
+hardware, like the at91?, we need to await back to error active anyway.
+Anyway, we simple do not touch controllers with magic bus-off handling.
+
+&gt;<i> 
+</I>&gt;&gt;<i>     - call netif_wake_queue()
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   Here is a &quot;candump -e&quot; output for the SJA1000 (with delta times)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     (009.832477)  can0  20000204  [8] 00 30 00 00 00 00 88 00   ERRORFRAME
+</I>&gt;&gt;<i> 	controller-problem{tx-error-passive}
+</I>&gt;&gt;<i> 	state-change{tx-error-passive}
+</I>&gt;&gt;<i> 	error-counter-tx-rx{{136}{0}}
+</I>&gt;&gt;<i>     (000.000804)  can0  20000240  [8] 00 00 00 00 00 00 7F 00   ERRORFRAME
+</I>&gt;&gt;<i> 	bus-off
+</I>&gt;&gt;<i> 	state-change{}
+</I>&gt;&gt;<i> 	error-counter-tx-rx{{127}{0}}
+</I>&gt;&gt;<i>     (000.099795)  can0  20000100  [8] 00 00 00 00 00 00 7F 00   ERRORFRAME
+</I>&gt;&gt;<i> 	restarted-after-bus-off
+</I>&gt;&gt;<i> 	error-counter-tx-rx{{127}{0}}
+</I>&gt;&gt;<i>     (000.003061)  can0  20000200  [8] 00 40 00 00 00 00 00 00   ERRORFRAME
+</I>&gt;&gt;<i> 	state-change{back-to-error-active}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>    Before doing all the necessary code changes, which are not always
+</I>&gt;&gt;<i>    trivial I ask: Would that be the correct bus-off handling???
+</I>&gt;<i> 
+</I>&gt;<i> However if hardware permits the described steps sound reasonable (from
+</I>&gt;<i> my non CAN expert point of view).
+</I>
+On the SJA1000 and i82527 I realized that the hardware does the bus-off
+recovery cycle anyway, even if you stop and restart the controller.
+
+Patches coming soon...
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006226.html">RFC: improve and consolidate state change and bus-off handling
+</A></li>
+	<LI>Next message: <A HREF="006230.html">[PATCH 0/4] import kernel header files into tree
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6227">[ date ]</a>
+              <a href="thread.html#6227">[ thread ]</a>
+              <a href="subject.html#6227">[ subject ]</a>
+              <a href="author.html#6227">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

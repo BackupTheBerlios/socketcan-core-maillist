@@ -1,0 +1,140 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> slcan on 64bit
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20slcan%20on%2064bit&In-Reply-To=%3C20090129172444.GB2723%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002180.html">
+   <LINK REL="Next"  HREF="002182.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>slcan on 64bit</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20slcan%20on%2064bit&In-Reply-To=%3C20090129172444.GB2723%40e-circ.dyndns.org%3E"
+       TITLE="slcan on 64bit">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Thu Jan 29 18:24:44 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002180.html">slcan on 64bit
+</A></li>
+        <LI>Next message: <A HREF="002182.html">slcan on 64bit
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2181">[ date ]</a>
+              <a href="thread.html#2181">[ thread ]</a>
+              <a href="subject.html#2181">[ subject ]</a>
+              <a href="author.html#2181">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, Jan 29, 2009 at 06:13:15PM +0100, Oliver Hartkopp wrote:
+&gt;<i> Date: Thu, 29 Jan 2009 18:13:15 +0100
+</I>&gt;<i> Subject: Re: slcan on 64bit
+</I>&gt;<i> From: Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan at hartkopp.net</A>&gt;
+</I>&gt;<i> To: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+</I>&gt;<i> CC: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> 
+</I>&gt;<i> Kurt Van Dijck wrote:
+</I>&gt;&gt;<i> I got a Lawicel USB CAN adapter today (<A HREF="http://www.canusb.com">http://www.canusb.com</A>)
+</I>&gt;&gt;<i> Trying to get it working, I found a 64bit issue.
+</I>&gt;<i>
+</I>&gt;<i> slcan on 64bit machines is hard stuff ;-)
+</I>&gt;<i>
+</I>&gt;&gt;<i>  Therefore, I got this
+</I>&gt;&gt;<i> patch. The idea is that the (unsigned long *) cast is wrong on 64bit,
+</I>&gt;&gt;<i> therefore, a real unsigned long intermediate variable should be
+</I>&gt;&gt;<i> applied. Before this patch, the can_dlc field was always cleared to 0
+</I>&gt;&gt;<i> again.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   
+</I>&gt;<i>
+</I>&gt;<i> Thanks for finding this. In my commit i also fixed the issue for kernels  
+</I>&gt;<i> &lt; 2.6.25 that is obviously the same.
+</I>In those cases, no cast is done. the return value from simple_strtoul is
+unsigned long (64 bit on my machine), but the equal sign does 
+'integral promotion' kind of downscale back to the can_id's type, being
+the hard uint32_t.
+&gt;<i>
+</I>&gt;&gt;<i> Added in the patch is a line that I otherwise needed an ascii table to
+</I>&gt;&gt;<i> understand what was going on. I took the freedom to make it more
+</I>&gt;&gt;<i> programmer-readable wihthout performance penalty :-)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   
+</I>&gt;<i>
+</I>&gt;<i> I usually prefer the masking of values than making subtractions as it is  
+</I>&gt;<i> just safer.
+</I>&gt;<i> In this special case two lines above the safety is guaranteed so i don't  
+</I>&gt;<i> have an objection to your 'beautification'. Btw *my* ASCII table is  
+</I>&gt;<i> omnipresent in my head :-)
+</I>&gt;<i>
+</I>&gt;<i> Thanks &amp; best regards,
+</I>&gt;<i> Oliver
+</I>kind regards back.
+Kurt
+&gt;<i>
+</I>&gt;&gt;<i> Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+</I>&gt;&gt;<i> Index: kernel/2.6/drivers/net/can/slcan.c
+</I>&gt;&gt;<i> ===================================================================
+</I>&gt;&gt;<i> --- kernel/2.6/drivers/net/can/slcan.c	(revision 917)
+</I>&gt;&gt;<i> +++ kernel/2.6/drivers/net/can/slcan.c	(working copy)
+</I>&gt;&gt;<i> @@ -239,6 +239,7 @@
+</I>&gt;&gt;<i>  	struct can_frame cf;
+</I>&gt;&gt;<i>  	int i, dlc_pos, tmp;
+</I>&gt;&gt;<i>  	char cmd = sl-&gt;rbuff[0];
+</I>&gt;&gt;<i> +	unsigned long ultmp;
+</I>&gt;&gt;<i>   	if ((cmd != 't') &amp;&amp; (cmd != 'T') &amp;&amp; (cmd != 'r') &amp;&amp; (cmd != 'R'))
+</I>&gt;&gt;<i>  		return;
+</I>&gt;&gt;<i> @@ -251,15 +252,16 @@
+</I>&gt;&gt;<i>  	if (!((sl-&gt;rbuff[dlc_pos] &gt;= '0') &amp;&amp; (sl-&gt;rbuff[dlc_pos] &lt; '9')))
+</I>&gt;&gt;<i>  		return;
+</I>&gt;&gt;<i>  -	cf.can_dlc = sl-&gt;rbuff[dlc_pos] &amp; 0x0F; /* get can_dlc */
+</I>&gt;&gt;<i> +	cf.can_dlc = sl-&gt;rbuff[dlc_pos] - '0'; /* get can_dlc */
+</I>&gt;&gt;<i>   	sl-&gt;rbuff[dlc_pos] = 0; /* terminate can_id string */
+</I>&gt;&gt;<i>   #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,25)
+</I>&gt;&gt;<i>  	cf.can_id = simple_strtoul(sl-&gt;rbuff+1, NULL, 16);
+</I>&gt;&gt;<i>  #else
+</I>&gt;&gt;<i> -	if (strict_strtoul(sl-&gt;rbuff+1, 16, (unsigned long *) &amp;cf.can_id))
+</I>&gt;&gt;<i> +	if (strict_strtoul(sl-&gt;rbuff+1, 16, &amp;ultmp))
+</I>&gt;&gt;<i>  		return;
+</I>&gt;&gt;<i> +	cf.can_id = ultmp;
+</I>&gt;&gt;<i>  #endif
+</I>&gt;&gt;<i>   	if (!(cmd &amp; 0x20)) /* NO tiny chars =&gt; extended frame format */
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> _______________________________________________
+</I>&gt;&gt;<i> Socketcan-core mailing list
+</I>&gt;&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>&gt;&gt;<i>   
+</I>&gt;<i>
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002180.html">slcan on 64bit
+</A></li>
+	<LI>Next message: <A HREF="002182.html">slcan on 64bit
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2181">[ date ]</a>
+              <a href="thread.html#2181">[ thread ]</a>
+              <a href="subject.html#2181">[ subject ]</a>
+              <a href="author.html#2181">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,250 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> can: make the number of echo skb's configurable
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20can%3A%20make%20the%20number%20of%20echo%20skb%27s%20configurable&In-Reply-To=%3C4ACEF33C.5010702%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003240.html">
+   <LINK REL="Next"  HREF="003243.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>can: make the number of echo skb's configurable</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20can%3A%20make%20the%20number%20of%20echo%20skb%27s%20configurable&In-Reply-To=%3C4ACEF33C.5010702%40pengutronix.de%3E"
+       TITLE="can: make the number of echo skb's configurable">mkl at pengutronix.de
+       </A><BR>
+    <I>Fri Oct  9 10:24:28 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003240.html">can: make the number of echo skb's configurable
+</A></li>
+        <LI>Next message: <A HREF="003243.html">can: make the number of echo skb's configurable
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3242">[ date ]</a>
+              <a href="thread.html#3242">[ thread ]</a>
+              <a href="subject.html#3242">[ subject ]</a>
+              <a href="author.html#3242">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger wrote:
+&gt;<i> This patch allows the CAN controller driver to define the number of echo
+</I>&gt;<i> skb's used for the local loopback (echo), as suggested by Kurt Van
+</I>&gt;<i> Dijck, with the function:
+</I>&gt;<i> 
+</I>&gt;<i>   struct net_device *alloc_candev(int sizeof_priv,
+</I>&gt;<i>                                   unsigned int echo_skb_max);
+</I>&gt;<i> 
+</I>&gt;<i> The CAN drivers have been adapted accordingly. For the ems_usb driver,
+</I>&gt;<i> as suggested by Sebastian Haas, the number of echo skb's has been
+</I>&gt;<i> increased to 10, which improves the transmission performance a lot.
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+</I>&gt;<i> Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+</I>&gt;<i> ---
+</I>&gt;<i>  drivers/net/can/at91_can.c        |    2 +-
+</I>&gt;<i>  drivers/net/can/dev.c             |   32 ++++++++++++++++++++++++++------
+</I>&gt;<i>  drivers/net/can/sja1000/sja1000.c |    3 ++-
+</I>&gt;<i>  drivers/net/can/sja1000/sja1000.h |    2 ++
+</I>&gt;<i>  drivers/net/can/ti_hecc.c         |    6 +-----
+</I>&gt;<i>  drivers/net/can/usb/ems_usb.c     |    4 ++--
+</I>&gt;<i>  include/linux/can/dev.h           |   16 ++++++++--------
+</I>&gt;<i>  7 files changed, 42 insertions(+), 23 deletions(-)
+</I>&gt;<i> 
+</I>&gt;<i> Index: net-next-2.6/drivers/net/can/dev.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- net-next-2.6.orig/drivers/net/can/dev.c
+</I>&gt;<i> +++ net-next-2.6/drivers/net/can/dev.c
+</I>&gt;<i> @@ -245,7 +245,7 @@ static void can_flush_echo_skb(struct ne
+</I>&gt;<i>  	struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;<i>  	int i;
+</I>&gt;<i>  
+</I>&gt;<i> -	for (i = 0; i &lt; CAN_ECHO_SKB_MAX; i++) {
+</I>&gt;<i> +	for (i = 0; i &lt; priv-&gt;echo_skb_max; i++) {
+</I>&gt;<i>  		if (priv-&gt;echo_skb[i]) {
+</I>&gt;<i>  			kfree_skb(priv-&gt;echo_skb[i]);
+</I>&gt;<i>  			priv-&gt;echo_skb[i] = NULL;
+</I>&gt;<i> @@ -262,10 +262,13 @@ static void can_flush_echo_skb(struct ne
+</I>&gt;<i>   * of the device driver. The driver must protect access to
+</I>&gt;<i>   * priv-&gt;echo_skb, if necessary.
+</I>&gt;<i>   */
+</I>&gt;<i> -void can_put_echo_skb(struct sk_buff *skb, struct net_device *dev, int idx)
+</I>&gt;<i> +void can_put_echo_skb(struct sk_buff *skb, struct net_device *dev,
+</I>&gt;<i> +		      unsigned int idx)
+</I>&gt;<i>  {
+</I>&gt;<i>  	struct can_priv *priv = netdev_priv(dev);
+</I>&gt;<i>  
+</I>&gt;<i> +	BUG_ON(idx &gt;= priv-&gt;echo_skb_max);
+</I>&gt;<i> +
+</I>&gt;<i>  	/* check flag whether this packet has to be looped back */
+</I>&gt;<i>  	if (!(dev-&gt;flags &amp; IFF_ECHO) || skb-&gt;pkt_type != PACKET_LOOPBACK) {
+</I>&gt;<i>  		kfree_skb(skb);
+</I>&gt;<i> @@ -311,10 +314,12 @@ EXPORT_SYMBOL_GPL(can_put_echo_skb);
+</I>&gt;<i>   * is handled in the device driver. The driver must protect
+</I>&gt;<i>   * access to priv-&gt;echo_skb, if necessary.
+</I>&gt;<i>   */
+</I>&gt;<i> -void can_get_echo_skb(struct net_device *dev, int idx)
+</I>&gt;<i> +void can_get_echo_skb(struct net_device *dev, unsigned int idx)
+</I>&gt;<i>  {
+</I>&gt;<i>  	struct can_priv *priv = netdev_priv(dev);
+</I>&gt;<i>  
+</I>&gt;<i> +	BUG_ON(idx &gt;= priv-&gt;echo_skb_max);
+</I>&gt;<i> +
+</I>&gt;<i>  	if (priv-&gt;echo_skb[idx]) {
+</I>&gt;<i>  		netif_rx(priv-&gt;echo_skb[idx]);
+</I>&gt;<i>  		priv-&gt;echo_skb[idx] = NULL;
+</I>&gt;<i> @@ -327,10 +332,12 @@ EXPORT_SYMBOL_GPL(can_get_echo_skb);
+</I>&gt;<i>    *
+</I>&gt;<i>    * The function is typically called when TX failed.
+</I>&gt;<i>    */
+</I>&gt;<i> -void can_free_echo_skb(struct net_device *dev, int idx)
+</I>&gt;<i> +void can_free_echo_skb(struct net_device *dev, unsigned int idx)
+</I>&gt;<i>  {
+</I>&gt;<i>  	struct can_priv *priv = netdev_priv(dev);
+</I>&gt;<i>  
+</I>&gt;<i> +	BUG_ON(idx &gt;= priv-&gt;echo_skb_max);
+</I>&gt;<i> +
+</I>&gt;<i>  	if (priv-&gt;echo_skb[idx]) {
+</I>&gt;<i>  		kfree_skb(priv-&gt;echo_skb[idx]);
+</I>&gt;<i>  		priv-&gt;echo_skb[idx] = NULL;
+</I>&gt;<i> @@ -445,17 +452,30 @@ static void can_setup(struct net_device 
+</I>&gt;<i>  /*
+</I>&gt;<i>   * Allocate and setup space for the CAN network device
+</I>&gt;<i>   */
+</I>&gt;<i> -struct net_device *alloc_candev(int sizeof_priv)
+</I>&gt;<i> +struct net_device *alloc_candev(int sizeof_priv, unsigned int echo_skb_max)
+</I>&gt;<i>  {
+</I>&gt;<i>  	struct net_device *dev;
+</I>&gt;<i>  	struct can_priv *priv;
+</I>&gt;<i> +	int size;
+</I>&gt;<i>  
+</I>&gt;<i> -	dev = alloc_netdev(sizeof_priv, &quot;can%d&quot;, can_setup);
+</I>&gt;<i> +	if (echo_skb_max)
+</I>&gt;<i> +		size = ALIGN(sizeof_priv, sizeof(struct sk_buff *)) +
+</I>&gt;<i> +			echo_skb_max * sizeof(struct sk_buff *);
+</I>&gt;<i> +	else
+</I>&gt;<i> +		size = sizeof_priv;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev = alloc_netdev(size, &quot;can%d&quot;, can_setup);
+</I>&gt;<i>  	if (!dev)
+</I>&gt;<i>  		return NULL;
+</I>&gt;<i>  
+</I>&gt;<i>  	priv = netdev_priv(dev);
+</I>&gt;<i>  
+</I>&gt;<i> +	if (echo_skb_max) {
+</I>&gt;<i> +		priv-&gt;echo_skb_max = echo_skb_max;
+</I>&gt;<i> +		priv-&gt;echo_skb = (void *)priv +
+</I>&gt;<i> +			ALIGN(sizeof_priv, sizeof(struct sk_buff *));
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i>  	priv-&gt;state = CAN_STATE_STOPPED;
+</I>&gt;<i>  
+</I>&gt;<i>  	init_timer(&amp;priv-&gt;restart_timer);
+</I>&gt;<i> Index: net-next-2.6/include/linux/can/dev.h
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- net-next-2.6.orig/include/linux/can/dev.h
+</I>&gt;<i> +++ net-next-2.6/include/linux/can/dev.h
+</I>&gt;<i> @@ -29,8 +29,6 @@ enum can_mode {
+</I>&gt;<i>  /*
+</I>&gt;<i>   * CAN common private data
+</I>&gt;<i>   */
+</I>&gt;<i> -#define CAN_ECHO_SKB_MAX  4
+</I>&gt;<i> -
+</I>&gt;<i>  struct can_priv {
+</I>&gt;<i>  	struct can_device_stats can_stats;
+</I>&gt;<i>  
+</I>&gt;<i> @@ -44,15 +42,16 @@ struct can_priv {
+</I>&gt;<i>  	int restart_ms;
+</I>&gt;<i>  	struct timer_list restart_timer;
+</I>&gt;<i>  
+</I>&gt;<i> -	struct sk_buff *echo_skb[CAN_ECHO_SKB_MAX];
+</I>&gt;<i> -
+</I>&gt;<i>  	int (*do_set_bittiming)(struct net_device *dev);
+</I>&gt;<i>  	int (*do_set_mode)(struct net_device *dev, enum can_mode mode);
+</I>&gt;<i>  	int (*do_get_state)(const struct net_device *dev,
+</I>&gt;<i>  			    enum can_state *state);
+</I>&gt;<i> +
+</I>&gt;<i> +	unsigned int echo_skb_max;
+</I>&gt;<i> +	struct sk_buff **echo_skb;
+</I>&gt;<i>  };
+</I>&gt;<i>  
+</I>&gt;<i> -struct net_device *alloc_candev(int sizeof_priv);
+</I>&gt;<i> +struct net_device *alloc_candev(int sizeof_priv, unsigned int echo_skb_max);
+</I>&gt;<i>  void free_candev(struct net_device *dev);
+</I>&gt;<i>  
+</I>&gt;<i>  int open_candev(struct net_device *dev);
+</I>&gt;<i> @@ -64,8 +63,9 @@ void unregister_candev(struct net_device
+</I>&gt;<i>  int can_restart_now(struct net_device *dev);
+</I>&gt;<i>  void can_bus_off(struct net_device *dev);
+</I>&gt;<i>  
+</I>&gt;<i> -void can_put_echo_skb(struct sk_buff *skb, struct net_device *dev, int idx);
+</I>&gt;<i> -void can_get_echo_skb(struct net_device *dev, int idx);
+</I>&gt;<i> -void can_free_echo_skb(struct net_device *dev, int idx);
+</I>&gt;<i> +void can_put_echo_skb(struct sk_buff *skb, struct net_device *dev,
+</I>&gt;<i> +		      unsigned int idx);
+</I>&gt;<i> +void can_get_echo_skb(struct net_device *dev, unsigned int idx);
+</I>&gt;<i> +void can_free_echo_skb(struct net_device *dev, unsigned int idx);
+</I>&gt;<i>  
+</I>&gt;<i>  #endif /* CAN_DEV_H */
+</I>&gt;<i> Index: net-next-2.6/drivers/net/can/at91_can.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- net-next-2.6.orig/drivers/net/can/at91_can.c
+</I>&gt;<i> +++ net-next-2.6/drivers/net/can/at91_can.c
+</I>&gt;<i> @@ -1087,7 +1087,7 @@ static int __init at91_can_probe(struct 
+</I>&gt;<i>  		goto exit_release;
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i> -	dev = alloc_candev(sizeof(struct at91_priv));
+</I>&gt;<i> +	dev = alloc_candev(sizeof(struct at91_priv), AT91_MB_TX_NUM);
+</I>&gt;<i>  	if (!dev) {
+</I>&gt;<i>  		err = -ENOMEM;
+</I>&gt;<i>  		goto exit_iounmap;
+</I>
+The at91 part looks okay.
+
+Marc
+
+-- 
+Pengutronix e.K.                         | Marc Kleine-Budde           |
+Linux Solutions for Science and Industry | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund                 | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686         | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 260 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20091009/ecabebbe/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20091009/ecabebbe/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003240.html">can: make the number of echo skb's configurable
+</A></li>
+	<LI>Next message: <A HREF="003243.html">can: make the number of echo skb's configurable
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3242">[ date ]</a>
+              <a href="thread.html#3242">[ thread ]</a>
+              <a href="subject.html#3242">[ subject ]</a>
+              <a href="author.html#3242">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

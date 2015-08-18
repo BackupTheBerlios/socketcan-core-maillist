@@ -1,0 +1,148 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC v3 5/6] j1939: rename NAME to UUID?
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20v3%205/6%5D%20j1939%3A%20rename%20NAME%20to%20UUID%3F&In-Reply-To=%3C4DA88705.5040203%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005646.html">
+   <LINK REL="Next"  HREF="005648.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC v3 5/6] j1939: rename NAME to UUID?</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20v3%205/6%5D%20j1939%3A%20rename%20NAME%20to%20UUID%3F&In-Reply-To=%3C4DA88705.5040203%40hartkopp.net%3E"
+       TITLE="[RFC v3 5/6] j1939: rename NAME to UUID?">socketcan at hartkopp.net
+       </A><BR>
+    <I>Fri Apr 15 19:57:25 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005646.html">[RFC v3 5/6] j1939: rename NAME to UUID?
+</A></li>
+        <LI>Next message: <A HREF="005648.html">[RFC v3 5/6] j1939: rename NAME to UUID?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5647">[ date ]</a>
+              <a href="thread.html#5647">[ thread ]</a>
+              <a href="subject.html#5647">[ subject ]</a>
+              <a href="author.html#5647">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 13.04.2011 06:49, Kurt Van Dijck wrote:
+&gt;<i> Oliver et.al.,
+</I>&gt;<i> 
+</I>&gt;<i> On Sun, Mar 20, 2011 at 04:56:46PM +0100, Oliver Hartkopp wrote:
+</I>&gt;&gt;<i> On 14.03.2011 14:59, Kurt Van Dijck wrote:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Then you suggest to attach static and/or dynamic addresses to the interface.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +  Assigning addresses is done via
+</I>&gt;&gt;&gt;<i> +  $ ip addr add dev canX j1939 0xXX
+</I>&gt;&gt;&gt;<i> +  statically or
+</I>&gt;&gt;&gt;<i> +  $ ip addr add dev canX j1939 name 0xXX
+</I>&gt;&gt;&gt;<i> +  dynamically. In the latter case, address claiming must take place
+</I>&gt;&gt;&gt;<i> +  before other traffic can leave.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> like you would have using DHCP/DNS (adapted for j1939) ...
+</I>&gt;&gt;<i>
+</I>&gt;<i> I suspect the confustion with DHCP/DNS comes free with the used terminology.
+</I>&gt;<i> 
+</I>&gt;<i> Specifications talk about a 64bit NAME, where is actually is a 64bit UUID.
+</I>&gt;<i> Calling this number a UUID may clarify things, but leaves the spec in the
+</I>&gt;<i> terminology.
+</I>&gt;<i> 
+</I>&gt;<i> one would then do:
+</I>&gt;<i> $ ip addr add dev canX j1939 uuid XXXX
+</I>&gt;<i> 
+</I>&gt;<i> Would that be a good way to progress?
+</I>
+Hello Kurt,
+
+i don't know if it helps - at least for j1939 users - to rename the NAME for
+j1939 address claiming to UUID which is usually 128 bit long an has a pretty
+different understanding than the J1939 NAME which stands for
+
+   1. Arbitrary address bit
+   2. Industry group, length 3 bits
+   3. Vehicle system instance, length 4 bits
+   4. Vehicle system, length 7 bits
+   5. Reserved bit
+   6. Function, length 8 bits
+   7. Function instance, length 5 bits
+   8. ECU instance, length 3 bits
+   9. Manufacturer code, length 11 bits
+  10. Identity number, length 21 bits
+
+(from <A HREF="http://www.kvaser.com/en/about-can/higher-layer-protocols/36.html">http://www.kvaser.com/en/about-can/higher-layer-protocols/36.html</A>)
+
+This is not comparable to the ideas from RFC 4122 ...
+
+Thinking about the approach to implement the j1939 address claiming (AC) in
+userspace, i discovered two ways which could both be hidden inside some
+easy-to-use helper functions:
+
+1. implement a thread (e.g. within a library) which opens a CAN_RAW socket on
+a specific CAN-interface and takes care of the AC procedure and monitors
+ongoing AC procedures on the bus. In this case every j1939 application
+requiring AC internally would monitor all the AC handling on itself (which
+should be no general problem - written only once).
+
+2. create j1939ac daemon(s) using PF_UNIX-sockets to be named e.g.
+j1939ac_can0, j1939ac_can1, etc. - these daemons take care for all AC
+requirements of the host it is running on. The PF_UNIX-sockets are used in
+SOCK_DGRAM mode and only the j1939 processes that need AC can then register
+their NAME by sending a request datagram, and get back the j1939-address once
+it is claimed (and all the updates on changes). As the j1939ac daemons are
+running on the same host as the j1939 application processes, optional the
+process' PID could be provided to the daemon during the registering process,
+so that the daemon can send a signal to a signal handler of the application
+process (if you would like to omit the select() syscall to handle both the
+j1939 and PF_UNIX sockets).
+
+-&gt;   &lt;Req&gt;&lt;Name=&quot;A3B5667799332242&quot; PID=&quot;12345&quot;&gt;
+&lt;-   &lt;Resp&gt;&lt;ACState=&quot;claimed&quot; Name=&quot;A3B5667799332242&quot; Address=&quot;1B&quot;&gt;
+(some time)
+&lt;-   &lt;Resp&gt;&lt;ACState=&quot;changed&quot; Name=&quot;A3B5667799332242&quot; Address=&quot;1C&quot;&gt;
+
+This is a sketch that could be put into simple C-structs that are sent via the
+PF_UNIX DGRAM socket.
+
+In all suggested cases (using a thread, daemon with/without signal) the AC
+procedure can be managed in userspace without real pain. But especially with
+less pain than putting the AC process into kernelspace and provide your
+suggested socket API with bind/connect/... in very different manners.
+
+Regards,
+Oliver
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005646.html">[RFC v3 5/6] j1939: rename NAME to UUID?
+</A></li>
+	<LI>Next message: <A HREF="005648.html">[RFC v3 5/6] j1939: rename NAME to UUID?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5647">[ date ]</a>
+              <a href="thread.html#5647">[ thread ]</a>
+              <a href="subject.html#5647">[ subject ]</a>
+              <a href="author.html#5647">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

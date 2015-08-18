@@ -1,0 +1,187 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] CAN: Add binary serial line can interface driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20CAN%3A%20Add%20binary%20serial%20line%20can%20interface%20driver&In-Reply-To=%3C4A9231B6.1070900%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002917.html">
+   <LINK REL="Next"  HREF="002919.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] CAN: Add binary serial line can interface driver</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20CAN%3A%20Add%20binary%20serial%20line%20can%20interface%20driver&In-Reply-To=%3C4A9231B6.1070900%40hartkopp.net%3E"
+       TITLE="[PATCH] CAN: Add binary serial line can interface driver">socketcan at hartkopp.net
+       </A><BR>
+    <I>Mon Aug 24 08:22:46 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002917.html">[PATCH] CAN: Add binary serial line can interface driver
+</A></li>
+        <LI>Next message: <A HREF="002919.html">[PATCH] CAN: Add binary serial line can interface driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2918">[ date ]</a>
+              <a href="thread.html#2918">[ thread ]</a>
+              <a href="subject.html#2918">[ subject ]</a>
+              <a href="author.html#2918">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Maximilian Falkenstein wrote:
+
+&gt;<i> I've made a module for devices using my simple binary serial can
+</I>&gt;<i> protocol. It's mainly a copy of Oliver's slcan driver(Code is the same
+</I>&gt;<i> on netlink and tty side, it even uses N_SLCAN), I've just modified it
+</I>&gt;<i> for my protocol. Because N_SLCAN is used, slcan and bscan can't be
+</I>&gt;<i> used(compiling and loading shouldn't be a problem) at the same time,
+</I>&gt;<i> but that shouldn't be a problem as my device is targeted to low-end,
+</I>&gt;<i> where you wouldn't use more than one device per computer. I've only
+</I>&gt;<i> tested it at 125 KBit can bitrate @100% busload and it works fine. A
+</I>&gt;<i> short documentation of the protocol can be found here:
+</I>&gt;<i> <A HREF="http://blog.maxf.info/wp-content/uploads/2009/08/bscan_proto.pdf">http://blog.maxf.info/wp-content/uploads/2009/08/bscan_proto.pdf</A> . On
+</I>&gt;<i> that site there's also a documentation of the hardware, but I haven't
+</I>&gt;<i> published it in English yet.
+</I>
+(..)
+
+
+&gt;<i> +/*
+</I>&gt;<i> + * Called by the driver when there's room for more data.  If we have
+</I>&gt;<i> + * more packets to send, we send them here.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void bscan_write_wakeup(struct tty_struct *tty) {
+</I>
+(..)
+
+&gt;<i> +    if (sl-&gt;xleft &lt;= 0) {
+</I>&gt;<i> +        /* Now serial buffer is almost free &amp; we can start
+</I>&gt;<i> +         * transmission of another packet if we havn't been paused */
+</I>&gt;<i> +        stats-&gt;tx_packets++;
+</I>&gt;<i> +        tty-&gt;flags &amp;= ~(1 &lt;&lt; TTY_DO_WRITE_WAKEUP);
+</I>&gt;<i> +        if (!sl-&gt;paused)
+</I>&gt;<i> +            netif_wake_queue(sl-&gt;dev);
+</I>&gt;<i> +        return;
+</I>&gt;<i> +    }
+</I>
+Hi Maximilian,
+
+it took two nights to come back with a proper feedback from my side ;-)
+
+The first thing is, that you should tweak the serial buffer side when you like
+to ensure that your serial device does not get flooded with data.
+
+AFAICS this is done by the code above and the defined SLC_MTU:
+
+  /* maximum rx buffer len: extended CAN frame with timestamp */
+  #define SLC_MTU (sizeof(&quot;T1111222281122334455667788EA5F\r&quot;)+1)
+
+The second and more important thing is, that i assume this bscan driver
+approach to end in an unmaintainable state always clashing with the slcan
+driver. The bscan driver creates something like slcan 1.5 using N_SLCAN and
+especially does not add any really new functionality.
+
+It would be an interesting (and new) idea to create a complete concept of a
+'remote style generic CAN controller driver' that uses the CAN driver
+interface, all the netlink stuff for bitrate setting, etc. - but bscan does
+not do this.
+
+Btw. the idea to reduce the serial line data load by providing a binary data
+encapsulation would be a valuable add-on for the slcan driver approach.
+
+As you stated correctly the bottleneck is the efficient transfer of CAN frames
+on the serial line. Therefore i would focus on this data transfer in detail
+and let all the other commands like 'O' and 'S2' as they are (in ASCII).
+
+The CAN frame encapsulation (with 'T', 't', 'R' and 'r') could be enhanced by
+a binary mode that works like this:
+
+ASCII mode (12 bytes):
+t4563112233\r : can_id 0x456, can_dlc 3, data 0x11 0x22 0x33
+
+Binary mode (7 bytes):
+t&lt;04&gt;&lt;56&gt;&lt;03&gt;&lt;11&gt;&lt;22&gt;&lt;33&gt;
+
+ASCII mode (15 bytes):
+T12ABCDEF2AA55\r : extended can_id 0x12ABCDEF, can_dlc 2, data 0xAA 0x55
+
+Binary mode (8 bytes):
+T&lt;12&gt;&lt;AB&gt;&lt;CD&gt;&lt;EF&gt;&lt;02&gt;&lt;AA&gt;&lt;FF&gt;
+
+To distinguish the two modes you can look into the first byte after [TtRr]:
+
+When this is an ASCII number (which can only be '0' .. '7' for CAN IDs) you
+have something like 0x30 .. 0x37 =&gt; 0x3? as hex value here.
+
+When you have the binary mode, you get values like this in the first byte:
+
+0x00 .. 0x07 for SFF frames
+0x00 .. 0x1F for EFF frames
+
+but *never* something like 0x3? ...
+
+So it's no problem to have an ASCII encapsulation and a binary encapsulation i
+parallel using the slcan protocol. Cool ey?
+
+The question remains, how switch the slcan encapsulation:
+
+1. Add a module parameter 'dflt_bin_encaps=1' so that the slcan driver would
+know from the first sending attempt of CAN frames, that he should use the
+binary encapsulation.
+
+2. Implement some kind of automatic detection:
+
+When slcan receives a binary CAN frame (see above) =&gt; switch to binary (also
+on the TX side).
+
+The problem here is, when you do not receive frames but only send all the time ...
+
+In this case your CAN adapter must be able to decode the ASCII CAN frames
+also. When your CAN adapter receives an ASCII encapsulated frame, it could
+send a notification, that he's capable to support binary frames.
+
+E.g. by sending
+
+t&lt;0F&gt;&lt;FF&gt;&lt;00&gt;
+
+This would switch the slcan driver to the binary mode (see above) but the
+frame itself would be discarded as 0xFFF is not a valid CAN identifier.
+
+Puh. Much text - but it hopefully was worth the effort ;-)
+
+What do you thing about this kind of binary encapsulation for the slcan driver?
+
+Regards,
+Oliver
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002917.html">[PATCH] CAN: Add binary serial line can interface driver
+</A></li>
+	<LI>Next message: <A HREF="002919.html">[PATCH] CAN: Add binary serial line can interface driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2918">[ date ]</a>
+              <a href="thread.html#2918">[ thread ]</a>
+              <a href="subject.html#2918">[ subject ]</a>
+              <a href="author.html#2918">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

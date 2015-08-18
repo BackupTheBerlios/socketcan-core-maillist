@@ -1,0 +1,156 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> struct sockaddr_can for j1939
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-March/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C4B8C346C.1080307%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004149.html">
+   <LINK REL="Next"  HREF="004151.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>struct sockaddr_can for j1939</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C4B8C346C.1080307%40hartkopp.net%3E"
+       TITLE="struct sockaddr_can for j1939">socketcan at hartkopp.net
+       </A><BR>
+    <I>Mon Mar  1 22:41:00 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004149.html">struct sockaddr_can for j1939
+</A></li>
+        <LI>Next message: <A HREF="004151.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4150">[ date ]</a>
+              <a href="thread.html#4150">[ thread ]</a>
+              <a href="subject.html#4150">[ subject ]</a>
+              <a href="author.html#4150">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Kurt Van Dijck wrote:
+&gt;<i> On Sat, Feb 27, 2010 at 07:26:46PM +0100, Oliver Hartkopp wrote:
+</I>
+&gt;&gt;<i> Btw. dynamic addressing is not an *essential* functionality for all J1939
+</I>&gt;&gt;<i> applications, that only like to communicate using J1939 protocols, right?
+</I>&gt;<i> Ack.
+</I>
+Fine.
+
+&gt;&gt;<i> Having
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>       struct {
+</I>&gt;&gt;<i>          uint8_t sa, da;
+</I>&gt;&gt;<i>          uint8_t priority;
+</I>&gt;&gt;<i>          uint32_t pgn;
+</I>&gt;&gt;<i>       } j1939;
+</I>&gt;<i> 1. during this discussion, I learned that combining source &amp; destination
+</I>&gt;<i>    in 1 sockaddr is bad. I turned my code into a seperate source &amp;
+</I>&gt;<i>    destination, with only PGN duplicated. It avoids some other confusion,
+</I>&gt;<i>    like which fields are used/filled out in: bind(), connect(),
+</I>&gt;<i>    recvfrom(), sendto()
+</I>&gt;<i> 2. To know the exact destination address of an incoming message, I added
+</I>&gt;<i>    a sockopt to add the original destination sockaddr into a cmsg.
+</I>&gt;<i>    so, a recvfrom(), you must suppose you're a receiver, but don't know
+</I>&gt;<i>    if it were a broadcast or not. with recvmsg(), you can find out.
+</I>&gt;<i> 3. Since priority is an option, I turned that into a sockopt
+</I>&gt;<i>    (potentially reusing the existing SO_PRIORITY option). for receiving,
+</I>&gt;<i>    the priority is only usefull in debugging, and I put it into a cmsg
+</I>&gt;<i>    entry in recvmsg().
+</I>&gt;<i> (1), (2) &amp; (3) lead to
+</I>&gt;<i>    struct {
+</I>&gt;<i>       uint8_t addr;
+</I>&gt;<i>       uint32_t pgn;
+</I>&gt;<i>    } j1939;
+</I>&gt;<i> which is very clean.
+</I>
+Yep - very nice.
+
+&gt;<i> I know most j1939 users will ask where the DA has gone, but existing
+</I>&gt;<i> socket API's have different structs for source &amp; destination.
+</I>&gt;<i> 
+</I>&gt;<i> To come to this stripped version, a few cmsg entries are added to allow
+</I>&gt;<i> debugging tools get all information, but those entries are IMO not used
+</I>&gt;<i> in everyday communication.
+</I>&gt;<i> Some socketoptions will be used in everyday applications, but that does
+</I>&gt;<i> not make the code (using a j1939 socket) much more complex.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> and
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>       uint64_t name;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> in /one/ structure IMO could lead to confusion and therefore to potential
+</I>&gt;&gt;<i> misusage.
+</I>&gt;<i> would 
+</I>&gt;<i> struct sockaddr_can {
+</I>&gt;<i>    union {
+</I>&gt;<i>       struct {
+</I>&gt;<i>          uint8_t addr;
+</I>&gt;<i>          uint32_t pgn;
+</I>&gt;<i>       } j1939;
+</I>&gt;<i>       struct {
+</I>&gt;<i>          uint8_t addr;
+</I>&gt;<i>          uint32_t pgn;
+</I>&gt;<i>          uint64_t name;
+</I>&gt;<i>       } j1939_dyn;
+</I>&gt;<i>    } can_addr;
+</I>&gt;<i> };
+</I>&gt;<i> make things better then? IMO not.
+</I>
+Indeed no :-)
+
+My suggestion was to the the uint64_t name only via setsockopt to identify
+dynamic adressing.
+
+
+&gt;<i> When this 8byte name is stripped from the sockaddr,
+</I>&gt;<i> this would work as sender (definitely), but would not work as good for receiving.
+</I>&gt;<i> An extra cmsg would work, but I doubt such API (for standard
+</I>&gt;<i> usage) is a good API.
+</I>&gt;<i> When one would move from static to dynamic addressing,  that means one is forced
+</I>&gt;<i> to use recvmsg() over recv() &amp; recvfrom(), which looks to me as a way too big constraint
+</I>&gt;<i> (read: being forced is a big constraint).
+</I>&gt;<i> given the small step you're taking. IMO, this proves the API being rude
+</I>&gt;<i> to users of dynamic addressed busses.
+</I>
+Sorry but i still wonder why recvfrom(), recvmsg() and sendto() are still that
+important for your API. Why not defining a uint64_t name for receive and one
+(different) uint64_t name for sending (with sockopts) and then just use read()
+wand write().
+
+Won't this work fine for the user?
+
+Regards,
+Oliver
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004149.html">struct sockaddr_can for j1939
+</A></li>
+	<LI>Next message: <A HREF="004151.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4150">[ date ]</a>
+              <a href="thread.html#4150">[ thread ]</a>
+              <a href="subject.html#4150">[ subject ]</a>
+              <a href="author.html#4150">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

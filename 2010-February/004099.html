@@ -1,0 +1,217 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 0/2] add support for Janz MODULbus devices
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/2%5D%20add%20support%20for%20Janz%20MODULbus%20devices&In-Reply-To=%3C4B850843.1000203%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004098.html">
+   <LINK REL="Next"  HREF="004105.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 0/2] add support for Janz MODULbus devices</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/2%5D%20add%20support%20for%20Janz%20MODULbus%20devices&In-Reply-To=%3C4B850843.1000203%40pengutronix.de%3E"
+       TITLE="[PATCH 0/2] add support for Janz MODULbus devices">mkl at pengutronix.de
+       </A><BR>
+    <I>Wed Feb 24 12:06:43 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004098.html">[PATCH 0/2] add support for Janz MODULbus devices
+</A></li>
+        <LI>Next message: <A HREF="004105.html">[PATCH 0/2] add support for Janz MODULbus devices
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4099">[ date ]</a>
+              <a href="thread.html#4099">[ thread ]</a>
+              <a href="subject.html#4099">[ subject ]</a>
+              <a href="author.html#4099">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger wrote:
+&gt;<i> Marc Kleine-Budde wrote:
+</I>&gt;&gt;<i> Ira W. Snyder wrote:
+</I>&gt;&gt;&gt;<i> On Tue, Feb 23, 2010 at 08:41:24PM +0100, Oliver Hartkopp wrote:
+</I>&gt;&gt;&gt;&gt;<i> Ira W. Snyder wrote:
+</I>&gt;&gt;&gt;&gt;&gt;<i> On Mon, Feb 22, 2010 at 08:42:56PM +0100, Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> - Don't include sja1000/sja1000.h. It's only for drivers in sja1000.
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>   I know that some other drivers use SJA1000 definitions as well, but
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>   that requires a general solution.
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> Why not? I need some of the definitions for the SJA1000 error registers.
+</I>&gt;&gt;&gt;&gt;&gt;<i> Is there any reason why it can't be include/linux/can/sja1000.h instead?
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> It seems stupid to duplicate the register definitions in each new driver
+</I>&gt;&gt;&gt;&gt;&gt;<i> that comes along.
+</I>&gt;&gt;&gt;&gt;<i> Register definitions are always hardware specific.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> The fact that the Janz card has some registers in SJA1000 layout does not
+</I>&gt;&gt;&gt;&gt;<i> justify to push sja1000.h to a public place like include/linux/can/* IMO.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> The ESD USB and the EMS USB drivers also have some registers in SJA1000
+</I>&gt;&gt;&gt;&gt;<i> layout. I would prefer following their approach.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> - About xmit flow control. What happens if you send messages quickly at
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>   125 KB/s. You could use &quot;cangen -g 0 can0&quot; for that test. How many
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>   messages get dropped?
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> I let the cangen command run for a while:
+</I>&gt;&gt;&gt;&gt;&gt;<i> $ ifconfig -a
+</I>&gt;&gt;&gt;&gt;&gt;<i> can0      Link encap:UNSPEC  HWaddr 00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00  
+</I>&gt;&gt;&gt;&gt;&gt;<i>           UP RUNNING NOARP  MTU:16  Metric:1
+</I>&gt;&gt;&gt;&gt;&gt;<i>           RX packets:473455 errors:0 dropped:0 overruns:0 frame:0
+</I>&gt;&gt;&gt;&gt;&gt;<i>           TX packets:473455 errors:0 dropped:1831983 overruns:0 carrier:0
+</I>&gt;&gt;&gt;&gt;<i> Oops!
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> This looks weird in janz_xmit() !
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> +	/* check that we can actually transmit */
+</I>&gt;&gt;&gt;&gt;<i> +	if (!(desc.control &amp; DESC_VALID)) {
+</I>&gt;&gt;&gt;&gt;<i> +		dev_err(mod-&gt;dev, &quot;%s: no buffers\n&quot;, __func__);
+</I>&gt;&gt;&gt;&gt;<i> +		stats-&gt;tx_dropped++;
+</I>&gt;&gt;&gt;&gt;<i> +		kfree_skb(skb);
+</I>&gt;&gt;&gt;&gt;<i> +		goto out_unlock;
+</I>&gt;&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> You should enable/wake the tx_queue only when your hardware is potentially
+</I>&gt;&gt;&gt;&gt;<i> able to process new CAN frames. You are getting lot's of trashed frames with
+</I>&gt;&gt;&gt;&gt;<i> your implementation.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Yep. I know how a network driver is supposed to work. Unfortunately,
+</I>&gt;&gt;&gt;<i> AFAICT from the datasheet, this hardware has no notification mechanism
+</I>&gt;&gt;&gt;<i> for completed packets.
+</I>&gt;&gt;<i> Have you asked the vendor? Sometimes the guys at the support have good
+</I>&gt;&gt;<i> ideas.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> The only way I can think of to track TX ring usage is to have the TX
+</I>&gt;&gt;&gt;<i> thread keep an index of where the last used packet was, and then check
+</I>&gt;&gt;&gt;<i> to see how many are left in the ring, for each TX.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> That text description is hard to understand, I mean something like this:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> start up (first TX packet)
+</I>&gt;&gt;&gt;<i> index	buffer		state
+</I>&gt;&gt;&gt;<i> =======================================
+</I>&gt;&gt;&gt;<i> 		0	empty
+</I>&gt;&gt;&gt;<i> 		1	empty
+</I>&gt;&gt;&gt;<i> last_processed	2	empty
+</I>&gt;&gt;&gt;<i> 		3	full (waiting to be sent by firmware)
+</I>&gt;&gt;&gt;<i> 		4	full (waiting to be sent by firmware)
+</I>&gt;&gt;&gt;<i> fasttx_num	5	empty (this is where the next packet will go)
+</I>&gt;&gt;&gt;<i> 		6	empty
+</I>&gt;&gt;&gt;<i> 		7	empty
+</I>&gt;&gt;&gt;<i> 		8	empty
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> So, when we call xmit, we first start at the last_processed index, and
+</I>&gt;&gt;&gt;<i> iterate until we find a packet waiting to be sent by the firmware. Then
+</I>&gt;&gt;&gt;<i> we do the correct subtraction to know if we have free space left.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Of course, we still must poll to call netif_wake_queue(). :( This is a
+</I>&gt;&gt;&gt;<i> pretty horrible solution. Thoughts?
+</I>&gt;&gt;<i> Er...I have only followed this thread with one eye....
+</I>&gt;&gt;<i> How do you do the ECHO of tx'ed CAN frames?
+</I>&gt;<i> 
+</I>&gt;<i> The hardware does it.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> But we want so solve the TX problem. You only have to stop the
+</I>&gt;&gt;<i> netif_queue if you TX ring is full. Then you have to deal with calling
+</I>&gt;&gt;<i> netif_wake_queue() eventually. But we obviously don't want to poll.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The solution might be to look at the TX queue in the interrupt handler
+</I>&gt;&gt;<i> and/or the NAPI loop. And now we get back to my first question. If the
+</I>&gt;&gt;<i> controller does a loopback in hardware, i.e. you receive a frame for
+</I>&gt;&gt;<i> each frame send, you don't need to poll the TX queue length.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If you receive a CAN frame it might be on of your's, which means the TX
+</I>&gt;&gt;<i> queue might have at least room for one frame. In pseudo code it might
+</I>&gt;&gt;<i> look like this:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> xmit()
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	send_frame_to_hardware();
+</I>&gt;&gt;<i> 	if (tx_ring_full) {
+</I>&gt;&gt;<i> 		netif_stop_queue();
+</I>&gt;&gt;<i> 		priv-&gt;flags |= TX_RING_FULL;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> irq() and netif_poll()
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	if (priv-&gt;flags &amp; TX_RING_FULL) {
+</I>&gt;&gt;<i> 		if (room_in_ring()) {
+</I>&gt;&gt;<i> 			priv-&gt;flags &amp;= ~TX_RING_FULL;
+</I>&gt;&gt;<i> 			netif_wake_queue();
+</I>&gt;&gt;<i> 		}
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Should be implemented race-free, i.e. you might have to use atomic_*
+</I>&gt;&gt;<i> operations and/or don't use a shared flag variable.
+</I>&gt;<i> 
+</I>&gt;<i> Cool, that should work. netif_queue_stopped() could be used instead of
+</I>&gt;<i> the TX_RING_FULL flag.
+</I>
+right...good point
+
+I should have looked at my own driver :)
+
+If room_in_ring() is cheap, it boils down to:
+
+&gt;&gt;<i> irq() and netif_poll()
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	if (room_in_ring()) {
+</I>&gt;&gt;<i> 		netif_wake_queue();
+</I>&gt;&gt;<i> }
+</I>
+Otherwise:
+
+&gt;&gt;<i> irq() and netif_poll()
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	if (netif_queue_stopped() &amp;&amp; room_in_ring()) {
+</I>&gt;&gt;<i> 		netif_wake_queue();
+</I>&gt;&gt;<i> }
+</I>
+Marc
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 260 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20100224/029342f2/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20100224/029342f2/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004098.html">[PATCH 0/2] add support for Janz MODULbus devices
+</A></li>
+	<LI>Next message: <A HREF="004105.html">[PATCH 0/2] add support for Janz MODULbus devices
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4099">[ date ]</a>
+              <a href="thread.html#4099">[ thread ]</a>
+              <a href="subject.html#4099">[ subject ]</a>
+              <a href="author.html#4099">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

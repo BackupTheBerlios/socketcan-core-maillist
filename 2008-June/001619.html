@@ -1,0 +1,1285 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [4/5] softing driver below 40kB
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5B4/5%5D%20softing%20driver%20below%2040kB&In-Reply-To=%3C48624FBE.9030503%40eia.be%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001641.html">
+   <LINK REL="Next"  HREF="001625.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[4/5] softing driver below 40kB</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5B4/5%5D%20softing%20driver%20below%2040kB&In-Reply-To=%3C48624FBE.9030503%40eia.be%3E"
+       TITLE="[4/5] softing driver below 40kB">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed Jun 25 16:01:34 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001641.html">[3/5] softing driver update
+</A></li>
+        <LI>Next message: <A HREF="001625.html">[4/5] softing driver below 40kB
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1619">[ date ]</a>
+              <a href="thread.html#1619">[ thread ]</a>
+              <a href="subject.html#1619">[ subject ]</a>
+              <a href="author.html#1619">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Index: kernel/2.6/drivers/net/can/softing/softing_main.c
+===================================================================
+--- kernel/2.6/drivers/net/can/softing/softing_main.c	(revision 0)
++++ kernel/2.6/drivers/net/can/softing/softing_main.c	(revision 0)
+@@ -0,0 +1,1219 @@
++/*
++ * softing.c -	Softing Gmbh 'generic' driver module for socketCAN
++ *
++ * Copyright (c) 2008, Kurt Van Dijck, EIA Electronics, &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ *
++ * Based on original, non-'socketcan', driver from Softing Gmbh
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the distribution.
++ * 3. Neither the name of EIA ELectronics nor the names of its contributors
++ *    may be used to endorse or promote products derived from this software
++ *    without specific prior written permission.
++ *
++ * Alternatively, provided that this notice is retained in full, this
++ * software may be distributed under the terms of the GNU General
++ * Public License (&quot;GPL&quot;) version 2, in which case the provisions of the
++ * GPL apply INSTEAD OF those given above.
++ *
++ * The provided data structures and external interfaces from this code
++ * are not restricted to be used by modules with a GPL compatible license.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
++ * DAMAGE.
++ *
++ * Send feedback to &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-users at lists.berlios.de</A>&gt;
++ *
++ */
++
++#include &lt;linux/module.h&gt;
++#include &lt;linux/init.h&gt;
++#include &lt;linux/device.h&gt;
++#include &lt;linux/firmware.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/mutex.h&gt;
++#include &lt;asm/io.h&gt;
++
++#include &quot;softing.h&quot;
++
++/* this is the worst thing on the softing API
++ * 2 busses are driven together, I don't know how
++ * to recover a single of them.
++ * Therefore, when one bus is modified, the other
++ * is flushed too
++ */
++void softing_flush_echo_skb(struct softing_priv *priv)
++{
++	can_close_cleanup(priv-&gt;netdev);
++	priv-&gt;tx.pending = 0;
++	priv-&gt;tx.echo_put = 0;
++	priv-&gt;tx.echo_get = 0;
++}
++
++/*softing_unlocked_tx_run:*/
++/*trigger the tx queue-ing*/
++/*no locks are grabbed, so be sure to have the spin spinlock*/
++static int netdev_start_xmit(struct sk_buff *skb, struct net_device *dev)
++{
++	struct softing_priv *priv = (struct softing_priv *)dev-&gt;priv;
++	struct softing *card = priv-&gt;card;
++	int r;
++	int bhlock;
++	u8 *ptr;
++	u8 cmd;
++	unsigned int fifo_wr;
++	struct can_frame msg;
++
++	r = -ENOTTY;
++	if (in_interrupt()) {
++		bhlock = 0;
++		spin_lock(&amp;card-&gt;spin);
++	} else {
++		bhlock = 1;
++		spin_lock_bh(&amp;card-&gt;spin);
++	}
++	if (!card-&gt;fw.up) {
++		r = -EIO;
++		goto xmit_done;
++	}
++	if (netif_carrier_ok(priv-&gt;netdev) &lt;= 0) {
++		r = -EBADF;
++		goto xmit_done;
++	}
++	if (card-&gt;tx.pending &gt;= card-&gt;tx.max) {
++		r = -EBUSY;
++		goto xmit_done;
++	}
++	if (priv-&gt;tx.pending &gt;= CAN_ECHO_SKB_MAX) {
++		r = -EBUSY;
++		goto xmit_done;
++	}
++	fifo_wr = card-&gt;dpram.tx-&gt;wr;
++	if (fifo_wr == card-&gt;dpram.tx-&gt;rd) {
++		/*fifo full */
++		r = -EAGAIN;
++		goto xmit_done;
++	}
++	memcpy(&amp;msg, skb-&gt;data, sizeof(msg));
++	ptr = &amp;card-&gt;dpram.tx-&gt;fifo[fifo_wr][0];
++	cmd = CMD_TX;
++	if (msg.can_id &amp; CAN_RTR_FLAG)
++		cmd |= CMD_RTR;
++	if (msg.can_id &amp; CAN_EFF_FLAG)
++		cmd |= CMD_XTD;
++	if (priv-&gt;index)
++		cmd |= CMD_BUS2;
++	*ptr++ = cmd;
++	*ptr++ = msg.can_dlc;
++	*ptr++ = (msg.can_id &gt;&gt; 0);
++	*ptr++ = (msg.can_id &gt;&gt; 8);
++	if (msg.can_id &amp; CAN_EFF_FLAG) {
++		*ptr++ = (msg.can_id &gt;&gt; 16);
++		*ptr++ = (msg.can_id &gt;&gt; 24);
++	} else {
++		/*increment 1, not 2 as you might think */
++		ptr += 1;
++	}
++	if (!(msg.can_id &amp; CAN_RTR_FLAG))
++		memcpy_toio(ptr, &amp;msg.data[0], msg.can_dlc);
++	if (++fifo_wr &gt;=
++	    sizeof(card-&gt;dpram.tx-&gt;fifo) /
++	    sizeof(card-&gt;dpram.tx-&gt;fifo[0]))
++		fifo_wr = 0;
++	card-&gt;dpram.tx-&gt;wr = fifo_wr;
++	r = 0;
++	++card-&gt;tx.pending;
++	++priv-&gt;tx.pending;
++	can_put_echo_skb(skb, dev, priv-&gt;tx.echo_put);
++	++priv-&gt;tx.echo_put;
++	if (priv-&gt;tx.echo_put &gt;= CAN_ECHO_SKB_MAX)
++		priv-&gt;tx.echo_put = 0;
++	/* clear pointer, so don't erase later */
++	skb = 0;
++xmit_done:
++	if (bhlock)
++		spin_unlock_bh(&amp;card-&gt;spin);
++	else
++		spin_unlock(&amp;card-&gt;spin);
++	if (card-&gt;tx.pending &gt;= card-&gt;tx.max) {
++		struct softing_priv *bus;
++		int j;
++		for (j = 0; j &lt; card-&gt;nbus; ++j) {
++			bus = card-&gt;bus[j];
++			if (!bus)
++			   continue;
++			netif_stop_queue(bus-&gt;netdev);
++		}
++	}
++
++	/* free skb, if not handled by the driver */
++	if (skb)
++		dev_kfree_skb(skb);
++	return r;
++}
++
++static int softing_dev_svc_once(struct softing *card)
++{
++	int j;
++	struct softing_priv *bus;
++	struct sk_buff *skb;
++	struct can_frame msg;
++
++	unsigned int fifo_rd;
++	unsigned int cnt = 0;
++	struct net_device_stats *stats;
++
++	memset(&amp;msg, 0, sizeof(msg));
++	if (card-&gt;dpram.rx-&gt;lost_msg) {
++		/*reset condition */
++		card-&gt;dpram.rx-&gt;lost_msg = 0;
++		/* prepare msg */
++		msg.can_id = CAN_ERR_FLAG | CAN_ERR_CRTL;
++		msg.can_dlc = CAN_ERR_DLC;
++		msg.data[1] = CAN_ERR_CRTL_RX_OVERFLOW;
++		/*service to both busses, we don't know which one generated */
++		for (j = 0; j &lt; card-&gt;nbus; ++j) {
++			bus = card-&gt;bus[j];
++			if (!bus)
++				continue;
++			if (!netif_carrier_ok(bus-&gt;netdev))
++				continue;
++			++bus-&gt;can.can_stats.data_overrun;
++			skb = dev_alloc_skb(sizeof(msg));
++			if (0 == skb)
++				return -ENOMEM;
++			skb-&gt;dev = bus-&gt;netdev;
++			skb-&gt;protocol = htons(ETH_P_CAN);
++			skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
++			memcpy(skb_put(skb, sizeof(msg)), &amp;msg, sizeof(msg));
++			if (0 != netif_rx(skb))
++				dev_kfree_skb_irq(skb);
++		}
++		memset(&amp;msg, 0, sizeof(msg));
++		++cnt;
++	}
++
++	fifo_rd = card-&gt;dpram.rx-&gt;rd;
++	if (++fifo_rd &gt;=
++	    sizeof(card-&gt;dpram.rx-&gt;fifo) / sizeof(card-&gt;dpram.rx-&gt;fifo[0]))
++		fifo_rd = 0;
++	if (card-&gt;dpram.rx-&gt;wr != fifo_rd) {
++		u8 *ptr;
++		u32 tmp;
++		u8 cmd;
++		int do_skb;
++
++		ptr = &amp;card-&gt;dpram.rx-&gt;fifo[fifo_rd][0];
++
++		cmd = *ptr++;
++		if (0xff == cmd) {
++			/*not quite usefull, probably the card has got out */
++			mod_alert(&quot;got cmd 0x%02x, I suspect the card is lost&quot;
++				, cmd);
++		}
++		/*mod_trace(&quot;0x%02x&quot;, cmd);*/
++		bus = card-&gt;bus[0];
++		if (cmd &amp; CMD_BUS2)
++			bus = card-&gt;bus[1];
++
++		stats = bus-&gt;netdev-&gt;get_stats(bus-&gt;netdev);
++		if (cmd &amp; CMD_ERR) {
++			u8 can_state;
++			u8 state;
++			state = *ptr++;
++
++			msg.can_id = CAN_ERR_FLAG;
++			msg.can_dlc = CAN_ERR_DLC;
++
++			if (state &amp; 0x80) {
++				can_state = CAN_STATE_BUS_OFF;
++				msg.can_id |= CAN_ERR_BUSOFF;
++				state = 2;
++			} else if (state &amp; 0x60) {
++				can_state = CAN_STATE_BUS_PASSIVE;
++				msg.can_id |= CAN_ERR_BUSERROR;
++				state = 1;
++			} else {
++				can_state = CAN_STATE_ACTIVE;
++				state = 0;
++				do_skb = 0;
++			}
++			/*update DPRAM */
++			if (!bus-&gt;index) {
++				card-&gt;dpram.info-&gt;bus_state = state;
++			} else {
++				card-&gt;dpram.info-&gt;bus_state2 = state;
++			}
++			/*timestamp */
++			tmp =
++			    (ptr[0] &lt;&lt; 0) | (ptr[1] &lt;&lt; 8) | (ptr[2] &lt;&lt; 16) |
++			    (ptr[3] &lt;&lt; 24);
++			ptr += 4;
++			/*msg.time = */ softing_time2usec(card, tmp);
++			/*trigger dual port RAM */
++			mb();
++			card-&gt;dpram.rx-&gt;rd = fifo_rd;
++			/*update internal status */
++			if (can_state != bus-&gt;can.state) {
++				bus-&gt;can.state = can_state;
++				if (1 == can_state)
++					bus-&gt;can.can_stats.error_passive += 1;
++			}
++			bus-&gt;can.can_stats.bus_error += 1;
++
++			/*trigger socketcan */
++			if (2 == state) {
++				/* this calls can_close_cleanup() */
++				softing_flush_echo_skb(bus);
++				can_bus_off(bus-&gt;netdev);
++				netif_stop_queue(bus-&gt;netdev);
++			}
++			if ((CAN_STATE_BUS_OFF == state)
++			    || (CAN_STATE_BUS_PASSIVE == state)) {
++				skb = dev_alloc_skb(sizeof(msg));
++				if (0 == skb)
++					return -ENOMEM;
++				skb-&gt;dev = bus-&gt;netdev;
++				skb-&gt;protocol = htons(ETH_P_CAN);
++				skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
++				memcpy(skb_put(skb, sizeof(msg)), &amp;msg,
++				       sizeof(msg));
++				if (0 != netif_rx(skb))
++					dev_kfree_skb_irq(skb);
++			}
++		} else {
++			if (cmd &amp; CMD_RTR)
++				msg.can_id |= CAN_RTR_FLAG;
++			/* acknowledge, was tx msg
++			 * no real tx flag to set
++			if (cmd &amp; CMD_ACK) {
++			}
++			 */
++			msg.can_dlc = *ptr++;
++			if (msg.can_dlc &gt; 8)
++				msg.can_dlc = 8;
++			if (cmd &amp; CMD_XTD) {
++				msg.can_id |= CAN_EFF_FLAG;
++				msg.can_id |=
++				      (ptr[0] &lt;&lt; 0)
++				    | (ptr[1] &lt;&lt; 8)
++				    | (ptr[2] &lt;&lt; 16)
++				    | (ptr[3] &lt;&lt; 24);
++				ptr += 4;
++			} else {
++				msg.can_id |= (ptr[0] &lt;&lt; 0) | (ptr[1] &lt;&lt; 8);
++				ptr += 2;
++			}
++			tmp = (ptr[0] &lt;&lt; 0)
++			    | (ptr[1] &lt;&lt; 8)
++			    | (ptr[2] &lt;&lt; 16)
++			    | (ptr[3] &lt;&lt; 24);
++			ptr += 4;
++			/*msg.time = */ softing_time2usec(card, tmp);
++			memcpy_fromio(&amp;msg.data[0], ptr, 8);
++			ptr += 8;
++			/*trigger dual port RAM */
++			mb();
++			card-&gt;dpram.rx-&gt;rd = fifo_rd;
++			/*update socket */
++			if (cmd &amp; CMD_ACK) {
++				can_get_echo_skb(bus-&gt;netdev, bus-&gt;tx.echo_get);
++				++bus-&gt;tx.echo_get;
++				if (bus-&gt;tx.echo_get &gt;= CAN_ECHO_SKB_MAX)
++					bus-&gt;tx.echo_get = 0;
++				if (bus-&gt;tx.pending)
++					--bus-&gt;tx.pending;
++				if (card-&gt;tx.pending)
++					--card-&gt;tx.pending;
++				stats-&gt;tx_packets += 1;
++				stats-&gt;tx_bytes += msg.can_dlc;
++			} else {
++				stats-&gt;rx_packets += 1;
++				stats-&gt;rx_bytes += msg.can_dlc;
++				bus-&gt;netdev-&gt;last_rx = jiffies;
++				skb = dev_alloc_skb(sizeof(msg));
++				if (0 != skb) {
++					skb-&gt;dev = bus-&gt;netdev;
++					skb-&gt;protocol = htons(ETH_P_CAN);
++					skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
++					memcpy(skb_put(skb, sizeof(msg)), &amp;msg,
++					       sizeof(msg));
++					if (0 != netif_rx(skb))
++						dev_kfree_skb_irq(skb);
++				}
++			}
++		}
++		++cnt;
++	}
++	return cnt;
++}
++
++static void softing_dev_svc(unsigned long v)
++{
++	struct softing *card = (struct softing *)v;
++	struct softing_priv *bus;
++	int j;
++	int offset;
++
++	spin_lock(&amp;card-&gt;spin);
++	while (softing_dev_svc_once(card) &gt; 0)
++		++card-&gt;irq.svc_count;
++	/*resume tx queue's */
++	offset = card-&gt;tx.last_bus;
++	for (j = 0; j &lt; card-&gt;nbus; ++j) {
++		if (card-&gt;tx.pending &gt;= card-&gt;tx.max)
++			break;
++		bus = card-&gt;bus[(j + offset) % card-&gt;nbus];
++		if (netif_carrier_ok(bus-&gt;netdev))
++			netif_wake_queue(bus-&gt;netdev);
++	}
++	spin_unlock(&amp;card-&gt;spin);
++}
++
++static void card_seems_down(struct softing *card)
++{
++	if (card-&gt;irq.requested) {
++		free_irq(card-&gt;irq.nr, card);
++		card-&gt;irq.requested = 0;
++		card-&gt;fw.up = 0;
++		mod_alert(&quot;I think the card is vanished&quot;);
++	}
++}
++
++static
++irqreturn_t dev_interrupt_shared(int irq, void *dev_id)
++{
++	struct softing *card = (struct softing *)dev_id;
++	unsigned char ir;
++	ir = card-&gt;dpram.virt[0xe02];
++	card-&gt;dpram.virt[0xe02] = 0;
++	if (0xffff == card-&gt;dpram.rx-&gt;rd) {
++		card_seems_down(card);
++		return IRQ_NONE;
++	}
++	if (1 == ir) {
++		tasklet_schedule(&amp;card-&gt;irq.bh);
++		return IRQ_HANDLED;
++	} else if (0x10 == ir) {
++		return IRQ_NONE;
++	} else {
++		return IRQ_NONE;
++	}
++}
++
++static
++irqreturn_t dev_interrupt_nshared(int irq, void *dev_id)
++{
++	struct softing *card = (struct softing *)dev_id;
++	unsigned char irq_host;
++	irq_host = card-&gt;dpram.irq-&gt;to_host;
++	/* make sure we have a copy, before clearing the variable in DPRAM */
++	rmb();
++	card-&gt;dpram.irq-&gt;to_host = 0;
++	/* make sure we cleared it */
++	wmb();
++	mod_trace(&quot;0x%02x&quot;, irq_host);
++	if (0xffff == card-&gt;dpram.rx-&gt;rd) {
++		card_seems_down(card);
++	} else {
++		tasklet_schedule(&amp;card-&gt;irq.bh);
++	}
++	return IRQ_HANDLED;
++}
++
++static int netdev_open(struct net_device *ndev)
++{
++	struct softing_priv *priv = netdev_priv(ndev);
++	struct softing *card = priv-&gt;card;
++	int fw;
++	mod_trace(&quot;%s&quot;, ndev-&gt;name);
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2, 6, 23)
++	/* clear statistics */
++	memset(&amp;priv-&gt;can.net_stats, 0, sizeof(priv-&gt;can.net_stats));
++#endif
++	if (mutex_lock_interruptible(&amp;card-&gt;fw.lock))
++		return -ERESTARTSYS;
++	fw = card-&gt;fw.up;
++	if (fw)
++		softing_reinit(card
++			, (card-&gt;bus[0] == priv) ? 1 : -1
++			, (card-&gt;bus[1] == priv) ? 1 : -1);
++	mutex_unlock(&amp;card-&gt;fw.lock);
++	if (!fw)
++		return -EIO;
++	netif_start_queue(ndev);
++	return 0;
++}
++
++static int netdev_stop(struct net_device *ndev)
++{
++	struct softing_priv *priv = netdev_priv(ndev);
++	struct softing *card = priv-&gt;card;
++	int fw;
++
++	mod_trace(&quot;%s&quot;, ndev-&gt;name);
++	netif_stop_queue(ndev);
++	netif_carrier_off(ndev);
++	softing_flush_echo_skb(priv);
++	can_close_cleanup(ndev);
++	if (mutex_lock_interruptible(&amp;card-&gt;fw.lock))
++		return -ERESTARTSYS;
++	fw = card-&gt;fw.up;
++	if (fw)
++		softing_reinit(card
++			, (card-&gt;bus[0] == priv) ? 0 : -1
++			, (card-&gt;bus[1] == priv) ? 0 : -1);
++	mutex_unlock(&amp;card-&gt;fw.lock);
++	if (!fw)
++		return -EIO;
++	return 0;
++}
++
++#define out_of_range(x, min, max) (((x) &lt; min) || ((x) &gt; max))
++
++static int candev_set_bittime(struct net_device *ndev, struct can_bittime *bt)
++{
++	switch (bt-&gt;type) {
++	case CAN_BITTIME_STD:
++		/*SJW is test via max_sjw */
++		if (out_of_range(bt-&gt;std.sjw, 1, 4))
++			return -EIO;
++		if (out_of_range(bt-&gt;std.phase_seg1 + bt-&gt;std.prop_seg, 1, 16))
++			return -EIO;
++		if (out_of_range(bt-&gt;std.phase_seg2, 1, 8))
++			return -EIO;
++		/*BRP is test via max_brp */
++		if (ndev-&gt;flags &amp; IFF_UP)
++			return -EBUSY;
++		break;
++	case CAN_BITTIME_BTR:
++	default:
++		mod_alert(&quot;%s, type %i not supported&quot;, ndev-&gt;name, bt-&gt;type);
++		return -EINVAL;
++		break;
++	}
++	return 0;
++}
++
++static int candev_get_state(struct net_device *ndev, enum can_state *state)
++{
++	struct softing_priv *priv = netdev_priv(ndev);
++	mod_trace(&quot;%s&quot;, ndev-&gt;name);
++	if (priv-&gt;netdev-&gt;flags &amp; IFF_UP) {
++		*state = CAN_STATE_STOPPED;
++	} else if (priv-&gt;can.state == CAN_STATE_STOPPED) {
++		*state = CAN_STATE_STOPPED;
++	} else {
++		*state = CAN_STATE_ACTIVE;
++	}
++	return 0;
++}
++
++static int candev_set_mode(struct net_device *ndev, enum can_mode mode)
++{
++	struct softing_priv *priv = netdev_priv(ndev);
++	struct softing *card = priv-&gt;card;
++	mod_trace(&quot;%s %u&quot;, ndev-&gt;name, mode);
++	switch (mode) {
++	case CAN_MODE_START:
++		/*recovery from busoff? */
++		if (mutex_lock_interruptible(&amp;card-&gt;fw.lock))
++			return -ERESTARTSYS;
++		softing_reinit(card, -1, -1);
++		mutex_unlock(&amp;card-&gt;fw.lock);
++		break;
++	case CAN_MODE_STOP:
++	case CAN_MODE_SLEEP:
++		return -EOPNOTSUPP;
++	}
++	return 0;
++}
++
++/*assume the card-&gt;lock is held*/
++
++int softing_card_irq(struct softing *card, int enable)
++{
++	int r;
++	if (!enable) {
++		if (card-&gt;irq.requested &amp;&amp; card-&gt;irq.nr) {
++			free_irq(card-&gt;irq.nr, card);
++			card-&gt;irq.requested = 0;
++		}
++		return 0;
++	}
++	if (!card-&gt;irq.requested &amp;&amp; (0 != card-&gt;irq.nr)) {
++		irqreturn_t(*fn) (int, void *);
++		unsigned int flags;
++		flags = IRQF_DISABLED;	/*| IRQF_TRIGGER_LOW; */
++		fn = dev_interrupt_nshared;
++		if (card-&gt;irq.shared) {
++			flags |= IRQF_SHARED;
++			fn = dev_interrupt_shared;
++		}
++		r = request_irq(card-&gt;irq.nr, fn, flags, card-&gt;id.name, card);
++		if (0 != r) {
++			mod_alert(&quot;%s, request_irq(%u) failed&quot;, card-&gt;id.name,
++				  card-&gt;irq.nr);
++			return r;
++		}
++		card-&gt;irq.requested = 1;
++	}
++	return 0;
++}
++
++static void shutdown_card(struct softing *card)
++{
++	int fw_up = 0;
++	mod_info(&quot;%s&quot;, card-&gt;id.name);
++	if (mutex_lock_interruptible(&amp;card-&gt;fw.lock))
++		/* return -ERESTARTSYS*/;
++	fw_up = card-&gt;fw.up;
++	card-&gt;fw.up = 0;
++
++	if (card-&gt;irq.requested &amp;&amp; card-&gt;irq.nr) {
++		free_irq(card-&gt;irq.nr, card);
++		card-&gt;irq.requested = 0;
++	}
++	if (fw_up) {
++		if (card-&gt;fn.enable_irq)
++			card-&gt;fn.enable_irq(card, 0);
++		if (card-&gt;fn.reset)
++			card-&gt;fn.reset(card, 1);
++	}
++	mutex_unlock(&amp;card-&gt;fw.lock);
++}
++
++static int boot_card(struct softing *card)
++{
++	mod_info(&quot;%s&quot;, card-&gt;id.name);
++	if (mutex_lock_interruptible(&amp;card-&gt;fw.lock))
++		return -ERESTARTSYS;
++	if (card-&gt;fw.up) {
++		mutex_unlock(&amp;card-&gt;fw.lock);
++		return 0;
++	}
++	/*reset board */
++
++	if (card-&gt;fn.enable_irq)
++		card-&gt;fn.enable_irq(card, 1);
++	/*boot card */
++	if (card-&gt;fn.reset)
++		card-&gt;fn.reset(card, 1);
++	/*test dp ram */
++	if (0 != card-&gt;dpram.virt) {
++		unsigned char *lp;
++		static const unsigned char stream[]
++		= { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, };
++		unsigned char back[sizeof(stream)];
++		for (lp = card-&gt;dpram.virt;
++		     &amp;lp[sizeof(stream)] &lt;= card-&gt;dpram.end;
++		     lp += sizeof(stream)) {
++			memcpy_toio(lp, stream, sizeof(stream));
++			/* flush IO cache */
++			mb();
++			memcpy_fromio(back, lp, sizeof(stream));
++
++			if (memcmp(back, stream, sizeof(stream))) {
++				char line[3 * sizeof(stream)
++					/ sizeof(stream[0]) + 1];
++				char *pline = line;
++				unsigned char *addr = lp;
++				for (lp = back; lp &lt; &amp;back[sizeof(stream)
++						/ sizeof(stream[0])]; ++lp)
++					pline += sprintf(pline, &quot; %02x&quot;, *lp);
++
++				mod_alert(&quot;write to dpram failed at 0x%p, %s&quot;
++					, addr, line);
++				goto open_failed;
++			}
++		}
++		/*fill dpram with 0x55 */
++		/*for (lp = card-&gt;dpram.virt; lp &lt;= card-&gt;dpram.end; ++lp) {
++		 *lp = 0x55;
++		 }*/
++		wmb();
++	} else {
++		goto open_failed;
++	}
++	/*load boot firmware */
++	if (0 !=
++	    softing_load_fw(card-&gt;desc-&gt;boot.fw, card, card-&gt;dpram.virt,
++			    card-&gt;dpram.size,
++			    card-&gt;desc-&gt;boot.offs -
++			    card-&gt;desc-&gt;boot.addr))
++		goto open_failed;
++	/*load load firmware */
++	if (0 !=
++	    softing_load_fw(card-&gt;desc-&gt;load.fw, card, card-&gt;dpram.virt,
++			    card-&gt;dpram.size,
++			    card-&gt;desc-&gt;load.offs -
++			    card-&gt;desc-&gt;load.addr))
++		goto open_failed;
++
++	if (card-&gt;fn.reset)
++		card-&gt;fn.reset(card, 0);
++	if (0 != softing_bootloader_command(card, 0, &quot;card boot&quot;))
++		goto open_failed;
++	if (0 != softing_load_app_fw(card-&gt;desc-&gt;app.fw, card))
++		goto open_failed;
++	/*reset chip */
++	card-&gt;dpram.info-&gt;reset_rcv_fifo = 0;
++	card-&gt;dpram.info-&gt;reset = 1;
++	/*sync */
++	if (0 != softing_fct_cmd(card, 99, 0x55, &quot;sync-a&quot;))
++		goto open_failed;
++	if (0 != softing_fct_cmd(card, 99, 0xaa, &quot;sync-a&quot;))
++		goto open_failed;
++	/*reset chip */
++	if (0 != softing_fct_cmd(card, 0, 0, &quot;reset_chip&quot;))
++		goto open_failed;
++	/*get_serial */
++	if (0 != softing_fct_cmd(card, 43, 0, &quot;get_serial_number&quot;))
++		goto open_failed;
++	card-&gt;id.serial =
++	    (u16) card-&gt;dpram.fct-&gt;param[1] +
++	    (((u16) card-&gt;dpram.fct-&gt;param[2]) &lt;&lt; 16);
++	/*get_version */
++	if (0 != softing_fct_cmd(card, 12, 0, &quot;get_version&quot;))
++		goto open_failed;
++	card-&gt;id.fw = (u16) card-&gt;dpram.fct-&gt;param[1];
++	card-&gt;id.hw = (u16) card-&gt;dpram.fct-&gt;param[2];
++	card-&gt;id.lic = (u16) card-&gt;dpram.fct-&gt;param[3];
++	card-&gt;id.chip[0] = (u16) card-&gt;dpram.fct-&gt;param[4];
++	card-&gt;id.chip[1] = (u16) card-&gt;dpram.fct-&gt;param[5];
++
++	mod_info
++	    (&quot;%s, card booted, serial %u, fw %u, hw %u, lic %u, chip (%u,%u)&quot;,
++	     card-&gt;id.name, card-&gt;id.serial, card-&gt;id.fw, card-&gt;id.hw,
++	     card-&gt;id.lic, card-&gt;id.chip[0], card-&gt;id.chip[1]);
++
++	card-&gt;fw.up = 1;
++	mutex_unlock(&amp;card-&gt;fw.lock);
++	return 0;
++open_failed:
++	card-&gt;fw.up = 0;
++	if (card-&gt;fn.enable_irq)
++		card-&gt;fn.enable_irq(card, 0);
++	if (card-&gt;fn.reset)
++		card-&gt;fn.reset(card, 1);
++	mutex_unlock(&amp;card-&gt;fw.lock);
++	return EINVAL;
++}
++
++/*suspend/resume don _not_ assume card-&gt;lock is held*/
++
++#if (!defined(softing_suspend))
++void softing_suspend(struct softing *card)
++{
++	mod_info(&quot;%s&quot;, card-&gt;id.name);
++	tasklet_disable(&amp;card-&gt;irq.bh);
++	shutdown_card(card);
++	/*don't enable it again */
++}
++EXPORT_SYMBOL(softing_suspend);
++#endif
++
++#if (!defined(softing_resume))
++int softing_resume(struct softing *card)
++{
++	int r;
++	mod_info(&quot;%s&quot;, card-&gt;id.name);
++	r = boot_card(card);
++	if (0 == r) {
++		card-&gt;suspended = 0;
++		tasklet_enable(&amp;card-&gt;irq.bh);
++		up(&amp;card-&gt;lock);
++	}
++	return 0;
++}
++EXPORT_SYMBOL(softing_resume);
++#endif
++
++/*sysfs stuff*/
++
++/* Because the struct softing may be used by pcmcia devices
++ * as well as pci devices, * we have no clue how to get
++ * from a struct device * towards the struct softing *.
++ * It may go over a pci_device-&gt;priv or over a pcmcia_device-&gt;priv.
++ * Therefore, provide the struct softing pointer within the attribute.
++ * Then we don't need driver/bus specific things in these attributes
++ */
++struct softing_attribute {
++	struct device_attribute dev;
++	ssize_t (*show) (struct softing *card, char *buf);
++	ssize_t (*store)(struct softing *card, const char *buf, size_t count);
++	struct softing *card;
++};
++
++static ssize_t rd_card_attr(struct device *dev, struct device_attribute *attr
++		, char *buf) {
++	struct softing_attribute *cattr
++		= container_of(attr, struct softing_attribute, dev);
++	return cattr-&gt;show ? cattr-&gt;show(cattr-&gt;card, buf) : 0;
++}
++static ssize_t wr_card_attr(struct device *dev, struct device_attribute *attr
++		, const char *buf, size_t count) {
++	struct softing_attribute *cattr
++		= container_of(attr, struct softing_attribute, dev);
++	return cattr-&gt;store ? cattr-&gt;store(cattr-&gt;card, buf, count) : 0;
++}
++
++#define declare_attr(_name, _mode, _show, _store) { \
++	.dev = { \
++		.attr = { \
++			.name = __stringify(_name), \
++			.mode = _mode, \
++		}, \
++		.show = rd_card_attr, \
++		.store = wr_card_attr, \
++	}, \
++	.show =	_show, \
++	.store = _store, \
++}
++
++#define CARD_SHOW(name, member) \
++static ssize_t show_##name(struct softing *card, char *buf) { \
++	return sprintf(buf, &quot;%u\n&quot;, card-&gt;member); \
++}
++CARD_SHOW(serial	, id.serial);
++CARD_SHOW(firmware	, id.fw);
++CARD_SHOW(hardware	, id.hw);
++CARD_SHOW(license	, id.lic);
++CARD_SHOW(freq		, id.freq);
++CARD_SHOW(txmax		, tx.max);
++CARD_SHOW(txpending	, tx.pending);
++
++static ssize_t store_txmax(struct softing *card
++		, const char *buf, size_t count) {
++	unsigned int v;
++	int j;
++	v = simple_strtoul(buf, 0, 0);
++	if (v &gt; 32)
++		v = 32;
++	for (j = 0; j &lt; card-&gt;nbus; ++j) {
++		if (card-&gt;bus[j]-&gt;netdev-&gt;flags &amp; IFF_UP)
++			return -EBUSY;
++	}
++	card-&gt;tx.max = v;
++	return count;
++}
++
++#if 0
++static ssize_t wr_tx_max(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t count) {
++	struct softing *card = (struct softing *)(dev-&gt;platform_data);
++	card-&gt;tx.max = simple_strtol(buf, 0, 0);
++	return count;
++}
++
++SOFTING_DEV_ATTR(tx_pending_max	, tx.max  , wr_tx_max);
++static ssize_t show_dpram(struct device *dev
++		, struct device_attribute *attr, char *buf) {
++	ssize_t res = 0;
++	int j;
++	struct softing *card = (struct softing *)(dev-&gt;platform_data);
++	spin_lock_bh(&amp;card-&gt;spin);
++	res += sprintf(&amp;buf[res], &quot;bus	%u %u\n&quot;
++		, card-&gt;dpram.info-&gt;bus_state
++		, card-&gt;dpram.info-&gt;bus_state2);
++	res += sprintf(&amp;buf[res], &quot;err	%u %u\n&quot;
++		, card-&gt;dpram.info-&gt;error_state
++		, card-&gt;dpram.info-&gt;error_state2);
++	res += sprintf(&amp;buf[res], &quot;time %u %u\n&quot;
++		, card-&gt;dpram.info-&gt;time
++		, card-&gt;dpram.info-&gt;time_wrap);
++	res += sprintf(&amp;buf[res], &quot;fifo %u %u\n&quot;
++		, card-&gt;dpram.info-&gt;rcv_fifo_level
++		, card-&gt;dpram.info-&gt;xmt_fifo_level);
++	res += sprintf(&amp;buf[res], &quot;irq	0x%02x 0x%02x\n&quot;
++		, card-&gt;dpram.irq-&gt;to_host
++		, card-&gt;dpram.irq-&gt;to_card);
++	res += sprintf(&amp;buf[res], &quot;rx [%u %u]&quot;
++		, card-&gt;dpram.rx-&gt;rd, card-&gt;dpram.rx-&gt;wr);
++	for (j = 0
++	; j &lt; sizeof(card-&gt;dpram.rx-&gt;fifo)/sizeof(card-&gt;dpram.rx-&gt;fifo[0])
++	; ++j)
++		res += sprintf(&amp;buf[res], &quot; %02x&quot;
++			, card-&gt;dpram.rx-&gt;fifo[j][0]);
++	res += sprintf(&amp;buf[res], &quot;, lost %u\n&quot;
++		, card-&gt;dpram.rx-&gt;lost_msg);
++	res += sprintf(&amp;buf[res], &quot;tx [%u %u]&quot;
++		, card-&gt;dpram.tx-&gt;rd, card-&gt;dpram.tx-&gt;wr);
++	for (j = 0
++	; j &lt; sizeof(card-&gt;dpram.tx-&gt;fifo)/sizeof(card-&gt;dpram.tx-&gt;fifo[0])
++	; ++j)
++		res += sprintf(&amp;buf[res], &quot; %02x&quot;
++			, card-&gt;dpram.tx-&gt;fifo[j][0]);
++	res += sprintf(&amp;buf[res], &quot;\n&quot;);
++	spin_unlock_bh(&amp;card-&gt;spin);
++	return res;
++}
++static DEVICE_ATTR(dpram, 0444, show_dpram, 0);
++
++static ssize_t show_irq(struct device *dev
++	, struct device_attribute *attr, char *buf) {
++	struct softing *card = (struct softing *)(dev-&gt;platform_data);
++	if (card-&gt;irq.shared) {
++		dev_interrupt_shared(card-&gt;irq.nr, card);
++	} else {
++		dev_interrupt_nshared(card-&gt;irq.nr, card);
++	}
++	return sprintf(buf, &quot;interrupted\n&quot;);
++}
++static DEVICE_ATTR(irq, 0444, show_irq, 0);
++#endif
++
++static const struct softing_attribute card_attr_proto [] = {
++	declare_attr(serial	, 0644, show_serial	, 0),
++	declare_attr(firmware	, 0644, show_firmware	, 0),
++	declare_attr(hardware	, 0644, show_hardware	, 0),
++	declare_attr(license	, 0644, show_license	, 0),
++	declare_attr(freq	, 0644, show_freq	, 0),
++	declare_attr(txpending	, 0644, show_txpending	, 0),
++	declare_attr(txmax	, 0644, show_txmax	, store_txmax),
++};
++
++static int mk_card_sysfs(struct softing *card)
++{
++	int size;
++	int j;
++
++	size = sizeof(card_attr_proto)/sizeof(card_attr_proto[0]);
++	card-&gt;attr = kmalloc((size+1)*sizeof(card-&gt;attr[0]), GFP_KERNEL);
++	if (!card-&gt;attr)
++		goto attr_mem_failed;
++	memcpy(card-&gt;attr, card_attr_proto, size * sizeof(card-&gt;attr[0]));
++	memset(&amp;card-&gt;attr[size], 0, sizeof(card-&gt;attr[0]));
++
++	card-&gt;grp  = kmalloc((size+1)*sizeof(card-&gt;grp [0]), GFP_KERNEL);
++	if (!card-&gt;grp)
++		goto grp_mem_failed;
++
++	for (j = 0; j &lt; size; ++j) {
++		card-&gt;attr[j].card = card;
++		card-&gt;grp[j] = &amp;card-&gt;attr[j].dev.attr;
++		if (!card-&gt;attr[j].show)
++			card-&gt;attr[j].dev.attr.mode &amp;= ~(S_IRUGO);
++		if (!card-&gt;attr[j].store)
++			card-&gt;attr[j].dev.attr.mode &amp;= ~(S_IWUGO);
++	}
++	card-&gt;grp[size] = 0;
++	card-&gt;sysfs.name	= &quot;softing&quot;;
++	card-&gt;sysfs.attrs = card-&gt;grp;
++	if (sysfs_create_group(&amp;card-&gt;dev-&gt;kobj, &amp;card-&gt;sysfs) &lt; 0)
++		goto sysfs_failed;
++
++	return 0;
++
++sysfs_failed:
++	kfree(card-&gt;grp);
++grp_mem_failed:
++	kfree(card-&gt;attr);
++attr_mem_failed:
++	return -1;
++}
++static void rm_card_sysfs(struct softing *card)
++{
++	sysfs_remove_group(&amp;card-&gt;dev-&gt;kobj, &amp;card-&gt;sysfs);
++	kfree(card-&gt;grp);
++	kfree(card-&gt;attr);
++}
++
++static ssize_t show_chip(struct device *dev
++		, struct device_attribute *attr, char *buf)
++{
++	struct net_device *ndev = to_net_dev(dev);
++	struct softing_priv *priv = netdev2softing(ndev);
++	return sprintf(buf, &quot;%i\n&quot;, priv-&gt;chip);
++}
++#if 0
++static ssize_t show_hwsample(struct class_device *class_dev, char *buf)
++{
++	struct can_device *dev
++		= container_of(class_dev, struct can_device, cls_dev);
++	struct softing *card = (struct softing *)dev-&gt;priv;
++	return sprintf(buf, &quot;%i\n&quot;, card-&gt;priv[dev-&gt;slave].sample);
++}
++static ssize_t show_output(struct class_device *class_dev, char *buf)
++{
++	struct can_device *dev
++		= container_of(class_dev, struct can_device, cls_dev);
++	struct softing *card = (struct softing *)dev-&gt;priv;
++	return sprintf(buf, &quot;0x%02x\n&quot;, card-&gt;priv[dev-&gt;slave].output);
++}
++static ssize_t store_hwsample(struct class_device *class_dev
++		, const char *buf, size_t count)
++{
++	struct can_device *dev
++		= container_of(class_dev, struct can_device, cls_dev);
++	struct softing *card = (struct softing *)dev-&gt;priv;
++	if (softing_dev_lock(dev))
++		return -ERESTARTSYS;
++	card-&gt;priv[dev-&gt;slave].sample = simple_strtol(buf, 0, 0);
++	if (dev-&gt;open)
++		softing_reinit(card);
++	softing_dev_unlock(dev);
++	return count;
++}
++static ssize_t store_output(struct class_device *class_dev
++		, const char *buf, size_t count)
++{
++	struct can_device *dev
++		= container_of(class_dev, struct can_device, cls_dev);
++	struct softing *card = (struct softing *)dev-&gt;priv;
++	if (softing_dev_lock(dev))
++		return -ERESTARTSYS;
++	card-&gt;priv[dev-&gt;slave].output = simple_strtol(buf, 0, 0);
++	if (dev-&gt;open)
++		softing_reinit(card);
++	softing_dev_unlock(dev);
++	return count;
++}
++#endif
++static const DEVICE_ATTR(chip, S_IRUGO, show_chip, 0);
++
++static const struct attribute *const netdev_sysfs_entries [] = {
++	&amp;dev_attr_chip		.attr,
++	0,
++};
++static const struct attribute_group netdev_sysfs = {
++	.name  = &quot;softing&quot;,
++	.attrs = (struct attribute **)netdev_sysfs_entries,
++};
++
++static int mk_netdev_sysfs(struct softing_priv *priv)
++{
++	if (!priv-&gt;netdev-&gt;dev.kobj.sd) {
++		mod_alert(&quot;sysfs_create_group would fail&quot;);
++		return ENODEV;
++	}
++	return sysfs_create_group(&amp;priv-&gt;netdev-&gt;dev.kobj, &amp;netdev_sysfs);
++}
++static void rm_netdev_sysfs(struct softing_priv *priv)
++{
++	sysfs_remove_group(&amp;priv-&gt;netdev-&gt;dev.kobj, &amp;netdev_sysfs);
++}
++
++static struct softing_priv *mk_netdev(struct softing *card, u16 chip_id)
++{
++	struct net_device *ndev;
++	struct softing_priv *priv;
++
++	ndev = alloc_candev(sizeof(*priv));
++	if (0 == ndev) {
++		mod_alert(&quot;alloc_candev failed&quot;);
++		return 0;
++	}
++	priv = netdev_priv(ndev);
++	priv-&gt;netdev		= ndev;
++	priv-&gt;card		= card;
++	priv-&gt;can.can_sys_clock = 8000000UL;
++	priv-&gt;can.max_brp	= card-&gt;desc-&gt;max_brp;
++	priv-&gt;can.max_sjw	= card-&gt;desc-&gt;max_sjw;
++	priv-&gt;sample		= 1;
++	priv-&gt;chip		= chip_id;
++	priv-&gt;output = softing_default_output(chip_id, card-&gt;id.prod);
++	SET_NETDEV_DEV(ndev, card-&gt;dev);
++
++	ndev-&gt;flags |= IFF_ECHO;
++	ndev-&gt;open		= netdev_open;
++	ndev-&gt;stop		= netdev_stop;
++	ndev-&gt;hard_start_xmit	= netdev_start_xmit;
++	priv-&gt;can.do_set_bittime = candev_set_bittime;
++	priv-&gt;can.do_get_state	= candev_get_state;
++	priv-&gt;can.do_set_mode	= candev_set_mode;
++
++	if (can_set_bitrate(ndev, 250000UL))
++		mod_alert(&quot;bitrate failed&quot;);
++
++	return priv;
++}
++
++static void rm_netdev(struct softing_priv *priv)
++{
++	free_candev(priv-&gt;netdev);
++}
++
++static int reg_netdev(struct softing_priv *priv)
++{
++	int r;
++	netif_carrier_off(priv-&gt;netdev);
++	r = register_netdev(priv-&gt;netdev);
++	if (0 != r) {
++		mod_alert(&quot;%s, register failed&quot;, priv-&gt;card-&gt;id.name);
++		goto reg_failed;
++	}
++	r = mk_netdev_sysfs(priv);
++	if (0 != r) {
++		mod_alert(&quot;%s, sysfs failed&quot;, priv-&gt;card-&gt;id.name);
++		goto sysfs_failed;
++	}
++	return 0;
++sysfs_failed:
++	unregister_netdev(priv-&gt;netdev);
++reg_failed:
++	return EINVAL;
++}
++
++static void unreg_netdev(struct softing_priv *priv)
++{
++	rm_netdev_sysfs(priv);
++	unregister_netdev(priv-&gt;netdev);
++}
++
++void rm_softing(struct softing *card)
++{
++	int j;
++
++	mod_trace(&quot;&quot;);
++	/*first, disable tasklet*/
++
++	for (j = 0; j &lt; card-&gt;nbus; ++j) {
++		unreg_netdev(card-&gt;bus[j]);
++		rm_netdev(card-&gt;bus[j]);
++	}
++
++	rm_card_sysfs(card);
++	shutdown_card(card);
++	tasklet_kill(&amp;card-&gt;irq.bh);
++
++	iounmap(card-&gt;dpram.virt);
++}
++EXPORT_SYMBOL(rm_softing);
++
++int mk_softing(struct softing *card)
++{
++	int j;
++
++	/* try_module_get(THIS_MODULE); */
++	mutex_init(&amp;card-&gt;fw.lock);
++	spin_lock_init(&amp;card-&gt;spin);
++	tasklet_init(&amp;card-&gt;irq.bh, softing_dev_svc, (unsigned long)card);
++
++	card-&gt;desc = softing_lookup_desc(card-&gt;id.manf, card-&gt;id.prod);
++	if (0 == card-&gt;desc) {
++		mod_alert(&quot;0x%04x:0x%04x not supported\n&quot;, card-&gt;id.manf,
++			  card-&gt;id.prod);
++		goto lookup_failed;
++	}
++	card-&gt;id.name = card-&gt;desc-&gt;name;
++	mod_trace(&quot;can (%s)&quot;, card-&gt;id.name);
++
++	card-&gt;dpram.virt = ioremap(card-&gt;dpram.phys, card-&gt;dpram.size);
++	if (0 == card-&gt;dpram.virt) {
++		mod_alert(&quot;dpram ioremap failed\n&quot;);
++		goto ioremap_failed;
++	}
++
++	card-&gt;dpram.size = card-&gt;desc-&gt;dpram_size;
++	card-&gt;dpram.end = &amp;card-&gt;dpram.virt[card-&gt;dpram.size];
++	/*initialize_board */
++	card-&gt;dpram.rx = (struct softing_rx *)&amp;card-&gt;dpram.virt[0x0000];
++	card-&gt;dpram.tx = (struct softing_tx *)&amp;card-&gt;dpram.virt[0x0400];
++	card-&gt;dpram.fct = (struct softing_fct *)&amp;card-&gt;dpram.virt[0x0300];
++	card-&gt;dpram.info = (struct softing_info *)&amp;card-&gt;dpram.virt[0x0330];
++	card-&gt;dpram.command = (unsigned short *)&amp;card-&gt;dpram.virt[0x07e0];
++	card-&gt;dpram.receipt = (unsigned short *)&amp;card-&gt;dpram.virt[0x07f0];
++	card-&gt;dpram.irq = (struct softing_irq *)&amp;card-&gt;dpram.virt[0x07fe];
++
++	/*reset card */
++	if (card-&gt;fn.reset)
++		card-&gt;fn.reset(card, 1);
++	if (0 != boot_card(card)) {
++		mod_alert(&quot;%s, failed to boot&quot;, card-&gt;id.name);
++		goto boot_failed;
++	}
++
++	/*only now, the chip's are known */
++	card-&gt;id.freq = card-&gt;desc-&gt;freq * 1000000UL;
++
++	if (0 != mk_card_sysfs(card)) {
++		mod_alert(&quot;%s, sysfs failed&quot;, card-&gt;id.name);
++		goto sysfs_failed;
++	}
++
++	if (card-&gt;nbus &gt; (sizeof(card-&gt;bus) / sizeof(card-&gt;bus[0]))) {
++		card-&gt;nbus = sizeof(card-&gt;bus) / sizeof(card-&gt;bus[0]);
++		mod_alert(&quot;%s, going for %u busses&quot;, card-&gt;id.name, card-&gt;nbus);
++	}
++
++	for (j = 0; j &lt; card-&gt;nbus; ++j) {
++		card-&gt;bus[j] = mk_netdev(card, card-&gt;id.chip[j]);
++		if (0 == card-&gt;bus[j]) {
++			mod_alert(&quot;%s: failed to make can[%i]&quot;, card-&gt;id.name,
++				  j);
++			goto netdev_failed;
++		}
++		card-&gt;bus[j]-&gt;index = j;
++	}
++	for (j = 0; j &lt; card-&gt;nbus; ++j) {
++		if (0 != reg_netdev(card-&gt;bus[j])) {
++			mod_alert(&quot;%s: failed to register can[%i]&quot;,
++				  card-&gt;id.name, j);
++			goto reg_failed;
++		}
++	}
++	card-&gt;tx.max = 16;
++	mod_info(&quot;card initialised&quot;);
++	return 0;
++
++reg_failed:
++	for (j = 0; j &lt; card-&gt;nbus; ++j)
++		unreg_netdev(card-&gt;bus[j]);
++netdev_failed:
++	for (j = 0; j &lt; card-&gt;nbus; ++j) {
++		if (card-&gt;bus[j])
++			rm_netdev(card-&gt;bus[j]);
++	}
++	rm_card_sysfs(card);
++sysfs_failed:
++	shutdown_card(card);
++boot_failed:
++	iounmap(card-&gt;dpram.virt);
++	card-&gt;dpram.virt = 0;
++	card-&gt;dpram.end = 0;
++ioremap_failed:
++lookup_failed:
++	tasklet_kill(&amp;card-&gt;irq.bh);
++	return EINVAL;
++}
++EXPORT_SYMBOL(mk_softing);
++
++static int __init mod_start(void)
++{
++	mod_trace(&quot;&quot;);
++	return 0;
++}
++
++static void __exit mod_stop(void)
++{
++	mod_trace(&quot;&quot;);
++}
++
++module_init(mod_start);
++module_exit(mod_stop);
++
++MODULE_DESCRIPTION(&quot;socketcan softing driver&quot;);
++MODULE_AUTHOR(&quot;Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;&quot;);
++MODULE_LICENSE(&quot;GPL&quot;);
++
++int softing_debug = 1;
++EXPORT_SYMBOL(softing_debug);
++module_param(softing_debug, int , S_IRUGO | S_IWUSR | S_IWGRP);
++MODULE_PARM_DESC(softing_debug, &quot;trace softing functions&quot;);
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001641.html">[3/5] softing driver update
+</A></li>
+	<LI>Next message: <A HREF="001625.html">[4/5] softing driver below 40kB
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1619">[ date ]</a>
+              <a href="thread.html#1619">[ thread ]</a>
+              <a href="subject.html#1619">[ subject ]</a>
+              <a href="author.html#1619">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

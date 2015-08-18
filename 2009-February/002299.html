@@ -1,0 +1,141 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC 3/9] Socket-CAN: add network device driver interface
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%203/9%5D%20Socket-CAN%3A%20add%20network%20device%20driver%20interface&In-Reply-To=%3C20090215202432.GC4970%40uranus.ravnborg.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002297.html">
+   <LINK REL="Next"  HREF="002306.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC 3/9] Socket-CAN: add network device driver interface</H1>
+    <B>Sam Ravnborg</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%203/9%5D%20Socket-CAN%3A%20add%20network%20device%20driver%20interface&In-Reply-To=%3C20090215202432.GC4970%40uranus.ravnborg.org%3E"
+       TITLE="[RFC 3/9] Socket-CAN: add network device driver interface">sam at ravnborg.org
+       </A><BR>
+    <I>Sun Feb 15 21:24:32 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002297.html">[RFC 3/9] Socket-CAN: add network device driver interface
+</A></li>
+        <LI>Next message: <A HREF="002306.html">[RFC 3/9] Socket-CAN: add network device driver interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2299">[ date ]</a>
+              <a href="thread.html#2299">[ thread ]</a>
+              <a href="subject.html#2299">[ subject ]</a>
+              <a href="author.html#2299">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> common data structures and functions, which all real CAN network device
+</I>&gt;<i> drivers should use. Please have a look to the SJA1000 or MSCAN driver
+</I>&gt;<i> to understand how to use them. The name of the module is can-dev.ko.
+</I>&gt;<i> 
+</I>&gt;<i> For further information please check &quot;Documentation/networking/can.txt&quot;
+</I>
+Samll nit..
+&gt;<i> provided by the first patch of this series.
+</I>
+Changelog are read as sigle entities - so this coment makes
+little sense when applied to mainline.
+
+
+&gt;<i> +
+</I>&gt;<i> +#ifdef CONFIG_CAN_CALC_BITTIMING
+</I>&gt;<i> +#define CAN_CALC_MAX_ERROR 50 /* in one-tenth of a percent */
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Bit-timing calculation derived from:
+</I>&gt;<i> + *
+</I>&gt;<i> + * Code based on LinCAN sources and H8S2638 project
+</I>&gt;<i> + * Copyright 2004-2006 Pavel Pisa - DCE FELK CVUT cz
+</I>&gt;<i> + * Copyright 2005      Stanislav Marek
+</I>&gt;<i> + * email: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">pisa at cmp.felk.cvut.cz</A>
+</I>&gt;<i> + */
+</I>&gt;<i> +static int can_update_spt(const struct can_bittiming_const *btc,
+</I>&gt;<i> +			  int sampl_pt, int tseg, int *tseg1, int *tseg2)
+</I>&gt;<i> +{
+</I>&gt;<i> +	*tseg2 = tseg + 1 - (sampl_pt * (tseg + 1)) / 1000;
+</I>&gt;<i> +	if (*tseg2 &lt; btc-&gt;tseg2_min)
+</I>&gt;<i> +		*tseg2 = btc-&gt;tseg2_min;
+</I>&gt;<i> +	if (*tseg2 &gt; btc-&gt;tseg2_max)
+</I>&gt;<i> +		*tseg2 = btc-&gt;tseg2_max;
+</I>&gt;<i> +	*tseg1 = tseg - *tseg2;
+</I>&gt;<i> +	if (*tseg1 &gt; btc-&gt;tseg1_max) {
+</I>&gt;<i> +		*tseg1 = btc-&gt;tseg1_max;
+</I>&gt;<i> +		*tseg2 = tseg - *tseg1;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	return 1000 * (tseg + 1 - *tseg2) / (tseg + 1);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int can_calc_bittiming(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct can_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct can_bittiming *bt = &amp;priv-&gt;bittiming;
+</I>&gt;<i> +	const struct can_bittiming_const *btc = priv-&gt;bittiming_const;
+</I>&gt;<i> +	long rate, best_rate = 0;
+</I>&gt;<i> +	long best_error = 1000000000, error = 0;
+</I>&gt;<i> +	int best_tseg = 0, best_brp = 0, brp = 0;
+</I>&gt;<i> +	int tsegall, tseg = 0, tseg1 = 0, tseg2 = 0;
+</I>&gt;<i> +	int spt_error = 1000, spt = 0, sampl_pt;
+</I>&gt;<i> +	uint64_t v64;
+</I>
+The use of u64 and friends is preferred over the c99 types.
+In exported interfaces we use the variants with '__' prefixes.
+
+&gt;<i> +#else /* !CONFIG_CAN_CALC_BITTIMING */
+</I>
+The &quot;!&quot; is wrong here?
+
+&gt;<i> +static int can_calc_bittiming(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	dev_err(ND2D(dev), &quot;bit-timing calculation not available\n&quot;);
+</I>&gt;<i> +	return -EINVAL;
+</I>&gt;<i> +}
+</I>&gt;<i> +#endif /* CONFIG_CAN_CALC_BITTIMING */
+</I>
+&gt;<i> +int can_fixup_bittiming(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct can_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct can_bittiming *bt = &amp;priv-&gt;bittiming;
+</I>&gt;<i> +	const struct can_bittiming_const *btc = priv-&gt;bittiming_const;
+</I>&gt;<i> +	int tseg1, alltseg;
+</I>&gt;<i> +	u32 bitrate;
+</I>&gt;<i> +	u64 brp64;
+</I>
+Here we use u64 - so the above it likely from the origianl codebase.
+
+
+	Sam
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002297.html">[RFC 3/9] Socket-CAN: add network device driver interface
+</A></li>
+	<LI>Next message: <A HREF="002306.html">[RFC 3/9] Socket-CAN: add network device driver interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2299">[ date ]</a>
+              <a href="thread.html#2299">[ thread ]</a>
+              <a href="subject.html#2299">[ subject ]</a>
+              <a href="author.html#2299">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

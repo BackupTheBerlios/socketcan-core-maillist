@@ -1,0 +1,142 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] mscan: fix TX message handling to ensure proper	message ordering
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20mscan%3A%20fix%20TX%20message%20handling%20to%20ensure%20proper%0A%09message%20ordering&In-Reply-To=%3C20090921085217.GA6219%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003157.html">
+   <LINK REL="Next"  HREF="003160.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] mscan: fix TX message handling to ensure proper	message ordering</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20mscan%3A%20fix%20TX%20message%20handling%20to%20ensure%20proper%0A%09message%20ordering&In-Reply-To=%3C20090921085217.GA6219%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH] mscan: fix TX message handling to ensure proper	message ordering">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Mon Sep 21 10:52:18 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003157.html">[PATCH] mscan: fix TX message handling to ensure proper message	ordering
+</A></li>
+        <LI>Next message: <A HREF="003160.html">[PATCH] mscan: fix TX message handling to ensure proper	message	ordering
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3159">[ date ]</a>
+              <a href="thread.html#3159">[ thread ]</a>
+              <a href="subject.html#3159">[ subject ]</a>
+              <a href="author.html#3159">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Mon, Sep 21, 2009 at 10:30:07AM +0200, <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A> wrote:
+&gt;<i> 
+</I>&gt;<i> Hello Wolfgang,
+</I>&gt;<i> 
+</I>&gt;<i> I have tested SW again and cannot reproduce error situation I had
+</I>&gt;<i> yesterday.
+</I>&gt;<i> Everything turns out to be OK. Was it Sunday effect? I have no idea...
+</I>&gt;<i> The write function issue you have mentioned is fixed (see attached).
+</I>I looked at the code.
+
+                        while( (nbytes=write(s, &amp;tx_frames[send_pos], sizeof(*tx_frames))) !=
+                                   sizeof(*tx_frames) )
+                        {
+                                if(nbytes!=EAGAIN)
+                                {
+                                        perror(&quot;write&quot;);
+                                        return 1;
+                                }
+                        }
+
+I don't know the exact purpose of the test.
+This loops asks for sunday effects, isn't it?
+
+nbytes would return -1, not EAGAIN!
+   if ((nbytes &lt; 0)&amp;&amp;(EAGAIN == errno))
+is what I think you meant
+
+my preference:
+
+   int ret;
+   struct pollfd pollfd;
+
+   pollfd.fd = s;
+   pollfd.events = POLLOUT;
+   while ((ret = poll(&amp;pollfd, 1, -1)) &lt; 0) {
+      if (EAGAIN == errno) {
+         perror(&quot;write&quot;);
+         return 1;
+      }
+   }
+   nbytes = write(s, ....)
+   // nbytes with anything other than sizeof(*tx_frames) is a serious
+   // poll issue
+&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Vladislav
+</I>Kurt
+&gt;<i> 
+</I>&gt;<i> -----Original Message-----
+</I>&gt;<i> From: Wolfgang Grandegger [mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>] 
+</I>&gt;<i> Sent: Sunday, September 20, 2009 6:11 PM
+</I>&gt;<i> To: Gribov, Vladislav
+</I>&gt;<i> Cc: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> Subject: Re: [PATCH] mscan: fix TX message handling to ensure proper
+</I>&gt;<i> message ordering
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A> wrote:
+</I>&gt;<i> &gt; Hello Wolfgang,
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I have tested the latest SVN version (r1060) and the order of frame 
+</I>&gt;<i> &gt; problem is gone (tested also with IXXAT proprietary test environment).
+</I>&gt;<i> 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; However, if setting the CAN_MSG_COUNT to bigger that 12 in the
+</I>&gt;<i> &gt; canecho_gen.c , the messages are lost on the MSCAN DUT.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Attached is the trace with CAN_MSG_COUNT equal to 20. Message #55
+</I>&gt;<i> &gt; is wrong here, two CAN messages with ID 77 are lost on reception.
+</I>&gt;<i> 
+</I>&gt;<i> Before I start inspecting the trace, did you fix your code, which does
+</I>&gt;<i> not check the return value of the write functions?
+</I>&gt;<i> 
+</I>&gt;<i> Wolfgang.
+</I>
+
+
+&gt;<i> _______________________________________________
+</I>&gt;<i> Socketcan-core mailing list
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003157.html">[PATCH] mscan: fix TX message handling to ensure proper message	ordering
+</A></li>
+	<LI>Next message: <A HREF="003160.html">[PATCH] mscan: fix TX message handling to ensure proper	message	ordering
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3159">[ date ]</a>
+              <a href="thread.html#3159">[ thread ]</a>
+              <a href="subject.html#3159">[ subject ]</a>
+              <a href="author.html#3159">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,198 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-core] Re: [Socket-can] Error handling
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Re%3A%20%5BSocket-can%5D%20Error%20handling&In-Reply-To=%3C200604100824.k3A8OfO03865%40web10.manitu.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="000001.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-core] Re: [Socket-can] Error handling</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Re%3A%20%5BSocket-can%5D%20Error%20handling&In-Reply-To=%3C200604100824.k3A8OfO03865%40web10.manitu.net%3E"
+       TITLE="[Socketcan-core] Re: [Socket-can] Error handling">wg at grandegger.com
+       </A><BR>
+    <I>Mon Apr 10 10:24:41 CEST 2006</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="000001.html">[Socketcan-core] Re[2]: [Socket-can] Error handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#0">[ date ]</a>
+              <a href="thread.html#0">[ thread ]</a>
+              <a href="subject.html#0">[ subject ]</a>
+              <a href="author.html#0">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;<i> &gt; Marc Kleine-Budde wrote:
+</I>&gt;<i> &gt;&gt; Jan Kiszka wrote:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; Polling the device state with an ioctl isn't very satisfying. I
+</I>propose
+&gt;<i> &gt;&gt;&gt;&gt; to relay events from the hardware (like the warning interrupt, bus
+</I>&gt;<i> &gt;&gt;&gt;&gt; passive, bus off, etc...) with udev events to the userspace. There 
+</I>&gt;<i> &gt;&gt;&gt;&gt; is an
+</I>&gt;<i> &gt;&gt;&gt;&gt; existing infrastucture in modern 2.6.x kernels for this. E.g.
+</I>ethernet
+&gt;<i> &gt;&gt;&gt;&gt; cable plug and undplug events are transported this way.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Consider the scenario where you have to react in a bounded amount of
+</I>&gt;<i> &gt;&gt;&gt; time on an external error like a bus failure (emergency machine
+</I>stop?).
+&gt;<i> &gt;&gt;&gt; In this case also the error reporting path has to be deterministic. I
+</I>&gt;<i> &gt;&gt;&gt; wonder if this happened to be a design goal or was met
+</I>automatically by
+&gt;<i> &gt;&gt;&gt; the hotplug subsystem. I'm currently trying to locate the involved
+</I>&gt;<i> &gt;&gt;&gt; kernel code (any hints are welcome), but I'm a bit sceptical.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; The uevent stuff contained the last time I look at and IIRC at
+</I>least one
+&gt;<i> &gt;&gt; kmalloc in the hot path, but you can choose the GFP_*. The netlink
+</I>&gt;<i> &gt;&gt; subsystem is used to send the event to userspace.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; The simpler the better here: some socket ioctl (redirected to the CAN
+</I>&gt;<i> &gt;&gt;&gt; device) which waits for error condition is what I would prefer for
+</I>now.
+&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; I'm not sure whether introducing new ioctl to the kernel is still
+</I>&gt;<i> &gt;&gt; considered evil :) Normal IOCTL are handled under the now preemptible
+</I>&gt;<i> &gt;&gt; BKL. What about a read/write interface.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; We could use some kind of special filter (error condition mask) and
+</I>bind 
+&gt;<i> &gt; it to a socket. Each application interested in handling the error could 
+</I>&gt;<i> &gt; register that way. A dedicated thread could than wait for error events
+</I>&gt;<i> &gt; (via poll/select and read them with the read or recvfrom function).
+</I>With 
+&gt;<i> &gt; the socket interface, is it easily possible to deliver the same
+</I>event to 
+&gt;<i> &gt;  more than one listener?
+</I>&gt;<i> 
+</I>&gt;<i> I'd like this method (in reality we already use it), we mark reserved 
+</I>&gt;<i> bits in packets from SJA or MSCAN as one, when CAN received error 
+</I>&gt;<i> (analogue of filter in your proposal), with full error info in packet's 
+</I>&gt;<i> data fields.
+</I>
+This approach is even simpler (implementation wise). An extra error
+message is received on the normal RX socket for each COB (filter). 
+It's than up to the user to handle it properly. This option could
+be made selectable when the filter is defined and an empty filter 
+could be used in case the task is not interessted in handling RX
+messaged but errors only.
+
+BTW: it there already a MSCAN (MPC5200) driber in socket-can?
+
+&gt;<i> Also don't forget about common demand of customers (and, IMHO, one of
+</I>&gt;<i> main difference from eth)- redundancy of physical layer (as minimum),
+</I>&gt;<i> and if one net is die (due to vaporing :) as ex.), this is not a reason
+</I>&gt;<i> to stop all CAN activity. But _when_ (from packets order point of view)
+</I>&gt;<i> this error is occurred is very important in some common cases. Any
+</I>&gt;<i> ioctl/daemon will signaling about error too late in best case, or will
+</I>&gt;<i> provide invalid information in worst. We are don't talk about bus-off,
+</I>&gt;<i> isn't it :)?
+</I>
+OK, then the above approach would be fine.
+
+&gt;<i> &gt; 
+</I>&gt;<i> &gt; Asynchronous notification is to difficult to implement and I think we 
+</I>&gt;<i> &gt; should skip it (for the time being).
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; Regarding the error counters. There are several counters available in
+</I>&gt;<i> &gt;&gt;&gt;&gt; the standard struct net_device_stats. They are all exported into
+</I>&gt;<i> &gt;&gt;&gt;&gt; userspace via sysfs (/sys/class/net/&lt;dev&gt;/statistics/*) and it's
+</I>fun to
+&gt;<i> &gt;&gt;&gt;&gt; use libsysfs to parse them. At least busybox' ifconfig uses
+</I>&gt;<i> &gt;&gt;&gt;&gt; /proc/net/dev for the error counters. The bad thing is, several 
+</I>&gt;<i> &gt;&gt;&gt;&gt; counters
+</I>&gt;<i> &gt;&gt;&gt;&gt; are added together before beeing printed to the prov-entry.
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; For ethernet cards these net_device_stats counters can be
+</I>expanded and
+&gt;<i> &gt;&gt;&gt;&gt; transfered into userspace with help of ethtool. We could a) use
+</I>&gt;<i> &gt;&gt;&gt;&gt; ethtool's infrastructure to implement out own can specific error
+</I>&gt;<i> &gt;&gt;&gt;&gt; counters like (bit stuffing-, crc and other errors...) or b)
+</I>agree on a
+&gt;<i> &gt;&gt;&gt;&gt; &quot;struct can_device_stats&quot;. Howto copy them to userspace is then
+</I>another
+&gt;<i> &gt;&gt;&gt;&gt; problem :)
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Whatever the structure will finally look like, we should take care
+</I>that
+&gt;<i> &gt;&gt;&gt; the transport mechanism does not depend on the network stack. This
+</I>helps
+&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; To read the net_device_stats there is a callback in the net_device
+</I>&gt;<i> &gt;&gt; structure in vanilla linux. They are not pushed out of the driver resp.
+</I>&gt;<i> &gt;&gt; into the stack, they are pulled by the stack on a read-request by 
+</I>&gt;<i> &gt;&gt; whomever.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; to provide RT-CAN as long as someone adds RT-awareness to the
+</I>networking
+&gt;<i> &gt;&gt;&gt; subsystem. If the services a CAN device would call to report
+</I>errors are
+&gt;<i> &gt;&gt;&gt; easily wrapable, I see no problems.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; With the ethtool stats, each driver gives tuples of the error
+</I>counters
+&gt;<i> &gt;&gt;&gt;&gt; and strings descibing them. Thus making it difficulter to parse these
+</I>&gt;<i> &gt;&gt;&gt;&gt; numbers. Solution b) has the advantage over a) that we have a hard
+</I>&gt;<i> &gt;&gt;&gt;&gt; mapping of error type to struct entry. But the error categories are
+</I>&gt;<i> &gt;&gt;&gt;&gt; limited in CAN, aren't they? :)
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; If CAN doesn't map well on net-devices regarding errors, leave
+</I>this way
+&gt;<i> &gt;&gt;&gt; alone. I don't think we are discussing significant amount of code
+</I>here.
+&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; sure.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I think, all this error counters are nice to have for debugging and 
+</I>&gt;<i> &gt; analysis but are not really useful during run time. Error conditions 
+</I>&gt;<i> &gt; vary from controller to controller and it's therefore difficult to 
+</I>&gt;<i> &gt; implement something generic.
+</I>&gt;<i> This info not so different, controllers usually give not so detailed
+</I>&gt;<i> info as SJA, but minimal error info is common for all controllers.
+</I>&gt;<i> 
+</I>&gt;<i> Andrey
+</I>&gt;<i> 
+</I>
+Wolfgang.
+
+PS: I have already made a CC to <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core at lists.berlios.de</A> as I'm
+now subcribed.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="000001.html">[Socketcan-core] Re[2]: [Socket-can] Error handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#0">[ date ]</a>
+              <a href="thread.html#0">[ thread ]</a>
+              <a href="subject.html#0">[ subject ]</a>
+              <a href="author.html#0">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

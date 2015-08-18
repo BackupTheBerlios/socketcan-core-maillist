@@ -1,0 +1,399 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] j1939 utils: introduce jdate
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20j1939%20utils%3A%20introduce%20jdate&In-Reply-To=%3C20110511210358.GA277%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005729.html">
+   <LINK REL="Next"  HREF="005735.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] j1939 utils: introduce jdate</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20j1939%20utils%3A%20introduce%20jdate&In-Reply-To=%3C20110511210358.GA277%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH] j1939 utils: introduce jdate">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed May 11 23:04:20 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005729.html">[PATCH] j1939: kernel fixes
+</A></li>
+        <LI>Next message: <A HREF="005735.html">[PATCH] j1939 utils: introduce jdate
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5730">[ date ]</a>
+              <a href="thread.html#5730">[ thread ]</a>
+              <a href="subject.html#5730">[ subject ]</a>
+              <a href="author.html#5730">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver,
+
+Yet another interesting general purpose tool: jdate
+It sends out the date/time PGN.
+
+Kurt
+PS: I know you can't test immediately :-)
+---
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+---
+Index: can-utils/Makefile
+===================================================================
+--- can-utils/Makefile	(revision 1257)
++++ can-utils/Makefile	(working copy)
+@@ -56,7 +56,7 @@
+ PROGRAMS_ISOTP = isotpdump isotprecv isotpsend isotpsniffer isotptun isotpserver
+ PROGRAMS_CANGW = cangw
+ PROGRAMS_SLCAN = slcan_attach slcand
+-PROGRAMS_J1939 = jacd jspy jsr
++PROGRAMS_J1939 = jacd jspy jsr jdate
+ PROGRAMS = can-calc-bit-timing candump cansniffer cansend canplayer cangen canbusload\
+ 	   log2long log2asc asc2log\
+ 	   canlogserver bcmserver\
+@@ -107,4 +107,5 @@
+ 
+ jspy: libj1939.a
+ jsr: libj1939.a
++jdate: libj1939.a
+ 
+Index: can-utils/GNUmakefile.am
+===================================================================
+--- can-utils/GNUmakefile.am	(revision 1257)
++++ can-utils/GNUmakefile.am	(working copy)
+@@ -56,11 +56,13 @@
+ bin_PROGRAMS += \
+ 	jacd \
+ 	jsr \
+-	jspy
++	jspy \
++	jdate
+ 
+ jacd_LDADD = libj1939.la
+ jsr_LDADD = libj1939.la
+ jspy_LDADD = libj1939.la
++jdate_LDADD = libj1939.la
+ 
+ noinst_LTLIBRARIES += libj1939.la
+ 
+Index: can-utils/jdate.c
+===================================================================
+--- can-utils/jdate.c	(revision 0)
++++ can-utils/jdate.c	(revision 0)
+@@ -0,0 +1,279 @@
++/*
++ * Copyright (c) 2011 EIA Electronics
++ *
++ * Authors:
++ * Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ */
++
++#include &lt;signal.h&gt;
++#include &lt;time.h&gt;
++#include &lt;inttypes.h&gt;
++#include &lt;errno.h&gt;
++#include &lt;string.h&gt;
++#include &lt;stdlib.h&gt;
++#include &lt;stdio.h&gt;
++
++#include &lt;unistd.h&gt;
++#include &lt;getopt.h&gt;
++#include &lt;error.h&gt;
++#include &lt;sys/time.h&gt;
++#include &lt;sys/socket.h&gt;
++#include &lt;linux/can.h&gt;
++#include &lt;linux/can/j1939.h&gt;
++#include &quot;libj1939.h&quot;
++
++static const char help_msg[] =
++	&quot;jdate: Send the datetime pgn, each second or on request&quot; &quot;\n&quot;
++	&quot;Usage: jdate SOURCE&quot; &quot;\n&quot;
++	&quot; -v, --verbose		Show info&quot; &quot;\n&quot;
++	&quot; -l, --listen		Answer to request PGN's only&quot; &quot;\n&quot;
++	&quot; -i, --iso11783		iso-11783 format&quot; &quot;\n&quot;
++	&quot;\n&quot;
++	&quot;Example:&quot; &quot;\n&quot;
++	&quot;jdate --iso can1:20&quot; &quot;\n&quot;
++	&quot;\n&quot;
++	&quot;Specifications&quot; &quot;\n&quot;
++	&quot; - SAE J1939-71 pgn65254&quot; &quot;\n&quot;
++	&quot; - ISO 11783-7 Annex B.1&quot; &quot;\n&quot;
++	&quot;\n&quot;
++	&quot;Notes&quot; &quot;\n&quot;
++	&quot;Time/Date Adjust is not yet supported&quot; &quot;\n&quot;
++	;
++
++#ifdef _GNU_SOURCE
++static struct option long_opts[] = {
++	{ &quot;help&quot;, no_argument, NULL, '?', },
++	{ &quot;listen&quot;, no_argument, NULL, 'l', },
++	{ &quot;verbose&quot;, no_argument, NULL, 'v', },
++	{ &quot;iso11783&quot;, no_argument, NULL, 'i', },
++	{ },
++};
++#else
++#define getopt_long(argc, argv, optstring, longopts, longindex) \
++	getopt((argc), (argv), (optstring))
++#endif
++static const char optstring[] = &quot;liv?&quot;;
++
++/* global variables */
++static struct {
++	const char *source;
++	int periodic;
++	int verbose;
++	int iso;
++	int sig_term;
++	int sig_alrm;
++} s = {
++	.source = &quot;can0:&quot;,
++	.periodic = 1,
++};
++
++/* j1939 socket */
++static const struct j1939_filter filt[] = {
++	{
++		.pgn = 0x0ea00,
++		.pgn_mask = 0x3ff00,
++	},
++};
++
++static int open_socket(const char *source)
++{
++	int ret, sock;
++	struct sockaddr_can saddr;
++
++	ret = libj1939_str2addr(source, 0, &amp;saddr);
++	if (ret &lt; 0)
++		error(1, 0, &quot;source spec '%s'&quot;, source);
++	if (saddr.can_addr.j1939.pgn != J1939_NO_PGN)
++		error(1, 0, &quot;no pgn allowed in '%s'&quot;, source);
++	saddr.can_addr.j1939.pgn = 0xfee6;
++
++	sock = ret = socket(PF_CAN, SOCK_DGRAM, CAN_J1939);
++	if (ret &lt; 0)
++		error(1, errno, &quot;socket(j1939)&quot;);
++
++	ret = setsockopt(sock, SOL_CAN_J1939, SO_J1939_FILTER,
++			&amp;filt, sizeof(filt));
++	if (ret &lt; 0)
++		error(1, errno, &quot;setsockopt filter&quot;);
++
++	ret = bind(sock, (void *)&amp;saddr, sizeof(saddr));
++	if (ret &lt; 0)
++		error(1, errno, &quot;bind()&quot;);
++	return sock;
++}
++
++/* signa handling */
++static void sighandler(int sig, siginfo_t *info, void *vp)
++{
++	switch (sig) {
++	case SIGINT:
++	case SIGTERM:
++		s.sig_term = 1;
++		break;
++	case SIGALRM:
++		s.sig_alrm = 1;
++		break;
++	}
++}
++
++static void install_signal(int sig)
++{
++	int ret;
++	struct sigaction sigact = {
++		.sa_sigaction = sighandler,
++		.sa_flags = SA_SIGINFO,
++	};
++
++	sigfillset(&amp;sigact.sa_mask);
++	ret = sigaction(sig, &amp;sigact, NULL);
++	if (ret &lt; 0)
++		error(1, errno, &quot;sigaction for signal %i&quot;, sig);
++}
++
++static void schedule_repeating_itimer(int msec)
++{
++	int ret;
++	struct itimerval val = {};
++
++	val.it_value.tv_sec = msec / 1000;
++	val.it_value.tv_usec = (msec % 1000) * 1000;
++	val.it_interval = val.it_value;
++
++	s.sig_alrm = 0;
++	do {
++		ret = setitimer(ITIMER_REAL, &amp;val, NULL);
++	} while ((ret &lt; 0) &amp;&amp; (errno == EINTR));
++	if (ret &lt; 0)
++		error(1, errno, &quot;setitimer %i msec&quot;, msec);
++}
++
++static void fill_datetime(uint8_t dat[8])
++{
++	struct timeval tv;
++	struct timezone tz;
++	struct tm tm;
++
++	if (gettimeofday(&amp;tv, &amp;tz) &lt; 0)
++		error(1, errno, &quot;gettimeofday&quot;);
++
++	tm = *gmtime(&amp;tv.tv_sec);
++	dat[0] = tm.tm_sec *4;
++	dat[1] = tm.tm_min;
++	dat[2] = tm.tm_hour;
++	dat[3] = tm.tm_mon +1;
++	dat[4] = tm.tm_mday *4;
++	dat[5] = tm.tm_year - 85;
++	if (s.iso) {
++		dat[6] = 0;
++		dat[7] = (-tz.tz_minuteswest / 60) + 24;
++	} else {
++		dat[6] = (-tz.tz_minuteswest % 60) + 125;
++		dat[7] = (-tz.tz_minuteswest / 60) + 125;
++	}
++}
++
++static int ratelimit_errno(int _errno)
++{
++	static int saved_errno;
++	int ret;
++
++	ret = _errno != saved_errno;
++	saved_errno = _errno;
++	return ret;
++}
++
++/* main */
++int main(int argc, char *argv[])
++{
++	int ret, sock, pgn, opt;
++	uint8_t dat[9];
++	struct sockaddr_can daddr;
++
++#ifdef _GNU_SOURCE
++	program_invocation_name = program_invocation_short_name;
++#endif
++	/* argument parsing */
++	while ((opt = getopt_long(argc, argv, optstring, long_opts, NULL)) != -1)
++	switch (opt) {
++	case 'l':
++		s.periodic = 0;
++		break;
++	case 'i':
++		s.iso = 1;
++		break;
++	case 'v':
++		++s.verbose;
++		break;
++	default:
++		fputs(help_msg, stderr);
++		exit(1);
++		break;
++	}
++	if (argv[optind])
++		s.source = argv[optind++];
++	/* args done */
++
++	ret = sock = open_socket(s.source);
++
++	install_signal(SIGTERM);
++	install_signal(SIGINT);
++	install_signal(SIGALRM);
++	install_signal(SIGUSR1);
++	install_signal(SIGUSR2);
++
++	if (s.periodic)
++		schedule_repeating_itimer(1000);
++
++	while (!s.sig_term) {
++		if (s.sig_alrm) {
++			/* send datetime */
++			memset(&amp;daddr, 0, sizeof(daddr));
++
++			fill_datetime(dat);
++			ret = send(sock, dat, 8, 0);
++			if (ret &lt; 0)
++			switch (errno) {
++			case EINTR:
++				continue;
++			case ENOBUFS:
++			case EHOSTDOWN:
++			case EADDRNOTAVAIL:
++				if (ratelimit_errno(errno))
++					error(0, errno, &quot;j1939 send&quot;);
++				break;
++			default:
++				error(1, errno, &quot;j1939 send&quot;);
++				break;
++			} else if (ratelimit_errno(0))
++				error(0, 0, &quot;j1939 send ok&quot;);
++
++			s.sig_alrm = 0;
++			if (s.verbose &amp;&amp; (ret &gt;= 0))
++				error(0, 0, &quot;send&quot;);
++		}
++
++		ret = recv(sock, dat, sizeof(dat), 0);
++		if (ret &lt; 0) {
++			if (EINTR == errno)
++				continue;
++			error(1, errno, &quot;recvfrom()&quot;);
++		}
++		if (ret &lt; 3)
++			continue;
++		pgn = dat[0] + (dat[1] &lt;&lt; 8) + ((dat[2] &amp; 0x03) &lt;&lt; 16);
++
++		switch (pgn) {
++		case 0x0fee6:
++			if (s.verbose)
++				error(0, 0, &quot;got request&quot;);
++			s.sig_alrm = 1;
++			break;
++		}
++	}
++	return 0;
++}
++
+
+Property changes on: can-utils/jdate.c
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005729.html">[PATCH] j1939: kernel fixes
+</A></li>
+	<LI>Next message: <A HREF="005735.html">[PATCH] j1939 utils: introduce jdate
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5730">[ date ]</a>
+              <a href="thread.html#5730">[ thread ]</a>
+              <a href="subject.html#5730">[ subject ]</a>
+              <a href="author.html#5730">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

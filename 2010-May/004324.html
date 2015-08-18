@@ -1,0 +1,1241 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2] can: Add driver for esd CAN-USB/2 device
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20can%3A%20Add%20driver%20for%20esd%20CAN-USB/2%20device&In-Reply-To=%3C201005101528.50834.matthias.fuchs%40esd.eu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004331.html">
+   <LINK REL="Next"  HREF="004325.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2] can: Add driver for esd CAN-USB/2 device</H1>
+    <B>Matthias Fuchs</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20can%3A%20Add%20driver%20for%20esd%20CAN-USB/2%20device&In-Reply-To=%3C201005101528.50834.matthias.fuchs%40esd.eu%3E"
+       TITLE="[PATCH v2] can: Add driver for esd CAN-USB/2 device">matthias.fuchs at esd.eu
+       </A><BR>
+    <I>Mon May 10 15:28:50 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004331.html">Hello, I am working on converting mcp251x to async spi interface 	and have some problems
+</A></li>
+        <LI>Next message: <A HREF="004325.html">[PATCH v2] can: Add driver for esd CAN-USB/2 device
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4324">[ date ]</a>
+              <a href="thread.html#4324">[ thread ]</a>
+              <a href="subject.html#4324">[ subject ]</a>
+              <a href="author.html#4324">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch adds a driver for esd's USB high speed
+CAN interface. The driver supports devices with
+multiple CAN interfaces.
+
+Signed-off-by: Matthias Fuchs &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">matthias.fuchs at esd.eu</A>&gt;
+---
+
+version 2: 
+ - use bus-error reporting and counters
+ - minor cleanup
+ - rebased against current net-next-2.6 tree
+ - initial post to linux-usb list for review
+
+ drivers/net/can/usb/Kconfig    |    6 +
+ drivers/net/can/usb/Makefile   |    1 +
+ drivers/net/can/usb/esd_usb2.c | 1126 ++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 1133 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/net/can/usb/esd_usb2.c
+
+diff --git a/drivers/net/can/usb/Kconfig b/drivers/net/can/usb/Kconfig
+index 97ff6fe..0452549 100644
+--- a/drivers/net/can/usb/Kconfig
++++ b/drivers/net/can/usb/Kconfig
+@@ -7,4 +7,10 @@ config CAN_EMS_USB
+ 	  This driver is for the one channel CPC-USB/ARM7 CAN/USB interface
+ 	  from EMS Dr. Thomas Wuensche (<A HREF="http://www.ems-wuensche.de">http://www.ems-wuensche.de</A>).
+ 
++config CAN_ESD_USB2
++        tristate &quot;ESD USB/2 CAN/USB interface&quot;
++        ---help---
++          This driver supports the CAN-USB/2 interface
++          from esd electronic system design gmbh (<A HREF="http://www.esd.eu">http://www.esd.eu</A>).
++
+ endmenu
+diff --git a/drivers/net/can/usb/Makefile b/drivers/net/can/usb/Makefile
+index 0afd51d..fce3cf1 100644
+--- a/drivers/net/can/usb/Makefile
++++ b/drivers/net/can/usb/Makefile
+@@ -3,5 +3,6 @@
+ #
+ 
+ obj-$(CONFIG_CAN_EMS_USB) += ems_usb.o
++obj-$(CONFIG_CAN_ESD_USB2) += esd_usb2.o
+ 
+ ccflags-$(CONFIG_CAN_DEBUG_DEVICES) := -DDEBUG
+diff --git a/drivers/net/can/usb/esd_usb2.c b/drivers/net/can/usb/esd_usb2.c
+new file mode 100644
+index 0000000..24b935b
+--- /dev/null
++++ b/drivers/net/can/usb/esd_usb2.c
+@@ -0,0 +1,1126 @@
++/*
++ * CAN driver for esd CAN-USB/2
++ *
++ * Copyright (C) 2010 Matthias Fuchs &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">matthias.fuchs at esd.eu</A>&gt;, esd gmbh
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as published
++ * by the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++#include &lt;linux/init.h&gt;
++#include &lt;linux/signal.h&gt;
++#include &lt;linux/slab.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/usb.h&gt;
++
++#include &lt;linux/can.h&gt;
++#include &lt;linux/can/dev.h&gt;
++#include &lt;linux/can/error.h&gt;
++
++MODULE_AUTHOR(&quot;Matthias Fuchs &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">matthias.fuchs at esd.eu</A>&gt;&quot;);
++MODULE_DESCRIPTION(&quot;CAN driver for esd CAN-USB/2 interfaces&quot;);
++MODULE_LICENSE(&quot;GPL v2&quot;);
++
++/* Define these values to match your devices */
++#define USB_ESDGMBH_VENDOR_ID	0x0ab4
++#define USB_CANUSB2_PRODUCT_ID	0x0010
++
++#define ESD_USB2_CAN_CLOCK	60000000
++#define ESD_USB2_MAX_NETS	2
++
++/* USB2 commands */
++#define CMD_VERSION		1 /* also used for VERSION_REPLY */
++#define CMD_CAN_RX		2 /* device to host only */
++#define CMD_CAN_TX		3 /* also used for TX_DONE */
++#define CMD_SETBAUD		4 /* also used for SETBAUD_REPLY */
++#define CMD_TS			5 /* also used for TS_REPLY */
++#define CMD_IDADD		6 /* also used for IDADD_REPLY */
++
++/* esd CAN message flags - dlc field */
++#define ESD_RTR			0x10
++
++/* esd CAN message flags - id field */
++#define ESD_EXTID		0x20000000
++#define ESD_EVENT		0x40000000
++#define ESD_IDMASK		0x1fffffff
++
++/* esd CAN event ids used by this driver */
++#define ESD_EV_CAN_ERROR_EXT	2
++
++/* baudrate message flags */
++#define ESD_USB2_UBR		0x80000000
++#define ESD_USB2_LOM		0x40000000
++#define ESD_USB2_NO_BAUDRATE	0x7fffffff
++#define ESD_USB2_TSEG1_MIN	1
++#define ESD_USB2_TSEG1_MAX	16
++#define ESD_USB2_TSEG1_SHIFT	16
++#define ESD_USB2_TSEG2_MIN	1
++#define ESD_USB2_TSEG2_MAX	8
++#define ESD_USB2_TSEG2_SHIFT	20
++#define ESD_USB2_SJW_MAX	4
++#define ESD_USB2_SJW_SHIFT	14
++#define ESD_USB2_BRP_MIN	1
++#define ESD_USB2_BRP_MAX	1024
++#define ESD_USB2_BRP_INC	1
++#define ESD_USB2_3_SAMPLES	0x00800000
++
++/* esd IDADD message */
++#define ESD_ID_ENABLE		0x80
++#define ESD_MAX_ID_SEGMENT	64
++
++/* SJA1000 ECC register (emulated by usb2 firmware) */
++#define SJA1000_ECC_SEG		0x1F
++#define SJA1000_ECC_DIR		0x20
++#define SJA1000_ECC_ERR		0x06
++#define SJA1000_ECC_BIT		0x00
++#define SJA1000_ECC_FORM	0x40
++#define SJA1000_ECC_STUFF	0x80
++#define SJA1000_ECC_MASK	0xc0
++
++/* esd bus state event codes */
++#define ESD_BUSSTATE_MASK	0xc0
++#define ESD_BUSSTATE_WARN	0x40
++#define ESD_BUSSTATE_ERRPASSIVE	0x80
++#define ESD_BUSSTATE_BUSOFF	0xc0
++
++#define RX_BUFFER_SIZE		1024
++#define MAX_RX_URBS		4
++#define MAX_TX_URBS		16 /* must be power of 2 */
++
++struct header_msg {
++	u8 len; /* len is always the total message length in 32bit words */
++	u8 cmd;
++	u8 rsvd[2];
++};
++
++struct version_msg {
++	u8 len;
++	u8 cmd;
++	u8 rsvd;
++	u8 flags;
++	__le32 drv_version;
++};
++
++struct version_reply_msg {
++	u8 len;
++	u8 cmd;
++	u8 nets;
++	u8 features;
++	__le32 version;
++	u8 name[16];
++	__le32 rsvd;
++	__le32 ts;
++};
++
++struct rx_msg {
++	u8 len;
++	u8 cmd;
++	u8 net;
++	u8 dlc;
++	__le32 ts;
++	__le32 id; /* upper 3 bits contain flags */
++	u8 data[8];
++};
++
++struct tx_msg {
++	u8 len;
++	u8 cmd;
++	u8 net;
++	u8 dlc;
++	__le32 hnd;
++	__le32 id; /* upper 3 bits contain flags */
++	u8 data[8];
++};
++
++struct tx_done_msg {
++	u8 len;
++	u8 cmd;
++	u8 net;
++	u8 status;
++	__le32 hnd;
++	__le32 ts;
++};
++
++struct id_filter_msg {
++	u8 len;
++	u8 cmd;
++	u8 net;
++	u8 option;
++	__le32 mask[ESD_MAX_ID_SEGMENT + 1];
++};
++
++struct set_baudrate_msg {
++	u8 len;
++	u8 cmd;
++	u8 net;
++	u8 rsvd;
++	__le32 baud;
++};
++
++/* Main message type used between library and application */
++struct __attribute__ ((packed)) esd_usb2_msg {
++	union {
++		struct header_msg hdr;
++		struct version_msg version;
++		struct version_reply_msg version_reply;
++		struct rx_msg rx;
++		struct tx_msg tx;
++		struct tx_done_msg txdone;
++		struct set_baudrate_msg setbaud;
++		struct id_filter_msg filter;
++	} msg;
++};
++
++static struct usb_device_id esd_usb2_table[] = {
++	{USB_DEVICE(USB_ESDGMBH_VENDOR_ID, USB_CANUSB2_PRODUCT_ID)},
++	{}
++};
++MODULE_DEVICE_TABLE(usb, esd_usb2_table);
++
++struct esd_usb2_net_priv;
++
++struct esd_tx_urb_context {
++	struct esd_usb2_net_priv *priv;
++	u32 echo_index;
++	int dlc;
++};
++
++struct esd_usb2 {
++	struct usb_device *udev;
++	struct esd_usb2_net_priv *nets[ESD_USB2_MAX_NETS];
++
++	struct usb_anchor rx_submitted;
++
++	int net_count;
++	u32 version;
++	int rxinitdone;
++};
++
++struct esd_usb2_net_priv {
++	struct can_priv can; /* must be the first member */
++
++	atomic_t active_tx_jobs;
++	struct usb_anchor tx_submitted;
++	struct esd_tx_urb_context tx_contexts[MAX_TX_URBS];
++
++	int open_time;
++	struct esd_usb2 *usb2;
++	struct net_device *netdev;
++	int index;
++	u8 old_state;
++	struct can_berr_counter bec;
++};
++
++static void esd_usb2_rx_event(struct esd_usb2_net_priv *priv,
++			      struct esd_usb2_msg *msg)
++{
++	struct net_device_stats *stats = &amp;priv-&gt;netdev-&gt;stats;
++	struct can_frame *cf;
++	struct sk_buff *skb;
++	u32 id = le32_to_cpu(msg-&gt;msg.rx.id) &amp; ESD_IDMASK;
++
++	if (id == ESD_EV_CAN_ERROR_EXT) {
++		u8 state = msg-&gt;msg.rx.data[0];
++		u8 ecc = msg-&gt;msg.rx.data[1];
++		u8 txerr = msg-&gt;msg.rx.data[2];
++		u8 rxerr = msg-&gt;msg.rx.data[3];
++
++		skb = alloc_can_err_skb(priv-&gt;netdev, &amp;cf);
++		if (skb == NULL) {
++			stats-&gt;rx_dropped++;
++			return;
++		}
++
++		if (state != priv-&gt;old_state) {
++			priv-&gt;old_state = state;
++
++			switch (state &amp; ESD_BUSSTATE_MASK) {
++			case ESD_BUSSTATE_BUSOFF:
++				priv-&gt;can.state = CAN_STATE_BUS_OFF;
++				cf-&gt;can_id |= CAN_ERR_BUSOFF;
++				can_bus_off(priv-&gt;netdev);
++				break;
++			case ESD_BUSSTATE_WARN:
++				priv-&gt;can.state = CAN_STATE_ERROR_WARNING;
++				priv-&gt;can.can_stats.error_warning++;
++				break;
++			case ESD_BUSSTATE_ERRPASSIVE:
++				priv-&gt;can.state = CAN_STATE_ERROR_PASSIVE;
++				priv-&gt;can.can_stats.error_passive++;
++				break;
++			default:
++				priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
++				break;
++			}
++		} else {
++			priv-&gt;can.can_stats.bus_error++;
++			stats-&gt;rx_errors++;
++
++			cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
++
++			switch (ecc &amp; SJA1000_ECC_MASK) {
++			case SJA1000_ECC_BIT:
++				cf-&gt;data[2] |= CAN_ERR_PROT_BIT;
++				break;
++			case SJA1000_ECC_FORM:
++				cf-&gt;data[2] |= CAN_ERR_PROT_FORM;
++				break;
++			case SJA1000_ECC_STUFF:
++				cf-&gt;data[2] |= CAN_ERR_PROT_STUFF;
++				break;
++			default:
++				cf-&gt;data[2] |= CAN_ERR_PROT_UNSPEC;
++				cf-&gt;data[3] = ecc &amp; SJA1000_ECC_SEG;
++				break;
++			}
++
++			/* Error occured during transmission? */
++			if (!(ecc &amp; SJA1000_ECC_DIR))
++				cf-&gt;data[2] |= CAN_ERR_PROT_TX;
++
++			if (priv-&gt;can.state == CAN_STATE_ERROR_WARNING ||
++			    priv-&gt;can.state == CAN_STATE_ERROR_PASSIVE) {
++				cf-&gt;data[1] = (txerr &gt; rxerr) ?
++					CAN_ERR_CRTL_TX_PASSIVE :
++					CAN_ERR_CRTL_RX_PASSIVE;
++			}
++			cf-&gt;data[6] = txerr;
++			cf-&gt;data[7] = rxerr;
++		}
++
++		netif_rx(skb);
++
++		priv-&gt;bec.txerr = txerr;
++		priv-&gt;bec.rxerr = rxerr;
++
++		stats-&gt;rx_packets++;
++		stats-&gt;rx_bytes += cf-&gt;can_dlc;
++	}
++}
++
++static void esd_usb2_rx_can_msg(struct esd_usb2_net_priv *priv,
++				struct esd_usb2_msg *msg)
++{
++	struct net_device_stats *stats = &amp;priv-&gt;netdev-&gt;stats;
++	struct can_frame *cf;
++	struct sk_buff *skb;
++	int i;
++	u32 id;
++
++	if (!netif_device_present(priv-&gt;netdev))
++		return;
++
++	id = le32_to_cpu(msg-&gt;msg.rx.id);
++
++	if (id &amp; ESD_EVENT) {
++		esd_usb2_rx_event(priv, msg);
++	} else {
++		skb = alloc_can_skb(priv-&gt;netdev, &amp;cf);
++		if (skb == NULL) {
++			stats-&gt;rx_dropped++;
++			return;
++		}
++
++		cf-&gt;can_id = id &amp; ESD_IDMASK;
++		cf-&gt;can_dlc = get_can_dlc(msg-&gt;msg.rx.dlc);
++
++		if (id &amp; ESD_EXTID)
++			cf-&gt;can_id |= CAN_EFF_FLAG;
++
++		if (msg-&gt;msg.rx.dlc &amp; ESD_RTR) {
++			cf-&gt;can_id |= CAN_RTR_FLAG;
++		} else {
++			for (i = 0; i &lt; cf-&gt;can_dlc; i++)
++				cf-&gt;data[i] = msg-&gt;msg.rx.data[i];
++		}
++
++		netif_rx(skb);
++
++		stats-&gt;rx_packets++;
++		stats-&gt;rx_bytes += cf-&gt;can_dlc;
++	}
++
++	return;
++}
++
++static void esd_usb2_tx_done_msg(struct esd_usb2_net_priv *priv,
++				 struct esd_usb2_msg *msg)
++{
++	struct net_device_stats *stats = &amp;priv-&gt;netdev-&gt;stats;
++	struct net_device *netdev = priv-&gt;netdev;
++	struct esd_tx_urb_context *context;
++
++	if (!netif_device_present(netdev))
++		return;
++
++	context = &amp;priv-&gt;tx_contexts[msg-&gt;msg.txdone.hnd &amp; (MAX_TX_URBS - 1)];
++
++	if (!msg-&gt;msg.txdone.status) {
++		stats-&gt;tx_packets++;
++		stats-&gt;tx_bytes += context-&gt;dlc;
++		can_get_echo_skb(netdev, context-&gt;echo_index);
++	} else {
++		stats-&gt;tx_errors++;
++		can_free_echo_skb(netdev, context-&gt;echo_index);
++	}
++
++	/* Release context */
++	context-&gt;echo_index = MAX_TX_URBS;
++	atomic_dec(&amp;priv-&gt;active_tx_jobs);
++
++	netif_wake_queue(netdev);
++}
++
++static void esd_usb2_read_bulk_callback(struct urb *urb)
++{
++	struct esd_usb2 *dev = urb-&gt;context;
++	int retval;
++	int pos = 0;
++	int i;
++
++	switch (urb-&gt;status) {
++	case 0: /* success */
++		break;
++
++	case -ENOENT:
++	case -ESHUTDOWN:
++		return;
++
++	default:
++		dev_info(dev-&gt;udev-&gt;dev.parent,
++			 &quot;Rx URB aborted (%d)\n&quot;, urb-&gt;status);
++		goto resubmit_urb;
++	}
++
++	while (pos &lt; urb-&gt;actual_length) {
++		struct esd_usb2_msg *msg;
++
++		msg = (struct esd_usb2_msg *)(urb-&gt;transfer_buffer + pos);
++
++		switch (msg-&gt;msg.hdr.cmd) {
++		case CMD_CAN_RX:
++			esd_usb2_rx_can_msg(dev-&gt;nets[msg-&gt;msg.rx.net], msg);
++			break;
++
++		case CMD_CAN_TX:
++			esd_usb2_tx_done_msg(dev-&gt;nets[msg-&gt;msg.txdone.net],
++					     msg);
++			break;
++		}
++
++		pos += msg-&gt;msg.hdr.len &lt;&lt; 2;
++
++		if (pos &gt; urb-&gt;actual_length) {
++			dev_err(dev-&gt;udev-&gt;dev.parent, &quot;format error\n&quot;);
++			break;
++		}
++	}
++
++resubmit_urb:
++	usb_fill_bulk_urb(urb, dev-&gt;udev, usb_rcvbulkpipe(dev-&gt;udev, 1),
++			  urb-&gt;transfer_buffer, RX_BUFFER_SIZE,
++			  esd_usb2_read_bulk_callback, dev);
++
++	retval = usb_submit_urb(urb, GFP_ATOMIC);
++	if (retval == -ENODEV) {
++		for (i = 0; i &lt; dev-&gt;net_count; i++) {
++			if (dev-&gt;nets[i])
++				netif_device_detach(dev-&gt;nets[i]-&gt;netdev);
++		}
++	} else if (retval) {
++		dev_err(dev-&gt;udev-&gt;dev.parent,
++			&quot;failed resubmitting read bulk urb: %d\n&quot;, retval);
++	}
++
++	return;
++}
++
++/*
++ * callback for bulk IN urb
++ */
++static void esd_usb2_write_bulk_callback(struct urb *urb)
++{
++	struct esd_tx_urb_context *context = urb-&gt;context;
++	struct esd_usb2_net_priv *priv;
++	struct esd_usb2 *dev;
++	struct net_device *netdev;
++	size_t size = sizeof(struct esd_usb2_msg);
++
++	BUG_ON(!context);
++
++	priv = context-&gt;priv;
++	netdev = priv-&gt;netdev;
++	dev = priv-&gt;usb2;
++
++	/* free up our allocated buffer */
++	usb_buffer_free(urb-&gt;dev, size,
++			urb-&gt;transfer_buffer, urb-&gt;transfer_dma);
++
++	if (!netif_device_present(netdev))
++		return;
++
++	if (urb-&gt;status)
++		dev_info(netdev-&gt;dev.parent, &quot;Tx URB aborted (%d)\n&quot;,
++			 urb-&gt;status);
++
++	netdev-&gt;trans_start = jiffies;
++}
++
++#ifdef CONFIG_SYSFS
++static ssize_t show_firmware(struct device *d,
++			     struct device_attribute *attr, char *buf)
++{
++	struct usb_interface *intf = to_usb_interface(d);
++	struct esd_usb2 *dev = usb_get_intfdata(intf);
++
++	return sprintf(buf, &quot;%d.%d.%d\n&quot;,
++		       (dev-&gt;version &gt;&gt; 12) &amp; 0xf,
++		       (dev-&gt;version &gt;&gt; 8) &amp; 0xf,
++		       dev-&gt;version &amp; 0xff);
++}
++static DEVICE_ATTR(firmware, S_IRUGO, show_firmware, NULL);
++
++static ssize_t show_hardware(struct device *d,
++			     struct device_attribute *attr, char *buf)
++{
++	struct usb_interface *intf = to_usb_interface(d);
++	struct esd_usb2 *dev = usb_get_intfdata(intf);
++
++	return sprintf(buf, &quot;%d.%d.%d\n&quot;,
++		       (dev-&gt;version &gt;&gt; 28) &amp; 0xf,
++		       (dev-&gt;version &gt;&gt; 24) &amp; 0xf,
++		       (dev-&gt;version &gt;&gt; 16) &amp; 0xff);
++}
++static DEVICE_ATTR(hardware, S_IRUGO, show_hardware, NULL);
++
++static ssize_t show_nets(struct device *d,
++			 struct device_attribute *attr, char *buf)
++{
++	struct usb_interface *intf = to_usb_interface(d);
++	struct esd_usb2 *dev = usb_get_intfdata(intf);
++
++	return sprintf(buf, &quot;%d&quot;, dev-&gt;net_count);
++}
++static DEVICE_ATTR(nets, S_IRUGO, show_nets, NULL);
++#endif
++
++static int esd_usb2_send_msg(struct esd_usb2 *dev, struct esd_usb2_msg *msg)
++{
++	int actual_length;
++
++	return usb_bulk_msg(dev-&gt;udev,
++			    usb_sndbulkpipe(dev-&gt;udev, 2),
++			    msg,
++			    msg-&gt;msg.hdr.len &lt;&lt; 2,
++			    &amp;actual_length,
++			    1000);
++}
++
++static int esd_usb2_wait_msg(struct esd_usb2 *dev,
++			     struct esd_usb2_msg *msg)
++{
++	int actual_length;
++
++	return usb_bulk_msg(dev-&gt;udev,
++			    usb_rcvbulkpipe(dev-&gt;udev, 1),
++			    msg,
++			    sizeof(*msg),
++			    &amp;actual_length,
++			    1000);
++}
++
++static int esd_usb2_setup_rx_urbs(struct esd_usb2 *dev)
++{
++	int i, err = 0;
++
++	if (dev-&gt;rxinitdone)
++		return 0;
++
++	for (i = 0; i &lt; MAX_RX_URBS; i++) {
++		struct urb *urb = NULL;
++		u8 *buf = NULL;
++
++		/* create a URB, and a buffer for it */
++		urb = usb_alloc_urb(0, GFP_KERNEL);
++		if (!urb) {
++			dev_warn(dev-&gt;udev-&gt;dev.parent,
++				 &quot;No memory left for URBs\n&quot;);
++			err = -ENOMEM;
++			break;
++		}
++
++		buf = usb_buffer_alloc(dev-&gt;udev, RX_BUFFER_SIZE, GFP_KERNEL,
++				       &amp;urb-&gt;transfer_dma);
++		if (!buf) {
++			dev_warn(dev-&gt;udev-&gt;dev.parent,
++				 &quot;No memory left for USB buffer\n&quot;);
++			err = -ENOMEM;
++			goto freeurb;
++		}
++
++		usb_fill_bulk_urb(urb, dev-&gt;udev,
++				  usb_rcvbulkpipe(dev-&gt;udev, 1),
++				  buf, RX_BUFFER_SIZE,
++				  esd_usb2_read_bulk_callback, dev);
++		urb-&gt;transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
++		usb_anchor_urb(urb, &amp;dev-&gt;rx_submitted);
++
++		err = usb_submit_urb(urb, GFP_KERNEL);
++		if (err) {
++			usb_unanchor_urb(urb);
++			usb_buffer_free(dev-&gt;udev, RX_BUFFER_SIZE, buf,
++					urb-&gt;transfer_dma);
++		}
++
++freeurb:
++		/* Drop reference, USB core will take care of freeing it */
++		usb_free_urb(urb);
++		if (err)
++			break;
++	}
++
++	/* Did we submit any URBs */
++	if (i == 0) {
++		dev_err(dev-&gt;udev-&gt;dev.parent, &quot;couldn't setup read URBs\n&quot;);
++		return err;
++	}
++
++	/* Warn if we've couldn't transmit all the URBs */
++	if (i &lt; MAX_RX_URBS) {
++		dev_warn(dev-&gt;udev-&gt;dev.parent,
++			 &quot;rx performance may be slow\n&quot;);
++	}
++
++	dev-&gt;rxinitdone = 1;
++	return 0;
++}
++
++/*
++ * Start interface
++ */
++static int esd_usb2_start(struct esd_usb2_net_priv *priv)
++{
++	struct esd_usb2 *dev = priv-&gt;usb2;
++	struct net_device *netdev = priv-&gt;netdev;
++	struct esd_usb2_msg msg;
++	int err, i;
++
++	/*
++	 * Enable all IDs
++	 * The IDADD message takes up to 64 32 bit bitmasks (2048 bits).
++	 * Each bit represents one 11 bit CAN identifier. A set bit
++	 * enables reception of the corresponding CAN identifier. A cleared
++	 * bit disabled this identifier. An additional bitmask value
++	 * following the CAN 2.0A bits is used to enable reception of
++	 * extended CAN frames. Only the LSB of this final mask is checked
++	 * for the complete 29 bit ID range. The IDADD message also allows
++	 * filter configuration for an ID subset. In this case you can add
++	 * the number of the starting bitmask (0..64) to the filter.option
++	 * field followed by only some bitmasks.
++	 */
++	msg.msg.hdr.cmd = CMD_IDADD;
++	msg.msg.hdr.len = 2 + ESD_MAX_ID_SEGMENT;
++	msg.msg.filter.net = priv-&gt;index;
++	msg.msg.filter.option = ESD_ID_ENABLE; /* start with segment 0 */
++	for (i = 0; i &lt; ESD_MAX_ID_SEGMENT; i++)
++		msg.msg.filter.mask[i] = cpu_to_le32(0xffffffff);
++	/* enable 29bit extended IDs */
++	msg.msg.filter.mask[ESD_MAX_ID_SEGMENT] = cpu_to_le32(0x00000001);
++
++	err = esd_usb2_send_msg(dev, &amp;msg);
++	if (err)
++		goto failed;
++
++	err = esd_usb2_setup_rx_urbs(dev);
++	if (err)
++		goto failed;
++
++	priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
++
++	return 0;
++
++failed:
++	if (err == -ENODEV)
++		netif_device_detach(netdev);
++
++	dev_err(netdev-&gt;dev.parent, &quot;couldn't start device: %d\n&quot;, err);
++
++	return err;
++}
++
++static void unlink_all_urbs(struct esd_usb2 *dev)
++{
++	struct esd_usb2_net_priv *priv;
++	int i;
++
++	usb_kill_anchored_urbs(&amp;dev-&gt;rx_submitted);
++	for (i = 0; i &lt; dev-&gt;net_count; i++) {
++		priv = dev-&gt;nets[i];
++		if (priv) {
++			usb_kill_anchored_urbs(&amp;priv-&gt;tx_submitted);
++			atomic_set(&amp;priv-&gt;active_tx_jobs, 0);
++
++			for (i = 0; i &lt; MAX_TX_URBS; i++)
++				priv-&gt;tx_contexts[i].echo_index = MAX_TX_URBS;
++		}
++	}
++}
++
++static int esd_usb2_open(struct net_device *netdev)
++{
++	struct esd_usb2_net_priv *priv = netdev_priv(netdev);
++	int err;
++
++	/* common open */
++	err = open_candev(netdev);
++	if (err)
++		return err;
++
++	/* finally start device */
++	err = esd_usb2_start(priv);
++	if (err) {
++		dev_warn(netdev-&gt;dev.parent,
++			 &quot;couldn't start device: %d\n&quot;, err);
++		close_candev(netdev);
++		return err;
++	}
++
++	priv-&gt;open_time = jiffies;
++
++	netif_start_queue(netdev);
++
++	return 0;
++}
++
++static netdev_tx_t esd_usb2_start_xmit(struct sk_buff *skb,
++				      struct net_device *netdev)
++{
++	struct esd_usb2_net_priv *priv = netdev_priv(netdev);
++	struct esd_usb2 *dev = priv-&gt;usb2;
++	struct esd_tx_urb_context *context = NULL;
++	struct net_device_stats *stats = &amp;netdev-&gt;stats;
++	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
++	struct esd_usb2_msg *msg;
++	struct urb *urb;
++	u8 *buf;
++	int i, err;
++	int ret = NETDEV_TX_OK;
++	size_t size = sizeof(struct esd_usb2_msg);
++
++	if (can_dropped_invalid_skb(netdev, skb))
++		return NETDEV_TX_OK;
++
++	/* create a URB, and a buffer for it, and copy the data to the URB */
++	urb = usb_alloc_urb(0, GFP_ATOMIC);
++	if (!urb) {
++		dev_err(netdev-&gt;dev.parent, &quot;No memory left for URBs\n&quot;);
++		stats-&gt;tx_dropped++;
++		dev_kfree_skb(skb);
++		goto nourbmem;
++	}
++
++	buf = usb_buffer_alloc(dev-&gt;udev, size, GFP_ATOMIC, &amp;urb-&gt;transfer_dma);
++	if (!buf) {
++		dev_err(netdev-&gt;dev.parent, &quot;No memory left for USB buffer\n&quot;);
++		stats-&gt;tx_dropped++;
++		dev_kfree_skb(skb);
++		goto nobufmem;
++	}
++
++	msg = (struct esd_usb2_msg *)buf;
++
++	msg-&gt;msg.hdr.len = 3; /* minimal length */
++	msg-&gt;msg.hdr.cmd = CMD_CAN_TX;
++	msg-&gt;msg.tx.net = priv-&gt;index;
++	msg-&gt;msg.tx.dlc = cf-&gt;can_dlc;
++	msg-&gt;msg.tx.id = cpu_to_le32(cf-&gt;can_id &amp; CAN_ERR_MASK);
++
++	if (cf-&gt;can_id &amp; CAN_RTR_FLAG)
++		msg-&gt;msg.tx.dlc |= ESD_RTR;
++
++	if (cf-&gt;can_id &amp; CAN_EFF_FLAG)
++		msg-&gt;msg.tx.id |= cpu_to_le32(ESD_EXTID);
++
++	for (i = 0; i &lt; cf-&gt;can_dlc; i++)
++		msg-&gt;msg.tx.data[i] = cf-&gt;data[i];
++
++	msg-&gt;msg.hdr.len += (cf-&gt;can_dlc + 3) &gt;&gt; 2;
++
++	for (i = 0; i &lt; MAX_TX_URBS; i++) {
++		if (priv-&gt;tx_contexts[i].echo_index == MAX_TX_URBS) {
++			context = &amp;priv-&gt;tx_contexts[i];
++			break;
++		}
++	}
++
++	/*
++	 * This may never happen.
++	 */
++	if (!context) {
++		dev_warn(netdev-&gt;dev.parent, &quot;couldn't find free context\n&quot;);
++		ret = NETDEV_TX_BUSY;
++		goto releasebuf;
++	}
++
++	context-&gt;priv = priv;
++	context-&gt;echo_index = i;
++	context-&gt;dlc = cf-&gt;can_dlc;
++
++	/* hnd must not be 0 - MSB is stripped in txdone handling */
++	msg-&gt;msg.tx.hnd = 0x80000000 | i; /* returned in TX done message */
++
++	usb_fill_bulk_urb(urb, dev-&gt;udev, usb_sndbulkpipe(dev-&gt;udev, 2), buf,
++			  msg-&gt;msg.hdr.len &lt;&lt; 2,
++			  esd_usb2_write_bulk_callback, context);
++
++	urb-&gt;transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
++
++	usb_anchor_urb(urb, &amp;priv-&gt;tx_submitted);
++
++	can_put_echo_skb(skb, netdev, context-&gt;echo_index);
++
++	atomic_inc(&amp;priv-&gt;active_tx_jobs);
++
++	err = usb_submit_urb(urb, GFP_ATOMIC);
++	if (err) {
++		can_free_echo_skb(netdev, context-&gt;echo_index);
++
++		atomic_dec(&amp;priv-&gt;active_tx_jobs);
++		usb_unanchor_urb(urb);
++
++		stats-&gt;tx_dropped++;
++
++		if (err == -ENODEV)
++			netif_device_detach(netdev);
++		else
++			dev_warn(netdev-&gt;dev.parent, &quot;failed tx_urb %d\n&quot;, err);
++
++		goto releasebuf;
++	}
++
++	netdev-&gt;trans_start = jiffies;
++
++	/* Slow down tx path */
++	if (atomic_read(&amp;priv-&gt;active_tx_jobs) &gt;= MAX_TX_URBS)
++		netif_stop_queue(netdev);
++
++	/*
++	 * Release our reference to this URB, the USB core will eventually free
++	 * it entirely.
++	 */
++	usb_free_urb(urb);
++
++	return NETDEV_TX_OK;
++
++releasebuf:
++	usb_buffer_free(dev-&gt;udev, size, buf, urb-&gt;transfer_dma);
++
++nobufmem:
++	usb_free_urb(urb);
++
++nourbmem:
++	return ret;
++}
++
++static int esd_usb2_close(struct net_device *netdev)
++{
++	struct esd_usb2_net_priv *priv = netdev_priv(netdev);
++	struct esd_usb2_msg msg;
++	int i;
++
++	/* Disable all IDs (see esd_usb2_start()) */
++	msg.msg.hdr.cmd = CMD_IDADD;
++	msg.msg.hdr.len = 2 + ESD_MAX_ID_SEGMENT;
++	msg.msg.filter.net = priv-&gt;index;
++	msg.msg.filter.option = ESD_ID_ENABLE; /* start with segment 0 */
++	for (i = 0; i &lt;= ESD_MAX_ID_SEGMENT; i++)
++		msg.msg.filter.mask[i] = 0;
++	esd_usb2_send_msg(priv-&gt;usb2, &amp;msg);
++
++	/* set CAN controller to reset mode */
++	msg.msg.hdr.len = 2;
++	msg.msg.hdr.cmd = CMD_SETBAUD;
++	msg.msg.setbaud.net = priv-&gt;index;
++	msg.msg.setbaud.rsvd = 0;
++	msg.msg.setbaud.baud = cpu_to_le32(ESD_USB2_NO_BAUDRATE);
++	esd_usb2_send_msg(priv-&gt;usb2, &amp;msg);
++
++	priv-&gt;can.state = CAN_STATE_STOPPED;
++
++	netif_stop_queue(netdev);
++
++	close_candev(netdev);
++
++	priv-&gt;open_time = 0;
++
++	return 0;
++}
++
++static const struct net_device_ops esd_usb2_netdev_ops = {
++	.ndo_open = esd_usb2_open,
++	.ndo_stop = esd_usb2_close,
++	.ndo_start_xmit = esd_usb2_start_xmit,
++};
++
++static struct can_bittiming_const esd_usb2_bittiming_const = {
++	.name = &quot;esd_usb2&quot;,
++	.tseg1_min = ESD_USB2_TSEG1_MIN,
++	.tseg1_max = ESD_USB2_TSEG1_MAX,
++	.tseg2_min = ESD_USB2_TSEG2_MIN,
++	.tseg2_max = ESD_USB2_TSEG2_MAX,
++	.sjw_max = ESD_USB2_SJW_MAX,
++	.brp_min = ESD_USB2_BRP_MIN,
++	.brp_max = ESD_USB2_BRP_MAX,
++	.brp_inc = ESD_USB2_BRP_INC,
++};
++
++static int esd_usb2_set_bittiming(struct net_device *netdev)
++{
++	struct esd_usb2_net_priv *priv = netdev_priv(netdev);
++	struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
++	struct esd_usb2_msg msg;
++	u32 canbtr;
++
++	canbtr = ESD_USB2_UBR;
++	canbtr |= (bt-&gt;brp - 1) &amp; (ESD_USB2_BRP_MAX - 1);
++	canbtr |= ((bt-&gt;sjw - 1) &amp; (ESD_USB2_SJW_MAX - 1))
++		&lt;&lt; ESD_USB2_SJW_SHIFT;
++	canbtr |= ((bt-&gt;prop_seg + bt-&gt;phase_seg1 - 1)
++		   &amp; (ESD_USB2_TSEG1_MAX - 1))
++		&lt;&lt; ESD_USB2_TSEG1_SHIFT;
++	canbtr |= ((bt-&gt;phase_seg2 - 1) &amp; (ESD_USB2_TSEG2_MAX - 1))
++		&lt;&lt; ESD_USB2_TSEG2_SHIFT;
++	if (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES)
++		canbtr |= ESD_USB2_3_SAMPLES;
++
++	msg.msg.hdr.len = 2;
++	msg.msg.hdr.cmd = CMD_SETBAUD;
++	msg.msg.setbaud.net = priv-&gt;index;
++	msg.msg.setbaud.rsvd = 0;
++	msg.msg.setbaud.baud = cpu_to_le32(canbtr);
++
++	dev_info(netdev-&gt;dev.parent, &quot;setting BTR=%#x\n&quot;, canbtr);
++
++	return esd_usb2_send_msg(priv-&gt;usb2, &amp;msg);
++}
++
++static int esd_usb2_get_berr_counter(const struct net_device *netdev,
++				     struct can_berr_counter *bec)
++{
++	struct esd_usb2_net_priv *priv = netdev_priv(netdev);
++
++	bec-&gt;txerr = priv-&gt;bec.txerr;
++	bec-&gt;rxerr = priv-&gt;bec.rxerr;
++
++	return 0;
++}
++
++static int esd_usb2_set_mode(struct net_device *netdev, enum can_mode mode)
++{
++	struct esd_usb2_net_priv *priv = netdev_priv(netdev);
++
++	if (!priv-&gt;open_time)
++		return -EINVAL;
++
++	switch (mode) {
++	case CAN_MODE_START:
++		netif_wake_queue(netdev);
++		break;
++
++	default:
++		return -EOPNOTSUPP;
++	}
++
++	return 0;
++}
++
++static int esd_usb2_probe_one_net(struct usb_interface *intf, int index)
++{
++	struct esd_usb2 *dev = usb_get_intfdata(intf);
++	struct net_device *netdev;
++	struct esd_usb2_net_priv *priv;
++	int err;
++	int i;
++
++	netdev = alloc_candev(sizeof(*priv), MAX_TX_URBS);
++	if (!netdev) {
++		dev_err(&amp;intf-&gt;dev, &quot;couldn't alloc candev\n&quot;);
++		return -ENOMEM;
++	}
++
++	priv = netdev_priv(netdev);
++
++	init_usb_anchor(&amp;priv-&gt;tx_submitted);
++	atomic_set(&amp;priv-&gt;active_tx_jobs, 0);
++
++	for (i = 0; i &lt; MAX_TX_URBS; i++)
++		priv-&gt;tx_contexts[i].echo_index = MAX_TX_URBS;
++
++	priv-&gt;usb2 = dev;
++	priv-&gt;netdev = netdev;
++	priv-&gt;index = index;
++
++	priv-&gt;can.state = CAN_STATE_STOPPED;
++	priv-&gt;can.clock.freq = ESD_USB2_CAN_CLOCK;
++	priv-&gt;can.bittiming_const = &amp;esd_usb2_bittiming_const;
++	priv-&gt;can.do_set_bittiming = esd_usb2_set_bittiming;
++	priv-&gt;can.do_set_mode = esd_usb2_set_mode;
++	priv-&gt;can.do_get_berr_counter = esd_usb2_get_berr_counter;
++	priv-&gt;can.ctrlmode_supported = CAN_CTRLMODE_3_SAMPLES |
++		CAN_CTRLMODE_BERR_REPORTING;
++
++	netdev-&gt;flags |= IFF_ECHO; /* we support local echo */
++
++	netdev-&gt;netdev_ops = &amp;esd_usb2_netdev_ops;
++
++	SET_NETDEV_DEV(netdev, &amp;intf-&gt;dev);
++
++	err = register_candev(netdev);
++	if (err) {
++		dev_err(&amp;intf-&gt;dev,
++			&quot;couldn't register CAN device: %d\n&quot;, err);
++		free_candev(netdev);
++		return -ENOMEM;
++	}
++
++	dev-&gt;nets[index] = priv;
++	dev_info(netdev-&gt;dev.parent, &quot;device %s registered\n&quot;, netdev-&gt;name);
++	return 0;
++}
++
++/*
++ * probe function for new USB2 devices
++ *
++ * check version information and number of available
++ * CAN interfaces
++ */
++static int esd_usb2_probe(struct usb_interface *intf,
++			 const struct usb_device_id *id)
++{
++	struct esd_usb2 *dev;
++	struct esd_usb2_msg msg;
++	int i, err = -ENOMEM;
++
++	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
++	if (!dev)
++		return -ENOMEM;
++
++	dev-&gt;udev = interface_to_usbdev(intf);
++
++	init_usb_anchor(&amp;dev-&gt;rx_submitted);
++
++	usb_set_intfdata(intf, dev);
++
++	/* query number of CAN interfaces (nets) */
++	msg.msg.hdr.cmd = CMD_VERSION;
++	msg.msg.hdr.len = 2;
++	msg.msg.version.rsvd = 0;
++	msg.msg.version.flags = 0;
++	msg.msg.version.drv_version = 0;
++
++	if (esd_usb2_send_msg(dev, &amp;msg) &lt; 0) {
++		dev_err(&amp;intf-&gt;dev, &quot;sending version message failed\n&quot;);
++		goto free_dev;
++	}
++
++	if (esd_usb2_wait_msg(dev, &amp;msg) &lt; 0) {
++		dev_err(&amp;intf-&gt;dev, &quot;no version message answer\n&quot;);
++		goto free_dev;
++	}
++
++	dev-&gt;net_count = (int)msg.msg.version_reply.nets;
++	dev-&gt;version = le32_to_cpu(msg.msg.version_reply.version);
++
++#ifdef CONFIG_SYSFS
++	if (device_create_file(&amp;intf-&gt;dev, &amp;dev_attr_firmware))
++		dev_err(&amp;intf-&gt;dev,
++			&quot;Couldn't create device file for firmware\n&quot;);
++
++	if (device_create_file(&amp;intf-&gt;dev, &amp;dev_attr_hardware))
++		dev_err(&amp;intf-&gt;dev,
++			&quot;Couldn't create device file for hardware\n&quot;);
++
++	if (device_create_file(&amp;intf-&gt;dev, &amp;dev_attr_nets))
++		dev_err(&amp;intf-&gt;dev,
++			&quot;Couldn't create device file for nets\n&quot;);
++#endif
++
++	/* do per device probing */
++	for (i = 0; i &lt; dev-&gt;net_count; i++)
++		esd_usb2_probe_one_net(intf, i);
++
++	return 0;
++
++free_dev:
++	kfree(dev);
++	return err;
++}
++
++/*
++ * called by the usb core when the device is removed from the system
++ */
++static void esd_usb2_disconnect(struct usb_interface *intf)
++{
++	struct esd_usb2 *dev = usb_get_intfdata(intf);
++	struct net_device *netdev;
++	int i;
++
++#ifdef CONFIG_SYSFS
++	device_remove_file(&amp;intf-&gt;dev, &amp;dev_attr_firmware);
++	device_remove_file(&amp;intf-&gt;dev, &amp;dev_attr_hardware);
++	device_remove_file(&amp;intf-&gt;dev, &amp;dev_attr_nets);
++#endif
++	usb_set_intfdata(intf, NULL);
++
++	if (dev) {
++		for (i = 0; i &lt; dev-&gt;net_count; i++) {
++			if (dev-&gt;nets[i]) {
++				netdev = dev-&gt;nets[i]-&gt;netdev;
++				unregister_netdev(netdev);
++				free_candev(netdev);
++			}
++		}
++		unlink_all_urbs(dev);
++	}
++}
++
++/* usb specific object needed to register this driver with the usb subsystem */
++static struct usb_driver esd_usb2_driver = {
++	.name = &quot;esd_usb2&quot;,
++	.probe = esd_usb2_probe,
++	.disconnect = esd_usb2_disconnect,
++	.id_table = esd_usb2_table,
++};
++
++static int __init esd_usb2_init(void)
++{
++	int err;
++
++	/* register this driver with the USB subsystem */
++	err = usb_register(&amp;esd_usb2_driver);
++
++	if (err) {
++		err(&quot;usb_register failed. Error number %d\n&quot;, err);
++		return err;
++	}
++
++	return 0;
++}
++module_init(esd_usb2_init);
++
++static void __exit esd_usb2_exit(void)
++{
++	/* deregister this driver with the USB subsystem */
++	usb_deregister(&amp;esd_usb2_driver);
++}
++module_exit(esd_usb2_exit);
+-- 
+1.5.6.3
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004331.html">Hello, I am working on converting mcp251x to async spi interface 	and have some problems
+</A></li>
+	<LI>Next message: <A HREF="004325.html">[PATCH v2] can: Add driver for esd CAN-USB/2 device
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4324">[ date ]</a>
+              <a href="thread.html#4324">[ thread ]</a>
+              <a href="subject.html#4324">[ subject ]</a>
+              <a href="author.html#4324">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

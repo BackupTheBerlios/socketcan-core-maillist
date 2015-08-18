@@ -1,0 +1,245 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> struct can_addr extensions
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20can_addr%20extensions&In-Reply-To=%3C20100210101450.GD285%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003992.html">
+   <LINK REL="Next"  HREF="004027.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>struct can_addr extensions</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20can_addr%20extensions&In-Reply-To=%3C20100210101450.GD285%40e-circ.dyndns.org%3E"
+       TITLE="struct can_addr extensions">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed Feb 10 11:14:50 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003992.html">struct can_addr extensions
+</A></li>
+        <LI>Next message: <A HREF="004027.html">struct can_addr extensions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3999">[ date ]</a>
+              <a href="thread.html#3999">[ thread ]</a>
+              <a href="subject.html#3999">[ subject ]</a>
+              <a href="author.html#3999">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tue, Feb 09, 2010 at 06:03:30PM +0100, Oliver Hartkopp wrote:
+&gt;<i> Kurt Van Dijck wrote:
+</I>&gt;<i> &gt; On Tue, Feb 09, 2010 at 10:33:05AM +0100, Wolfgang Grandegger wrote:
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> &gt;&gt; Anyhow, there is no
+</I>&gt;<i> &gt;&gt; user of this code. Why should we add it?
+</I>&gt;<i> 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; The newly introduce 'code' does not add features, nor does it add
+</I>&gt;<i> &gt; 'functions', but it add 'flexibility'.
+</I>&gt;<i> 
+</I>[...]
+&gt;<i> Hi Kurt,
+</I>&gt;<i> 
+</I>&gt;<i> if it's ok for you, i would like to move the discussion to your intended
+</I>&gt;<i> extensions ...
+</I>* first things first: the patch is white-space mangled too. sorry for
+  that. I attached a better one below.
+* The proposed patch is seperate from any protocol extension. It's about
+  binary compatibility.
+  To visualize my problem, I included my current version of
+  sockaddr_can below. Note that when you would extend sockaddr_can in this or
+  any other way, you'll want the patch in order to not recompile every
+  userspace binary.
+* Since I'm not the only contributor, I'm not in a position to force
+  such things, now or later :-). If the discussion is moved, I'll have
+  to accept that.
+
+&gt;<i> 
+</I>&gt;<i> AFAIK in J1939 you have broadcast announce messages (BAM) that send on two
+</I>&gt;<i> different CAN identifiers in one direction. This could be handled within the
+</I>&gt;<i> union.
+</I>In fact, there's a lot more.
+J1939 introduces a network addressing (both source &amp; destination).
+And this addressing tables (comparable to arp tables I think) should be
+kept in kernel.
+The CAN id's are then seperated into SRC &amp; DST fields, and a PGN
+(iso11783 naming). SRC &amp; DST is comparable to IP, in the way that is a
+mapped address from an 'ISONAME' (iso11783 naming). The PGN is roughly
+to be compared with a TCP port number, but again, roughly.
+
+So, J1939 much better matches the kernel-to-userspace API sendto,
+   recvfrom, .... using all a 'struct sockaddr_xxx' derivate.
+I could use a seperate struct, but don't think that's an elegant
+solution.
+
+The transport protocol indeed used 2 'PGN's, but they are fixed. the
+transport protocol must thus be serialized, but that's a different
+thing.
+
+&gt;<i> 
+</I>&gt;<i> What are your proposed new structure elements for a J1939 socketcan address?
+</I>struct sockaddr_can {
+	sa_family_t can_family;
+	int         can_ifindex;
+	union {
+		/* transport protocol class address information (e.g. ISOTP) */
+		struct { canid_t rx_id, tx_id; } tp;
+
+		/* J1939 address information */
+		struct {
+			/*
+			 * any of these parameters that are used in connect()
+			 * can be overruled by using sendto()
+			 */
+			/* name: bind() sets source, connect sets dest */
+			uint64_t name; /* bind != connect */
+			/* pgn &amp; priority: can be set by bind &amp; connect */
+			uint32_t pgn;
+			uint8_t priority;
+			/*
+			 * 'sa' is used in bind() &amp; sendto(),
+			 * 'da' is used in connect() &amp; sendto()
+			 */
+			uint8_t sa; /* the originator address */
+			uint8_t da; /* the destination address */
+		} j1939;
+
+		/* reserved for future CAN protocols address information */
+	} can_addr;
+};
+
+this is my current working version.
+
+Now, this is a preliminary thing, and only for j1939/iso11783.
+
+&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>Regards,
+Kurt
+&gt;<i> 
+</I>---
+This patch solves a problem that 'regular' socket types
+do require the full struct sockaddr_can be present, while using only the
+first few fields.
+
+It does so by not testing on sizeof() but using a newly introduced macro
+'partial_struct_size', which returns the size of the struct up to the
+requested struct member.
+When socketcan is compiled with bigger struct sockaddr_can, It will not
+pose any problems with userspace binaries that got compiled with older
+revisions of struct sockaddr_can.
+Please not that the 'partial_struct_size' macro can only work when the
+struct in only added to, not modified, which is the case here.
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+---
+
+Index: include/socketcan/can/core.h
+===================================================================
+--- include/socketcan/can/core.h	(revision 1124)
++++ include/socketcan/can/core.h	(working copy)
+@@ -52,6 +52,15 @@
+ #endif
+ };
+ 
++
++/*
++ * partial_struct_size
++ * macro to find the size of a struct up to a requested member (inclusive)
++ */
++#define partial_struct_size(member, type) \
++	(offsetof(typeof(type), member) + \
++	 sizeof(((typeof(type) *)(0))-&gt;member))
++
+ /* function prototypes for the CAN networklayer core (af_can.c) */
+ 
+ extern int  can_proto_register(struct can_proto *cp);
+Index: net/can/isotp.c
+===================================================================
+--- net/can/isotp.c	(revision 1124)
++++ net/can/isotp.c	(working copy)
+@@ -826,7 +826,7 @@
+ 	int err = 0;
+ 	int notify_enetdown = 0;
+ 
+-	if (len &lt; sizeof(*addr))
++	if (len &lt; partial_struct_size(can_addr.tp, *addr))
+ 		return -EINVAL;
+ 
+ 	if (addr-&gt;can_addr.tp.rx_id == addr-&gt;can_addr.tp.tx_id)
+Index: net/can/bcm.c
+===================================================================
+--- net/can/bcm.c	(revision 1124)
++++ net/can/bcm.c	(working copy)
+@@ -1610,6 +1610,9 @@
+ 	if (bo-&gt;bound)
+ 		return -EISCONN;
+ 
++	if (len &lt; partial_struct_size(can_ifindex, *addr))
++		return -EINVAL;
++
+ 	/* bind a device to this socket */
+ 	if (addr-&gt;can_ifindex) {
+ 		struct net_device *dev;
+Index: net/can/raw.c
+===================================================================
+--- net/can/raw.c	(revision 1124)
++++ net/can/raw.c	(working copy)
+@@ -354,7 +354,7 @@
+ 	int err = 0;
+ 	int notify_enetdown = 0;
+ 
+-	if (len &lt; sizeof(*addr))
++	if (len &lt; partial_struct_size(can_ifindex, *addr))
+ 		return -EINVAL;
+ 
+ 	lock_sock(sk);
+Index: net/can/bcm-prior-2-6-22.c
+===================================================================
+--- net/can/bcm-prior-2-6-22.c	(revision 1124)
++++ net/can/bcm-prior-2-6-22.c	(working copy)
+@@ -1475,6 +1475,9 @@
+ 	if (bo-&gt;bound)
+ 		return -EISCONN;
+ 
++	if (len &lt; partial_struct_size(can_ifindex, *addr))
++		return -EINVAL;
++
+ 	/* bind a device to this socket */
+ 	if (addr-&gt;can_ifindex) {
+ 		struct net_device *dev;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003992.html">struct can_addr extensions
+</A></li>
+	<LI>Next message: <A HREF="004027.html">struct can_addr extensions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3999">[ date ]</a>
+              <a href="thread.html#3999">[ thread ]</a>
+              <a href="subject.html#3999">[ subject ]</a>
+              <a href="author.html#3999">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,211 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC Loopback implementation
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%20Loopback%20implementation&In-Reply-To=%3C45367DF4.5050002%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000366.html">
+   <LINK REL="Next"  HREF="000368.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC Loopback implementation</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%20Loopback%20implementation&In-Reply-To=%3C45367DF4.5050002%40grandegger.com%3E"
+       TITLE="RFC Loopback implementation">wg at grandegger.com
+       </A><BR>
+    <I>Wed Oct 18 21:18:12 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000366.html">RFC Loopback implementation
+</A></li>
+        <LI>Next message: <A HREF="000368.html">RFC Loopback implementation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#367">[ date ]</a>
+              <a href="thread.html#367">[ thread ]</a>
+              <a href="subject.html#367">[ subject ]</a>
+              <a href="author.html#367">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver Hartkopp wrote:
+&gt;<i> Jan Kiszka wrote:
+</I>&gt;&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;<i>   
+</I>&gt;&gt;&gt;<i> Hi my special friends from the last &quot;Looping back TX messages&quot; 
+</I>&gt;&gt;&gt;<i> discussion. O:-)
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Last tuesday (the 26th) i was in the University of Magdeburg in a tiny 
+</I>&gt;&gt;&gt;<i> workshop and presented the LLCF/socket-can idea and the concepts behind. 
+</I>&gt;&gt;&gt;<i> The looping back of TX messages was in agreement to have multiple 
+</I>&gt;&gt;&gt;<i> user-applications that can work under identical independent conditions.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> But there have been comprehensible concerns about the current 
+</I>&gt;&gt;&gt;<i> implementation that is performing the loopback at the same time, when 
+</I>&gt;&gt;&gt;<i> the socket-buffer is enqueued into the netdevice TX-queue. This may 
+</I>&gt;&gt;&gt;<i> conflict with the following case:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> - TX-application is sending CAN-frame with ID 0x777
+</I>&gt;&gt;&gt;<i> - CAN-frame 0x777 is enqueued to netdevice and looped back
+</I>&gt;&gt;&gt;<i> - a CAN-frame with ID 0x111 is put on the bus by another ECU
+</I>&gt;&gt;&gt;<i> - the sending of ID 0x777 is delayed due to ID 0x111 on the bus
+</I>&gt;&gt;&gt;<i> - CAN-frame 0x111 is received and routed to RX-application
+</I>&gt;&gt;&gt;<i> - CAN-frame 0x777 is finally sent to the bus
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> The problem is that the RX-application receives the sequence of 
+</I>&gt;&gt;&gt;<i> CAN-frames 0x777 and 0x111 /BUT/ on the real bus the order was 0x111 and 
+</I>&gt;&gt;&gt;<i> 0x777, due to the CSMA/CA principle implemented in the CAN-controller. 
+</I>&gt;&gt;&gt;<i> This leads to the problem that a RX-application (like 'candump') would 
+</I>&gt;&gt;&gt;<i> receive CAN-frames in a wrong order which is definitely a bad behaviour. :-(
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i> Yes, this issue is known. Looping back after TX is actually more
+</I>&gt;&gt;<i> appropriate, also to reflect errors on the bus.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   
+</I>&gt;&gt;&gt;<i> For that reason i would propose to loopback the sent CAN-frame inside 
+</I>&gt;&gt;&gt;<i> the CAN-netdevice driver:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> static int can_start_xmit(struct sk_buff *skb, struct net_device *dev)
+</I>&gt;&gt;&gt;<i> {
+</I>&gt;&gt;&gt;<i> 	(..) 
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> 	netif_stop_queue(dev);
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> 	//NEW: save skb pointer here
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> 	(..)
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> 	//NEW: no dev_kfree_skb(skb) here
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> static irqreturn_t can_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+</I>&gt;&gt;&gt;<i> {
+</I>&gt;&gt;&gt;<i> 	struct net_device *dev = (struct net_device*)dev_id;
+</I>&gt;&gt;&gt;<i> 	struct can_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> 	(..)
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> 		if (isrc &amp; IRQ_TI) {
+</I>&gt;&gt;&gt;<i> 			/* transmission complete interrupt */
+</I>&gt;&gt;&gt;<i> 			priv-&gt;stats.tx_packets++;
+</I>&gt;&gt;&gt;<i> 			//NEW: netif_rx(my_saved_skb);
+</I>&gt;&gt;&gt;<i> 			netif_wake_queue(dev);
+</I>&gt;&gt;&gt;<i> 		}
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> 	(..)
+</I>&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> This would have the following disadvantages:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> D1. This &quot;CAN-behaviour&quot; has to be implemented in every CAN netdevice driver
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> D2. The can_device struct would need a new element (pointer to tx_skb)
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> D3. In error cases - that would lead to an error handling with forced 
+</I>&gt;&gt;&gt;<i> netif_wake_queue(dev) - the tx_skb has additionally to be removed with 
+</I>&gt;&gt;&gt;<i> dev_kfree_skb(my_saved_skb).
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> D4. In some 'mailbox-designed' CAN controllers there has probably(??) to 
+</I>&gt;&gt;&gt;<i> be done something more to loopback the correct tx_skb's on dedicated 
+</I>&gt;&gt;&gt;<i> tx-complete-irqs.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> This - for some controllers probably increased complexity - was my major 
+</I>&gt;&gt;&gt;<i> concern, why we implemented the loopback into the CAN-core in one single 
+</I>&gt;&gt;&gt;<i> place in the can_send()-function (see af_can.c) ...
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> But the advantages for the proposed realization would be:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> A1. It is the correct(!) and expected behaviour.
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i> Ack. When loopback is desired for a set of applications, then this is
+</I>&gt;&gt;<i> the way it should be provided by a CAN stack. Actually, I have been told
+</I>&gt;&gt;<i> that there are (proprietary) drivers/stacks out there capable of doing
+</I>&gt;&gt;<i> it this way already.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   
+</I>&gt;&gt;&gt;<i> A2. The clone_skb() in can_send() would become obsolete. (less checks, 
+</I>&gt;&gt;&gt;<i> more performance, execution time prediction for the CAN-core)
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> A3. The netif_rx() in can_send() would become obsolete. (it is worth a 
+</I>&gt;&gt;&gt;<i> discussion, if the usage of netif_rx() in this layer is 'good style' and 
+</I>&gt;&gt;&gt;<i> comprehensible for all kernel maintainers)
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> A3. The timestamps of  the looped CAN-frames are correct.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> A4. In most cases this proposed implementation is not really a 
+</I>&gt;&gt;&gt;<i> significant effort to implement.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> The proposed implementation would probably also bring the socket-can and 
+</I>&gt;&gt;&gt;<i> RT-socket-can concepts/implementations closer together.
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i> Wolfgang and I discussed this earlier. But we first wanted to evaluate
+</I>&gt;&gt;<i> what the new, likely additional costs for the RT stack are (recall: /wrt
+</I>&gt;&gt;<i> WCET ;) ) before rushing forward with any new discussion on the API.
+</I>&gt;&gt;<i>   
+</I>&gt;<i> 
+</I>&gt;<i> Hi all,
+</I>&gt;<i> 
+</I>&gt;<i> we (Urs, Marc, Sascha, Robert and me) had a face-to-face discussion 
+</I>&gt;<i> about the ongoing work today. Regarding the loopback of TX-messages 
+</I>&gt;<i> there had been again the known concerns, that netdevices usually send 
+</I>&gt;<i> and receive packets - and nothing more. The current loopback behaviour 
+</I>&gt;<i> is similar sloppy in message ordering than e.g. what you can see with 
+</I>&gt;<i> 'tcpdump' using the PACKET-socket. Focussing hardware-TX-FIFOs in the 
+</I>&gt;<i> CAN-controller the implementation may become very complex or the FIFOs 
+</I>&gt;<i> have to be disabled to have the wanted correct loopback.
+</I>&gt;<i> 
+</I>&gt;<i> But as it is of vital importance for some applications and users to have 
+</I>&gt;<i> correct timestamps and message orders i had the following (agreed) idea:
+</I>&gt;<i> 
+</I>&gt;<i> The can_send() function in af_can.c checks, if the netdevice has 
+</I>&gt;<i> ARPHDR_CAN (and is therefore a CAN-device). If so can_send() checks if 
+</I>&gt;<i> this CAN-device itself provides a loopback-functionality or not.
+</I>&gt;<i> 
+</I>&gt;<i> That means: If the CAN-device supports loopback itself, it is used to 
+</I>&gt;<i> have a 'high quality' loopback with correct timestamp and order (the 
+</I>&gt;<i> default case). If the CAN-device does not support loopback (or if it is 
+</I>&gt;<i> no CAN-device but e.g. an ethernet device) the loopback is performed by 
+</I>&gt;<i> the CAN-core (the fallback case).
+</I>
+Do you mean the hardware loopback of the controller? Good idea, indeed. 
+I just checked with MSCAN. In loopback mode nothing goes out to the CAN 
+bus (because it's an internal loopback). Unfortunately, there is no 
+&quot;self-reception request&quot; like on the SJA1000 :-(. Nevertheless, I fully 
+support this proposal as it saves code.
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000366.html">RFC Loopback implementation
+</A></li>
+	<LI>Next message: <A HREF="000368.html">RFC Loopback implementation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#367">[ date ]</a>
+              <a href="thread.html#367">[ thread ]</a>
+              <a href="subject.html#367">[ subject ]</a>
+              <a href="author.html#367">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

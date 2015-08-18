@@ -1,0 +1,139 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC] &quot;write: No buffer space available&quot; problem
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20%22write%3A%20No%20buffer%20space%20available%22%20problem&In-Reply-To=%3C470E10B4.8010406%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000752.html">
+   <LINK REL="Next"  HREF="000764.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC] &quot;write: No buffer space available&quot; problem</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20%22write%3A%20No%20buffer%20space%20available%22%20problem&In-Reply-To=%3C470E10B4.8010406%40grandegger.com%3E"
+       TITLE="[RFC] &quot;write: No buffer space available&quot; problem">wg at grandegger.com
+       </A><BR>
+    <I>Thu Oct 11 14:01:56 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000752.html">[RFC] &quot;write: No buffer space available&quot; problem
+</A></li>
+        <LI>Next message: <A HREF="000764.html">[RFC] &quot;write: No buffer space available&quot; problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#755">[ date ]</a>
+              <a href="thread.html#755">[ thread ]</a>
+              <a href="subject.html#755">[ subject ]</a>
+              <a href="author.html#755">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Marc Kleine-Budde wrote:
+&gt;<i> Hi!
+</I>&gt;<i> 
+</I>&gt;<i> I've just ported some test programs to Berlios Socketcan, one program is 
+</I>&gt;<i> can_sequence.
+</I>&gt;<i> 
+</I>&gt;<i> It opens a PF_CAN socket and sends packets (with increasing packet 
+</I>&gt;<i> numbers inside) as fast as it can. After a few seconds a write fails 
+</I>&gt;<i> with an errno of ENOBUFS &quot;No buffer space available&quot;. What the userspace 
+</I>&gt;<i> does is to generate packages faster than they could be delivered.
+</I>&gt;<i> 
+</I>&gt;<i> We at pengutronix think this is an inappropriate behaviour. From 
+</I>&gt;<i> connection orriented protocols (yes I know, CAN is different) like 
+</I>&gt;<i> TCP/IP I get an EWOULDBLOCK/EAGAIN if the sender runs out of buffers or 
+</I>&gt;<i> it comes to congestions in the &quot;connection&quot;.
+</I>&gt;<i> 
+</I>&gt;<i> I would appreciate that CAN behaves in a similar manner. A propper 
+</I>&gt;<i> solution would also include the possibility to select/poll on a 
+</I>&gt;<i> &quot;congested&quot; socket till it is free again.
+</I>&gt;<i> 
+</I>&gt;<i> I've looked through the code a bit and AFAICS the ENOBUFS comes from here:
+</I>&gt;<i> 
+</I>&gt;<i> a) net/can/raw.c:raw_sendmsg()
+</I>&gt;<i>     allocs a skb with skb_alloc() and calls finally can_send()
+</I>&gt;<i> 
+</I>&gt;<i> b) net/can/af_can.c:can_send()
+</I>&gt;<i>     calls dev_queue_xmit()
+</I>&gt;<i> 
+</I>&gt;<i> c) net/core/dev.c:dev_queue_xmit()
+</I>&gt;<i>     tries to add skb to the device's queue
+</I>&gt;<i>     returns a &quot;NET_XMIT_DROP&quot; when the txqueue of the device is full
+</I>&gt;<i>     (the skb is really lost in that case)
+</I>&gt;<i> 
+</I>&gt;<i> d) net/can/af_can.c:can_send()
+</I>&gt;<i>     converts NET_XMIT_DROP to -ENOBUFS
+</I>&gt;<i> 
+</I>&gt;<i> e) -ENOBUFS is finally returned into userspace
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> In order to work around this problem we have added rather hackish patch 
+</I>&gt;<i> to our BSP. It consists of two parts:
+</I>&gt;<i> 
+</I>&gt;<i> 1) In the write/sendmsg codepath: net/can/raw.c:raw_sendmsg(), replace
+</I>&gt;<i>     the allocation of the skb &quot;alloc_skb()&quot; with &quot;sock_alloc_send_skb()&quot;
+</I>&gt;<i>     (see attached patch)
+</I>&gt;<i> 
+</I>&gt;<i> 2) set the txqueuelen of a can device to 10000
+</I>&gt;<i>     (via ifconfig during runtime)
+</I>&gt;<i> 
+</I>&gt;<i> This brings the following changes:
+</I>&gt;<i> - The skb's memory comes from the socket
+</I>&gt;<i> - The sockets memory buffer will run empty if the packets can't be
+</I>&gt;<i>    transmitted and thus freed
+</I>&gt;<i> - sock_alloc_send_skb() will block in this case
+</I>&gt;<i>    (maybe even return EGAIN/EWOULDBLOCK in case of a nonblocking socket,
+</I>&gt;<i>     but I havn't tested that)
+</I>&gt;<i> - last but not least, if only one socket is involed, the sockets memory
+</I>&gt;<i>    pool runs out _before_ the txqueue of then device runs over
+</I>&gt;<i>    But you have a per socket memory pool, which means that the more
+</I>&gt;<i>    sockets you have, the more skb have to be queued before the memory is
+</I>&gt;<i>    out. So we can calculate when then txqueuelen of 10000 isn't long
+</I>&gt;<i>    enough.
+</I>&gt;<i> 
+</I>&gt;<i> As I said before, this is rather hackish. I prefer a clean solution.
+</I>&gt;<i> Waiting for you comments.
+</I>&gt;<i> 
+</I>&gt;<i> Please don't say: &quot;CAN is an unreliable protocol anyway, so it doesn't 
+</I>&gt;<i> matter if the packages are dropped in the kernel.&quot;
+</I>&gt;<i> 
+</I>&gt;<i> How does rtcan handle this problem?
+</I>
+RT-Socket-CAN does not queue outgoing messages. In non-bocking mode it 
+returns EAGAIN:
+
+<A HREF="http://www.rts.uni-hannover.de/xenomai/lxr/source/ksrc/drivers/can/rtcan_raw.c#941">http://www.rts.uni-hannover.de/xenomai/lxr/source/ksrc/drivers/can/rtcan_raw.c#941</A>
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000752.html">[RFC] &quot;write: No buffer space available&quot; problem
+</A></li>
+	<LI>Next message: <A HREF="000764.html">[RFC] &quot;write: No buffer space available&quot; problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#755">[ date ]</a>
+              <a href="thread.html#755">[ thread ]</a>
+              <a href="subject.html#755">[ subject ]</a>
+              <a href="author.html#755">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

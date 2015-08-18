@@ -1,0 +1,137 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC] &quot;write: No buffer space available&quot; problem
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20%22write%3A%20No%20buffer%20space%20available%22%20problem&In-Reply-To=%3C470E05EC.7040300%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000763.html">
+   <LINK REL="Next"  HREF="000752.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC] &quot;write: No buffer space available&quot; problem</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20%22write%3A%20No%20buffer%20space%20available%22%20problem&In-Reply-To=%3C470E05EC.7040300%40pengutronix.de%3E"
+       TITLE="[RFC] &quot;write: No buffer space available&quot; problem">mkl at pengutronix.de
+       </A><BR>
+    <I>Thu Oct 11 13:15:56 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000763.html">protocol 000c is buggy
+</A></li>
+        <LI>Next message: <A HREF="000752.html">[RFC] &quot;write: No buffer space available&quot; problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#751">[ date ]</a>
+              <a href="thread.html#751">[ thread ]</a>
+              <a href="subject.html#751">[ subject ]</a>
+              <a href="author.html#751">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi!
+
+I've just ported some test programs to Berlios Socketcan, one program is 
+can_sequence.
+
+It opens a PF_CAN socket and sends packets (with increasing packet 
+numbers inside) as fast as it can. After a few seconds a write fails 
+with an errno of ENOBUFS &quot;No buffer space available&quot;. What the userspace 
+does is to generate packages faster than they could be delivered.
+
+We at pengutronix think this is an inappropriate behaviour. From 
+connection orriented protocols (yes I know, CAN is different) like 
+TCP/IP I get an EWOULDBLOCK/EAGAIN if the sender runs out of buffers or 
+it comes to congestions in the &quot;connection&quot;.
+
+I would appreciate that CAN behaves in a similar manner. A propper 
+solution would also include the possibility to select/poll on a 
+&quot;congested&quot; socket till it is free again.
+
+I've looked through the code a bit and AFAICS the ENOBUFS comes from here:
+
+a) net/can/raw.c:raw_sendmsg()
+    allocs a skb with skb_alloc() and calls finally can_send()
+
+b) net/can/af_can.c:can_send()
+    calls dev_queue_xmit()
+
+c) net/core/dev.c:dev_queue_xmit()
+    tries to add skb to the device's queue
+    returns a &quot;NET_XMIT_DROP&quot; when the txqueue of the device is full
+    (the skb is really lost in that case)
+
+d) net/can/af_can.c:can_send()
+    converts NET_XMIT_DROP to -ENOBUFS
+
+e) -ENOBUFS is finally returned into userspace
+
+
+In order to work around this problem we have added rather hackish patch 
+to our BSP. It consists of two parts:
+
+1) In the write/sendmsg codepath: net/can/raw.c:raw_sendmsg(), replace
+    the allocation of the skb &quot;alloc_skb()&quot; with &quot;sock_alloc_send_skb()&quot;
+    (see attached patch)
+
+2) set the txqueuelen of a can device to 10000
+    (via ifconfig during runtime)
+
+This brings the following changes:
+- The skb's memory comes from the socket
+- The sockets memory buffer will run empty if the packets can't be
+   transmitted and thus freed
+- sock_alloc_send_skb() will block in this case
+   (maybe even return EGAIN/EWOULDBLOCK in case of a nonblocking socket,
+    but I havn't tested that)
+- last but not least, if only one socket is involed, the sockets memory
+   pool runs out _before_ the txqueue of then device runs over
+   But you have a per socket memory pool, which means that the more
+   sockets you have, the more skb have to be queued before the memory is
+   out. So we can calculate when then txqueuelen of 10000 isn't long
+   enough.
+
+As I said before, this is rather hackish. I prefer a clean solution.
+Waiting for you comments.
+
+Please don't say: &quot;CAN is an unreliable protocol anyway, so it doesn't 
+matter if the packages are dropped in the kernel.&quot;
+
+How does rtcan handle this problem?
+
+regards - Marc
+
+-- 
+  Marc Kleine-Budde              Phone: +49-231-2826-924
+  Pengutronix - Linux Solutions for Science and Industry
+  Vertretung West/Dortmund     <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000763.html">protocol 000c is buggy
+</A></li>
+	<LI>Next message: <A HREF="000752.html">[RFC] &quot;write: No buffer space available&quot; problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#751">[ date ]</a>
+              <a href="thread.html#751">[ thread ]</a>
+              <a href="subject.html#751">[ subject ]</a>
+              <a href="author.html#751">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

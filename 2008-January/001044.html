@@ -1,0 +1,229 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Summary of the new device interface implementation
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Summary%20of%20the%20new%20device%20interface%20implementation&In-Reply-To=%3C479E1788.8080203%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001039.html">
+   <LINK REL="Next"  HREF="001045.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Summary of the new device interface implementation</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Summary%20of%20the%20new%20device%20interface%20implementation&In-Reply-To=%3C479E1788.8080203%40grandegger.com%3E"
+       TITLE="Summary of the new device interface implementation">wg at grandegger.com
+       </A><BR>
+    <I>Mon Jan 28 18:57:28 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001039.html">[PATCH 9/9] More fixes for the SJA1000 driver
+</A></li>
+        <LI>Next message: <A HREF="001045.html">Summary of the new device interface implementation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1044">[ date ]</a>
+              <a href="thread.html#1044">[ thread ]</a>
+              <a href="subject.html#1044">[ subject ]</a>
+              <a href="author.html#1044">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+here is a brief summary of my on-going effort to implement the new CAN
+device interface and the reference driver for the SJA1000. So far, I
+have applied the following improvements and new features to the
+Socket-CAN branch &quot;cannetdriver26&quot;:
+
+o Code clean-up and name changes
+
+  - Lindent and manual beautification on various files.
+  - Name change &quot;baudrate&quot; -&gt; &quot;bitrate&quot;
+  - Name change &quot;bit_time&quot; -&gt; &quot;bittime&quot;
+  - Module name change &quot;candev.ko&quot; -&gt; &quot;can-dev.ko&quot;.
+  - Obsolete code has been removed.
+  - Typedefs have been cleaned up.
+  - TX timeout functions have been removed from the device drivers.
+  - Rename function names &quot;can_*&quot; into &quot;sja1000_*&quot; in sja1000.c.
+
+
+o CAN state management
+
+  The following CAN error states are handled by the SJA1000 and MSCAN
+  driver:
+
+    typedef enum {
+	CAN_STATE_ACTIVE=0
+	CAN_STATE_BUS_WARNING,
+	CAN_STATE_BUS_PASSIVE,
+	CAN_STATE_BUS_OFF,
+	CAN_STATE_STOPPED,
+    } can_state_t;
+
+  The CAN error states are set properly in the ISR and an error frame
+  is generated when the state changes. The do_get_state() function is
+  implemented for debugging purposes and will be remove soon. For MSCAN
+  it's a bit more tricky, unfortunately.
+
+
+o SYSFS support
+
+  IOCTL request have been removed in favor of the following SYSFS files:
+
+    # cd /sys/class/net/can0
+    # ls -1 `find  -name 'can_*'`
+    ./can_bitrate
+    ./can_clock
+    ./can_ctrlmode
+    ./can_custombittime
+    ./can_echo
+    ./can_restart
+    ./can_restart_ms
+    ./can_state
+
+    ./can_statistics:
+    arbitration_lost
+    bus_error
+    data_overrun
+    error_passive
+    error_warning
+    restarts
+    wakeup
+
+  We need to discuss sometime later what we really want to list under
+  &quot;can_statistics&quot;. The current implementation is biased by the
+  SJA1000.
+
+
+o CAN start, stop, re-start and bus-off recovery:
+
+  The CAN device must be started with &quot;ifconfig up&quot; and stopped with
+  &quot;ifconfig down&quot;. In case of bus-off it can be re-started manually by
+  writing to the SYSFS file &quot;/sys/class/net/can*/can_restart&quot;. And if
+  /sys/class/net/can*/can_restart_ms&quot; is greater than 0, it gets
+  re-started automatically after the specified time.
+
+  Bus-off and automatic re-start is handled by a common interface:
+
+  - In case of bus-off, the device driver calls can_bus_off(), which
+    calls netif_carrier_off() and eventually adds a timer to schedule
+    the automatic re-start. At manual or automatic restart time, the
+    function can_restart_now() mainly calls:
+
+    * can_flush_echo_skb(dev);
+    * priv-&gt;do_set_mode(dev, CAN_MODE_START);
+    * netif_carrier_on(dev);
+    * priv-&gt;can_stats.restarts++;
+    * format a CAN_ERR_RESTARTED error frame and send it upstream.
+    * update statistics
+
+  This means that the device driver has to perform the bus-off recovery
+  or re-start in its do_set_mode() function. When the device is closed
+  the device driver should call can_close_cleanup() to stop the timer.
+
+  This interface may need refinement in case of delayed bus-off
+  recovery. I have to check the doc more carefully first. Maybe
+  we need an additional can_bus_on() function when the bus-off
+  recovery interrupt finally arrives.
+
+
+o Bitrate setting
+
+  There are the following rules:
+
+  - The bitrate can *not* be modified when the device is active.
+    &quot;ifconfig down&quot; must be called first.
+
+  - Currently we have the following macro definitions for bitrates:
+
+    #define CAN_BITRATE_UNCONFIGURED	((__u32) 0xFFFFFFFFU)
+    #define CAN_BITRATE_UNKNOWN		0
+    #define CAN_BITRATE_DEFAULT		500000
+
+  - A default bitrate is used and set in common code when the driver is
+    registered. It is currently defined by CAN_BITRATE_DEFAULT in
+    ioctl.h but we may want to have an additional module paramter of
+    can-dev.ko for overwrite it. Comments?
+    Note that the device driver can define and set its own, non
+    standard bitrate and timing. For this purpose I have implemented a
+    common can_set_bitrate() function.
+
+  As you know, we want to have a re-vised bit-time setting, which we
+  should discuss sooner than later.
+
+
+o Echoing skbs:
+
+  There is now a simple common interface using an array of skb pointers:
+
+    struct can_priv {
+          ...
+	  struct sk_buff *echo_skb[CAN_ECHO_SKB_MAX];
+
+  - The drivers start_xmit function calls before returning:
+
+      can_put_echo_skb(skb, dev, idx):
+
+  - When TX is done the corrsponding ISR should call:
+
+      can_get_echo_skb(dev, idx);
+
+  - can_flush_echo_skb(dev) is called when the device is restarted
+    or closed. The device driver should call can_close_cleanup() in its
+    stop function.
+
+  - The driver should enable support for echoing skbs in its
+    registration function:
+
+      dev-&gt;flags |= IFF_ECHO;
+
+  - It can be disabled/enabled using the SYSFS file can_echo.
+
+  So far, this works fine for SJA1000 and MSCAN.
+
+
+o Supported CAN controllers and devices:
+
+  Currently there is support for:
+
+  - SJA1000 on PCAN PEAK PCI Cards
+  - SJA1000 on EMS CPC PCI Cards
+  - SJA1000 on IXXAT PCI cards
+  - SJA1000 on Phytec PCM027 boards
+  - MSCAN on the MPC5200
+
+What do you think? Comments, improvements, new CAN device
+drivers and patches are welcome.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001039.html">[PATCH 9/9] More fixes for the SJA1000 driver
+</A></li>
+	<LI>Next message: <A HREF="001045.html">Summary of the new device interface implementation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1044">[ date ]</a>
+              <a href="thread.html#1044">[ thread ]</a>
+              <a href="subject.html#1044">[ subject ]</a>
+              <a href="author.html#1044">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

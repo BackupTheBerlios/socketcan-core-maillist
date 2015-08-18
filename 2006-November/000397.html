@@ -1,0 +1,116 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: minor API change
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20minor%20API%20change&In-Reply-To=%3Cygfzmacwttg.fsf%40janus.isnogud.escape.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000399.html">
+   <LINK REL="Next"  HREF="000398.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: minor API change</H1>
+    <B>Urs Thuermann</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20minor%20API%20change&In-Reply-To=%3Cygfzmacwttg.fsf%40janus.isnogud.escape.de%3E"
+       TITLE="RFC: minor API change">urs at isnogud.escape.de
+       </A><BR>
+    <I>Mon Nov 27 20:52:43 CET 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000399.html">Default filter setting
+</A></li>
+        <LI>Next message: <A HREF="000398.html">RFC: minor API change
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#397">[ date ]</a>
+              <a href="thread.html#397">[ thread ]</a>
+              <a href="subject.html#397">[ subject ]</a>
+              <a href="author.html#397">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The CAN_RAW_ERR_FILTER socket option is currently implemented so, that
+you can set a filter by call setsockopt with a pointer to a error mask
+(an 32 bit int) and optlen set to 4, and you can remove the filter by
+calling setsockopt with optlen set to 0 and the pointer to optval will
+be ignored.
+
+It's quite unusual to have a sockopt with varying optlen values,
+especially optlen == 0 and a meaningless optval pointer.  I suggest to
+change this, so that removing the filter is done by calling the
+CAN_RAW_ERR_FILTER socket option with a optlen of 4 as usual and a
+32 bit optval of 0, i.e. no bits in the error mask set.
+
+The patch is appended.  Any comments?  In case of no objections I'd
+like to check it in.
+
+urs
+
+
+
+Index: kernel/2.6/net/can/raw.c
+===================================================================
+--- kernel/2.6/net/can/raw.c	(revision 105)
++++ kernel/2.6/net/can/raw.c	(working copy)
+@@ -413,12 +413,10 @@
+ 		break;
+ 
+ 	case CAN_RAW_ERR_FILTER:
+-		if (optlen) {
+-			if (optlen != sizeof(err_mask))
+-				return -EINVAL;
+-			if ((err = copy_from_user(&amp;err_mask, optval, optlen)))
+-				return err;
+-		}
++		if (optlen != sizeof(err_mask))
++			return -EINVAL;
++		if ((err = copy_from_user(&amp;err_mask, optval, optlen)))
++			return err;
+ 
+ 		err_mask &amp;= CAN_ERR_MASK;
+ 
+@@ -430,11 +428,9 @@
+ 			can_rx_unregister(dev, 0, canraw_sk(sk)-&gt;err_mask | CAN_ERR_FLAG, raw_rcv, sk);
+ 
+ 		/* add new error mask */
+-		if (optlen) {
+-			canraw_sk(sk)-&gt;err_mask = err_mask;
+-			if (canraw_sk(sk)-&gt;err_mask &amp;&amp; canraw_sk(sk)-&gt;bound)
+-				can_rx_register(dev, 0, canraw_sk(sk)-&gt;err_mask | CAN_ERR_FLAG, raw_rcv, sk, IDENT);
+-		}
++		canraw_sk(sk)-&gt;err_mask = err_mask;
++		if (canraw_sk(sk)-&gt;err_mask &amp;&amp; canraw_sk(sk)-&gt;bound)
++			can_rx_register(dev, 0, canraw_sk(sk)-&gt;err_mask | CAN_ERR_FLAG, raw_rcv, sk, IDENT);
+ 
+ 		if (dev)
+ 			dev_put(dev);
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000399.html">Default filter setting
+</A></li>
+	<LI>Next message: <A HREF="000398.html">RFC: minor API change
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#397">[ date ]</a>
+              <a href="thread.html#397">[ thread ]</a>
+              <a href="subject.html#397">[ subject ]</a>
+              <a href="author.html#397">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

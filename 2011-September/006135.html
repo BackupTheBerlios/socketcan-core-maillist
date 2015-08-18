@@ -1,0 +1,167 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Solving ENOBUFS returned by write()
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Solving%20ENOBUFS%20returned%20by%20write%28%29&In-Reply-To=%3C87pqiimcrz.fsf%40steelpick.2x.cz%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006134.html">
+   <LINK REL="Next"  HREF="006136.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Solving ENOBUFS returned by write()</H1>
+    <B>Michal Sojka</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Solving%20ENOBUFS%20returned%20by%20write%28%29&In-Reply-To=%3C87pqiimcrz.fsf%40steelpick.2x.cz%3E"
+       TITLE="Solving ENOBUFS returned by write()">sojkam1 at fel.cvut.cz
+       </A><BR>
+    <I>Fri Sep 30 14:32:16 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006134.html">Antwort: Re: [PATCH net-next-2.6] can/sja1000: driver for PEAK	PCAN	PCI/PCIe cards
+</A></li>
+        <LI>Next message: <A HREF="006136.html">Solving ENOBUFS returned by write()
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6135">[ date ]</a>
+              <a href="thread.html#6135">[ thread ]</a>
+              <a href="subject.html#6135">[ subject ]</a>
+              <a href="author.html#6135">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Dear SocketCAN developers,
+
+recently, we worked with Oliver on evaluation of queuing disciplines for
+use in CAN networks. We will publish our results soon, but before that I
+would like to discuss with you one issue that annoys me for a long time
+(and according to the mailing list, I'm not alone). Now we may have a
+solution for it - see the description and the patch below.
+
+This issue is that write()/send() syscalls return ENOBUFS under
+certain conditions. The easiest way to reproduce the problem is to
+send some frames to an unconnected CAN interface (i.e. no frame cannot
+leave the box, all stay queued somewhere). After attempting to send
+10+(number of HW TX buffers) frames, the application (e.g. cangen)
+gets ENOBUFS. cangen tries to overcome the problem by calling poll()
+in this case but this doesn't work. Poll never block and cangen ends
+up busy waiting. Just run cangen .... -i -p 1000 and top. cangen will
+eat 100% CPU.
+
+Such a problem usually doesn't appear in Ethernet networks.
+Applications block automatically when there is lack of resources for
+sending. We dig into source codes to find out what is different in CAN
+compared to the Ethernet and here is what we have found.
+
+So why is ENOBUFS typically returned? In the default configuration,
+CAN interfaces have attached pfifo_fast queuing discipline. Therefore,
+dev_queue_xmit() calls pfifo_fast_enqueue() which checks for
+dev-&gt;tx_queue_len (which is 10 for CAN devices by default). If the
+dev-&gt;number of queued frames is grater, it and returns
+NET_XMIT_DROP. Then, can_send() calls net_xmit_errno(), which
+translates NET_XMIT_DROP into -ENOBUFS which is then returned to the
+application.
+
+The difference in Ethernet networks is that the default queue size is
+1000 and the reason why this limit is not reached is that there is
+another limit, which is lower and causes the application to block.
+This limit is SO_SNDBUF socket option.
+
+In case of CAN_RAW sockets, this limit is checked in
+sock_alloc_send_skb() like this:
+
+if (sk-&gt;sk_wmem_alloc &lt; sk-&gt;sk_sndbuf)
+  alloc_skb();
+else
+ sock_wait_for_wmem(); // i.e. block
+
+sk-&gt;sk_wmem_alloc is increased by skb-&gt;truesize whenever application
+creates a skb belonging to the socket (i.e. on write) and decreased by
+the same amount whenever the skb is passed to the driver. The value
+of skb-&gt;truesize is the sizeof(can_frame) + sizeof(skb), which is 200
+in my case (PowerPC).
+ 
+The default value of sk-&gt;sk_wmem_alloc is 108544 which means that for
+CAN, this limit is reached (and the application blocks) when it has
+542 CAN frames waiting to be send to the driver. This is of cause more
+then 10, allowed by dev-&gt;tx_queue_len.
+
+Therefore, we propose apply patch like this:
+
+diff --git a/drivers/net/can/dev.c b/drivers/net/can/dev.c
+index d0f8c7e..4831c53 100644
+--- a/drivers/net/can/dev.c
++++ b/drivers/net/can/dev.c
+@@ -438,7 +438,7 @@ static void can_setup(struct net_device *dev)
+ 	dev-&gt;mtu = sizeof(struct can_frame);
+ 	dev-&gt;hard_header_len = 0;
+ 	dev-&gt;addr_len = 0;
+-	dev-&gt;tx_queue_len = 10;
++	dev-&gt;tx_queue_len = 22;
+ 
+ 	/* New-style flags. */
+ 	dev-&gt;flags = IFF_NOARP;
+diff --git a/net/can/af_can.c b/net/can/af_can.c
+index 094fc53..4cf10e7 100644
+--- a/net/can/af_can.c
++++ b/net/can/af_can.c
+@@ -190,6 +190,8 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
+ 	sock_init_data(sock, sk);
+ 	sk-&gt;sk_destruct = can_sock_destruct;
+ 
++	sk-&gt;sk_sndbuf = SOCK_MIN_SNDBUF;
++
+ 	if (sk-&gt;sk_prot-&gt;init)
+ 		err = sk-&gt;sk_prot-&gt;init(sk);
+ 
+This sets the minimum possible sk_sndbuf, i.e. 2048, which allows to
+have 11 frames queued for a socket before the application blocks. In
+my case, the driver (mpc5200) seems to utilize 3 TX buffers and
+therefore cangen blocks when it tries to send the 15th frame (3 frames
+are buffered in driver, 11 in pfifo_fast qdisc). If the application
+does not want to block, it can set O_NONBLOCK flag on the socket and
+it receives EAGAIN instead of ENOBUFS.
+
+It is also necessary to slightly increase the default tx_queue_len.
+Increasing it to 22 allows using two applications (or better two
+sockets) without seeing ENOBUFS. The third application/socket then
+gets ENOBUFS just for its first write().
+
+The above described situation is not the only way how can an
+application get ENOBUFS, but I think that in case of PF_CAN this is
+the most common situation and having a blocking behavior as provided
+by this patch would help the users a lot.
+
+Thoughts?
+
+Best regards,
+Michal &amp; Rosta
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006134.html">Antwort: Re: [PATCH net-next-2.6] can/sja1000: driver for PEAK	PCAN	PCI/PCIe cards
+</A></li>
+	<LI>Next message: <A HREF="006136.html">Solving ENOBUFS returned by write()
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6135">[ date ]</a>
+              <a href="thread.html#6135">[ thread ]</a>
+              <a href="subject.html#6135">[ subject ]</a>
+              <a href="author.html#6135">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

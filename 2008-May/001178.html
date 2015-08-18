@@ -1,0 +1,294 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Socket returns invalid argument using Virtual CAN, and mcp251x	probe issue
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Socket%20returns%20invalid%20argument%20using%20Virtual%20CAN%2C%20and%20mcp251x%0A%09probe%20issue&In-Reply-To=%3C1210081744.11829.8.camel%40desktop.home%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001177.html">
+   <LINK REL="Next"  HREF="001179.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Socket returns invalid argument using Virtual CAN, and mcp251x	probe issue</H1>
+    <B>Chris Elston</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Socket%20returns%20invalid%20argument%20using%20Virtual%20CAN%2C%20and%20mcp251x%0A%09probe%20issue&In-Reply-To=%3C1210081744.11829.8.camel%40desktop.home%3E"
+       TITLE="Socket returns invalid argument using Virtual CAN, and mcp251x	probe issue">celston at katalix.com
+       </A><BR>
+    <I>Tue May  6 15:49:04 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001177.html">Socket returns invalid argument using Virtual CAN,	and mcp251x probe issue
+</A></li>
+        <LI>Next message: <A HREF="001179.html">Socket returns invalid argument using Virtual CAN,	and mcp251x probe issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1178">[ date ]</a>
+              <a href="thread.html#1178">[ thread ]</a>
+              <a href="subject.html#1178">[ subject ]</a>
+              <a href="author.html#1178">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hugh,
+
+It looks to me as if your SPI bus driver isn't registering correctly.
+You need to fix that in order for the mcp251x driver init to get called.
+I suggest you look at the SPI bus driver code to see why you get this
+error:
+
+        -bash-3.2# insmod spi_mpc83xx.ko
+        insmod: error inserting 'spi_mpc83xx.ko': -1 No such device
+
+I'd guess that it isn't finding/detecting your hardware correctly.
+
+Once the SPI bus driver is working (i.e. not reporting an error on
+modprobe), then you'll need to add the _correct_ bus num in
+spi_board_info.  How the SPI bus driver numbers it's busses is up to the
+SPI bus driver, and how that ties up to where you have physically wired
+the mcp251x is board dependent, so only you can find that out.
+
+When you have the SPI bus working you will see something like:
+
+        spi spi32766.0: spi_bitbang_setup, mode 0, 8 bits/w, 100
+nsec/bit
+
+Bear in mind that apart from the prefix 'spi' at the beginning of the
+line, yours will probably be very different.  The bit immediately
+following the 'spi' ('spi32766.0') uniquely identifies the bus on the
+system - yours is likely to be 'spi0.0'.
+
+Thanks,
+
+Chris.
+
+On Tue, 2008-05-06 at 10:31 +0100, Hugh Hernan wrote:
+&gt;<i> Hello,
+</I>&gt;<i> 
+</I>&gt;<i> Thanks very much Wolfgang that solved by first problem. ELDK Release  
+</I>&gt;<i> 4.2 does, did not allow the VCAN to work, but I have taken a snapshot  
+</I>&gt;<i> of your commit, as suggested which results in 2.6.24.4, as opposed to  
+</I>&gt;<i> 2.6.24.2 which is the 4.2 ELDK release, and this allows vcan to work  
+</I>&gt;<i> correctly.
+</I>&gt;<i> 
+</I>&gt;<i> Regarding the second issue, As Andre has suggested I have tried  
+</I>&gt;<i> loading the mcp251x as a module, instead of linked into the kernel but  
+</I>&gt;<i> it still does not call the probe function.
+</I>&gt;<i> 
+</I>&gt;<i> 1.) Don't know if this is relevant.  The mcp251x when statically  
+</I>&gt;<i> linked into the kernel requires the SPI to be included (unresolved  
+</I>&gt;<i> external for spi_sync) , so I have created the SPI_MPC83xx, and  
+</I>&gt;<i> SPI_BITBANG as separate modules.  When I insmod the MCP251x.ko, it  
+</I>&gt;<i> shows only my init printk, showing that the spi_driver is being  
+</I>&gt;<i> registered,
+</I>&gt;<i> 	-bash-3.2# insmod mcp251x.ko
+</I>&gt;<i> 	mcp251x_can_init(): spi_register_driver in
+</I>&gt;<i> 
+</I>&gt;<i> But I get an error when loading the SPI_MPC83xx. Don't know why !!
+</I>&gt;<i> 	-bash-3.2# insmod spi_mpc83xx.ko
+</I>&gt;<i> 	insmod: error inserting 'spi_mpc83xx.ko': -1 No such device
+</I>&gt;<i> 
+</I>&gt;<i> 2.) I do not have any spi nodes in my /dev directory, (should I ??),  
+</I>&gt;<i> but I notice that in the mail archives for the MCP251x you refer to  
+</I>&gt;<i> the interface as can0, I presume that these are not in the /dev  
+</I>&gt;<i> directory but would be in the ifconfig interface, but I would have  
+</I>&gt;<i> thought from the mcp251x code, that these would be mcp251x0, and  
+</I>&gt;<i> mcp251x1 created.
+</I>&gt;<i> 
+</I>&gt;<i> 3.) I have tried both 0, and 1 as the bus_num in by spi_board_info.  I  
+</I>&gt;<i> am unclear as to how this should tie to the particular spi device on  
+</I>&gt;<i> the board, if at all?
+</I>&gt;<i> 
+</I>&gt;<i> Any help would be greatly appreciated, in order to get the mcp251x  
+</I>&gt;<i> probe being called.
+</I>&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Hugh.
+</I>&gt;<i> 
+</I>&gt;<i> On 2 May 2008, at 13:54, Andre Puschmann wrote:
+</I>&gt;<i> &gt; Hugh Hernan wrote:
+</I>&gt;<i> &gt;&gt; 2.) My second problem is that probe is not being called for the
+</I>&gt;<i> &gt;&gt; mcp251x during boot-up.  I have added the code indicated below to my
+</I>&gt;<i> &gt;&gt; platform file.  Indicating that there are 2 SPI ports. Is there
+</I>&gt;<i> &gt;&gt; something more I need to register, in order for the driver core to  
+</I>&gt;<i> &gt;&gt; tie
+</I>&gt;<i> &gt;&gt; the driver to the spi device, using the modalias of mcp251x ?
+</I>&gt;<i> &gt;&gt; spi_register_board_info is being called, as also is the
+</I>&gt;<i> &gt;&gt; spi_register_driver in the mcp251x.c code.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; No, calling spi_register_board_info() with the right &quot;modalias&quot; should
+</I>&gt;<i> &gt; be enough to invoke the drivers probe function.
+</I>&gt;<i> &gt; And it works fine for me here. Maybe you can try to load the driver as
+</I>&gt;<i> &gt; module.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Anyway, I would like to take the chance and inform you guys that we  
+</I>&gt;<i> &gt; are
+</I>&gt;<i> &gt; currently rewrite the mcp251x-socketcan driver in order to fulfill
+</I>&gt;<i> &gt; socketcan-driver requirements for being integrated into the mainline
+</I>&gt;<i> &gt; kernel. This work is based on a former driver, which was unfortunately
+</I>&gt;<i> &gt; not being released and Chris Elstons' patch for that controller.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Best regards,
+</I>&gt;<i> &gt; 	Andre
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;&gt; Would really appreciate any help or advice,
+</I>&gt;<i> &gt;&gt; Thank you,
+</I>&gt;<i> &gt;&gt; Hugh.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; --------------------------------------------------------
+</I>&gt;<i> &gt;&gt; Hugh Hernan,
+</I>&gt;<i> &gt;&gt; Gamah Technologies.
+</I>&gt;<i> &gt;&gt; e-mail: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hhernan at eircom.net</A>
+</I>&gt;<i> &gt;&gt; --------------------------------------------------------
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; -socket issue -------------------------------------------------
+</I>&gt;<i> &gt;&gt; Using ELDK 4.2, I have enabled CONFIG_CAN, CONFIG_CAN_RAW,
+</I>&gt;<i> &gt;&gt; CONFIG_CAN_RAW_USER, and CONFIG_CAN_VCAN in my build of the kernel,
+</I>&gt;<i> &gt;&gt; and also patched the kernel with the MCP251X driver from Chris
+</I>&gt;<i> &gt;&gt; Elston.  I also had to create a patch from the socketcan trunk, using
+</I>&gt;<i> &gt;&gt; mkpatch in order for it to work with ELDK's 2.6.24, since setting the
+</I>&gt;<i> &gt;&gt; RAW option with the ELDK 4.2 will not build (in correct number of
+</I>&gt;<i> &gt;&gt; arguments in dev_get_by_index).
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; On boot-up the board displays that the vcan ports are being created
+</I>&gt;<i> &gt;&gt; (as shown below),
+</I>&gt;<i> &gt;&gt; 	vcan: Virtual CAN interface driver
+</I>&gt;<i> &gt;&gt; 	vcan: registering 4 virtual CAN interfaces. (loopback disabled)
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; ifconfig can0 up, will result in the can0 interface being displayed  
+</I>&gt;<i> &gt;&gt; by
+</I>&gt;<i> &gt;&gt; ifconfig.  As also does &quot;ip link&quot;.
+</I>&gt;<i> &gt;&gt; 	vcan0     Link encap:UNSPEC  HWaddr
+</I>&gt;<i> &gt;&gt; 00-00-00-00-00-00-00-00-00-00-00-00-00-00-00
+</I>&gt;<i> &gt;&gt; 	-00
+</I>&gt;<i> &gt;&gt;           UP RUNNING NOARP  MTU:16  Metric:1
+</I>&gt;<i> &gt;&gt;           RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+</I>&gt;<i> &gt;&gt;           TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+</I>&gt;<i> &gt;&gt;           collisions:0 txqueuelen:0
+</I>&gt;<i> &gt;&gt;           RX bytes:0 (0.0 b)  TX bytes:0 (0.0 b)
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Also during bootup it shows that the network registers the PF_CAN
+</I>&gt;<i> &gt;&gt; (i.e. 29), and that the RAW_PROTOCOL is setup.
+</I>&gt;<i> &gt;&gt; 	can: controller area network core (rev 20070802 abi 8)
+</I>&gt;<i> &gt;&gt; 	NET: Registered protocol family 29
+</I>&gt;<i> &gt;&gt; 	can: raw protocol (rev 20070802)
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; The problem however is that when I use the can-utils  I get the
+</I>&gt;<i> &gt;&gt; following error.
+</I>&gt;<i> &gt;&gt; 	./cansend vcan0 123#DEADBEEF
+</I>&gt;<i> &gt;&gt; 	socket: Invalid argument
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; - mcp251x platform code  
+</I>&gt;<i> &gt;&gt; ------------------------------------------------
+</I>&gt;<i> &gt;&gt; void myboard_mcp251x_initfunc(void);
+</I>&gt;<i> &gt;&gt; void myboard_mcp251x_reset(void);
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; static struct mcp251x_platform_data mcp251x_info = {
+</I>&gt;<i> &gt;&gt;   .oscillator_frequency = 19000000,
+</I>&gt;<i> &gt;&gt;   .board_specific_setup = myboard_mcp251x_initfunc,
+</I>&gt;<i> &gt;&gt;   .device_reset = myboard_mcp251x_reset,
+</I>&gt;<i> &gt;&gt;   .transceiver_enable = NULL,
+</I>&gt;<i> &gt;&gt; };
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; static struct spi_board_info spi_board_info[] __initdata = {
+</I>&gt;<i> &gt;&gt; {
+</I>&gt;<i> &gt;&gt;   .modalias = &quot;mcp251x&quot;,
+</I>&gt;<i> &gt;&gt;   .platform_data = &amp;mcp251x_info,
+</I>&gt;<i> &gt;&gt;   .irq = 19,     /* MPC83xx IRQ_EXT3 in include/asm/mpc83xx.h */
+</I>&gt;<i> &gt;&gt;   .max_speed_hz = 8000000,
+</I>&gt;<i> &gt;&gt;   .bus_num = 0,
+</I>&gt;<i> &gt;&gt;   .chip_select = 0
+</I>&gt;<i> &gt;&gt; },
+</I>&gt;<i> &gt;&gt; {
+</I>&gt;<i> &gt;&gt;   .modalias = &quot;mcp251x&quot;,
+</I>&gt;<i> &gt;&gt;   .platform_data = &amp;mcp251x_info,
+</I>&gt;<i> &gt;&gt;   .irq = 20,     /* MPC83xx IRQ_EXT4 in include/asm/mpc83xx.h */
+</I>&gt;<i> &gt;&gt;   .max_speed_hz = 8000000,
+</I>&gt;<i> &gt;&gt;   .bus_num = 1,
+</I>&gt;<i> &gt;&gt;   .chip_select = 1
+</I>&gt;<i> &gt;&gt; }
+</I>&gt;<i> &gt;&gt; };
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; void myboard_mcp251x_initfunc()
+</I>&gt;<i> &gt;&gt; {
+</I>&gt;<i> &gt;&gt;         printk(KERN_ALERT &quot;fpga_dcc2 myboard_mcp251x_initfunc called
+</I>&gt;<i> &gt;&gt; \n&quot;);
+</I>&gt;<i> &gt;&gt; }
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; void myboard_mcp251x_reset()
+</I>&gt;<i> &gt;&gt; {
+</I>&gt;<i> &gt;&gt;         printk(KERN_ALERT &quot;fpga_dcc2 myboard_mcp251x_reset called 
+</I>&gt;<i> &gt;&gt; \n&quot;);
+</I>&gt;<i> &gt;&gt; }
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; static int __init am_asp_834x_mcp251x_init(void)
+</I>&gt;<i> &gt;&gt; {
+</I>&gt;<i> &gt;&gt; 	printk(KERN_ALERT &quot;%s(): registering device resources\n&quot;,
+</I>&gt;<i> &gt;&gt; __FUNCTION__);
+</I>&gt;<i> &gt;&gt; 	spi_register_board_info(spi_board_info, ARRAY_SIZE(spi_board_info));
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;     return 0;
+</I>&gt;<i> &gt;&gt; }
+</I>&gt;<i> &gt;&gt; arch_initcall(am_asp_834x_mcp251x_init);
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; _______________________________________________
+</I>&gt;<i> &gt;&gt; Socketcan-core mailing list
+</I>&gt;<i> &gt;&gt; <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> &gt;&gt; <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> 
+</I>&gt;<i> --------------------------------------------------------
+</I>&gt;<i> Hugh Hernan,
+</I>&gt;<i> Gamah Technologies.
+</I>&gt;<i> e-mail: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hhernan at eircom.net</A>
+</I>&gt;<i> Tel: +353-61-225074
+</I>&gt;<i> Mob: +353-87-2324979
+</I>&gt;<i> --------------------------------------------------------
+</I>&gt;<i> 
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> Socketcan-core mailing list
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>-- 
+Chris Elston
+Katalix Systems Ltd
+<A HREF="http://www.katalix.com">http://www.katalix.com</A>
+Catalysts for your Embedded Linux software development
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001177.html">Socket returns invalid argument using Virtual CAN,	and mcp251x probe issue
+</A></li>
+	<LI>Next message: <A HREF="001179.html">Socket returns invalid argument using Virtual CAN,	and mcp251x probe issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1178">[ date ]</a>
+              <a href="thread.html#1178">[ thread ]</a>
+              <a href="subject.html#1178">[ subject ]</a>
+              <a href="author.html#1178">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

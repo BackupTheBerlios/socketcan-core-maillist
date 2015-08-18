@@ -1,0 +1,133 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-users] Looping back TX messages
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-users%5D%20Looping%20back%20TX%20messages&In-Reply-To=%3Cm2lkp9jc8b.fsf%40janus.isnogud.escape.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000321.html">
+   <LINK REL="Next"  HREF="000323.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-users] Looping back TX messages</H1>
+    <B>Urs Thuermann</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-users%5D%20Looping%20back%20TX%20messages&In-Reply-To=%3Cm2lkp9jc8b.fsf%40janus.isnogud.escape.de%3E"
+       TITLE="[Socketcan-users] Looping back TX messages">urs at isnogud.escape.de
+       </A><BR>
+    <I>Mon Aug 28 14:06:44 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000321.html">Reply to the initial Mail from Pavel:  [ocera - Open Discussion] 	RE: Socket based CAN driver API
+</A></li>
+        <LI>Next message: <A HREF="000323.html">[Socketcan-users] Looping back TX messages
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#322">[ date ]</a>
+              <a href="thread.html#322">[ thread ]</a>
+              <a href="subject.html#322">[ subject ]</a>
+              <a href="author.html#322">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Returning from vacation, I found this thread on looping back packets
+sent on a CAN interface.  I consider quite some portion of the
+discussion technically incorrect or irrelevant.
+
+Basically, delivering sent packets not only to a CAN interface but
+also loop it back to sockets listening on the local host is the
+correct behavior.  Why should several process running on other
+machines see the packet while other processes running on the local
+machine don't see them?
+
+If a packet is sent to only one recipient it should be routed to only
+that recipient, when it's multicasted or broadcasted, any socket
+registered for that packet should get it.  CAN is by definition a
+broadcast network, there is no way to send unicast or multicast
+packets.  Therefore, all packets should be received by all listening
+sockets, be it on a remote host or the local host.  I am surprised
+someone would expect otherwise, keeping in mind that CAN is by
+definition broadcast and does not even have something like addresses.
+
+Having a mechanism to disable packets to local sockets for performance
+reasons might be valuable like IP does with the IP_MULTICAST_LOOP
+socket option.
+
+Jan Kiszka &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">jan.kiszka at web.de</A>&gt; writes:
+
+&gt;<i> At least for IP multicast, there is no such filtering, only the socket
+</I>&gt;<i> option IP_MULTICAST_LOOP which works per host. I would therefore avoid
+</I>&gt;<i> such complications.
+</I>
+No.  IP_MULTICAST_LOOP is a per socket option, not per host.  You can
+well have sockets with IP_MULTICAST_LOOP enabled and other sockets
+with this option disabled on the same host at a time.  IMO, this is
+how we should implement it for CAN, too.  We should have a
+CAN_RAW_LOOP (or maybe CAN_LOOP) socket option to control this
+behavior.
+
+Currently, I am somewhat undecided wether we need another option to
+control if a socket should get back its own packets.  First, my
+preference was not to have it in order to not bloat the API
+description, now I think it may be useful to meet the different
+expectations expressed in this discussion.
+
+&gt;<i> Protocols look more handy too me (from a user POV) and are easier
+</I>&gt;<i> acceptable if we really go for default on. Socket options are not that
+</I>&gt;<i> well visible, and we should better reduce the level of surprise.
+</I>&gt;<i> 
+</I>&gt;<i> But let's ask for other opinions:
+</I>&gt;<i> 
+</I>&gt;<i> POLL 1: How to control TX loopback behaviour?
+</I>&gt;<i> 	[ ] socket option
+</I>&gt;<i> 	[ ] two protocols
+</I>&gt;<i> 	[ ] .................
+</I>&gt;<i> 	    (please describe)
+</I>
+It should definitely be a socket option, since this is not another
+protocol.  It's only a minor optional change in behavior of the
+socket, i.e. a socket option.
+
+&gt;<i> POLL 2: What should be the default behaviour?
+</I>&gt;<i> 	[ ] loopback
+</I>&gt;<i> 	[ ] no loopback
+</I>
+Since we are talking about a multiuser and multitasking system where
+many processes run on the same machine, several of which may use CAN
+sockets, IMO the default should be to do loopback, so that different
+sockets in different processes can see packets generated by other
+sockets.  If one knows he's the only one on the system using a CAN
+socket (or a CAN socket bound to some specific CAN ID), he can disable
+the default behaviour with the socket option.
+
+
+urs
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000321.html">Reply to the initial Mail from Pavel:  [ocera - Open Discussion] 	RE: Socket based CAN driver API
+</A></li>
+	<LI>Next message: <A HREF="000323.html">[Socketcan-users] Looping back TX messages
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#322">[ date ]</a>
+              <a href="thread.html#322">[ thread ]</a>
+              <a href="subject.html#322">[ subject ]</a>
+              <a href="author.html#322">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

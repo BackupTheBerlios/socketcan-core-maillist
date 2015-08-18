@@ -1,0 +1,227 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH V2] CAN: Add Flexcan CAN controller driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V2%5D%20CAN%3A%20Add%20Flexcan%20CAN%20controller%20driver&In-Reply-To=%3C20090728133719.GU2714%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002811.html">
+   <LINK REL="Next"  HREF="002813.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH V2] CAN: Add Flexcan CAN controller driver</H1>
+    <B>Sascha Hauer</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V2%5D%20CAN%3A%20Add%20Flexcan%20CAN%20controller%20driver&In-Reply-To=%3C20090728133719.GU2714%40pengutronix.de%3E"
+       TITLE="[PATCH V2] CAN: Add Flexcan CAN controller driver">s.hauer at pengutronix.de
+       </A><BR>
+    <I>Tue Jul 28 15:37:19 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002811.html">[PATCH V2] CAN: Add Flexcan CAN controller driver
+</A></li>
+        <LI>Next message: <A HREF="002813.html">[PATCH V2] CAN: Add Flexcan CAN controller driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2812">[ date ]</a>
+              <a href="thread.html#2812">[ thread ]</a>
+              <a href="subject.html#2812">[ subject ]</a>
+              <a href="author.html#2812">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Oliver,
+
+On Tue, Jul 28, 2009 at 03:21:40PM +0200, Oliver Hartkopp wrote:
+&gt;<i> Sascha Hauer wrote:
+</I>&gt;<i> &gt; Hi,
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Here is the second version of the flexcan driver.
+</I>&gt;<i> 
+</I>&gt;<i> Hi Sascha,
+</I>&gt;<i> 
+</I>&gt;<i> some more points i forgot to mention, sorry ...
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> &gt; +/* Structure of the message buffer */
+</I>&gt;<i> &gt; +struct flexcan_mb {
+</I>&gt;<i> &gt; +	u32	can_dlc;
+</I>&gt;<i> &gt; +	u32	can_id;
+</I>&gt;<i> &gt; +	u32	data[2];
+</I>&gt;<i> &gt; +};
+</I>&gt;<i> 
+</I>&gt;<i> This looks really hackish and does not reflect the structure of a flexcan
+</I>&gt;<i> message buffer! The data is 'u8' and the name of 'dlc' for the
+</I>&gt;<i> description/flag register is bad.
+</I>&gt;<i> 
+</I>
+see below..
+
+&gt;<i> 
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +static int flexcan_start_xmit(struct sk_buff *skb, struct net_device *dev)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	struct can_frame *frame = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i> &gt; +	struct flexcan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> &gt; +	struct flexcan_regs __iomem *regs = priv-&gt;base;
+</I>&gt;<i> 
+</I>&gt;<i> &gt; +	u32 can_id;
+</I>&gt;<i> &gt; +	u32 dlc = MB_CNT_CODE(0xc) | (frame-&gt;can_dlc &lt;&lt; 16);
+</I>&gt;<i> 
+</I>&gt;<i> Naming this variable 'dlc' does not hit the point. See below.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; +	u32 *can_data;
+</I>&gt;<i> 
+</I>&gt;<i> Really this needs to be fixed up by defining a proper mailbox struct.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	netif_stop_queue(dev);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	if (frame-&gt;can_id &amp; CAN_EFF_FLAG) {
+</I>&gt;<i> &gt; +		can_id = frame-&gt;can_id &amp; MB_ID_EXT;
+</I>&gt;<i> 
+</I>&gt;<i> Please use CAN_EFF_MASK here.
+</I>
+I used MX_ID_EXT intentionally because it it flexcan specific and just
+happens to be the same as CAN_EFF_MASK. I can change it if you like.
+
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> &gt; +		dlc |= MB_CNT_IDE | MB_CNT_SRR;
+</I>&gt;<i> &gt; +	} else {
+</I>&gt;<i> &gt; +		can_id = (frame-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 18;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> 
+</I>&gt;<i> Just nitpicking for Kernel coding style:
+</I>&gt;<i> remove the last '{' and '}' pair.
+</I>
+No, Documentation/CondingStyle suggests that if one branch needs braces
+the other branch should use them, too.
+
+&gt;<i> 
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	if (frame-&gt;can_id &amp; CAN_RTR_FLAG)
+</I>&gt;<i> &gt; +		dlc |= MB_CNT_RTR;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	writel(dlc, &amp;regs-&gt;cantxfg[TX_BUF_ID].can_dlc);
+</I>&gt;<i> &gt; +	writel(can_id, &amp;regs-&gt;cantxfg[TX_BUF_ID].can_id);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	can_data = (u32 *)frame-&gt;data;
+</I>&gt;<i> &gt; +	writel(cpu_to_be32(*can_data), &amp;regs-&gt;cantxfg[TX_BUF_ID].data[0]);
+</I>&gt;<i> &gt; +	writel(cpu_to_be32(*(can_data + 1)), &amp;regs-&gt;cantxfg[TX_BUF_ID].data[1]);
+</I>&gt;<i> 
+</I>&gt;<i> IMHO it is not really transparent, that this is a correct handling to copy the
+</I>&gt;<i>   can_frame.data[] on all architectures. I bet creating a for-statement
+</I>&gt;<i> regarding the dlc is not slower and makes really clear, what's going on here.
+</I>
+This is indeed a problem here. The original Coldfire code I used as a
+template used a loop around unsigned char * which did the wrong thing
+for me. So yes, this is not generic here, but I have no idea how the
+generic code looks like. As Coldfire is big endian this doesn't seem
+that wrong.
+
+&gt;<i> 
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	writel(dlc, &amp;regs-&gt;cantxfg[TX_BUF_ID].can_dlc);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	kfree_skb(skb);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	return NETDEV_TX_OK;
+</I>&gt;<i> &gt; +}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +static void flexcan_rx_frame(struct net_device *ndev,
+</I>&gt;<i> &gt; +		struct flexcan_mb __iomem *mb)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	struct net_device_stats *stats = &amp;ndev-&gt;stats;
+</I>&gt;<i> &gt; +	struct sk_buff *skb;
+</I>&gt;<i> &gt; +	struct can_frame *frame;
+</I>&gt;<i> &gt; +	int ctrl = readl(&amp;mb-&gt;can_dlc);
+</I>&gt;<i> 
+</I>&gt;<i> 'ctrl' is much better than 'dlc' naming above :-)
+</I>
+ok, will change it above.
+
+&gt;<i> 
+</I>&gt;<i> &gt; +	int length = (ctrl &gt;&gt; 16) &amp; 0x0f;
+</I>&gt;<i> 
+</I>&gt;<i> is probably not enough ... use %9 or an additional check.
+</I>
+ok, I'll add a sanity check.
+
+&gt;<i> 
+</I>&gt;<i> &gt; +	u32 id;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	skb = dev_alloc_skb(sizeof(struct can_frame));
+</I>&gt;<i> &gt; +	if (!skb) {
+</I>&gt;<i> &gt; +		stats-&gt;rx_dropped++;
+</I>&gt;<i> &gt; +		return;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	frame = (struct can_frame *)skb_put(skb,
+</I>&gt;<i> &gt; +			sizeof(struct can_frame));
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	frame-&gt;can_dlc = length;
+</I>&gt;<i> &gt; +	id = readl(&amp;mb-&gt;can_id) &amp; MB_ID_EXT;
+</I>&gt;<i> 
+</I>&gt;<i> like above use CAN_EFF_MASK
+</I>&gt;<i> 
+</I>&gt;<i> or at least rename MB_ID_EXT to MB_ID_EXT_MASK
+</I>&gt;<i> 
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	if (ctrl &amp; MB_CNT_IDE) {
+</I>&gt;<i> &gt; +		frame-&gt;can_id = id &amp; CAN_EFF_MASK;
+</I>&gt;<i> &gt; +		frame-&gt;can_id |= CAN_EFF_FLAG;
+</I>&gt;<i> &gt; +		if (ctrl &amp; MB_CNT_RTR)
+</I>&gt;<i> &gt; +			frame-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;<i> &gt; +	} else {
+</I>&gt;<i> &gt; +		frame-&gt;can_id  = id &gt;&gt; 18;
+</I>&gt;<i> &gt; +		if (ctrl &amp; MB_CNT_RTR)
+</I>&gt;<i> &gt; +			frame-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	*(u32 *)frame-&gt;data = be32_to_cpu(readl(&amp;mb-&gt;data[0]));
+</I>&gt;<i> &gt; +	*((u32 *)frame-&gt;data + 1) = be32_to_cpu(readl(&amp;mb-&gt;data[1]));
+</I>&gt;<i> 
+</I>&gt;<i> Same as above.
+</I>&gt;<i> 
+</I>&gt;<i> Please write readable an maintainable code and let the compiler do his job.
+</I>&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Oliver
+</I>&gt;<i> 
+</I>
+-- 
+Pengutronix e.K.                           |                             |
+Industrial Linux Solutions                 | <A HREF="http://www.pengutronix.de/">http://www.pengutronix.de/</A>  |
+Peiner Str. 6-8, 31137 Hildesheim, Germany | Phone: +49-5121-206917-0    |
+Amtsgericht Hildesheim, HRA 2686           | Fax:   +49-5121-206917-5555 |
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002811.html">[PATCH V2] CAN: Add Flexcan CAN controller driver
+</A></li>
+	<LI>Next message: <A HREF="002813.html">[PATCH V2] CAN: Add Flexcan CAN controller driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2812">[ date ]</a>
+              <a href="thread.html#2812">[ thread ]</a>
+              <a href="subject.html#2812">[ subject ]</a>
+              <a href="author.html#2812">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

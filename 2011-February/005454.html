@@ -1,0 +1,224 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 3/3] CAN: add SAE J1939 protocol
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/3%5D%20CAN%3A%20add%20SAE%20J1939%20protocol&In-Reply-To=%3C4D4960D1.6010302%40volkswagen.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005449.html">
+   <LINK REL="Next"  HREF="005455.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 3/3] CAN: add SAE J1939 protocol</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/3%5D%20CAN%3A%20add%20SAE%20J1939%20protocol&In-Reply-To=%3C4D4960D1.6010302%40volkswagen.de%3E"
+       TITLE="[PATCH 3/3] CAN: add SAE J1939 protocol">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Wed Feb  2 14:49:05 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005449.html">[PATCH 3/3] CAN: add SAE J1939 protocol
+</A></li>
+        <LI>Next message: <A HREF="005455.html">[PATCH 3/3] CAN: add SAE J1939 protocol
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5454">[ date ]</a>
+              <a href="thread.html#5454">[ thread ]</a>
+              <a href="subject.html#5454">[ subject ]</a>
+              <a href="author.html#5454">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Am 01.02.2011 17:33, schrieb Kurt Van Dijck:
+
+&gt;<i> diff --git a/include/linux/can.h b/include/linux/can.h
+</I>
+
+&gt;<i> +/* particular protocols of the protocol family PF_CAN */
+</I>&gt;<i> +#define CAN_RAW		1 /* RAW sockets */
+</I>&gt;<i> +#define CAN_BCM		2 /* Broadcast Manager */
+</I>&gt;<i> +#define CAN_TP16	3 /* VAG Transport Protocol v1.6 */
+</I>&gt;<i> +#define CAN_TP20	4 /* VAG Transport Protocol v2.0 */
+</I>&gt;<i> +#define CAN_MCNET	5 /* Bosch MCNet */
+</I>&gt;<i> +#define CAN_ISOTP	6 /* ISO 15765-2 Transport Protocol */
+</I>&gt;<i> +#define CAN_J1939	7 /* SAE J1939 */
+</I>
+Very nice :-)
+
+&gt;<i> +#define CAN_NPROTO	8
+</I>&gt;<i> +
+</I>&gt;<i> +#define SOL_CAN_BASE 100
+</I>&gt;<i> +
+</I>&gt;<i> +/**
+</I>&gt;<i> + * struct sockaddr_can - the sockaddr structure for CAN sockets
+</I>&gt;<i> + * @can_family:  address family number AF_CAN.
+</I>&gt;<i> + * @can_ifindex: CAN network interface index.
+</I>&gt;<i> + * @can_addr:    protocol specific address information
+</I>&gt;<i> + */
+</I>&gt;<i> +struct sockaddr_can {
+</I>&gt;<i> +	sa_family_t can_family;
+</I>&gt;<i> +	int         can_ifindex;
+</I>&gt;<i> +	union {
+</I>&gt;<i> +		/* transport protocol class address information (e.g. ISOTP) */
+</I>&gt;<i> +		struct { canid_t rx_id, tx_id; } tp;
+</I>&gt;<i> +
+</I>&gt;<i> +		/* J1939 address information */
+</I>&gt;<i> +		struct {
+</I>&gt;<i> +			/* 8 byte name when using dynamic addressing */
+</I>&gt;<i> +			__u64 name;
+</I>&gt;<i> +			/*
+</I>&gt;<i> +			 * pgn:
+</I>&gt;<i> +			 * 8bit: PS in PDU2 case, else 0
+</I>&gt;<i> +			 * 8bit: PF
+</I>&gt;<i> +			 * 1bit: DP
+</I>&gt;<i> +			 * 1bit: reserved
+</I>&gt;<i> +			 */
+</I>&gt;<i> +			__u32 pgn;
+</I>&gt;<i> +
+</I>&gt;<i> +			/* 1byte address */
+</I>&gt;<i> +			__u8 addr;
+</I>&gt;<i> +		} j1939;
+</I>&gt;<i> +
+</I>&gt;<i> +		/* reserved for future CAN protocols address information */
+</I>&gt;<i> +	} can_addr;
+</I>&gt;<i> +};
+</I>
+struct sockaddr is 16 Bytes long and is defined here:
+<A HREF="http://lxr.linux.no/#linux+v2.6.37/include/linux/socket.h#L42">http://lxr.linux.no/#linux+v2.6.37/include/linux/socket.h#L42</A>
+
+struct sockaddr_in is defined here:
+<A HREF="http://lxr.linux.no/#linux+v2.6.37/include/linux/in.h#L181">http://lxr.linux.no/#linux+v2.6.37/include/linux/in.h#L181</A>
+
+And as you can see, the inet-guys managed to extend their struct to the 
+maximum size of 16 bytes total with the __pad[] array.
+
+I did not see this idea before, so the struct sockaddr_can is:
+
+<A HREF="http://lxr.linux.no/#linux+v2.6.37/include/linux/can.h#L73">http://lxr.linux.no/#linux+v2.6.37/include/linux/can.h#L73</A>
+
+struct sockaddr_can {
+      sa_family_t can_family;
+      int         can_ifindex;
+      union {
+              /* transport protocol class address info (e.g. ISOTP) */
+              struct { canid_t rx_id, tx_id; } tp;
+
+              /* reserved for future CAN protocols address information */
+      } can_addr;
+};
+
+This struct sockaddr_can has a length of 2+4+4+4 = 14 bytes which fit's 
+fortunately into the max 16 bytes specified by struct sockaddr.
+
+Your proposed structure is
+
+2+4+8+4+1 = 19
+
+Unfortunately this does not fit.
+
+Also the problem can not be solved to make struct sockaddr_can longer 
+than 14 bytes. E.g. if you build a CAN application with the new 
+sockaddr_can and then try to run this binary (16 byte struct) on an 
+older kernel expecting a 14 bytes (max 16 bytes) struct. :-(
+
+So it is assumed that the address information for j1939 is limited to 
+the 8 bytes in the can_addr union that has been reserved by struct tp.
+
+What about ...
+
+struct sockaddr_can {
+      sa_family_t can_family;
+      int         can_ifindex;
+      union {
+              /* transport protocol class address info (e.g. ISOTP) */
+              struct { canid_t rx_id, tx_id; } tp;
+
+              struct {
+                       /* parameter group number */
+                       struct {
+                                __u8 ps;
+                                __u8 pf;
+                                __u8 dp:1,
+                                     res:1;
+                       } pgn;
+
+                       /* 1byte address */
+                       __u8 addr;
+              } j1939;
+
+              /* reserved for future CAN protocols address information */
+      } can_addr;
+};
+
+and putting the
+
+     &quot;/* 8 byte name when using dynamic addressing */&quot;
+
+into a sockopt?
+
+So far you defined:
+
++#define J1939_NO_NAME	0
+
+which says to me that it can be '0' or a valid 'name'.
+
+Therefore this 'name' could be set by an socket option too, simply:
+
+When it is set with a non-zero value before a bind()-syscall, the 
+dynamic addressing is used.
+
++/*
++ * J1939 NAME
++ *
++ * bit 0-20	: Identity Number
++ * bit 21-31	: Manufacturer Code
++ * bit 32-34	: ECU Instance
++ * bit 35-39	: Function Instance
++ * bit 40-47	: Function
++ * bit 48	: Reserved
++ * bit 49-55	: Vehicle System
++ * bit 56-59	: Vehicle System Instance
++ * bit 60-62	: Industry Group
++ * bit 63	: Arbitrary Address Capable
++ */
++typedef __u64 name_t;
+
+Expect these kind of typedefs to be remarked as unwanted on the 
+netdev-ML. Typedefs may 'hide' things and therefore there are not 
+wanted. I had a longer discussion on this for the canid_t ...
+
+Btw. how dou you ensure the endian problem to be solved, when working 
+with __u64 bitfields?
+
+Regards,
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005449.html">[PATCH 3/3] CAN: add SAE J1939 protocol
+</A></li>
+	<LI>Next message: <A HREF="005455.html">[PATCH 3/3] CAN: add SAE J1939 protocol
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5454">[ date ]</a>
+              <a href="thread.html#5454">[ thread ]</a>
+              <a href="subject.html#5454">[ subject ]</a>
+              <a href="author.html#5454">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

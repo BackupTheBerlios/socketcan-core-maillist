@@ -1,0 +1,177 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> mcp251x: endless irq when MERRF while receiving
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%3A%20endless%20irq%20when%20MERRF%20while%20receiving&In-Reply-To=%3C4C4AF907.7060308%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004470.html">
+   <LINK REL="Next"  HREF="004472.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>mcp251x: endless irq when MERRF while receiving</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%3A%20endless%20irq%20when%20MERRF%20while%20receiving&In-Reply-To=%3C4C4AF907.7060308%40grandegger.com%3E"
+       TITLE="mcp251x: endless irq when MERRF while receiving">wg at grandegger.com
+       </A><BR>
+    <I>Sat Jul 24 16:30:31 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004470.html">mcp251x: endless irq when MERRF while receiving
+</A></li>
+        <LI>Next message: <A HREF="004472.html">mcp251x: endless irq when MERRF while receiving
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4471">[ date ]</a>
+              <a href="thread.html#4471">[ thread ]</a>
+              <a href="subject.html#4471">[ subject ]</a>
+              <a href="author.html#4471">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+On 07/24/2010 11:11 AM, Alexander Holler wrote:
+&gt;<i> Hello,
+</I>&gt;<i> 
+</I>&gt;<i> I'm currently testing a MCP2515 connected to an AT91-board.
+</I>&gt;<i> 
+</I>&gt;<i> Besides some small changes to use an gpio-irq, I've come across about a
+</I>&gt;<i> problem in the driver which leads to an endless IRQ. For the test I've
+</I>&gt;<i> used two nodes, a PEAK USB controller and said MCP2515, both configured
+</I>&gt;<i> to use a bitrate of 500k. When I'm now sending a simple message from the
+</I>&gt;<i> peak, the mcp251x-driver will end in an endless irq and the MCP2515 will
+</I>&gt;<i> endless send error-messages.
+</I>&gt;<i> 
+</I>&gt;<i> Here is an debug output which should describe the problem:
+</I>&gt;<i> 
+</I>&gt;<i> ---------------------------------------------
+</I>&gt;<i> peak:
+</I>&gt;<i> cansend can0 &quot;5A1#11.2233.44556677.01 / 123#DEADBEEF / 5AA# /&quot;
+</I>&gt;<i> 
+</I>&gt;<i> at91:
+</I>&gt;<i> [   93.730000] mcp251x_can_ist entered
+</I>&gt;<i> [   93.770000] mcp251x_can_ist intf: 0xa0
+</I>&gt;<i> [   93.890000] mcp251x_can_ist eflag: 0xb
+</I>&gt;<i>  forever:
+</I>&gt;<i> [   93.930000] mcp251x_can_ist intf: 0x80
+</I>&gt;<i> [   94.060000] mcp251x_can_ist eflag: 0xb
+</I>&gt;<i> [   94.100000] mcp251x_can_ist intf: 0x80
+</I>&gt;<i> [   94.220000] mcp251x_can_ist eflag: 0xb
+</I>&gt;<i> ...
+</I>&gt;<i> 
+</I>&gt;<i> peak:
+</I>&gt;<i> candump any,0:0,#ffffffff
+</I>&gt;<i>  forever:
+</I>&gt;<i>   can0  20000004  [8] 00 04 00 00 00 00 00 00   ERRORFRAME
+</I>&gt;<i> ---------------------------------------------
+</I>
+Looks like the infamous bus error flooding, which can hang low-end
+systems. There seem to be electrical problem on the bus triggering bus
+errors on the MCP251x. Just run &quot;candump any,0:0,#ffffffff&quot; on the at91
+system as well.
+
+&gt;<i> Using the at91_can-driver (and can-hw) instead of the mcp251x on the
+</I>&gt;<i> AT91 box I can't reproduce this, so it seems not to be a problem of the
+</I>&gt;<i> cabling or the sender (peak) side.
+</I>
+Also here running &quot;candump any,0:0,#ffffffff&quot; on the at91 will provide
+more information.
+
+&gt;<i> Anyway, currently I don't care for the reason of the fault on the bus,
+</I>&gt;<i> but I think at least that endless loop is something which should be
+</I>&gt;<i> adressed because this renders the AT91 system almost useless (and could
+</I>&gt;<i> be triggered from remote).
+</I>&gt;<i> 
+</I>&gt;<i> My first simple solution for this is currently the following patch:
+</I>&gt;<i> 
+</I>&gt;<i> --------------------------------
+</I>&gt;<i> diff --git a/drivers/net/can/mcp251x.c b/drivers/net/can/mcp251x.c
+</I>&gt;<i> index b11a0cb..e1a3745 100644
+</I>&gt;<i> --- a/drivers/net/can/mcp251x.c
+</I>&gt;<i> +++ b/drivers/net/can/mcp251x.c
+</I>&gt;<i> @@ -835,7 +835,7 @@ static irqreturn_t mcp251x_can_ist(int irq, void
+</I>&gt;<i> *dev_id)
+</I>&gt;<i>                         }
+</I>&gt;<i>                 }
+</I>&gt;<i> 
+</I>&gt;<i> -               if (intf == 0)
+</I>&gt;<i> +               if ((intf &amp; ~CANINTF_MERRF) == 0)
+</I>&gt;<i>                         break;
+</I>&gt;<i> 
+</I>&gt;<i>                 if (intf &amp; (CANINTF_TX2IF | CANINTF_TX1IF |
+</I>&gt;<i> CANINTF_TX0IF)) {
+</I>&gt;<i> --------------------------------
+</I>&gt;<i> 
+</I>&gt;<i> With that patch the IRQ will be released even if the MERRF is set in the
+</I>&gt;<i> CANINTF-register. This will not fix the problem, but at least the system
+</I>&gt;<i> is still usable in such a case.
+</I>
+You seem not to use the MCP251x driver from the mainline kernel. There,
+MERR is not enabled any more. Here is the commit message:
+
+commit bf66f3736a945dd4e92d86427276c6eeab0a6c1d
+Author: Christian Pellegrin &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">chripell at fsfe.org</A>&gt;
+Date:   Wed Feb 3 07:39:54 2010 +0000
+
+    can: mcp251x: Move to threaded interrupts instead of workqueues.
+    
+    This patch addresses concerns about efficiency of handling incoming
+    packets. Handling of interrupts is done in a threaded interrupt handler
+    which has a smaller latency than workqueues. This change needed a rework
+    of the locking scheme that was much simplified. Some other (more or less
+    longstanding) bugs are fixed: utilization of just half of the RX
+    buffers, useless wait for interrupt on open, more reliable reset
+    sequence. The MERR interrupt is not used anymore: it overloads the CPU
+    in error-passive state without any additional information. One shot mode
+    is disabled because it's not clear if it can be handled efficiently on
+    this CAN controller.
+    
+    Signed-off-by: Christian Pellegrin &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">chripell at fsfe.org</A>&gt;
+    Acked-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+    Signed-off-by: David S. Miller &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">davem at davemloft.net</A>&gt;
+
+&gt;<i> 
+</I>&gt;<i> I'm no CAN expert, but I think a correct solution would be to restart
+</I>&gt;<i> the MCP2515 after a MERRF was received and didn't go away (restart-ms).
+</I>&gt;<i> 
+</I>&gt;<i> The datasheet for the MCP2515 doesn't talk much about MERRF while
+</I>&gt;<i> receiving (just a sentence in section 7.4 Message Error Interrupt), and
+</I>&gt;<i> the chart for message reception shows why the Error Frames are generated
+</I>&gt;<i> endless.
+</I>&gt;<i> 
+</I>&gt;<i> Any pointers/suggestions?
+</I>
+See above. Just disable the MERR interrrupt.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004470.html">mcp251x: endless irq when MERRF while receiving
+</A></li>
+	<LI>Next message: <A HREF="004472.html">mcp251x: endless irq when MERRF while receiving
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4471">[ date ]</a>
+              <a href="thread.html#4471">[ thread ]</a>
+              <a href="subject.html#4471">[ subject ]</a>
+              <a href="author.html#4471">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,189 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/10%5D%20SJA1000DEV%20using%20device%20interface%20and%20further%20fixes%0A%09and%20improvements&In-Reply-To=%3C47440BC6.8000203%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000848.html">
+   <LINK REL="Next"  HREF="000824.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/10%5D%20SJA1000DEV%20using%20device%20interface%20and%20further%20fixes%0A%09and%20improvements&In-Reply-To=%3C47440BC6.8000203%40grandegger.com%3E"
+       TITLE="[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements">wg at grandegger.com
+       </A><BR>
+    <I>Wed Nov 21 11:43:18 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000848.html">RFC: SocketCAN Team Meeting at SPS/IPC/Drives
+</A></li>
+        <LI>Next message: <A HREF="000824.html">[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#813">[ date ]</a>
+              <a href="thread.html#813">[ thread ]</a>
+              <a href="subject.html#813">[ subject ]</a>
+              <a href="author.html#813">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+as announced, I post the patches of our current quilt patch stack for
+Socket-CAN revision 561 from Berlios. Each patch has some documentation
+in the header. Here is a brief summary.
+
+o bitrate-hw-independant.patch
+
+  J&#252;rgens patch to set the CAN bit rate in HW-independent way:
+<A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-October/000715.html">https://lists.berlios.de/pipermail/socketcan-core/2007-October/000715.html</A>
+
+o sja1000-dev-interface.patch
+
+  It provides the improved driver for the SJA1000 using the existing
+  CAN device interface in &quot;drivers/net/can/sja1000dev&quot;. I have some
+  further improvements concerning names in mind (prefixes), but that's
+  a minor issue. I didn't want to change to much.
+
+o sja1000-dev-err-frames.patch
+
+  Adds the generation of error frames for the SJA1000 in case of error
+  conditions.
+
+o sja1000-dev-ixxat-pci.patch
+o sja1000-dev-pcm027.patch
+o sja1000-dev-ems-pci.patch
+o sja1000-dev-peak-pci.patch
+
+  PCI drivers for the PCI CAN devices from IXXAT, EMS W&#252;nsche and PEAK
+  System and a platform driver for the SJA1000 on the Pnytech PCM027
+  board. Adding other devices should simple.
+
+o mscan-netdev-fixes.patch
+
+  Fixes issues with changes in the netdev layer (NAPI, device stats)
+  introduced with kernel version 2.6.24. Was needed for testing.
+
+o can-dev-proc.patch
+
+  Permits to list CAN device parameters and counters via
+  /proc/net/dev_can. It was already useful for debugging and testing.
+
+o can-config-util.patch
+
+  Adds adds the CAN utility &quot;canconfig&quot; to set the baudrate, to change
+  the CAN controller mode, to re-start the CAN controller or to query
+  the state and other parameters
+
+Not yet perfect but a big step forward, I think. Regard these patches as
+a starting point towards an improved CAN device interface. Here is a
+list of issues/threads I have in mind which needs discussion and
+clarification:
+
+1. CAN bit rate setting:
+
+   Default CAN bit rate calculation and custom bit rate setting in a
+   more hardware independent way. See thread
+<A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-October/000715.html.">https://lists.berlios.de/pipermail/socketcan-core/2007-October/000715.html.</A>
+
+
+2. CAN state management:
+
+   How should the CAN state be managed? We have the common &quot;state&quot;
+   variable of the CAN device interface and the do_get_state() method.
+   I see two methods:
+
+   - the common &quot;state&quot; variable is updated in the ISR and it always
+     hold the proper state. There's no need for do_get_state().
+
+   - if do_get_state(), it should return the proper state.
+
+   Part of it could be handled in common code.
+
+
+3. Controller start and re-start:
+
+   When and how should the controller be restarted? I see the following
+   three methods:
+
+   - via ifconfig up/down
+
+   - via automatic restart in case of persistent error condition or
+     TX timeout (do we really need that?).
+
+   - via ioctl request SIOCGCANCTRLMODE / CAN_MODE_START
+
+   A restart may also be triggered by a baud-rate setting. The restart
+   behavior should also be configurable when the driver is statically
+   linked into the kernel (no module parameters).
+
+
+4. PROCFS support for common and specific properties, e.g.:
+
+   $ cat /proc/net/dev_can
+   i-face can-clock bitrate canstate err-warn err-pass buserrors
+overruns arb-lost wakeups restarts
+     can0   8000000  125000   active        5        3        92
+0        0       0        6
+     can1   8000000  500000  stopped        0        0         0
+0        0       0        0
+
+
+6. Feature RX-Probe:
+
+   See
+<A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-November/000789.html">https://lists.berlios.de/pipermail/socketcan-core/2007-November/000789.html</A>
+
+7. ... likely I have forgotten something.
+
+
+Minor issues and 2nd step ideas and improvements:
+
+o CAN device statistics:
+
+  I think it is to much biased by the SJA1000. It actually counts
+  the error interrupt sources of the SJA1000.
+
+o Using (N)NAPI, rx-poll for SJA1000 to deal better with high interrupt
+  load, especially bus error flooding (check MSCAN driver).
+
+o Using SYSFS to set device properties as replacement for module
+  parameters.
+
+
+Please comment.
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000848.html">RFC: SocketCAN Team Meeting at SPS/IPC/Drives
+</A></li>
+	<LI>Next message: <A HREF="000824.html">[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#813">[ date ]</a>
+              <a href="thread.html#813">[ thread ]</a>
+              <a href="subject.html#813">[ subject ]</a>
+              <a href="author.html#813">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

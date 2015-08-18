@@ -1,0 +1,256 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v9 05/20] pch_can: Fix warnings
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v9%2005/20%5D%20pch_can%3A%20Fix%20warnings&In-Reply-To=%3C1292221467-8039-5-git-send-email-tomoya-linux%40dsn.okisemi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005189.html">
+   <LINK REL="Next"  HREF="005191.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v9 05/20] pch_can: Fix warnings</H1>
+    <B>Tomoya MORINAGA</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v9%2005/20%5D%20pch_can%3A%20Fix%20warnings&In-Reply-To=%3C1292221467-8039-5-git-send-email-tomoya-linux%40dsn.okisemi.com%3E"
+       TITLE="[PATCH net-next-2.6 v9 05/20] pch_can: Fix warnings">tomoya-linux at dsn.okisemi.com
+       </A><BR>
+    <I>Mon Dec 13 07:24:11 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005189.html">[PATCH net-next-2.6 v9 04/20] pch_can: Improve rx processing
+</A></li>
+        <LI>Next message: <A HREF="005191.html">[PATCH net-next-2.6 v9 06/20] pch_can: Rename function/macro name
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5190">[ date ]</a>
+              <a href="thread.html#5190">[ thread ]</a>
+              <a href="subject.html#5190">[ subject ]</a>
+              <a href="author.html#5190">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Currently, in case CONFIG_PM is disabled, compiler outputs warnings.
+Move six functions which are used only CONFIG_PM is enabled,
+into &quot;#ifdef CONFIG_PM&quot; area.
+
+Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+---
+ drivers/net/can/pch_can.c |  146 ++++++++++++++++++++++----------------------
+ 1 files changed, 73 insertions(+), 73 deletions(-)
+
+diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+index d646fbc..5fc99cb 100644
+--- a/drivers/net/can/pch_can.c
++++ b/drivers/net/can/pch_can.c
+@@ -245,23 +245,6 @@ static void pch_can_set_optmode(struct pch_can_priv *priv)
+ 	iowrite32(reg_val, &amp;priv-&gt;regs-&gt;opt);
+ }
+ 
+-static void pch_can_set_int_custom(struct pch_can_priv *priv)
+-{
+-	/* Clearing the IE, SIE and EIE bits of Can control register. */
+-	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, PCH_CTRL_IE_SIE_EIE);
+-
+-	/* Appropriately setting them. */
+-	pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont,
+-			((priv-&gt;int_enables &amp; PCH_MSK_CTRL_IE_SIE_EIE) &lt;&lt; 1));
+-}
+-
+-/* This function retrieves interrupt enabled for the CAN device. */
+-static void pch_can_get_int_enables(struct pch_can_priv *priv, u32 *enables)
+-{
+-	/* Obtaining the status of IE, SIE and EIE interrupt bits. */
+-	*enables = ((ioread32(&amp;priv-&gt;regs-&gt;cont) &amp; PCH_CTRL_IE_SIE_EIE) &gt;&gt; 1);
+-}
+-
+ static void pch_can_set_int_enables(struct pch_can_priv *priv,
+ 				    enum pch_can_mode interrupt_no)
+ {
+@@ -355,61 +338,11 @@ static void pch_can_set_tx_all(struct pch_can_priv *priv, u32 set)
+ 		pch_can_set_rxtx(priv, i, set, PCH_TX_IFREG);
+ }
+ 
+-static u32 pch_can_get_rxtx_ir(struct pch_can_priv *priv, u32 buff_num,
+-			       enum pch_ifreg dir)
+-{
+-	u32 ie, enable;
+-
+-	if (dir)
+-		ie = PCH_IF_MCONT_RXIE;
+-	else
+-		ie = PCH_IF_MCONT_TXIE;
+-
+-	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[dir].cmask);
+-	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[dir].creq, buff_num);
+-
+-	if (((ioread32(&amp;priv-&gt;regs-&gt;ifregs[dir].id2)) &amp; PCH_ID_MSGVAL) &amp;&amp;
+-			((ioread32(&amp;priv-&gt;regs-&gt;ifregs[dir].mcont)) &amp; ie)) {
+-		enable = 1;
+-	} else {
+-		enable = 0;
+-	}
+-	return enable;
+-}
+-
+ static int pch_can_int_pending(struct pch_can_priv *priv)
+ {
+ 	return ioread32(&amp;priv-&gt;regs-&gt;intr) &amp; 0xffff;
+ }
+ 
+-static void pch_can_set_rx_buffer_link(struct pch_can_priv *priv,
+-				       u32 buffer_num, u32 set)
+-{
+-	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+-	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, buffer_num);
+-	iowrite32(PCH_CMASK_RDWR | PCH_CMASK_CTRL,
+-		  &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+-	if (set == PCH_ENABLE)
+-		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].mcont,
+-				  PCH_IF_MCONT_EOB);
+-	else
+-		pch_can_bit_set(&amp;priv-&gt;regs-&gt;ifregs[0].mcont, PCH_IF_MCONT_EOB);
+-
+-	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, buffer_num);
+-}
+-
+-static void pch_can_get_rx_buffer_link(struct pch_can_priv *priv,
+-				       u32 buffer_num, u32 *link)
+-{
+-	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+-	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, buffer_num);
+-
+-	if (ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].mcont) &amp; PCH_IF_MCONT_EOB)
+-		*link = PCH_DISABLE;
+-	else
+-		*link = PCH_ENABLE;
+-}
+-
+ static void pch_can_clear_buffers(struct pch_can_priv *priv)
+ {
+ 	int i;
+@@ -583,12 +516,6 @@ static void pch_can_int_clr(struct pch_can_priv *priv, u32 mask)
+ 	}
+ }
+ 
+-static int pch_can_get_buffer_status(struct pch_can_priv *priv)
+-{
+-	return (ioread32(&amp;priv-&gt;regs-&gt;treq1) &amp; 0xffff) |
+-	       ((ioread32(&amp;priv-&gt;regs-&gt;treq2) &amp; 0xffff) &lt;&lt; 16);
+-}
+-
+ static void pch_can_reset(struct pch_can_priv *priv)
+ {
+ 	/* write to sw reset register */
+@@ -1109,6 +1036,79 @@ static void __devexit pch_can_remove(struct pci_dev *pdev)
+ }
+ 
+ #ifdef CONFIG_PM
++static void pch_can_set_int_custom(struct pch_can_priv *priv)
++{
++	/* Clearing the IE, SIE and EIE bits of Can control register. */
++	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, PCH_CTRL_IE_SIE_EIE);
++
++	/* Appropriately setting them. */
++	pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont,
++			((priv-&gt;int_enables &amp; PCH_MSK_CTRL_IE_SIE_EIE) &lt;&lt; 1));
++}
++
++/* This function retrieves interrupt enabled for the CAN device. */
++static void pch_can_get_int_enables(struct pch_can_priv *priv, u32 *enables)
++{
++	/* Obtaining the status of IE, SIE and EIE interrupt bits. */
++	*enables = ((ioread32(&amp;priv-&gt;regs-&gt;cont) &amp; PCH_CTRL_IE_SIE_EIE) &gt;&gt; 1);
++}
++
++static u32 pch_can_get_rxtx_ir(struct pch_can_priv *priv, u32 buff_num,
++			       enum pch_ifreg dir)
++{
++	u32 ie, enable;
++
++	if (dir)
++		ie = PCH_IF_MCONT_RXIE;
++	else
++		ie = PCH_IF_MCONT_TXIE;
++
++	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[dir].cmask);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[dir].creq, buff_num);
++
++	if (((ioread32(&amp;priv-&gt;regs-&gt;ifregs[dir].id2)) &amp; PCH_ID_MSGVAL) &amp;&amp;
++			((ioread32(&amp;priv-&gt;regs-&gt;ifregs[dir].mcont)) &amp; ie)) {
++		enable = 1;
++	} else {
++		enable = 0;
++	}
++	return enable;
++}
++
++static void pch_can_set_rx_buffer_link(struct pch_can_priv *priv,
++				       u32 buffer_num, u32 set)
++{
++	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, buffer_num);
++	iowrite32(PCH_CMASK_RDWR | PCH_CMASK_CTRL,
++		  &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
++	if (set == PCH_ENABLE)
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].mcont,
++				  PCH_IF_MCONT_EOB);
++	else
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;ifregs[0].mcont, PCH_IF_MCONT_EOB);
++
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, buffer_num);
++}
++
++static void pch_can_get_rx_buffer_link(struct pch_can_priv *priv,
++				       u32 buffer_num, u32 *link)
++{
++	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, buffer_num);
++
++	if (ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].mcont) &amp; PCH_IF_MCONT_EOB)
++		*link = PCH_DISABLE;
++	else
++		*link = PCH_ENABLE;
++}
++
++static int pch_can_get_buffer_status(struct pch_can_priv *priv)
++{
++	return (ioread32(&amp;priv-&gt;regs-&gt;treq1) &amp; 0xffff) |
++	       ((ioread32(&amp;priv-&gt;regs-&gt;treq2) &amp; 0xffff) &lt;&lt; 16);
++}
++
+ static int pch_can_suspend(struct pci_dev *pdev, pm_message_t state)
+ {
+ 	int i;			/* Counter variable. */
+-- 
+1.6.0.6
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005189.html">[PATCH net-next-2.6 v9 04/20] pch_can: Improve rx processing
+</A></li>
+	<LI>Next message: <A HREF="005191.html">[PATCH net-next-2.6 v9 06/20] pch_can: Rename function/macro name
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5190">[ date ]</a>
+              <a href="thread.html#5190">[ thread ]</a>
+              <a href="subject.html#5190">[ subject ]</a>
+              <a href="author.html#5190">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

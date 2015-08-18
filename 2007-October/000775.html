@@ -1,0 +1,366 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> mcp251x driver for review
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%20driver%20for%20review&In-Reply-To=%3C20071020212522.GA9386%40uranus.ravnborg.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000772.html">
+   <LINK REL="Next"  HREF="000776.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>mcp251x driver for review</H1>
+    <B>Sam Ravnborg</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%20driver%20for%20review&In-Reply-To=%3C20071020212522.GA9386%40uranus.ravnborg.org%3E"
+       TITLE="mcp251x driver for review">sam at ravnborg.org
+       </A><BR>
+    <I>Sat Oct 20 23:25:22 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000772.html">mcp251x driver for review
+</A></li>
+        <LI>Next message: <A HREF="000776.html">Review comments to AT91 CAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#775">[ date ]</a>
+              <a href="thread.html#775">[ thread ]</a>
+              <a href="subject.html#775">[ subject ]</a>
+              <a href="author.html#775">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Chris.
+
+A few code-style comments to your patch.
+I did not look into the actual functionality so this is not
+to be considered a proper review.
+
+	Sam
+
++
++#include &lt;linux/device.h&gt;
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/platform_device.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/can.h&gt;
++#include &lt;asm/io.h&gt;
++#include &lt;linux/spi/spi.h&gt;
++#include &lt;linux/can/dev.h&gt;
++#include &lt;linux/if_arp.h&gt;
++#include &lt;linux/dma-mapping.h&gt;
++#include &lt;linux/delay.h&gt;
++#include &lt;asm/uaccess.h&gt;
++#include &quot;mcp251x.h&quot;
+
+Keep this order:
+
+#include &lt;linux/...&gt;
+#include &lt;asm/...&gt;
+#include &quot;...&quot;
+
++static uint8_t mcp251x_read_reg(struct spi_device *spi, uint8_t reg)
+
+Use of uintN_t in the kernel is generally considered bad practice.
+They belong to a namespace outside the kernel.
+
+Use the kernel accepted variants named u32 etc.
+Apply for the whole patch.
+
++	down(&amp;priv-&gt;spi_lock);
++
+...
++	spi_message_add_tail(&amp;t, &amp;m);
++
++	ret = spi_sync(spi, &amp;m);
++	if (ret &lt; 0) {
++		dev_dbg(&amp;spi-&gt;dev, &quot;%s: failed: ret = %d\n&quot;, __FUNCTION__, ret);
++	} else
++		val = priv-&gt;spi_rx_buf[2];
++
++	up(&amp;priv-&gt;spi_lock);
+Can we move this up() above the if ()?
+
++
++	/*dev_dbg(&amp;spi-&gt;dev, &quot;%s: reg 0x%02X val 0x%02X\n&quot;, __FUNCTION__, reg, val);*/
+Should be deleted before submission for inclusion.
+General comment for the whole patch.
+
++static void mcp251x_write_bits(struct spi_device *spi, uint8_t reg,
++                               uint8_t mask, uint8_t val)
++{
++	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
++	struct spi_transfer t = {
++		.tx_buf = priv-&gt;spi_tx_buf,
++		.rx_buf = priv-&gt;spi_rx_buf,
++		.len = 4,
++		.cs_change = 0,
++	};
++	struct spi_message m;
++	int ret;
++
++	down(&amp;priv-&gt;spi_lock);
++
++	priv-&gt;spi_tx_buf[0] = INSTRUCTION_BIT_MODIFY;
++	priv-&gt;spi_tx_buf[1] = reg;
++	priv-&gt;spi_tx_buf[2] = mask;
++	priv-&gt;spi_tx_buf[3] = val;
++
++	spi_message_init(&amp;m);
++
++	if (enable_dma) {
++		t.tx_dma = priv-&gt;spi_tx_dma;
++		t.rx_dma = priv-&gt;spi_rx_dma;
++		m.is_dma_mapped = 1;
++	}
++
++	spi_message_add_tail(&amp;t, &amp;m);
++
++	ret = spi_sync(spi, &amp;m);
++	if (ret &lt; 0)
++		dev_dbg(&amp;spi-&gt;dev, &quot;%s: failed\n&quot;, __FUNCTION__);
++
++	up(&amp;priv-&gt;spi_lock);
+
+Move it before the if ()
+
+
++	down(&amp;priv-&gt;spi_lock);
++
++	tx_buf[0] = INSTRUCTION_LOAD_TXB(tx_buf_idx);
++	tx_buf[1] = sid &gt;&gt; 3;
++	tx_buf[2] = (sid &lt;&lt; 5) | (exide &lt;&lt; 3) | (eid &gt;&gt; 16);
++	tx_buf[3] = eid &gt;&gt; 8;
++	tx_buf[4] = eid;
++	tx_buf[5] = (rtr &lt;&lt; 6) | frame-&gt;can_dlc;
++
++	memcpy(tx_buf + 6, frame-&gt;data, frame-&gt;can_dlc);
++
++	spi_message_init(&amp;m);
++
++	if (enable_dma) {
++		t.tx_dma = priv-&gt;spi_tx_dma;
++		t.rx_dma = priv-&gt;spi_rx_dma;
++		m.is_dma_mapped = 1;
++	}
++
++	spi_message_add_tail(&amp;t, &amp;m);
++
++	ret = spi_sync(spi, &amp;m);
++	if (ret &lt; 0)
++		dev_dbg(&amp;spi-&gt;dev, &quot;%s: failed: ret = %d\n&quot;, __FUNCTION__, ret);
++
++	/* FIXME: Should we exit with an error here? */
++
++	up(&amp;priv-&gt;spi_lock);
+Move it to before the if()
+
++static void mcp251x_hw_rx(struct spi_device *spi, int buf_idx)
++{
++	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
++	struct spi_transfer t = {
++		.tx_buf = priv-&gt;spi_tx_buf,
++		.rx_buf = priv-&gt;spi_rx_buf,
++		.cs_change = 0,
++		.len = 14,
++	};
+The hardcoded value '14' looks strange.
+A define or a comment?
+
++
++	ret = spi_sync(spi, &amp;m);
++	if (ret &lt; 0)
++		dev_dbg(&amp;spi-&gt;dev, &quot;%s: failed: ret = %d\n&quot;, __FUNCTION__, ret);
++	/* FIXME: Should we exit with an error here? */
++
++	if ((rx_buf[2] &gt;&gt; 3) &amp; 0x1) {
++		/* Extended ID format */
++		frame-&gt;can_id = CAN_EFF_FLAG;
++		frame-&gt;can_id |= (rx_buf[2] &lt;&lt; 16) | (rx_buf[3] &lt;&lt; 8) | rx_buf[4];
++	} else {
++		/* Standard ID format */
++		frame-&gt;can_id = (rx_buf[1] &lt;&lt; 3) | (rx_buf[2] &gt;&gt; 5);
++	}
++
++	if ((rx_buf[5] &gt;&gt; 6) &amp; 0x1) {
++		/* Remote transmission request */
++		frame-&gt;can_id |= CAN_RTR_FLAG;
++	}
++
++	dev_dbg(&amp;spi-&gt;dev, &quot;%s: can_id rec'd 0x%08X\n&quot;, __FUNCTION__, frame-&gt;can_id);
++
++	/* Data length */
++	frame-&gt;can_dlc = rx_buf[5] &amp; 0x0f;
++	memcpy(frame-&gt;data, rx_buf + 6, CAN_FRAME_MAX_DATA_LEN);
++
++	up(&amp;priv-&gt;spi_lock);
+Can it be moved upwards?
++
++	return;
++}
+return is not needed here.
+
++static void mcp251x_irq_work_handler(void *data)
++{
++	struct mcp251x_priv *priv = data;
++	struct spi_device *spi = priv-&gt;spi;
++	struct net_device *net = priv-&gt;net;
++	uint8_t intf;
++
++	for (;;) {
++		intf = mcp251x_read_reg(spi, CANINTF);
++		if (intf == 0x00)
++			break;
++
++		dev_dbg(&amp;spi-&gt;dev, &quot;interrupt:%s%s%s%s%s%s%s%s\n&quot;,
++			(intf &amp; CANINTF_MERRF) ? &quot; MERR&quot;:&quot;&quot;,
++			(intf &amp; CANINTF_WAKIF) ? &quot; WAK&quot;:&quot;&quot;,
++			(intf &amp; CANINTF_ERRIF) ? &quot; ERR&quot;:&quot;&quot;,
++			(intf &amp; CANINTF_TX2IF) ? &quot; TX2&quot;:&quot;&quot;,
++			(intf &amp; CANINTF_TX1IF) ? &quot; TX1&quot;:&quot;&quot;,
++			(intf &amp; CANINTF_TX0IF) ? &quot; TX0&quot;:&quot;&quot;,
++			(intf &amp; CANINTF_RX1IF) ? &quot; RX1&quot;:&quot;&quot;,
++			(intf &amp; CANINTF_RX0IF) ? &quot; RX0&quot;:&quot;&quot;);
++
++		if (intf &amp; CANINTF_MERRF) {
++			uint8_t txbnctrl;
++			/* if there are no pending Tx buffers, restart queue */
++			txbnctrl = mcp251x_read_reg(spi, TXBCTRL(0));
++			if (!(txbnctrl &amp; TXBCTRL_TXREQ))
++				netif_wake_queue(net);
++		}
++
++		if (intf &amp; CANINTF_ERRIF) {
++			uint8_t eflg = mcp251x_read_reg(spi, EFLG);
++
++			dev_dbg(&amp;spi-&gt;dev, &quot;EFLG = 0x%02x\n&quot;, eflg);
++
++			if (eflg &amp; (EFLG_RX0OVR | EFLG_RX1OVR)) {
++				if (eflg &amp; EFLG_RX0OVR)
++					priv-&gt;can.net_stats.rx_over_errors++;
++				if (eflg &amp; EFLG_RX1OVR)
++					priv-&gt;can.net_stats.rx_over_errors++;
++				mcp251x_write_reg(spi, EFLG, 0x00);
++			}
++		}
++
++		if (intf &amp; (CANINTF_TX2IF | CANINTF_TX1IF | CANINTF_TX0IF)) {
++			priv-&gt;can.net_stats.tx_packets++;
++			priv-&gt;can.net_stats.tx_bytes += ((struct can_frame *)(priv-&gt;tx_skb-&gt;data))-&gt;can_dlc;
++			dev_kfree_skb(priv-&gt;tx_skb);
++			netif_wake_queue(net);
++		}
++
++		if (intf &amp; CANINTF_RX0IF)
++			mcp251x_hw_rx(spi, 0);
++
++		if (intf &amp; CANINTF_RX1IF)
++			mcp251x_hw_rx(spi, 1);
++
++		mcp251x_write_bits(spi, CANINTF, intf, 0x00);
++	}
+Are we 100% sure that we always exit this loop independent on HW removal etc?
+
++static irqreturn_t
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,19)
++mcp251x_can_isr(int irq, void *dev_id, struct pt_regs *r)
++#else
++mcp251x_can_isr(int irq, void *dev_id)
++#endif
+
+This will be cleaned up before submission I assume.
+
++static void mcp251x_hw_reset(struct spi_device *spi)
++{
++	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
++	int ret;
++
++	down(&amp;priv-&gt;spi_lock);
++
++	priv-&gt;spi_tx_buf[0] = INSTRUCTION_RESET;
++
++	ret = spi_write(spi, priv-&gt;spi_tx_buf, 1);
++	if (ret &lt; 0)
++		dev_dbg(&amp;spi-&gt;dev, &quot;%s: failed: ret = %d\n&quot;, __FUNCTION__, ret);
++
++	up(&amp;priv-&gt;spi_lock);
+move up() up?
++}
++
++#ifdef CONFIG_PM
++static int mcp251x_can_suspend(struct spi_device *spi, pm_message_t state)
++static int mcp251x_can_resume(struct spi_device *spi)
++#endif
+
+The typical pattern is to define the two function names to NULL in an else clasue
+and avid the ifdef below.
+
++
++static struct spi_driver mcp251x_can_driver = {
++	.driver = {
++		.name		= DEVICE_NAME,
++		.bus		= &amp;spi_bus_type,
++		.owner		= THIS_MODULE,
++	},
++
++	.probe		= mcp251x_can_probe,
++	.remove		= __devexit_p(mcp251x_can_remove),
++#ifdef CONFIG_PM
++	.suspend	= mcp251x_can_suspend,
++	.resume		= mcp251x_can_resume,
++#endif
++};
++
++MODULE_LICENSE(&quot;GPL v2&quot;);
+
++++ linux-2.6.19.2/arch/arm/mach-mx3/aseries.c
+@@ -33,6 +33,7 @@
+ #include &lt;linux/mtd/mtd.h&gt;
+ #include &lt;linux/mtd/map.h&gt;
+ #include &lt;linux/mtd/partitions.h&gt;
++#include &lt;linux/delay.h&gt;
+ 
+ #include &lt;asm/mach/flash.h&gt;
+ #endif
+@@ -53,6 +54,7 @@
+ 
+ #include &quot;crm_regs.h&quot;
+ #include &quot;iomux.h&quot;
++#include &quot;../../../drivers/net/can/mcp251x.h&quot;
+
+Such a relative include looks wrong.
+Why not make it explicit (from root of kernel src)?
+
+
+	Sam
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000772.html">mcp251x driver for review
+</A></li>
+	<LI>Next message: <A HREF="000776.html">Review comments to AT91 CAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#775">[ date ]</a>
+              <a href="thread.html#775">[ thread ]</a>
+              <a href="subject.html#775">[ subject ]</a>
+              <a href="author.html#775">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

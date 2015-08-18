@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> AW: struct net_device_stats it 2.6.23
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20AW%3A%20struct%20net_device_stats%20it%202.6.23&In-Reply-To=%3C71A66C381173F7418BA6E78EE9E334653300CE%40vwagwox00011.vw.vwg%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000676.html">
+   <LINK REL="Next"  HREF="000678.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>AW: struct net_device_stats it 2.6.23</H1>
+    <B>Hartkopp, Oliver (K-EFE/E)</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20AW%3A%20struct%20net_device_stats%20it%202.6.23&In-Reply-To=%3C71A66C381173F7418BA6E78EE9E334653300CE%40vwagwox00011.vw.vwg%3E"
+       TITLE="AW: struct net_device_stats it 2.6.23">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Mon Sep 17 15:20:43 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000676.html">vcan.c does not compile with Linux 2.6.23-rc5
+</A></li>
+        <LI>Next message: <A HREF="000678.html">AW: struct net_device_stats it 2.6.23
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#677">[ date ]</a>
+              <a href="thread.html#677">[ thread ]</a>
+              <a href="subject.html#677">[ subject ]</a>
+              <a href="author.html#677">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Marc,
+
+please check this GIT commit from Dave Miller:
+
+<A HREF="http://git.kernel.org/?p=linux/kernel/git/davem/net-2.6.git;a=commit;h=c45d2">http://git.kernel.org/?p=linux/kernel/git/davem/net-2.6.git;a=commit;h=c45d2</A>
+86e72dd72c0229dc9e2849743ba427fee84
+
+[NET]: Inline net_device_stats
+
+Network drivers which keep stats allocate their own stats structure
+then write a get_stats() function to return them.  It would be nice if
+this were done by default.
+
+1) Add a new &quot;stats&quot; field to &quot;struct net_device&quot;.
+2) Add a new feature field to say &quot;this driver uses the internal one&quot;
+3) Have a default &quot;get_stats&quot; which returns NULL if that feature not set.
+4) Change callers to check result of get_stats call for NULL, not if
+   -&gt;get_stats is set.
+
+This should not break backwards compatibility with older drivers, yet
+allow modern drivers to shed some boilerplate code.
+
+Lightly tested: works for a modified lguest network driver.
+
+
+ 
+Especially in include/linux/nedevice.h you'll find:
+
+diff --git a/include/linux/netdevice.h b/include/linux/netdevice.h
+index 1a52854..71fc8ff 100644 (file)
+--- a/include/linux/netdevice.h
++++ b/include/linux/netdevice.h
+@@ -323,6 +323,7 @@ struct net_device
+ #define NETIF_F_VLAN_CHALLENGED        1024    /* Device cannot handle VLAN
+packets */
+ #define NETIF_F_GSO            2048    /* Enable software GSO. */
+ #define NETIF_F_LLTX           4096    /* LockLess TX */
++#define NETIF_F_INTERNAL_STATS 8192    /* Use stats structure in net_device
+*/
+ 
+        /* Segmentation offload features */
+ #define NETIF_F_GSO_SHIFT      16
+@@ -347,6 +348,7 @@ struct net_device
+ 
+ 
+        struct net_device_stats* (*get_stats)(struct net_device *dev);
++       struct net_device_stats stats;
+ 
+        /* List of functions to handle Wireless Extensions (instead of
+ioctl).
+         * See &lt;net/iw_handler.h&gt; for details. Jean II */
+
+So the netdev stats just moved into struct net_device.
+Did i forget something, e.g. to set NETIF_F_INTERNAL_STATS somewhere?
+
+Regards,
+Oliver
+
+-----Urspr&#252;ngliche Nachricht-----
+Von: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core-bounces at lists.berlios.de</A>
+[mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core-bounces at lists.berlios.de</A>] Im Auftrag von Marc
+Kleine-Budde
+Gesendet: Montag, 17. September 2007 12:06
+An: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core at lists.berlios.de</A>
+Betreff: struct net_device_stats it 2.6.23
+
+Hi!
+
+There was a change in net_devive_stats handling from 2.6.22 -&gt; 2.6.23.
+
+In can_setup() we see:
+
+#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+         dev-&gt;get_stats       = can_get_stats;
+#endif
+
+Can someone please tell me how the stats handling in &gt;= 2.6.23 should 
+be, without fixing it several drivers would not compile, because struct 
+netdevice_stats has been removed from struct can_priv?
+
+struct can_priv {
+#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+         struct net_device_stats net_stats;
+#endif
+
+Marc
+-- 
+  Dipl.-Ing. Marc Kleine-Budde | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>
+   Pengutronix - Linux Solutions for Science and Industry
+     Handelsregister: Amtsgericht Hildesheim, HRA 2686
+       Hannoversche Str. 2, 31134 Hildesheim, Germany
+     Phone: +49-5121-206917-0 |  Fax: +49-5121-206917-9
+_______________________________________________
+Socketcan-core mailing list
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000676.html">vcan.c does not compile with Linux 2.6.23-rc5
+</A></li>
+	<LI>Next message: <A HREF="000678.html">AW: struct net_device_stats it 2.6.23
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#677">[ date ]</a>
+              <a href="thread.html#677">[ thread ]</a>
+              <a href="subject.html#677">[ subject ]</a>
+              <a href="author.html#677">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

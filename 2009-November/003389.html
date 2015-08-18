@@ -1,0 +1,389 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] Peak PCI CAN card driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Peak%20PCI%20CAN%20card%20driver&In-Reply-To=%3C20091105124355.GA1005%40bitbox.co.uk%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003384.html">
+   <LINK REL="Next"  HREF="003390.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] Peak PCI CAN card driver</H1>
+    <B>Peter Horton</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Peak%20PCI%20CAN%20card%20driver&In-Reply-To=%3C20091105124355.GA1005%40bitbox.co.uk%3E"
+       TITLE="[PATCH] Peak PCI CAN card driver">phorton at bitbox.co.uk
+       </A><BR>
+    <I>Thu Nov  5 13:44:27 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003384.html">[PATCH] ems_usb: Fix byte order issues on big endian machines
+</A></li>
+        <LI>Next message: <A HREF="003390.html">[PATCH] Peak PCI CAN card driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3389">[ date ]</a>
+              <a href="thread.html#3389">[ thread ]</a>
+              <a href="subject.html#3389">[ subject ]</a>
+              <a href="author.html#3389">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The patch below adds support for the Peak PCI CAN interface cards. The
+cards are SJA1000 based so only the PCI glue is needed.
+
+Tested with a 2 channel card but should work with 1, 2, 3 or 4 channel
+cards.
+
+Signed-off-by: Peter Horton &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">phorton at bitbox.co.uk</A>&gt;
+
+--
+
+diff -urpN linux-2.6.31.orig/drivers/net/can/Kconfig linux-2.6.31/drivers/net/can/Kconfig
+--- linux-2.6.31.orig/drivers/net/can/Kconfig	2009-09-09 23:13:59.000000000 +0100
++++ linux-2.6.31/drivers/net/can/Kconfig	2009-11-05 10:17:05.000000000 +0000
+@@ -74,6 +74,12 @@ config CAN_KVASER_PCI
+ 	  This driver is for the the PCIcanx and PCIcan cards (1, 2 or
+ 	  4 channel) from Kvaser (<A HREF="http://www.kvaser.com">http://www.kvaser.com</A>).
+ 
++config CAN_PEAK_PCI
++	tristate &quot;Peak PCI CAN Cards&quot;
++	depends on PCI &amp;&amp; CAN_SJA1000
++	---help---
++	  This driver is for the Peak PCI CAN cards (1, 2, 3 or 4 channels).
++
+ config CAN_DEBUG_DEVICES
+ 	bool &quot;CAN devices debugging messages&quot;
+ 	depends on CAN
+diff -urpN linux-2.6.31.orig/drivers/net/can/sja1000/Makefile linux-2.6.31/drivers/net/can/sja1000/Makefile
+--- linux-2.6.31.orig/drivers/net/can/sja1000/Makefile	2009-09-09 23:13:59.000000000 +0100
++++ linux-2.6.31/drivers/net/can/sja1000/Makefile	2009-11-05 10:17:05.000000000 +0000
+@@ -7,5 +7,6 @@ obj-$(CONFIG_CAN_SJA1000_PLATFORM) += sj
+ obj-$(CONFIG_CAN_SJA1000_OF_PLATFORM) += sja1000_of_platform.o
+ obj-$(CONFIG_CAN_EMS_PCI) += ems_pci.o
+ obj-$(CONFIG_CAN_KVASER_PCI) += kvaser_pci.o
++obj-$(CONFIG_CAN_PEAK_PCI) += peak_pci.o
+ 
+ ccflags-$(CONFIG_CAN_DEBUG_DEVICES) := -DDEBUG
+diff -urpN linux-2.6.31.orig/drivers/net/can/sja1000/peak_pci.c linux-2.6.31/drivers/net/can/sja1000/peak_pci.c
+--- linux-2.6.31.orig/drivers/net/can/sja1000/peak_pci.c	1970-01-01 01:00:00.000000000 +0100
++++ linux-2.6.31/drivers/net/can/sja1000/peak_pci.c	2009-11-05 10:21:54.000000000 +0000
+@@ -0,0 +1,287 @@
++/*
++ * (C) BitBox Ltd 2009
++ *
++ * PCI glue for Peak PCI SJA1000 CAN cards
++ *
++ * mostly lifted from ems_pci.c
++ */
++
++#include &lt;linux/module.h&gt;
++#include &lt;linux/pci.h&gt;
++#include &lt;linux/netdevice.h&gt;
++
++#include &quot;sja1000.h&quot;
++
++#define DRIVER_NAME		&quot;peak-pci-can&quot;
++
++#define PEAK_PCI_VENDOR_ID	0x001c
++#define PEAK_PCI_DEVICE_ID	0x0001
++
++#define PEAK_PCI_MAP_SIZE	(4 &lt;&lt; 10)
++
++#define PEAK_PCI_CHAN_COUNT	4
++
++#define PEAK_PCI_REG_SIZE	4
++#define PEAK_PCI_CHAN_SIZE	(1 &lt;&lt; 10)
++
++#define PEAK_PCI_CAN_CLOCK	(8 * 1000 * 1000)
++
++#define PEAK_PCI_OCR		(OCR_TX0_PUSHPULL | OCR_MODE_NORMAL)
++#define PEAK_PCI_CDR		(CDR_PELICAN | CDR_CBP | CDR_CLKOUT_MASK)
++
++#define PITA_ICR		0x0000
++#define PITA_GPIOICR		0x0018
++#define PITA_MISC		0x001c
++
++struct peak_pci_card
++{
++	unsigned int		channels;
++	struct pci_dev		*pdev;
++	void __iomem		*conf_addr;
++	void __iomem		*base_addr;
++	struct net_device	*net_dev[PEAK_PCI_CHAN_COUNT];
++};
++
++static struct pci_device_id const peak_pci_table[] =
++{
++	{
++		PEAK_PCI_VENDOR_ID, PEAK_PCI_DEVICE_ID,
++		PEAK_PCI_VENDOR_ID, PCI_ANY_ID
++	},
++	{ },
++};
++
++MODULE_DEVICE_TABLE(pci, peak_pci_table);
++
++static u8 peak_pci_can_read(struct sja1000_priv const *ctlr, int reg)
++{
++	return ioread8(ctlr-&gt;reg_base + reg * PEAK_PCI_REG_SIZE);
++}
++
++static void
++peak_pci_can_write(struct sja1000_priv const *ctlr, int reg, u8 data)
++{
++	iowrite8(data, ctlr-&gt;reg_base + reg * PEAK_PCI_REG_SIZE);
++}
++
++static unsigned int peak_pci_intr_mask(struct sja1000_priv const *ctlr)
++{
++	static unsigned int const mask[] =
++	{
++		1 &lt;&lt; 1,
++		1 &lt;&lt; 0,
++		1 &lt;&lt; 6,
++		1 &lt;&lt; 7,
++	};
++
++	struct peak_pci_card *card;
++	unsigned int chan;
++
++	card = ctlr-&gt;priv;
++
++	chan = (ctlr-&gt;reg_base - card-&gt;base_addr) / PEAK_PCI_CHAN_SIZE;
++
++	BUG_ON(chan &gt;= ARRAY_SIZE(mask));
++
++	return mask[chan];
++}
++
++static void peak_pci_post_irq(struct sja1000_priv const *ctlr)
++{
++	struct peak_pci_card *card;
++
++	card = ctlr-&gt;priv;
++
++	/* acknowledge interrupt */
++	iowrite16(peak_pci_intr_mask(ctlr), card-&gt;conf_addr + PITA_ICR + 0);
++}
++
++static int
++peak_pci_add_card(struct pci_dev *pdev, struct pci_device_id const *id)
++{
++	struct peak_pci_card *card;
++	struct sja1000_priv *ctlr;
++	struct net_device *ndev;
++	unsigned int mask, nchan;
++	u16 ident;
++	int err;
++
++	err = pci_enable_device(pdev);
++	if (err &lt; 0) {
++		dev_err(&amp;pdev-&gt;dev, &quot;failed to enable PCI device\n&quot;);
++		return err;
++	}
++
++	err = -ENOMEM;
++
++	card = kzalloc(sizeof(struct peak_pci_card), GFP_KERNEL);
++	if (card == NULL) {
++		dev_err(&amp;pdev-&gt;dev, &quot;failed to allocate memory\n&quot;);
++		goto disable_device;
++	}
++
++	card-&gt;pdev = pdev;
++	pci_set_drvdata(pdev, card);
++
++	card-&gt;conf_addr = pci_iomap(pdev, 0, PEAK_PCI_MAP_SIZE);
++	if (card-&gt;conf_addr == NULL) {
++		dev_err(&amp;pdev-&gt;dev, &quot;failed to map PCI resource #0\n&quot;);
++		goto free_context;
++	}
++
++	card-&gt;base_addr = pci_iomap(pdev, 1, PEAK_PCI_MAP_SIZE);
++	if (card-&gt;base_addr == NULL) {
++		dev_err(&amp;pdev-&gt;dev, &quot;failed to map PCI resource #1\n&quot;);
++		goto unmap_config;
++	}
++
++	err = pci_read_config_word(pdev, PCI_SUBSYSTEM_ID, &amp;ident);
++	if (err) {
++		dev_err(&amp;pdev-&gt;dev, &quot;failed to get PCI device identifier\n&quot;);
++		goto unmap_base;
++	}
++
++	nchan = 1;
++	if (ident &gt;= 4)
++		++nchan;
++	if (ident &gt;= 10)
++		++nchan;
++	if (ident &gt;= 12)
++		++nchan;
++
++	dev_info(&amp;pdev-&gt;dev, &quot;%u channel card\n&quot;, nchan);
++
++	/* set GP0 and GP2 as outputs */
++	iowrite16(0x0005, card-&gt;conf_addr + PITA_GPIOICR + 2);
++	/* set GP0 and GP2 low */
++	iowrite8(0x00, card-&gt;conf_addr + PITA_GPIOICR + 0);
++	/* parallel mode, soft reset */
++	iowrite8(0x05, card-&gt;conf_addr + PITA_MISC + 3);
++	mdelay(5);
++	/* parallel mode */
++	iowrite8(0x04, card-&gt;conf_addr + PITA_MISC + 3);
++
++	mask = 0;
++
++	err = -ENOMEM;
++
++	while (card-&gt;channels &lt; nchan) {
++
++		ndev = alloc_sja1000dev(0);
++		if (ndev == NULL) {
++			dev_err(&amp;pdev-&gt;dev, &quot;failed to allocate memory\n&quot;);
++			goto free_devices;
++		}
++
++		ndev-&gt;irq = pdev-&gt;irq;
++
++		ctlr = netdev_priv(ndev);
++
++		ctlr-&gt;priv		= card;
++		ctlr-&gt;irq_flags		= IRQF_SHARED;
++		ctlr-&gt;reg_base		=
++			card-&gt;base_addr + card-&gt;channels * PEAK_PCI_CHAN_SIZE;
++		ctlr-&gt;read_reg		= peak_pci_can_read;
++		ctlr-&gt;write_reg		= peak_pci_can_write;
++		ctlr-&gt;post_irq		= peak_pci_post_irq;
++		ctlr-&gt;can.clock.freq	= PEAK_PCI_CAN_CLOCK;
++		ctlr-&gt;ocr		= PEAK_PCI_OCR;
++		ctlr-&gt;cdr		= PEAK_PCI_CDR;
++
++		SET_NETDEV_DEV(ndev, &amp;pdev-&gt;dev);
++
++		mask |= peak_pci_intr_mask(ctlr);
++
++		/* acknowledge interrupt */
++		iowrite16(mask, card-&gt;conf_addr + PITA_ICR + 0);
++		/* enable interrupt */
++		iowrite16(mask, card-&gt;conf_addr + PITA_ICR + 2);
++
++		err = register_sja1000dev(ndev);
++		if (err &lt; 0) {
++			dev_err(&amp;pdev-&gt;dev,
++					&quot;failed to register SJA1000 device\n&quot;);
++			free_sja1000dev(ndev);
++			goto free_devices;
++		}
++
++		card-&gt;net_dev[card-&gt;channels++] = ndev;
++	}
++
++	return 0;
++
++free_devices:
++	/* disable interrupts */
++	iowrite16(0x0000, card-&gt;conf_addr + PITA_ICR + 2);
++
++	while (card-&gt;channels) {
++
++		ndev = card-&gt;net_dev[--card-&gt;channels];
++		unregister_sja1000dev(ndev);
++		free_sja1000dev(ndev);
++	}
++
++unmap_base:
++	pci_iounmap(pdev, card-&gt;base_addr);
++
++unmap_config:
++	pci_iounmap(pdev, card-&gt;conf_addr);
++
++free_context:
++	kfree(card);
++
++disable_device:
++	pci_disable_device(pdev);
++
++	return err;
++}
++
++static void peak_pci_del_card(struct pci_dev *pdev)
++{
++	struct peak_pci_card *card;
++	struct net_device *ndev;
++
++	card = pci_get_drvdata(pdev);
++
++	while (card-&gt;channels) {
++
++		ndev = card-&gt;net_dev[--card-&gt;channels];
++		dev_info(&amp;pdev-&gt;dev, &quot;removing device %s\n&quot;, ndev-&gt;name);
++		unregister_sja1000dev(ndev);
++		free_sja1000dev(ndev);
++	}
++
++	pci_iounmap(pdev, card-&gt;base_addr);
++	pci_iounmap(pdev, card-&gt;conf_addr);
++
++	pci_set_drvdata(pdev, NULL);
++
++	kfree(card);
++
++	pci_disable_device(pdev);
++}
++
++static struct pci_driver peak_pci_driver =
++{
++	.name		= DRIVER_NAME,
++	.id_table	= peak_pci_table,
++	.probe		= peak_pci_add_card,
++	.remove		= peak_pci_del_card,
++};
++
++static int __init peak_pci_init(void)
++{
++	return pci_register_driver(&amp;peak_pci_driver);
++}
++
++static void __exit peak_pci_exit(void)
++{
++	pci_unregister_driver(&amp;peak_pci_driver);
++}
++
++module_init(peak_pci_init);
++module_exit(peak_pci_exit);
++
++MODULE_LICENSE(&quot;GPL v2&quot;);
++
++/* vi:set ts=8 sw=8 cin: */
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003384.html">[PATCH] ems_usb: Fix byte order issues on big endian machines
+</A></li>
+	<LI>Next message: <A HREF="003390.html">[PATCH] Peak PCI CAN card driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3389">[ date ]</a>
+              <a href="thread.html#3389">[ thread ]</a>
+              <a href="subject.html#3389">[ subject ]</a>
+              <a href="author.html#3389">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

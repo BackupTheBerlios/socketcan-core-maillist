@@ -1,0 +1,145 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> How to provide product information
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20How%20to%20provide%20product%20information&In-Reply-To=%3C20091106085511.GA323%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003391.html">
+   <LINK REL="Next"  HREF="003375.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>How to provide product information</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20How%20to%20provide%20product%20information&In-Reply-To=%3C20091106085511.GA323%40e-circ.dyndns.org%3E"
+       TITLE="How to provide product information">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Fri Nov  6 09:55:11 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003391.html">How to provide product information
+</A></li>
+        <LI>Next message: <A HREF="003375.html">How to provide product information
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3400">[ date ]</a>
+              <a href="thread.html#3400">[ thread ]</a>
+              <a href="subject.html#3400">[ subject ]</a>
+              <a href="author.html#3400">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, Nov 05, 2009 at 06:18:05PM +0100, Oliver Hartkopp wrote:
+&gt;<i> Kurt Van Dijck wrote:
+</I>&gt;<i> 
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; Maybe after all this discussion and after coming back to sysfs the idea behind
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; a driver generated unique canhwid has become clearer.
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; IMO we could define a common specification, how the canhwid has to be built by
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; the driver, e.g.
+</I>&gt;<i> &gt;&gt;&gt;&gt; yes, and this does not forbit anyone to create other sysfs entries for special cases :-)
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &lt;drvname&gt;#&lt;vendor&gt;#&lt;product&gt;#&lt;serialnumber&gt;#&lt;ioport&gt;#&lt;channel&gt;#
+</I>&gt;<i> &gt; From these, only serialnumber &amp; channel are new values. The others (if
+</I>&gt;<i> &gt; they would be available) can be found in the device subdirectory.
+</I>&gt;<i> (..)
+</I>&gt;<i> &gt; I can, however, imagine very usefull things with a 'channel' (which is
+</I>&gt;<i> &gt; per-CAN chip) and a serial (which is per-device), although not every
+</I>&gt;<i> &gt; device has such properties.
+</I>&gt;<i> &gt; A good udev config (we use a udev replacement, written in house just for
+</I>&gt;<i> &gt; faster boots) should be able to do anything you like when these
+</I>&gt;<i> &gt; (2) are seperate sysfs properties.
+</I>&gt;<i> 
+</I>&gt;<i> No problems with that.
+</I>&gt;<i> 
+</I>&gt;<i> So your suggestion in two sentences would be:
+</I>&gt;<i> 
+</I>&gt;<i> 1. Put the modalias stuff AS-IS in /sys/class/net/can0/device/modalias
+</I>right, but this is not the driver's job, it's the bus's job.
+&gt;<i> 2. Put the CAN interface differencing stuff in /sys/class/net/can0/canhwid
+</I>&gt;<i> 
+</I>&gt;<i> Right?
+</I>&gt;<i> 
+</I>&gt;<i> This would make udev happy to load &amp; handle the correct driver and
+</I>&gt;<i> additionally would allow to identify separate CAN interfaces embedded in this
+</I>&gt;<i> 'device' due to the serialnumber/channel/ioport in the driver generated canhwid.
+</I>ack.
+
+&gt;<i> 
+</I>&gt;<i> Do you know if this can be handled sufficiently by udev scripts to configure
+</I>&gt;<i> e.g. bitrates? I'm not that familiar with udev scripting.
+</I>Yep, you can access sysfs properties to match udev rules. Here, it
+becomes important to only have 1 value per sysfs file, as Wolfgang
+already mentioned.
+To be honest, we developed our own (not yet open source) udev
+replacement, to speed up boot time. I therefore don't know the exact
+syntax anymore.
+
+Still in udev:
+Once a rule matched, you can attach any command you like to the uevent.
+be carefull with this, udev per default tries to run these commands
+serialized with other events, so your command must return within a
+reasonable time. I used to apply the 'atd' scheduler for it to schedule
+work.
+'ip link set .... ${DEV}' is a command as any other in this regard.
+
+For this rule-matching, the 'device' symlink comes extremely handy,
+as you're not limited to the netdevice, you can access the parent
+'physical' device's properties too, like ioport, irq, manufacturer,
+product when the bus exports these.
+I'm not how to use udev's driver symlink support.
+
+I did not write udev rules for CAN chips, I mainly did for personal
+camera, printer, ..., usb disk, ... to run commands when they appeared.
+
+In the next example, I'll demonstrate an example with my softing card.
+1 addition I'll need to make (never had any problem with 1 card), is a
+bus-num per CAN chip property.
+
+So, if you'd like to configure a bitrate when the device comes up,
+then the udev rule must be something like this. (I'm not sure on $name)
+
+SUBSYSTEM==&quot;net&quot;, DRIVERS==&quot;softing_cs&quot;, ATTR{bus_num}==&quot;1&quot;,
+   ATTR{device/prod_id1}==&quot;SOFTING GmbH&quot;, RUN+=&quot;ip link set $name ...&quot;
+
+Mind the device/* attributes, they're not added by my driver, they come
+from the pcmcia subsystem.
+
+Therefore, The only 2 properties I see usefull here are a serial number
+per device, and a 'bus number within the card' per chip.
+
+Hope this clarifies some things
+Kurt
+&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>&gt;<i> 
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003391.html">How to provide product information
+</A></li>
+	<LI>Next message: <A HREF="003375.html">How to provide product information
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3400">[ date ]</a>
+              <a href="thread.html#3400">[ thread ]</a>
+              <a href="subject.html#3400">[ subject ]</a>
+              <a href="author.html#3400">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

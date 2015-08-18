@@ -1,0 +1,178 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Socket returns invalid argument using Virtual CAN,	and mcp251x probe issue
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Socket%20returns%20invalid%20argument%20using%20Virtual%20CAN%2C%0A%09and%20mcp251x%20probe%20issue&In-Reply-To=%3CCE49A946-8E6C-4BFE-A287-6A64CCDC6116%40eircom.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="001174.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Socket returns invalid argument using Virtual CAN,	and mcp251x probe issue</H1>
+    <B>Hugh Hernan</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Socket%20returns%20invalid%20argument%20using%20Virtual%20CAN%2C%0A%09and%20mcp251x%20probe%20issue&In-Reply-To=%3CCE49A946-8E6C-4BFE-A287-6A64CCDC6116%40eircom.net%3E"
+       TITLE="Socket returns invalid argument using Virtual CAN,	and mcp251x probe issue">hhernan at eircom.net
+       </A><BR>
+    <I>Fri May  2 10:36:42 CEST 2008</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="001174.html">Socket returns invalid argument using Virtual CAN,	and mcp251x	probe issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1173">[ date ]</a>
+              <a href="thread.html#1173">[ thread ]</a>
+              <a href="subject.html#1173">[ subject ]</a>
+              <a href="author.html#1173">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+I am relatively new to linux, and socket-CAN.  I am using Linux  
+2.6.24, (ARCH=ppc)  on an Analog and Micro MPC8347 board, and I'm  
+having trouble getting socket CAN working.  I've look through your  
+documentation, and archives and I'm unable to find what I am missing.
+
+1.) When socket is called (e.g. in cansend) it returns -1, and perror  
+displays &quot;invalid argument&quot;.  Can anybody please help me.  I do not  
+know why the call to &quot;socket&quot; is returning this error, and how to  
+resolve the issue, since I think I have all the pre-requisites setup  
+for socket can. See details below.
+
+2.) My second problem is that probe is not being called for the  
+mcp251x during boot-up.  I have added the code indicated below to my  
+platform file.  Indicating that there are 2 SPI ports. Is there  
+something more I need to register, in order for the driver core to tie  
+the driver to the spi device, using the modalias of mcp251x ?   
+spi_register_board_info is being called, as also is the  
+spi_register_driver in the mcp251x.c code.
+
+Would really appreciate any help or advice,
+Thank you,
+Hugh.
+
+--------------------------------------------------------
+Hugh Hernan,
+Gamah Technologies.
+e-mail: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hhernan at eircom.net</A>
+--------------------------------------------------------
+
+-socket issue -------------------------------------------------
+Using ELDK 4.2, I have enabled CONFIG_CAN, CONFIG_CAN_RAW,  
+CONFIG_CAN_RAW_USER, and CONFIG_CAN_VCAN in my build of the kernel,  
+and also patched the kernel with the MCP251X driver from Chris  
+Elston.  I also had to create a patch from the socketcan trunk, using  
+mkpatch in order for it to work with ELDK's 2.6.24, since setting the  
+RAW option with the ELDK 4.2 will not build (in correct number of  
+arguments in dev_get_by_index).
+
+On boot-up the board displays that the vcan ports are being created  
+(as shown below),
+	vcan: Virtual CAN interface driver
+	vcan: registering 4 virtual CAN interfaces. (loopback disabled)
+
+ifconfig can0 up, will result in the can0 interface being displayed by  
+ifconfig.  As also does &quot;ip link&quot;.
+	vcan0     Link encap:UNSPEC  HWaddr  
+00-00-00-00-00-00-00-00-00-00-00-00-00-00-00
+	-00
+           UP RUNNING NOARP  MTU:16  Metric:1
+           RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+           TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+           collisions:0 txqueuelen:0
+           RX bytes:0 (0.0 b)  TX bytes:0 (0.0 b)
+
+Also during bootup it shows that the network registers the PF_CAN  
+(i.e. 29), and that the RAW_PROTOCOL is setup.
+	can: controller area network core (rev 20070802 abi 8)
+	NET: Registered protocol family 29
+	can: raw protocol (rev 20070802)
+
+The problem however is that when I use the can-utils  I get the  
+following error.
+	./cansend vcan0 123#DEADBEEF
+	socket: Invalid argument
+
+- mcp251x platform code ------------------------------------------------
+void myboard_mcp251x_initfunc(void);
+void myboard_mcp251x_reset(void);
+
+static struct mcp251x_platform_data mcp251x_info = {
+   .oscillator_frequency = 19000000,
+   .board_specific_setup = myboard_mcp251x_initfunc,
+   .device_reset = myboard_mcp251x_reset,
+   .transceiver_enable = NULL,
+};
+
+static struct spi_board_info spi_board_info[] __initdata = {
+{
+   .modalias = &quot;mcp251x&quot;,
+   .platform_data = &amp;mcp251x_info,
+   .irq = 19,     /* MPC83xx IRQ_EXT3 in include/asm/mpc83xx.h */
+   .max_speed_hz = 8000000,
+   .bus_num = 0,
+   .chip_select = 0
+},
+{
+   .modalias = &quot;mcp251x&quot;,
+   .platform_data = &amp;mcp251x_info,
+   .irq = 20,     /* MPC83xx IRQ_EXT4 in include/asm/mpc83xx.h */
+   .max_speed_hz = 8000000,
+   .bus_num = 1,
+   .chip_select = 1
+}
+};
+
+void myboard_mcp251x_initfunc()
+{
+         printk(KERN_ALERT &quot;fpga_dcc2 myboard_mcp251x_initfunc called 
+\n&quot;);
+}
+
+void myboard_mcp251x_reset()
+{
+         printk(KERN_ALERT &quot;fpga_dcc2 myboard_mcp251x_reset called\n&quot;);
+}
+
+static int __init am_asp_834x_mcp251x_init(void)
+{
+	printk(KERN_ALERT &quot;%s(): registering device resources\n&quot;,  
+__FUNCTION__);
+	spi_register_board_info(spi_board_info, ARRAY_SIZE(spi_board_info));
+
+     return 0;
+}
+arch_initcall(am_asp_834x_mcp251x_init);
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="001174.html">Socket returns invalid argument using Virtual CAN,	and mcp251x	probe issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1173">[ date ]</a>
+              <a href="thread.html#1173">[ thread ]</a>
+              <a href="subject.html#1173">[ subject ]</a>
+              <a href="author.html#1173">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

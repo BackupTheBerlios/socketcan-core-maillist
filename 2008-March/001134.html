@@ -1,0 +1,213 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] EMS CPC-PCI/PCIe reworked
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-March/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20EMS%20CPC-PCI/PCIe%20reworked&In-Reply-To=%3C47ECB029.9090103%40ems-wuensche.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001127.html">
+   <LINK REL="Next"  HREF="001135.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] EMS CPC-PCI/PCIe reworked</H1>
+    <B>Sebastian Haas</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20EMS%20CPC-PCI/PCIe%20reworked&In-Reply-To=%3C47ECB029.9090103%40ems-wuensche.com%3E"
+       TITLE="[PATCH] EMS CPC-PCI/PCIe reworked">haas at ems-wuensche.com
+       </A><BR>
+    <I>Fri Mar 28 09:45:29 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001127.html">[PATCH] EMS CPC-PCI/PCIe reworked
+</A></li>
+        <LI>Next message: <A HREF="001135.html">[PATCH] EMS CPC-PCI/PCIe reworked
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1134">[ date ]</a>
+              <a href="thread.html#1134">[ thread ]</a>
+              <a href="subject.html#1134">[ subject ]</a>
+              <a href="author.html#1134">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+Hello Wolfgang,
+
+Wolfgang Grandegger wrote:
+&gt;&gt;<i> This patch cleans up the EMS PCI driver and fixes a bug in card
+</I>&gt;<i> detection.
+</I>&gt;<i>
+</I>&gt;<i> Thanks for your contribution. I appreciate when the hardware gets
+</I>&gt;<i> supported by the vendor itself. Does this mean that you also want to
+</I>&gt;<i> maintain the driver in the future?
+</I>Yes, as long as my work time limit allows it. We also thinking about
+adding support to Socket-CAN for other PC CAN interfaces like CPC-104M
+(up to 4 channels), CPC-USB and CPC-Card (dual channel).
+
+&gt;&gt;<i> The patch was tested with an one-channel PCI (CPC-PCI) and
+</I>&gt;&gt;<i> dual-channel PCI express (CPC-PCIe).
+</I>&gt;<i>
+</I>&gt;<i> I was not aware that there are also single-channels cards.
+</I>CPC-PCI and CPC-PCIe are both available with one or two channels. And a
+4 channel PCI card is in progress.
+
+&gt;<i> I realized that you re-wrote the master/slave code but I do not see
+</I>&gt;<i> any real benefit. For me it looks more complicated. More comments
+</I>&gt;<i> inline.
+</I>We just store a table of available channel within the card structure. If
+we need to support more channels, just change EMS_PCI_MAX_CHAN. It's
+scales very well. Maybe I replace the static table with a dynamic list.
+
+&gt;<i> Furthermore there are plenty of coding style issues. Please read the
+</I>&gt;<i> kernel's Documentation/CodingStyle and run the scripts/checkpatch.pl.
+</I>Thank you for your annotations, this was my first patch I've ever
+committed to the public. I've fixed a lot of coding style problems with
+the help of checkpatch.
+
+Sebastian
+
+Wolfgang Grandegger wrote:
+
+&gt;<i> +struct ems_pci_chan {
+</I>&gt;<i>  	struct pci_dev *pci_dev;
+</I>&gt;<i> -	struct net_device *slave_dev;
+</I>&gt;<i> -	volatile void __iomem *conf_addr;
+</I>&gt;<i> +	void __iomem *can_addr;
+</I>&gt;<i>  };
+</I>&gt;<i> 
+</I>&gt;<i> ** It's handy to keep the conf_addr in the above struct.
+</I>Yes, but the conf_addr belongs to the card not the channel.
+
+&gt;<i> +static void ems_pci_write_reg(struct net_device *dev, int port, u8 val)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct sja1000_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct ems_pci_chan *chan = priv-&gt;priv;
+</I>&gt;<i> +	
+</I>&gt;<i> +	ems_chan_writeb(chan, port, val);
+</I>&gt;<i>  }
+</I>&gt;<i> 
+</I>&gt;<i> ** I do not see the need for an extra set of register access functions.
+</I>Oh yeah! Fixed!
+
+&gt;<i> +/**
+</I>&gt;<i> + * Check if a CAN controller is present at the specified location
+</I>&gt;<i> + * by trying to set 'em into the PeliCAN mode
+</I>&gt;<i> + */
+</I>&gt;<i> +static inline int ems_pci_check_chan(struct ems_pci_chan *chan)
+</I>&gt;<i> +{
+</I>&gt;<i> +	unsigned char res;
+</I>&gt;<i> 
+</I>&gt;<i> +	/* Make sure SJA1000 is in reset mode */
+</I>&gt;<i> +	ems_chan_writeb(chan, REG_MOD, 1);
+</I>&gt;<i> +	
+</I>&gt;<i> +	ems_chan_writeb(chan, REG_CDR, CDR_PELICAN);
+</I>&gt;<i> +	
+</I>&gt;<i> +	/* give controller some time to react */
+</I>&gt;<i> +	mdelay(50);
+</I>&gt;<i> 
+</I>&gt;<i> ** Does the controller really need that much time. If yes, please avoid
+</I>&gt;<i> ** busy sleep.
+</I>Not required. Fixed!
+
+&gt;<i> +static void ems_pci_card_reset(struct ems_pci_card *card)
+</I>&gt;<i> +{
+</I>&gt;<i> +	/* Request board reset */
+</I>&gt;<i> +	writeb(0, card-&gt;base_addr);
+</I>&gt;<i> 
+</I>&gt;<i> -	printk(&quot;%s: base_addr=%#lx conf_addr=%p irq=%d\n&quot;, DRV_NAME,
+</I>&gt;<i> -	       dev-&gt;base_addr, board-&gt;conf_addr, dev-&gt;irq);
+</I>&gt;<i> +	mdelay(500);
+</I>&gt;<i> 
+</I>&gt;<i> ** Puh, 500ms is a long time. This means an insmod for a two channel
+</I>&gt;<i> ** card will take *1* second. If this is really required by the hardware
+</I>&gt;<i> ** please don't use busy sleep, at least.
+</I>Not required. Fixed!
+
+&gt;<i> +	/* Allocating card structures to hold addresses, ... */
+</I>&gt;<i> +	card = (struct ems_pci_card *) vmalloc(sizeof(struct
+</I>&gt;<i> 
+</I>&gt;<i> ** Don't use vmalloc() but kmalloc().
+</I>Fixed!
+
+&gt;<i> +	disable_irq(pdev-&gt;irq);
+</I>&gt;<i> 
+</I>&gt;<i> -	if ((err = pci_request_regions(pdev, DRV_NAME)))
+</I>&gt;<i> -		goto failure;
+</I>&gt;<i> +	/* Enable interrupts from card */
+</I>&gt;<i> +	writel(PITA2_ICR_INT0_EN, card-&gt;conf_addr + PITA2_ICR);
+</I>&gt;<i> 
+</I>&gt;<i> -	if ((err = ems_pci_add_chan(pdev, EMS_PCI_MASTER, &amp;master_dev)))
+</I>&gt;<i> -		goto failure_cleanup;
+</I>&gt;<i> -	if ((err = ems_pci_add_chan(pdev, EMS_PCI_SLAVE, &amp;master_dev)))
+</I>&gt;<i> -		goto failure_cleanup;
+</I>&gt;<i> +	enable_irq(pdev-&gt;irq);
+</I>&gt;<i> 
+</I>&gt;<i> ** Why do you not enable the interrupts on the card before calling
+</I>&gt;<i> ** register_sja1000dev()?
+</I>Fixed!
+
+- --
+Mit freundlichen Gruessen/Best Regards,
+
+Sebastian Haas
+Software Entwicklung/Software Development
+
+Phone: +49-9451-9432-22
+Fax  : +49-9451-9432-12
+Email: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">haas at ems-wuensche.com</A>
+Web  : www.ems-wuensche.com
+
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.6 (GNU/Linux)
+Comment: Using GnuPG with Mozilla - <A HREF="http://enigmail.mozdev.org">http://enigmail.mozdev.org</A>
+
+iD8DBQFH7LAppqRB8PJG7XwRApNvAJ4osLODTZT7cBhXWUMpINHtLoLDyACdFNsc
+xPEivzFRmjDGZsk4QjJMahg=
+=u8kp
+-----END PGP SIGNATURE-----
+
+-- 
+EMS Dr. Thomas Wuensche e.K.
+Sonnenhang 3
+85304 Ilmmuenster
+HRA Neuburg a.d. Donau, HR-Nr. 70.106
+Phone: +49-8441-490260
+Fax  : +49-8441-81860
+<A HREF="http://www.ems-wuensche.com">http://www.ems-wuensche.com</A>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: ems_pci_reworked_fixed.patch
+Type: text/x-diff
+Size: 14153 bytes
+Desc: not available
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20080328/9da89fe7/attachment.patch">https://lists.berlios.de/pipermail/socketcan-core/attachments/20080328/9da89fe7/attachment.patch</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001127.html">[PATCH] EMS CPC-PCI/PCIe reworked
+</A></li>
+	<LI>Next message: <A HREF="001135.html">[PATCH] EMS CPC-PCI/PCIe reworked
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1134">[ date ]</a>
+              <a href="thread.html#1134">[ thread ]</a>
+              <a href="subject.html#1134">[ subject ]</a>
+              <a href="author.html#1134">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

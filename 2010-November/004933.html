@@ -1,0 +1,138 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Fix%20build%0A%09warnings&In-Reply-To=%3C4CD95EE8.4000709%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004930.html">
+   <LINK REL="Next"  HREF="004931.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Fix%20build%0A%09warnings&In-Reply-To=%3C4CD95EE8.4000709%40pengutronix.de%3E"
+       TITLE="[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings">mkl at pengutronix.de
+       </A><BR>
+    <I>Tue Nov  9 15:47:04 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004930.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+        <LI>Next message: <A HREF="004931.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4933">[ date ]</a>
+              <a href="thread.html#4933">[ thread ]</a>
+              <a href="subject.html#4933">[ subject ]</a>
+              <a href="author.html#4933">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 11/09/2010 01:26 PM, Tomoya MORINAGA wrote:
+&gt;&gt;<i> It's just a question if the driver for an Intel Chipset should/could ignore
+</I>&gt;&gt;<i> the endian problematic.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If this is intended the driver should only appear in Kconfig depending on X86
+</I>&gt;&gt;<i> or little endian systems.
+</I>&gt;<i> 
+</I>&gt;<i> This driver is for only x86 processor.
+</I>&gt;<i> I have no intention to support processor except x86.
+</I>
+Fair enough, if you do the endianess conversion correct, either with my
+proposed cpu_to_be16 or with the simpler and probably unnoticeable
+slower version from Oliver. With Olivers version it's a bit harder to
+build a loop that just copies the number of bytes specified in dlc.
+
+&gt;&gt;<i> Besides this remark, the struct pch_can_regs could also be defined in a way
+</I>&gt;&gt;<i> that every single CAN payload data byte could be accessed directly to allow
+</I>&gt;&gt;<i> e.g. this code in pch_can_rx_normal():
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> cf-&gt;data[0] = ioread8(&amp;priv-&gt;regs-&gt;if1_data0);
+</I>&gt;&gt;<i> cf-&gt;data[1] = ioread8(&amp;priv-&gt;regs-&gt;if1_data1);
+</I>&gt;&gt;<i> cf-&gt;data[2] = ioread8(&amp;priv-&gt;regs-&gt;if1_data2);
+</I>&gt;&gt;<i> (..)
+</I>&gt;&gt;<i> cf-&gt;data[6] = ioread8(&amp;priv-&gt;regs-&gt;if1_data6);
+</I>&gt;&gt;<i> cf-&gt;data[7] = ioread8(&amp;priv-&gt;regs-&gt;if1_data7);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> This is easy to understand and additionally endian aware.
+</I>&gt;<i> 
+</I>&gt;<i> I agree. Thease codes are very simple.
+</I>&gt;<i> I will modify like above.
+</I>&gt;<i> 
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> In opposite to this:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> + if (cf-&gt;can_dlc &gt; 2) {
+</I>&gt;&gt;<i> + u32 data1 = *((u16 *)&amp;cf-&gt;data[2]);
+</I>&gt;&gt;<i> + iowrite32(data1, &amp;priv-&gt;regs-&gt;if2_dataa2);
+</I>&gt;&gt;<i> + }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Which puts a little? endian u16 into the big endian register layout.
+</I>&gt;&gt;<i> Sorry i'm just getting curious on this register access implementation.
+</I>&gt;<i> 
+</I>&gt;<i> I think cf-&gt;data is like below
+</I>&gt;<i> MSB----------LSB
+</I>&gt;<i> D3-D2-D1-D0
+</I>&gt;<i> D7-D6-D5-D4
+</I>
+No, cf-&gt;data is an array of 8 u8, so it looks this way:
+
+D0 D1 D2 D3  D4 D5 D6 D7
+
+&gt;<i> *((u16 *)&amp;cf-&gt;data[2]) means &quot;D3-D2&quot;.
+</I>
+No, it's D2 D3. This is why you need the endianess conversion.
+
+&gt;<i> This order coprresponds to register order.
+</I>&gt;<i> data register is like below
+</I>&gt;<i> MSB----------LSB
+</I>&gt;<i> **-**-D3-D2
+</I>&gt;<i> 
+</I>&gt;<i> ** means reserved area.
+</I>
+cheers, Marc
+
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101109/a0dce637/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101109/a0dce637/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004930.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+	<LI>Next message: <A HREF="004931.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4933">[ date ]</a>
+              <a href="thread.html#4933">[ thread ]</a>
+              <a href="subject.html#4933">[ subject ]</a>
+              <a href="author.html#4933">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,141 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> AT91 device driver woes?
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20AT91%20device%20driver%20woes%3F&In-Reply-To=%3C20080228161313.45fea0c3%40dilbert.local%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001084.html">
+   <LINK REL="Next"  HREF="001086.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>AT91 device driver woes?</H1>
+    <B>Hans-J&#252;rgen Koch</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20AT91%20device%20driver%20woes%3F&In-Reply-To=%3C20080228161313.45fea0c3%40dilbert.local%3E"
+       TITLE="AT91 device driver woes?">hjk at linutronix.de
+       </A><BR>
+    <I>Thu Feb 28 16:13:13 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001084.html">AT91 device driver woes?
+</A></li>
+        <LI>Next message: <A HREF="001086.html">AT91 device driver woes?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1085">[ date ]</a>
+              <a href="thread.html#1085">[ thread ]</a>
+              <a href="subject.html#1085">[ subject ]</a>
+              <a href="author.html#1085">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Am Thu, 28 Feb 2008 15:48:49 +0100
+schrieb Sam Ravnborg &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">sam at ravnborg.org</A>&gt;:
+
+&gt;<i> On Wed, Feb 27, 2008 at 09:24:59AM +0100, Sam Ravnborg wrote:
+</I>&gt;<i> &gt; Hi Hans.
+</I>
+Hi Sam,
+sorry for not answering earlier, I was on a trade fair for two days.
+
+&gt;<i> &gt; 
+</I>&gt;<i> &gt; We are started to use your nice AT91 driver but
+</I>&gt;<i> &gt; are facing a small issue with respect to filtering.
+</I>&gt;<i> &gt; I tracked it down to following code snippet that looks wrong:
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; static void read_mailbox(struct net_device *dev, int mb, struct
+</I>&gt;<i> &gt; can_frame *cf) {
+</I>&gt;<i> &gt;         u32 can_msr, can_mid, can_mdl, can_mdh;
+</I>&gt;<i> &gt;         int i;
+</I>&gt;<i> &gt;         struct can_priv *priv = netdev_priv(dev);
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;         spin_lock(&amp;priv-&gt;lock);
+</I>&gt;<i> &gt;         can_mid = at91_can_read(dev, CAN_MID(mb));
+</I>&gt;<i> &gt;         if (can_mid &amp; CAN_MID_MIDE)
+</I>&gt;<i> &gt;                 cf-&gt;can_id = can_mid | CAN_EFF_FLAG;
+</I>&gt;<i> &gt;         else
+</I>&gt;<i> &gt;                 cf-&gt;can_id = ((can_mid &amp; 0x1FFC0000) &gt;&gt; 18);
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; The assignment to can_id in extended mode does not mask
+</I>&gt;<i> &gt; out the upper bits.
+</I>&gt;<i> &gt; So I went ahead and did:
+</I>&gt;<i> &gt; 	cf-&gt;can_id = (can_mid &amp; CAN_EFF_MASK) | CAN_EFF_FLAG;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; But a bit searching revealed that I was using an older version
+</I>&gt;<i> &gt; of your device driver. In the latest version you posted this
+</I>&gt;<i> &gt; code was fixed like this:
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; +	can_mid = at91_can_read(dev, CAN_MID(mb));
+</I>&gt;<i> &gt; +	if (can_mid &amp; CAN_MID_MIDE)
+</I>&gt;<i> &gt; +		cf-&gt;can_id = (can_mid &amp; 0x0003FFFF) | CAN_EFF_FLAG;
+</I>&gt;<i> &gt; +	else
+</I>&gt;<i> &gt; +		cf-&gt;can_id = ((can_mid &amp; 0x1FFC0000) &gt;&gt; 18);
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Here only the lower 18 bits are used in the extended addressign
+</I>&gt;<i> &gt; mode. And in normal addressign mode you mask out the upper 18 bits.
+</I>&gt;<i> &gt; Both assignments looks wrong to me.
+</I>&gt;<i> 
+</I>&gt;<i> Just a heads up.
+</I>&gt;<i> Using the below simple patch made the filtering work as expected.
+</I>&gt;<i> 
+</I>&gt;<i> --- linux-2.6.23/drivers/net/can/at91_can.c     2008-02-27
+</I>&gt;<i> 12:59:16.000000000 +0100 +++
+</I>&gt;<i> linux-2.6.23.new/drivers/net/can/at91_can.c 2008-02-27
+</I>&gt;<i> 13:05:21.000000000 +0100 @@ -483,7 +483,7 @@ spin_lock(&amp;priv-&gt;lock);
+</I>&gt;<i>         can_mid = at91_can_read(dev, CAN_MID(mb));
+</I>&gt;<i>         if (can_mid &amp; CAN_MID_MIDE)
+</I>&gt;<i> -               cf-&gt;can_id = can_mid | CAN_EFF_FLAG;
+</I>&gt;<i> +               cf-&gt;can_id = (can_mid &amp; CAN_EFF_MASK) | CAN_EFF_FLAG;
+</I>&gt;<i>         else
+</I>&gt;<i>                 cf-&gt;can_id = ((can_mid &amp; 0x1FFC0000) &gt;&gt; 18);
+</I>&gt;<i> 
+</I>
+Quite right. I came to the same conclusion. If your CAN_EFF_MASK is
+0x0003FFFF, then we've got the same code. We should replace that ugly
+0x1FFC0000 by some #define as well. 
+
+&gt;<i> [cut'n'paste patch - only for documentation purpose as this codepath
+</I>&gt;<i> is anyway changed in latest driver version]
+</I>&gt;<i> I have yet to re-read the at91 spec before I can comment on wheter
+</I>&gt;<i> I think the above is correct or not (working is not equal to correct).
+</I>&gt;<i> 
+</I>&gt;<i> What happened was that the can filter expected the can_id received
+</I>&gt;<i> from the HW driver to have bit 29+30 equal 0 and only bit 31 was
+</I>&gt;<i> explicit tested. So when we received a frame with extended adressign
+</I>&gt;<i> the filtering did not work out as expected.
+</I>
+True.
+
+Thanks,
+Hans
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001084.html">AT91 device driver woes?
+</A></li>
+	<LI>Next message: <A HREF="001086.html">AT91 device driver woes?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1085">[ date ]</a>
+              <a href="thread.html#1085">[ thread ]</a>
+              <a href="subject.html#1085">[ subject ]</a>
+              <a href="author.html#1085">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

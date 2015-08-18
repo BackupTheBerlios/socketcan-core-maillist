@@ -1,0 +1,373 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 4/4] ARM:FlexCAN Controller for platform_ type
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%204/4%5D%20ARM%3AFlexCAN%20Controller%20for%20platform_%20type&In-Reply-To=%3C1312815660-25828-1-git-send-email-bhaskar.upadhaya%40freescale.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005925.html">
+   <LINK REL="Next"  HREF="005892.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 4/4] ARM:FlexCAN Controller for platform_ type</H1>
+    <B>Bhaskar Upadhaya</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%204/4%5D%20ARM%3AFlexCAN%20Controller%20for%20platform_%20type&In-Reply-To=%3C1312815660-25828-1-git-send-email-bhaskar.upadhaya%40freescale.com%3E"
+       TITLE="[PATCH 4/4] ARM:FlexCAN Controller for platform_ type">bhaskar.upadhaya at freescale.com
+       </A><BR>
+    <I>Mon Aug  8 17:01:00 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005925.html">[PATCH 3/4] powerpc/p1010: FlexCAN Controller for of_ type
+</A></li>
+        <LI>Next message: <A HREF="005892.html">[PATCH 1/4][upstream] powerpc/p1010: Rearrange header file for	FlexCAN
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5926">[ date ]</a>
+              <a href="thread.html#5926">[ thread ]</a>
+              <a href="subject.html#5926">[ subject ]</a>
+              <a href="author.html#5926">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Rearrange the existing ARM based FlexCAN implementation, so as to
+support powerpc based FlexCAN on P1010.
+Signed-off-by: Bhaskar Upadhaya &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">bhaskar.upadhaya at freescale.com</A>&gt;
+---
+ Based on <A HREF="http://git.kernel.org/pub/scm/linux/kernel/git/davem/net-next-2.6.git">http://git.kernel.org/pub/scm/linux/kernel/git/davem/net-next-2.6.git</A>
+ Branch master
+
+ drivers/net/can/flexcan.c       |  105 ++++++++++++++-------------------------
+ drivers/net/can/flexcan_iface.c |   99 ++++++++++++++++++++++++++++++++++++
+ 2 files changed, 136 insertions(+), 68 deletions(-)
+
+diff --git a/drivers/net/can/flexcan.c b/drivers/net/can/flexcan.c
+index 1c1af24..b4d9afb 100644
+--- a/drivers/net/can/flexcan.c
++++ b/drivers/net/can/flexcan.c
+@@ -993,37 +993,29 @@ void __devexit unregister_flexcandev(struct net_device *dev)
+ 	unregister_candev(dev);
+ }
+ 
+-static int __devinit flexcan_probe(struct platform_device *pdev)
++int flexcan_dev_init(struct device *pdev, struct flexcan_resource flexcan_res,
++		 struct flexcan_interface *flexcan_ops)
+ {
+ 	struct net_device *dev;
+ 	struct flexcan_priv *priv;
+-	struct resource *mem;
+ 	struct clk *clk;
+ 	void __iomem *base;
+-	resource_size_t mem_size;
+-	int err, irq;
++	int err;
+ 
+-	clk = clk_get(&amp;pdev-&gt;dev, NULL);
++	clk = flexcan_ops-&gt;clk_get(pdev, NULL);
+ 	if (IS_ERR(clk)) {
+-		dev_err(&amp;pdev-&gt;dev, &quot;no clock defined\n&quot;);
++		dev_err(pdev, &quot;no clock defined\n&quot;);
+ 		err = PTR_ERR(clk);
+ 		goto failed_clock;
+ 	}
+ 
+-	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+-	irq = platform_get_irq(pdev, 0);
+-	if (!mem || irq &lt;= 0) {
+-		err = -ENODEV;
+-		goto failed_get;
+-	}
+-
+-	mem_size = resource_size(mem);
+-	if (!request_mem_region(mem-&gt;start, mem_size, pdev-&gt;name)) {
++	if (!request_mem_region
++	    (flexcan_res.addr, flexcan_res.size, flexcan_res.drv_name)) {
+ 		err = -EBUSY;
+-		goto failed_get;
++		goto failed_req;
+ 	}
+ 
+-	base = ioremap(mem-&gt;start, mem_size);
++	base = ioremap(flexcan_res.addr, flexcan_res.size);
+ 	if (!base) {
+ 		err = -ENOMEM;
+ 		goto failed_map;
+@@ -1036,11 +1028,11 @@ static int __devinit flexcan_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	dev-&gt;netdev_ops = &amp;flexcan_netdev_ops;
+-	dev-&gt;irq = irq;
++	dev-&gt;irq = flexcan_res.irq;
+ 	dev-&gt;flags |= IFF_ECHO; /* we support local echo in hardware */
+ 
+ 	priv = netdev_priv(dev);
+-	priv-&gt;can.clock.freq = clk_get_rate(clk);
++	priv-&gt;can.clock.freq = flexcan_ops-&gt;clk_get_rate(clk);
+ 	priv-&gt;can.bittiming_const = &amp;flexcan_bittiming_const;
+ 	priv-&gt;can.do_set_mode = flexcan_set_mode;
+ 	priv-&gt;can.do_get_berr_counter = flexcan_get_berr_counter;
+@@ -1050,20 +1042,21 @@ static int __devinit flexcan_probe(struct platform_device *pdev)
+ 	priv-&gt;base = base;
+ 	priv-&gt;dev = dev;
+ 	priv-&gt;clk = clk;
+-	priv-&gt;pdata = pdev-&gt;dev.platform_data;
++	priv-&gt;pdata = pdev-&gt;platform_data;
++	priv-&gt;flexcan_ops = flexcan_ops;
+ 
+ 	netif_napi_add(dev, &amp;priv-&gt;napi, flexcan_poll, FLEXCAN_NAPI_WEIGHT);
+ 
+-	dev_set_drvdata(&amp;pdev-&gt;dev, dev);
+-	SET_NETDEV_DEV(dev, &amp;pdev-&gt;dev);
++	dev_set_drvdata(pdev, dev);
++	SET_NETDEV_DEV(dev, pdev);
+ 
+ 	err = register_flexcandev(dev);
+ 	if (err) {
+-		dev_err(&amp;pdev-&gt;dev, &quot;registering netdev failed\n&quot;);
++		dev_err(pdev, &quot;registering netdev failed\n&quot;);
+ 		goto failed_register;
+ 	}
+ 
+-	dev_info(&amp;pdev-&gt;dev, &quot;device registered (reg_base=%p, irq=%d)\n&quot;,
++	dev_info(pdev, &quot;device registered (reg_base=%p, irq=%d)\n&quot;,
+ 		 priv-&gt;base, dev-&gt;irq);
+ 
+ 	return 0;
+@@ -1073,55 +1066,31 @@ static int __devinit flexcan_probe(struct platform_device *pdev)
+  failed_alloc:
+ 	iounmap(base);
+  failed_map:
+-	release_mem_region(mem-&gt;start, mem_size);
+- failed_get:
++	release_mem_region(flexcan_res.addr, flexcan_res.size);
++ failed_req:
+ 	clk_put(clk);
+  failed_clock:
+ 	return err;
+ }
+ 
+-static int __devexit flexcan_remove(struct platform_device *pdev)
++void flexcan_reg_dump(struct net_device *dev)
+ {
+-	struct net_device *dev = platform_get_drvdata(pdev);
+-	struct flexcan_priv *priv = netdev_priv(dev);
+-	struct resource *mem;
+-
+-	unregister_flexcandev(dev);
+-	platform_set_drvdata(pdev, NULL);
+-	iounmap(priv-&gt;base);
+-
+-	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+-	release_mem_region(mem-&gt;start, resource_size(mem));
+-
+-	clk_put(priv-&gt;clk);
+-
+-	free_candev(dev);
+-
+-	return 0;
+-}
+-
+-static struct platform_driver flexcan_driver = {
+-	.driver.name = DRV_NAME,
+-	.probe = flexcan_probe,
+-	.remove = __devexit_p(flexcan_remove),
+-};
+-
+-static int __init flexcan_init(void)
+-{
+-	pr_info(&quot;%s netdevice driver\n&quot;, DRV_NAME);
+-	return platform_driver_register(&amp;flexcan_driver);
+-}
++	const struct flexcan_priv *priv = netdev_priv(dev);
++	struct flexcan_regs __iomem *regs = priv-&gt;base;
+ 
+-static void __exit flexcan_exit(void)
+-{
+-	platform_driver_unregister(&amp;flexcan_driver);
+-	pr_info(&quot;%s: driver removed\n&quot;, DRV_NAME);
++	dev_dbg(dev-&gt;dev.parent, &quot;can-mcr 0x%x \r\n can-ctrl 0x%x \r\n&quot;
++			&quot;can-ecr 0x%x \r\n can-esr 0x%x \r\n&quot;
++			&quot;can-rxgmask 0x%x \r\n can-rx14mask 0x%x \r\n&quot;
++			&quot;can-rx15mask 0x%x \r\n can-imask1 0x%x \r\n&quot;
++			&quot;can-iflag1 0x%x \r\n&quot;
++			&quot;in  func &lt;%s&gt; line &lt;%d&gt; \r\n&quot;,
++			flexcan_read(&amp;regs-&gt;mcr),
++			flexcan_read(&amp;regs-&gt;ctrl),
++			flexcan_read(&amp;regs-&gt;ecr),
++			flexcan_read(&amp;regs-&gt;esr),
++			flexcan_read(&amp;regs-&gt;rxgmask),
++			flexcan_read(&amp;regs-&gt;rx14mask),
++			flexcan_read(&amp;regs-&gt;rx15mask),
++			flexcan_read(&amp;regs-&gt;imask1),
++			flexcan_read(&amp;regs-&gt;iflag1), __func__, __LINE__);
+ }
+-
+-module_init(flexcan_init);
+-module_exit(flexcan_exit);
+-
+-MODULE_AUTHOR(&quot;Sascha Hauer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kernel at pengutronix.de</A>&gt;, &quot;
+-	      &quot;Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kernel at pengutronix.de</A>&gt;&quot;);
+-MODULE_LICENSE(&quot;GPL v2&quot;);
+-MODULE_DESCRIPTION(&quot;CAN port driver for flexcan based chip&quot;);
+diff --git a/drivers/net/can/flexcan_iface.c b/drivers/net/can/flexcan_iface.c
+index 0c5f6dd..faa6c07 100644
+--- a/drivers/net/can/flexcan_iface.c
++++ b/drivers/net/can/flexcan_iface.c
+@@ -180,7 +180,55 @@ failed_req:
+ 	return err;
+ }
+ 
++/**
++ * flexcan_plt_resource_init - initialize the resources for
++ *				&quot;platform&quot; type architecture like &quot;ARM&quot;
++ * @flexcan_res: input buffer filled with address for accessing h/w registers
++ *		of CAN
++ * @pdev: the CAN device to be used
++ * @flexcan_ops: input buffer containing different utility functions
++ *
++ * fills the flexcan_res with the address detail
++ * for accessing the h/w registers of FlexCAN block.
++ * flexcan_ops is filled with different clock functions and normal read/write
++ *
++ * Return value
++ *    - On Success
++ *	       0
++ *    - On Failure
++ *	   error value
++ */
++static int flexcan_plt_resource_init(struct flexcan_resource *flexcan_res,
++				 struct platform_device *pdev,
++				 struct flexcan_interface *flexcan_ops)
++{
++	int err, irq;
++	resource_size_t mem_size;
++	struct resource *mem;
++
++	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	irq = platform_get_irq(pdev, 0);
++	if (!mem || irq &lt;= 0) {
++		dev_err(&amp;pdev-&gt;dev, &quot;Cannot map to irq\n&quot;);
++		err = -ENODEV;
++		goto failed_get;
++	}
++
++	mem_size = resource_size(mem);
++	flexcan_res-&gt;addr = mem-&gt;start;
++	flexcan_res-&gt;size = mem_size;
++	flexcan_res-&gt;drv_name = pdev-&gt;name;
++
++	flexcan_ops-&gt;clk_enable = clk_enable;
++	flexcan_ops-&gt;clk_disable = clk_disable;
++	flexcan_ops-&gt;clk_get_rate = clk_get_rate;
++	flexcan_ops-&gt;clk_get = clk_get;
++	flexcan_ops-&gt;clk_put = clk_put;
++	return 0;
+ 
++failed_get:
++	return err;
++}
+ 
+ /**
+  * flexcan_probe - performs the resource initialization
+@@ -212,6 +260,15 @@ static int flexcan_probe(struct platform_device *pdev)
+ 			err = -EINVAL;
+ 			goto failed_req;
+ 		}
++	} else {
++		err = flexcan_plt_resource_init(&amp;flexcan_res, pdev,
++						&amp;flexcan_ops);
++		if (err) {
++			dev_err(&amp;pdev-&gt;dev, &quot;Flexcan Initialization&quot;
++				 &quot;failed with err (%d)\n&quot;, err);
++			err = -EINVAL;
++			goto failed_req;
++		}
+ 	}
+ 
+ 	err = flexcan_dev_init(&amp;pdev-&gt;dev, flexcan_res, &amp;flexcan_ops);
+@@ -251,6 +308,9 @@ static int flexcan_remove(struct platform_device *pdev)
+ 		addr = of_translate_address(pdev-&gt;dev.of_node,
+ 		    of_get_address(pdev-&gt;dev.of_node, 0, &amp;size, NULL));
+ 		release_mem_region(addr, size);
++	} else {
++		mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++		release_mem_region(addr, size);
+ 	}	clk_put(priv-&gt;clk);
+ 
+ 	platform_set_drvdata(pdev, NULL);
+@@ -259,3 +319,42 @@ static int flexcan_remove(struct platform_device *pdev)
+ 	return 0;
+ }
+ 
++
++static struct of_device_id flexcan_match[] = {
++	{
++	 .compatible = &quot;fsl,flexcan-v1.0&quot;,
++	 },
++	{},
++};
++
++MODULE_DEVICE_TABLE(of, flexcan_match);
++
++static struct platform_driver flexcan_driver = {
++	.driver = {
++		.name = &quot;DRV_NAME&quot;,
++		.owner = THIS_MODULE,
++#ifdef CONFIG_OF
++		.of_match_table = flexcan_match,
++#endif
++	},
++	.probe = flexcan_probe,
++	.remove = flexcan_remove,
++};
++
++static int __init flexcan_init(void)
++{
++	return platform_driver_register(&amp;flexcan_driver);
++}
++
++static void __exit flexcan_exit(void)
++{
++	platform_driver_unregister(&amp;flexcan_driver);
++}
++
++module_init(flexcan_init);
++module_exit(flexcan_exit);
++
++MODULE_AUTHOR(&quot;Sascha Hauer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kernel at pengutronix.de</A>&gt;, &quot;
++		&quot;Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kernel at pengutronix.de</A>&gt;&quot;);
++MODULE_LICENSE(&quot;GPL v2&quot;);
++MODULE_DESCRIPTION(&quot;CAN port driver for flexcan based chip&quot;);
+-- 
+1.5.6.5
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005925.html">[PATCH 3/4] powerpc/p1010: FlexCAN Controller for of_ type
+</A></li>
+	<LI>Next message: <A HREF="005892.html">[PATCH 1/4][upstream] powerpc/p1010: Rearrange header file for	FlexCAN
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5926">[ date ]</a>
+              <a href="thread.html#5926">[ thread ]</a>
+              <a href="subject.html#5926">[ subject ]</a>
+              <a href="author.html#5926">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

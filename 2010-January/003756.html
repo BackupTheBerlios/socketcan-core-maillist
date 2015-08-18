@@ -1,0 +1,106 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next v2 1/3] can: mscan: fix improper return if dlc &lt; 8 in	start_xmit function
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%20v2%201/3%5D%20can%3A%20mscan%3A%20fix%20improper%20return%20if%20dlc%20%3C%208%20in%0A%09start_xmit%20function&In-Reply-To=%3C1262719241-2422-2-git-send-email-wg%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003754.html">
+   <LINK REL="Next"  HREF="003760.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next v2 1/3] can: mscan: fix improper return if dlc &lt; 8 in	start_xmit function</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%20v2%201/3%5D%20can%3A%20mscan%3A%20fix%20improper%20return%20if%20dlc%20%3C%208%20in%0A%09start_xmit%20function&In-Reply-To=%3C1262719241-2422-2-git-send-email-wg%40grandegger.com%3E"
+       TITLE="[PATCH net-next v2 1/3] can: mscan: fix improper return if dlc &lt; 8 in	start_xmit function">wg at grandegger.com
+       </A><BR>
+    <I>Tue Jan  5 20:20:39 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003754.html">[PATCH net-next v2 0/3] can: mscan-mpc5xxx: add support for the	Freescale MPC512x
+</A></li>
+        <LI>Next message: <A HREF="003760.html">[PATCH net-next v2 0/3] can: mscan-mpc5xxx: add support for the	Freescale MPC512x
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3756">[ date ]</a>
+              <a href="thread.html#3756">[ thread ]</a>
+              <a href="subject.html#3756">[ subject ]</a>
+              <a href="author.html#3756">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>From: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at denx.de</A>&gt;
+
+The start_xmit function of the MSCAN Driver did return improperly if
+the CAN dlc check failed (skb not freed and invalid return code). This
+patch adds a proper check of the frame lenght and data size and returns
+now correctly. Furthermore, a typo has been fixed.
+
+Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at denx.de</A>&gt;
+Acked-by: Wolfram Sang &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">w.sang at pengutronix.de</A>&gt;
+---
+ drivers/net/can/mscan/mscan.c |   11 ++++++++---
+ 1 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/can/mscan/mscan.c b/drivers/net/can/mscan/mscan.c
+index bb06dfb..7df950e 100644
+--- a/drivers/net/can/mscan/mscan.c
++++ b/drivers/net/can/mscan/mscan.c
+@@ -4,7 +4,7 @@
+  * Copyright (C) 2005-2006 Andrey Volkov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">avolkov at varma-el.com</A>&gt;,
+  *                         Varma Electronics Oy
+  * Copyright (C) 2008-2009 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+- * Copytight (C) 2008-2009 Pengutronix &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kernel at pengutronix.de</A>&gt;
++ * Copyright (C) 2008-2009 Pengutronix &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kernel at pengutronix.de</A>&gt;
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the version 2 of the GNU General Public License
+@@ -177,8 +177,13 @@ static netdev_tx_t mscan_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	int i, rtr, buf_id;
+ 	u32 can_id;
+ 
+-	if (frame-&gt;can_dlc &gt; 8)
+-		return -EINVAL;
++	if (skb-&gt;len != sizeof(*frame) || frame-&gt;can_dlc &gt; 8) {
++		dev_err(dev-&gt;dev.parent,
++			&quot;Dropping non-conform packet: len %u, can_dlc %u\n&quot;,
++			skb-&gt;len, frame-&gt;can_dlc);
++		kfree_skb(skb);
++		return  NETDEV_TX_OK;
++	}
+ 
+ 	out_8(&amp;regs-&gt;cantier, 0);
+ 
+-- 
+1.6.2.5
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003754.html">[PATCH net-next v2 0/3] can: mscan-mpc5xxx: add support for the	Freescale MPC512x
+</A></li>
+	<LI>Next message: <A HREF="003760.html">[PATCH net-next v2 0/3] can: mscan-mpc5xxx: add support for the	Freescale MPC512x
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3756">[ date ]</a>
+              <a href="thread.html#3756">[ thread ]</a>
+              <a href="subject.html#3756">[ subject ]</a>
+              <a href="author.html#3756">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

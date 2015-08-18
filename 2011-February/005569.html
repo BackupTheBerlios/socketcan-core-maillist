@@ -1,0 +1,175 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: cleaning up CAN_ERR_ACK issue
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20cleaning%20up%20CAN_ERR_ACK%20issue&In-Reply-To=%3C4D5D759C.4080703%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005583.html">
+   <LINK REL="Next"  HREF="005578.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: cleaning up CAN_ERR_ACK issue</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20cleaning%20up%20CAN_ERR_ACK%20issue&In-Reply-To=%3C4D5D759C.4080703%40grandegger.com%3E"
+       TITLE="RFC: cleaning up CAN_ERR_ACK issue">wg at grandegger.com
+       </A><BR>
+    <I>Thu Feb 17 20:23:08 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005583.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+        <LI>Next message: <A HREF="005578.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5569">[ date ]</a>
+              <a href="thread.html#5569">[ thread ]</a>
+              <a href="subject.html#5569">[ subject ]</a>
+              <a href="author.html#5569">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 02/16/2011 09:31 PM, Oliver Hartkopp wrote:
+&gt;<i> On 16.02.2011 21:04, Wolfgang Grandegger wrote:
+</I>...
+
+&gt;&gt;&gt;&gt;<i> We then could or even should add a version information into the error
+</I>&gt;&gt;&gt;&gt;<i> message. I think data[5] could be used for that purpose.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> It's like having the CAN core version information where Dave was complaining
+</I>&gt;&gt;&gt;<i> when it gone Mainline. Who should check version numbers and maintain all this?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> This would allow users already using the error flags to easily migrate
+</I>&gt;&gt;<i> to the new and changed error types. My idea here is:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	cf-&gt;data[5] = CAN_ERR_VERSION;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Also candump could use it to avoid displaying rubbish with old kernels.
+</I>&gt;<i> 
+</I>&gt;<i> Hm - maybe then it's better to retrieve the Kernel version with uname(2) ...
+</I>
+The does not clearly identify the version of the error message, e..g
+when drivers from BerliOS are used.
+
+&gt;&gt;<i> Furthermore I would like to use:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   s/CAN_ERR_PROT_OVERLOAD/CAN_ERR_PROT_CRC/
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> for the CRC errors.
+</I>&gt;<i> 
+</I>&gt;<i> ok.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>     CAN_ERR_ACK(can_id) and CAN_ERR_PROT_ACK(data[2])
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> are set together. But who cares?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Me, see above.
+</I>&gt;<i> 
+</I>&gt;<i> ok.
+</I>&gt;<i> 
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> CAN_ERR_BUSERROR(can_id) could be defined as the or-ed value from
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>     (CAN_ERR_LOSTARB | CAN_ERR_PROT | CAN_ERR_CRTL)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> What do you mean here. Currently CAN_ERR_BUSERROR behave like
+</I>&gt;&gt;<i> CAN_ERR_PROT but bus errors are *not* state changes or lostarb errors.
+</I>&gt;&gt;<i> In principle we could define:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   #define CAN_ERR_BUSERROR CAN_ERR_PROT
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> But maybe we leave it as is to allowing for other protocol violations
+</I>&gt;&gt;<i> which are not classical bus errors.
+</I>&gt;<i> 
+</I>&gt;<i> ok.
+</I>&gt;<i> 
+</I>&gt;<i> So the final error.h patch would look like this then:
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/include/linux/can/error.h b/include/linux/can/error.h
+</I>&gt;<i> index d4127fd..f9245e5 100644
+</I>&gt;<i> --- a/include/linux/can/error.h
+</I>&gt;<i> +++ b/include/linux/can/error.h
+</I>&gt;<i> @@ -22,7 +22,7 @@
+</I>&gt;<i>  #define CAN_ERR_CRTL         0x00000004U /* controller problems / data[1]    */
+</I>&gt;<i>  #define CAN_ERR_PROT         0x00000008U /* protocol violations / data[2..3] */
+</I>&gt;<i>  #define CAN_ERR_TRX          0x00000010U /* transceiver status  / data[4]    */
+</I>&gt;<i> -#define CAN_ERR_ACK          0x00000020U /* received no ACK on transmission */
+</I>&gt;<i> +#define CAN_ERR_ACTIVE       0x00000020U /* controller (self) recovered */
+</I>&gt;<i>  #define CAN_ERR_BUSOFF       0x00000040U /* bus off */
+</I>&gt;<i>  #define CAN_ERR_BUSERROR     0x00000080U /* bus error (may flood!) */
+</I>&gt;<i>  #define CAN_ERR_RESTARTED    0x00000100U /* controller restarted */
+</I>&gt;<i> @@ -49,8 +49,8 @@
+</I>&gt;<i>  #define CAN_ERR_PROT_STUFF       0x04 /* bit stuffing error */
+</I>&gt;<i>  #define CAN_ERR_PROT_BIT0        0x08 /* unable to send dominant bit */
+</I>&gt;<i>  #define CAN_ERR_PROT_BIT1        0x10 /* unable to send recessive bit */
+</I>&gt;<i> -#define CAN_ERR_PROT_OVERLOAD    0x20 /* bus overload */
+</I>&gt;<i> -#define CAN_ERR_PROT_ACTIVE      0x40 /* active error announcement */
+</I>&gt;<i> +#define CAN_ERR_PROT_CRC         0x20 /* CRC error */
+</I>&gt;<i> +#define CAN_ERR_PROT_ACK         0x40 /* received no ACK on transmission */
+</I>&gt;<i>  #define CAN_ERR_PROT_TX          0x80 /* error occured on transmission */
+</I>&gt;<i>  
+</I>&gt;<i>  /* error in CAN protocol (location) / data[3] */
+</I>&gt;<i> 
+</I>&gt;<i> Right?
+</I>
+Ye&#252;.
+
+&gt;<i> 
+</I>&gt;&gt;<i> I started writing the patch and realized that we need some more
+</I>&gt;&gt;<i> clarification and cleanup. Next point is how we increment the
+</I>&gt;&gt;<i> stats-&gt;[r|t]x_error counters? It's not done consistently and it's not
+</I>&gt;&gt;<i> even possible to assign the direction of bus errors properly. Have a
+</I>&gt;&gt;<i> look to the drivers to realizes the mess. Should we do that at all? We
+</I>&gt;&gt;<i> have our own stats of CAN errors:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   struct can_device_stats {
+</I>&gt;&gt;<i>         __u32 bus_error;        /* Bus errors */
+</I>&gt;&gt;<i>         __u32 error_warning;    /* Changes to error warning state */
+</I>&gt;&gt;<i>         __u32 error_passive;    /* Changes to error passive state */
+</I>&gt;&gt;<i>         __u32 bus_off;          /* Changes to bus off state */
+</I>&gt;&gt;<i>         __u32 arbitration_lost; /* Arbitration lost errors */
+</I>&gt;&gt;<i>         __u32 restarts;         /* CAN controller re-starts */
+</I>&gt;&gt;<i>   };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I tend to drop touching the network stats completely. What do you and
+</I>&gt;&gt;<i> others think.
+</I>&gt;<i> 
+</I>&gt;<i> Using the common network stats would have the advantage, that you can easily
+</I>&gt;<i> see problems with standard tools like 'ifconfig' or 'cat /proc/net/dev'
+</I>&gt;<i> 
+</I>&gt;<i> But maybe a cleanup is needed anyway ;-)
+</I>
+See my similar comment to Kurt mail.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005583.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+	<LI>Next message: <A HREF="005578.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5569">[ date ]</a>
+              <a href="thread.html#5569">[ thread ]</a>
+              <a href="subject.html#5569">[ subject ]</a>
+              <a href="author.html#5569">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

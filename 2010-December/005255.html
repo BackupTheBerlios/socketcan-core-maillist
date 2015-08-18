@@ -1,0 +1,282 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 1/2] can: add driver for Softing card
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%201/2%5D%20can%3A%20add%20driver%20for%20Softing%20card&In-Reply-To=%3C4D148788.3010808%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005254.html">
+   <LINK REL="Next"  HREF="005256.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 1/2] can: add driver for Softing card</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%201/2%5D%20can%3A%20add%20driver%20for%20Softing%20card&In-Reply-To=%3C4D148788.3010808%40pengutronix.de%3E"
+       TITLE="[PATCH net-next-2.6 1/2] can: add driver for Softing card">mkl at pengutronix.de
+       </A><BR>
+    <I>Fri Dec 24 12:44:08 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005254.html">[PATCH net-next-2.6 1/2] can: add driver for Softing card
+</A></li>
+        <LI>Next message: <A HREF="005256.html">[PATCH 0/9] can: don't copy data to rx'ed RTR frames
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5255">[ date ]</a>
+              <a href="thread.html#5255">[ thread ]</a>
+              <a href="subject.html#5255">[ subject ]</a>
+              <a href="author.html#5255">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 12/24/2010 10:14 AM, Kurt Van Dijck wrote:
+&gt;<i> Marc,
+</I>&gt;<i> 
+</I>&gt;<i> A lot of your remarks do make sense, without further comment.
+</I>&gt;<i> Some however, I'm not completely sure ...
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> On Thu, Dec 23, 2010 at 03:25:07PM +0100, Marc Kleine-Budde wrote:
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i>  obj-y				+= usb/
+</I>&gt;&gt;&gt;<i> +obj-y				+= softing/
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I think it will (at least marginally) speed up the Kernel build process
+</I>&gt;&gt;<i> only to dive into the softing subdir if Softing is enabled in Kconfig.
+</I>&gt;<i> 
+</I>&gt;<i> Due to the independant driver design, I should
+</I>&gt;<i> (CONFIG_CAN_SOFTING || CONFIG_CAN_SOFTINGCS)
+</I>
+In the second patch I see:
+
++config CAN_SOFTING_CS
++	tristate &quot;Softing CAN pcmcia cards&quot;
++	depends on CAN_SOFTING &amp;&amp; PCMCIA
+
+&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +	ktime_t ts_ref;
+</I>&gt;&gt;&gt;<i> +	ktime_t ts_overflow; /* timestamp overflow value, in ktime */
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	struct {
+</I>&gt;&gt;&gt;<i> +		/* indication of firmware status */
+</I>&gt;&gt;&gt;<i> +		int up;
+</I>&gt;&gt;&gt;<i> +		/* protection of the 'up' variable */
+</I>&gt;&gt;&gt;<i> +		struct mutex lock;
+</I>&gt;&gt;&gt;<i> +	} fw;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> what about using an atomic_t for the firmware status?
+</I>&gt;<i> for 'up', yes, but the lock stays. It protects the startup/shutdown
+</I>&gt;<i> sequence too, ie. only 1 process enters the shutdown sequence.
+</I>
+okay
+
+&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +/* SOFTING DPRAM mappings */
+</I>&gt;&gt;&gt;<i> +struct softing_rx {
+</I>&gt;&gt;&gt;<i> +	u8  fifo[16][32];
+</I>&gt;&gt;&gt;<i> +	u8  dummy1;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Just curious, why did they put a padding byte here, that makes the rest
+</I>&gt;&gt;<i> unaligned?
+</I>&gt;<i> I did not design the DPRAM layout. It's just the way it is ...
+</I>&gt;<i> I did prefer to use structs in virtual memory, and this is the consequence.
+</I>
+Sure, I was just wondering why the DPRAM designer did this.
+
+&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +	u32 time;
+</I>&gt;&gt;&gt;<i> +	u32 time_wrap;
+</I>&gt;&gt;&gt;<i> +	u8  wr_start;
+</I>&gt;&gt;&gt;<i> +	u8  wr_end;
+</I>&gt;&gt;&gt;<i> +	u8  dummy10;
+</I>&gt;&gt;&gt;<i> +	u16 dummy12;
+</I>&gt;&gt;&gt;<i> +	u16 dummy12x;
+</I>&gt;&gt;&gt;<i> +	u16 dummy13;
+</I>&gt;&gt;&gt;<i> +	u16 reset_rcv_fifo;
+</I>&gt;&gt;&gt;<i> +	u8  dummy14;
+</I>&gt;&gt;&gt;<i> +	u8  reset_xmt_fifo;
+</I>&gt;&gt;&gt;<i> +	u8  read_fifo_levels;
+</I>&gt;&gt;&gt;<i> +	u16 rcv_fifo_level;
+</I>&gt;&gt;&gt;<i> +	u16 xmt_fifo_level;
+</I>&gt;&gt;&gt;<i> +} __attribute__((packed));
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Can you renumber the dummy variables (there are some &quot;x&quot; in there), or
+</I>&gt;&gt;<i> does it correspond to some datasheet?
+</I>&gt;<i> no, there's no datasheet. I started from code released by Softing.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> diff --git a/drivers/net/can/softing/softing_fw.c b/drivers/net/can/softing/softing_fw.c
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;<i> [...]
+</I>&gt;&gt;&gt;<i> +int softing_fct_cmd(struct softing *card, int cmd, int vector, const char *msg)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	int ret;
+</I>&gt;&gt;&gt;<i> +	unsigned long stamp;
+</I>&gt;&gt;&gt;<i> +	if (vector == RES_OK)
+</I>&gt;&gt;&gt;<i> +		vector = RES_NONE;
+</I>&gt;&gt;&gt;<i> +	card-&gt;dpram.fct-&gt;param[0] = cmd;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> param[] is an array of s16 and cmd is an int.
+</I>&gt;<i> Is this a problem? Is it usefull to define the function with s16 arguments then?
+</I>
+Yes, I think so, same for the vector.
+
+&gt;&gt;<i> hmmm..all stuff behind dpram is __iomem, isn't it? I think it should
+</I>&gt;&gt;<i> only be accessed with via the ioread/iowrite operators. Please check
+</I>&gt;<i> I did an ioremap_nocache. Since it is unaligned, ioread/iowrite would render
+</I>&gt;<i> a lot of statements.
+</I>
+The thing is, ioremapped mem should not be accessed directly. Instead
+ioread/iowrite should be used. The softing driver should work on non x86
+platforms, too.
+
+&gt;&gt;<i> your code with sparse (compile with &quot;make C=2&quot;).
+</I>&gt;<i> (?)
+</I>
+Sparse, a static syntax analyser tool, see &quot;Documentation/sparse.txt&quot;.
+It throws the following warnings on your driver:
+
+&gt;<i> make drivers/net/can/softing/softing.ko C=2
+</I>&gt;<i>   CHK     include/linux/version.h
+</I>&gt;<i>   CHK     include/generated/utsrelease.h
+</I>&gt;<i>   CALL    scripts/checksyscalls.sh
+</I>&gt;<i>   CHECK   scripts/mod/empty.c
+</I>&gt;<i>   CHECK   drivers/net/can/softing/softing_main.c
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:98:15: warning: incorrect type in argument 1 (different address spaces)
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:98:15:    expected void volatile [noderef] &lt;asn:2&gt;*dst
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:98:15:    got unsigned char [usertype] *[assigned] ptr
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:292:31: warning: incorrect type in argument 2 (different address spaces)
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:292:31:    expected void const volatile [noderef] &lt;asn:2&gt;*src
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:292:31:    got unsigned char [usertype] *[assigned] ptr
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:522:15: warning: incorrect type in argument 1 (different address spaces)
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:522:15:    expected void volatile [noderef] &lt;asn:2&gt;*dst
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:522:15:    got unsigned char *[assigned] lp
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:525:23: warning: incorrect type in argument 2 (different address spaces)
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:525:23:    expected void const volatile [noderef] &lt;asn:2&gt;*src
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:525:23:    got unsigned char *[assigned] lp
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:654:14: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:655:14: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:662:2: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:665:11: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:696:10: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:753:1: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:754:1: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:755:1: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:756:1: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:757:1: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:758:1: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:767:2: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:790:18: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:794:21: warning: incorrect type in argument 1 (different address spaces)
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:794:21:    expected void volatile [noderef] &lt;asn:2&gt;*addr
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:794:21:    got unsigned char *virt
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:835:19: warning: incorrect type in assignment (different address spaces)
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:835:19:    expected unsigned char *virt
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:835:19:    got void [noderef] &lt;asn:2&gt;*
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:883:19: warning: Using plain integer as NULL pointer
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:902:21: warning: incorrect type in argument 1 (different address spaces)
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:902:21:    expected void volatile [noderef] &lt;asn:2&gt;*addr
+</I>&gt;<i> drivers/net/can/softing/softing_main.c:902:21:    got unsigned char *virt
+</I>&gt;<i>   CHECK   drivers/net/can/softing/softing_fw.c
+</I>&gt;<i> drivers/net/can/softing/softing_fw.c:213:20: warning: incorrect type in argument 1 (different address spaces)
+</I>&gt;<i> drivers/net/can/softing/softing_fw.c:213:20:    expected void volatile [noderef] &lt;asn:2&gt;*dst
+</I>&gt;<i> drivers/net/can/softing/softing_fw.c:213:20:    got unsigned char *
+</I>&gt;<i> drivers/net/can/softing/softing_fw.c:224:27: warning: incorrect type in argument 2 (different address spaces)
+</I>&gt;<i> drivers/net/can/softing/softing_fw.c:224:27:    expected void const volatile [noderef] &lt;asn:2&gt;*src
+</I>&gt;<i> drivers/net/can/softing/softing_fw.c:224:27:    got unsigned char *
+</I>&gt;<i> drivers/net/can/softing/softing_fw.c:319:33: warning: incorrect type in argument 1 (different address spaces)
+</I>&gt;<i> drivers/net/can/softing/softing_fw.c:319:33:    expected void volatile [noderef] &lt;asn:2&gt;*dst
+</I>&gt;<i> drivers/net/can/softing/softing_fw.c:319:33:    got unsigned char *
+</I>
+You should start with fixing the assignment of the ioremapped memory
+(drivers/net/can/softing/softing_main.c:835), the fix the rest.
+
+&gt;&gt;&gt;<i> +		}
+</I>&gt;&gt;&gt;<i> +		if ((jiffies - stamp) &gt;= 1 * HZ)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> That's not good. I don't remember the name, but there are some
+</I>&gt;&gt;<i> functions/defines to do this kind of things properly.
+</I>&gt;<i> I'll do a search
+</I>
+It's &quot;time_after&quot;
+<A HREF="http://lxr.linux.no/linux+v2.6.36/include/linux/jiffies.h#L106">http://lxr.linux.no/linux+v2.6.36/include/linux/jiffies.h#L106</A>
+
+&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +			break;
+</I>&gt;&gt;&gt;<i> +		if (in_interrupt())
+</I>&gt;&gt;&gt;<i> +			/* go as fast as possible */
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> In the worst case this means you lock up the system for one second. Does
+</I>&gt;&gt;<i> the card issue an interrupt if it's finished? Another option is to write
+</I>&gt;&gt;<i> a threaded interrupt handler.
+</I>&gt;<i> Yep, threaded interrupt handler is something to look at ... later.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	int ret;
+</I>&gt;&gt;&gt;<i> +	unsigned long stamp;
+</I>&gt;&gt;&gt;<i> +	card-&gt;dpram.receipt[0] = RES_NONE;
+</I>&gt;&gt;&gt;<i> +	card-&gt;dpram.command[0] = command;
+</I>&gt;&gt;&gt;<i> +	/* be sure to flush this to the card */
+</I>&gt;&gt;&gt;<i> +	wmb();
+</I>&gt;&gt;&gt;<i> +	stamp = jiffies;
+</I>&gt;&gt;&gt;<i> +	/*wait for card */
+</I>&gt;&gt;&gt;<i> +	do {
+</I>&gt;&gt;&gt;<i> +		ret = card-&gt;dpram.receipt[0];
+</I>&gt;&gt;&gt;<i> +		/* don't have any cached variables */
+</I>&gt;&gt;&gt;<i> +		rmb();
+</I>&gt;&gt;&gt;<i> +		if (ret == RES_OK)
+</I>&gt;&gt;&gt;<i> +			return 0;
+</I>&gt;&gt;&gt;<i> +		if ((jiffies - stamp) &gt;= (3 * HZ))
+</I>&gt;&gt;&gt;<i> +			break;
+</I>&gt;&gt;&gt;<i> +		schedule();
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> same applies here, too. Although this command seems not to be called
+</I>&gt;&gt;<i> from interrupt context, what about using a msleep() instead of a schedule?
+</I>&gt;<i> Not calling schedule was really annoying.
+</I>
+sure, but a *sleep might be better.
+
+Marc
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101224/2d53609e/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101224/2d53609e/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005254.html">[PATCH net-next-2.6 1/2] can: add driver for Softing card
+</A></li>
+	<LI>Next message: <A HREF="005256.html">[PATCH 0/9] can: don't copy data to rx'ed RTR frames
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5255">[ date ]</a>
+              <a href="thread.html#5255">[ thread ]</a>
+              <a href="subject.html#5255">[ subject ]</a>
+              <a href="author.html#5255">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

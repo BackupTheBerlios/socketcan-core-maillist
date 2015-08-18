@@ -1,0 +1,162 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> struct sockaddr_can for j1939
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-March/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20100302102330.GA306%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004150.html">
+   <LINK REL="Next"  HREF="004155.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>struct sockaddr_can for j1939</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20100302102330.GA306%40e-circ.dyndns.org%3E"
+       TITLE="struct sockaddr_can for j1939">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Tue Mar  2 11:23:30 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004150.html">struct sockaddr_can for j1939
+</A></li>
+        <LI>Next message: <A HREF="004155.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4151">[ date ]</a>
+              <a href="thread.html#4151">[ thread ]</a>
+              <a href="subject.html#4151">[ subject ]</a>
+              <a href="author.html#4151">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Mon, Mar 01, 2010 at 10:41:00PM +0100, Oliver Hartkopp wrote:
+&gt;<i> 
+</I>&gt;<i> &gt; When this 8byte name is stripped from the sockaddr,
+</I>&gt;<i> &gt; this would work as sender (definitely), but would not work as good for receiving.
+</I>&gt;<i> &gt; An extra cmsg would work, but I doubt such API (for standard
+</I>&gt;<i> &gt; usage) is a good API.
+</I>&gt;<i> &gt; When one would move from static to dynamic addressing,  that means one is forced
+</I>&gt;<i> &gt; to use recvmsg() over recv() &amp; recvfrom(), which looks to me as a way too big constraint
+</I>&gt;<i> &gt; (read: being forced is a big constraint).
+</I>&gt;<i> &gt; given the small step you're taking. IMO, this proves the API being rude
+</I>&gt;<i> &gt; to users of dynamic addressed busses.
+</I>&gt;<i> 
+</I>&gt;<i> Sorry but i still wonder why recvfrom(), recvmsg() and sendto() are still that
+</I>&gt;<i> important for your API. Why not defining a uint64_t name for receive and one
+</I>&gt;<i> (different) uint64_t name for sending (with sockopts) and then just use read()
+</I>&gt;<i> wand write().
+</I>&gt;<i> 
+</I>I see 4 'typical' use cases for the receive side:
+1. _least important to base the api upon_: tracing: get every message, with
+all whistles &amp; bells.
+I can do this via recvmsg() with extra cmsg's added (like timestamp)
+
+2. application, communicating with 1 ECU, on 1 PGN (per socket).
+I would support this totally via connect(), but an extra setsockopt
+would work indeed. recv() or read() can be used then.
+I think this is the use-case typically applied when using the isotp
+protocol.
+
+3. receiving several PGN's (masked or so) from a single ECU. example:
+getting all info from a Engine Controller (single ECU, a dozen PGN's).
+read() or recv() would not work in this case, as the PGN is not embedded
+in the data. recvfrom() would work fine, since the supplied
+sockaddr(_can) will get the SA &amp; PGN.
+so:
+   recvfrom(sock, buf, len, flags, &amp;addr, sizeof(addr));
+   switch (addr.can_addr.j1939.pgn) {
+   case XXX:
+      break;
+   case YYY:
+      break;
+   }
+
+4. more generic program: get a single PGN from different ECU's. example:
+getting all DM1's (diagnostic message: active errors, 1 single
+      predefined PGN) from the bus, and
+do something with the errors (like saving in a log, ....).
+with recvfrom(), I would get the next DM1 received, together with the
+source address spec (I get the PGN too).
+so:
+   /* a dm1 message sends a series of 4byte date, 1 per SPN (sensor).
+    * each block of 4bytes thus specifies an SPN (id) and FMI (failure
+    * mode indicator, value).
+    * there are some more fields, but irrelevant for this demonstration.
+    */
+   recvfrom(sock, buf, len, flags, &amp;addr, sizeof(addr));
+   foreach(entry, (dm1*)buf) {
+      cached = lookup(entry-&gt;spn, addr-&gt;sa);
+      if (!cached) {
+         cached = malloc_and_add(entry-&gt;spn, entry-&gt;fmi, addr-&gt;sa);
+         save(cached);
+      } else if (cached-&gt;fmi != entry-&gt;fmi) {
+         cached-&gt;fmi = entry-&gt;fmi;
+         save(cached);
+      } else {
+         //nothing changed for this entry
+      }
+   }
+
+Problem: this only works for static busses. for dynamic busses, the SA
+is not persistent, so saving the data would be based on the 8byte name.
+better is:
+      cached = lookup(entry-&gt;spn, addr-&gt;name, addr-&gt;sa);
+&amp;
+         cached = malloc_and_add(entry-&gt;spn, entry-&gt;fmi, addr-&gt;name, addr-&gt;sa);
+as both name &amp; sa may be add to unique-ness.
+
+the options are:
+lookup in a special proc file =&gt; transient problems
+ioctl() like SO_TIMESTAMP, or getsockopt =&gt; transient problems.
+putting the name in sockaddr =&gt; all problems fixed.
+
+The above transient problem is related with the fact that the at the
+time of lookup (or ioctl()), the mapping between 8byte name &amp; 1byte
+address may have changed. This greatly depends on the applied timing in
+the user program, but the api 'should be hard to abuse'.
+
+I keep in mind that the 8byte name does not need to be set, it's only
+set when dynamic addressing was in place for that SA.
+The simple logic would be that when 8byte name is != 0, it takes
+precedence over the 1byte SA, on both tx &amp; rx side.
+When dynamic address is _never_ used, the name may be ignored. I don't
+have a problem with that. I consider that an application choice on how
+to use the API.
+
+&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>I hope this clarifies my use cases.
+Regards,
+Kurt
+&gt;<i> 
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004150.html">struct sockaddr_can for j1939
+</A></li>
+	<LI>Next message: <A HREF="004155.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4151">[ date ]</a>
+              <a href="thread.html#4151">[ thread ]</a>
+              <a href="subject.html#4151">[ subject ]</a>
+              <a href="author.html#4151">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

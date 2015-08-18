@@ -1,0 +1,276 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC v1] can: add support for Janz CAN board
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20v1%5D%20can%3A%20add%20support%20for%20Janz%20CAN%20board&In-Reply-To=%3C20100210192228.GB15287%40ovro.caltech.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004005.html">
+   <LINK REL="Next"  HREF="004010.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC v1] can: add support for Janz CAN board</H1>
+    <B>Ira W. Snyder</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20v1%5D%20can%3A%20add%20support%20for%20Janz%20CAN%20board&In-Reply-To=%3C20100210192228.GB15287%40ovro.caltech.edu%3E"
+       TITLE="[RFC v1] can: add support for Janz CAN board">iws at ovro.caltech.edu
+       </A><BR>
+    <I>Wed Feb 10 20:22:28 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004005.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+        <LI>Next message: <A HREF="004010.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4007">[ date ]</a>
+              <a href="thread.html#4007">[ thread ]</a>
+              <a href="subject.html#4007">[ subject ]</a>
+              <a href="author.html#4007">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Wed, Feb 10, 2010 at 07:45:30PM +0100, Wolfgang Grandegger wrote:
+&gt;<i> Ira W. Snyder wrote:
+</I>&gt;<i> &gt; On Wed, Feb 10, 2010 at 01:09:53PM +0100, Wolfgang Grandegger wrote:
+</I>&gt;<i> &gt;&gt; Ira W. Snyder wrote:
+</I>&gt;<i> &gt;&gt;&gt; Hello all,
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; I posted last week asking about a driver for boards running on a PLX
+</I>&gt;<i> &gt;&gt;&gt; chip. It turns out that these are passive boards. I have been looking
+</I>&gt;<i> &gt;&gt;&gt; for a driver for the Janz CMOD-IO board CAN interfaces.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; I finally found the datasheets and took the time to write a driver. This
+</I>&gt;<i> &gt;&gt;&gt; board is an intelligent CAN interface: it has onboard microprocessors to
+</I>&gt;<i> &gt;&gt;&gt; help process CAN traffic.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; This is a very rough first try at a CAN driver. I'm sure it still has
+</I>&gt;<i> &gt;&gt;&gt; problems, and I would appreciate if you can take a look and help me add
+</I>&gt;<i> &gt;&gt;&gt; what is needed. I'm am not extremely knowledgeable about the CAN bus.
+</I>&gt;<i> &gt;&gt; You are welcome. I think the esd_pci331 drive should answer most of your
+</I>&gt;<i> &gt;&gt;  questions.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; The things that are known to be wrong:
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; - bus-on / bus-off handling
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; I did this straight in the network device open()/stop() methods. I don't
+</I>&gt;<i> &gt;&gt;&gt; handle the condition where we get too many bus errors and the bus goes
+</I>&gt;<i> &gt;&gt;&gt; into bus-off state. What should I be doing here?
+</I>&gt;<i> &gt;&gt; Search for &quot;can_bus_off&quot; in esd_pci331.c. The controller (hardware) goes
+</I>&gt;<i> &gt;&gt; bus-off if to much errors occurred and it's necessary to handle that
+</I>&gt;<i> &gt;&gt; event in the driver and report it to the apps. Yon can only recover from
+</I>&gt;<i> &gt;&gt;  a bus-off initiating a so called bus-off recovery, which is done via
+</I>&gt;<i> &gt;&gt; esd331_set_mode(CAN_MODE_START).
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; - state changes, bit timing, etc.
+</I>&gt;<i> &gt;&gt; Search for &quot;alloc_can_err_skb&quot; and &quot;CAN_ERR&quot; in esd_pci331.c. We report
+</I>&gt;<i> &gt;&gt; CAN error state changes and errors via so called CAN error messages,
+</I>&gt;<i> &gt;&gt; which the apps can receive on request.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; I'm not at all sure how this is supposed to work. Perhaps someone that
+</I>&gt;<i> &gt;&gt;&gt; knows CAN bus better that I do can help.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; - CAN bus termination
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; This board supports optionally terminating the CAN bus. In order to test
+</I>&gt;<i> &gt;&gt;&gt; this driver, I connected both CAN modules on a single board together. To
+</I>&gt;<i> &gt;&gt;&gt; get this to work, I needed to turn on termination on both modules.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Is this wrong? Is there a way to enable/disable termination via the &quot;ip&quot;
+</I>&gt;<i> &gt;&gt;&gt; tool?
+</I>&gt;<i> &gt;&gt; No, that's specific to this driver and could be implemented via SysFS,
+</I>&gt;<i> &gt;&gt; as Kurt suggested.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Ok. All of the existing code I have that uses Janz's char driver enables
+</I>&gt;<i> &gt; termination. I think just enabling termination (as I did in my driver)
+</I>&gt;<i> 
+</I>&gt;<i> The copyright made me think that you are the author of this code.
+</I>&gt;<i> 
+</I>
+I am the only author of the driver posted in the first email of the
+thread. I have written it using only the datasheets provided by Janz on
+their website.
+
+For many years at my organization, we have been using Linux char drivers
+provided by Janz. We would like to move to a driver which is present in
+mainline Linux, to make switching kernels easier.
+
+&gt;<i> &gt; will be fine. If I find a need for switching off termination later
+</I>&gt;<i> &gt; (unlikely) then I'll add a sysfs attribute.
+</I>&gt;<i> 
+</I>&gt;<i> That is a bad idea. You must use termination if the controller is at one
+</I>&gt;<i> end of the bus, which might not always be the case. But that's not that
+</I>&gt;<i> important in the first place.
+</I>&gt;<i> 
+</I>
+I'll get the rest of the driver working before I worry about this.
+
+&gt;<i> &gt;&gt;&gt; - module probing
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; This board is really a MODULbus carrier board, into which plugs 4
+</I>&gt;<i> &gt;&gt;&gt; daughterboards. These can be CAN modules, or others. On my board, I have
+</I>&gt;<i> &gt;&gt;&gt; 2x CAN modules and 1x TTL GPIO module. I need support for both of these
+</I>&gt;<i> &gt;&gt;&gt; for my application. For the time being, I *did not* add support for the
+</I>&gt;<i> &gt;&gt;&gt; TTL module. That will come once the CAN part is finished.
+</I>&gt;<i> &gt;&gt; The modules are connected to the PCI bus, I assume. The TTL module
+</I>&gt;<i> &gt;&gt; should be handled by a dedicated driver.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; The modules are NOT directly connected to the PCI bus, they connected to
+</I>&gt;<i> &gt; PCI through a multi-slot carrier board. They are &quot;MODULbus&quot; modules,
+</I>&gt;<i> &gt; which are very much NOT PCI modules. The carrier board IS a normal PCI
+</I>&gt;<i> &gt; board. It has a PLX 9030/9050 PCI bridge chip onboard. This chip bridges
+</I>&gt;<i> &gt; between PCI &lt;-&gt; MODULbus.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; The modules are accessed by reading specific memory addresses in PCI
+</I>&gt;<i> &gt; BAR3. The formula is bar3_address + (module_number * 0x200).
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; It looks like this:
+</I>&gt;<i> &gt; <A HREF="http://www.janz.de/as/en/cmod-io.html">http://www.janz.de/as/en/cmod-io.html</A>
+</I>&gt;<i> 
+</I>&gt;<i> I already realized that. The clean solution would be to have a driver
+</I>&gt;<i> supporting the MODULbus and the CAN or other drivers would then connect
+</I>&gt;<i> to that bus/driver. But that's another effort and maybe overkill for
+</I>&gt;<i> your purpose.
+</I>&gt;<i> 
+</I>&gt;<i> &gt;&gt;&gt; Also, there is no way I am aware of to determine what type of board is
+</I>&gt;<i> &gt;&gt;&gt; plugged into which MODULbus slot on the carrier board. My CAN modules
+</I>&gt;<i> &gt;&gt;&gt; support identification, but the TTL module does not.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; I hard-coded the module layout into the driver itself. This is
+</I>&gt;<i> &gt;&gt;&gt; sufficient for my purposes, but probably is not sufficient for mainline
+</I>&gt;<i> &gt;&gt;&gt; Linux :'(. Any ideas or suggestions?
+</I>&gt;<i> &gt;&gt; This information could be provide via module parameter, for example.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Any review will be much appreciated!
+</I>&gt;<i> &gt;&gt; Puh, that's a lot of untested code. Some general comments/questions:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; - You use NAPI and a work-queue. Why do you need both?
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; This device's programming interface has three different styles of
+</I>&gt;<i> &gt; communication with the driver.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 1) &quot;old-style&quot; host interface (control + SFF CAN messages)
+</I>&gt;<i> &gt; 2) &quot;new-style&quot; host interface (control + SFF CAN messages)
+</I>&gt;<i> &gt; 3) &quot;fast&quot; host interface (SFF + EFF CAN messages only)
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; In order for normal operation, you must be able to send/recv both
+</I>&gt;<i> &gt; control messages and SFF + EFF CAN frames.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Only the &quot;old-style&quot; interface is enabled when the chip comes out of
+</I>&gt;<i> &gt; reset. You must use it to enable the &quot;new-style&quot; interface. Then the
+</I>&gt;<i> &gt; &quot;new-style&quot; interface must be used to enable the &quot;fast&quot; interface.
+</I>&gt;<i> &gt; Follow janz_startup_module() for the details.
+</I>&gt;<i> 
+</I>&gt;<i> Puh.
+</I>&gt;<i> 
+</I>
+Yeah, it sucks. Nothing I can do about it, though. That's how the
+hardware is...
+
+&gt;<i> &gt; I used the workqueue to process &quot;old-style&quot; and &quot;new-style&quot; control
+</I>&gt;<i> &gt; messages. They indicate things like CAN messages lost and other CAN
+</I>&gt;<i> &gt; events.
+</I>&gt;<i> 
+</I>&gt;<i> These are typical candidates to create error messages.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; I used NAPI to process CAN frames only.
+</I>&gt;<i> 
+</I>&gt;<i> OK.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; I could remove NAPI support and roll the functionality into the
+</I>&gt;<i> &gt; workqueue, if you think that would be better.
+</I>&gt;<i> 
+</I>&gt;<i> NAPI support is a good thing in general but having it in the work queue
+</I>&gt;<i> seems more straight forward and you could get rid of a lot of
+</I>&gt;<i> synchronization, I assume. But that's just a wild guess for the moment.
+</I>&gt;<i> 
+</I>
+It is easy enough to implement. I'll do that for the next posting of the
+driver.
+
+&gt;<i> &gt;&gt; - I do not see how you control the flow of TX messages? To be more
+</I>&gt;<i> &gt;&gt;   precise, I do not find netif_stop_queue() in your xmit path.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I don't. :(
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Unfortunately, AFAICT the &quot;fast&quot; interface doesn't support any sort of
+</I>&gt;<i> &gt; notification to tell the driver when it consumes a buffer. The
+</I>&gt;<i> &gt; &quot;new-style&quot; interface does have support for notification, but it doesn't
+</I>&gt;<i> &gt; support send/recv of EFF CAN frames.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Do you have ideas of how to do this without any indication of &quot;fullness&quot;
+</I>&gt;<i> &gt; from the hardware?
+</I>&gt;<i> 
+</I>&gt;<i> You could at least restrict the number of messages queued. Does the
+</I>&gt;<i> firmware provide a TX done notification?
+</I>&gt;<i> 
+</I>
+Nope. If there is mention of it in the manual, I cannot find it. :(
+
+I *do* have a notification mechanism if I don't support EFF CAN frames,
+but I'd really like to have support for that.
+
+I could read the entire ring off the device after each xmit() and see if
+it is full. But then I have no way of knowing when to start the queue
+again, unless I set a kernel timer and keep reading the ring. That is a
+terribly slow (and ugly) approach, though.
+
+&gt;<i> &gt;&gt; - You can use the standard bit-timing calculation. See how it's done in
+</I>&gt;<i> &gt;&gt;   sja1000/sja1000.c. Search for sja1000_bittiming_const and
+</I>&gt;<i> &gt;&gt;   sja1000_set_bittiming.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; - You do not handle echo skb's. Search for can_get_echo_skb() and
+</I>&gt;<i> &gt;&gt;   can_put_echo_skb() for local loopback.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Shouldn't this be ommitted if the CAN controller supports echoing the
+</I>&gt;<i> &gt; frame back as a normal recv'd frame when it is sent? My controller does
+</I>&gt;<i> &gt; this.
+</I>&gt;<i> 
+</I>&gt;<i> If the hardware does the job of looping back the local packet then it
+</I>&gt;<i> should not be done in software, of course.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; I thought the can_(get|put)_echo_skb() functionality was the Linux CAN
+</I>&gt;<i> &gt; layer software fallback. Am I wrong?
+</I>&gt;<i> 
+</I>&gt;<i> No.
+</I>&gt;<i> 
+</I>
+Ok, I'll try and figure out what these do. The comments in the code
+/really/ make it seem like these are for local loopback. The
+descriptions even talk about local loopback! A better description might
+help authors such as myself.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004005.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+	<LI>Next message: <A HREF="004010.html">[RFC v1] can: add support for Janz CAN board
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4007">[ date ]</a>
+              <a href="thread.html#4007">[ thread ]</a>
+              <a href="subject.html#4007">[ subject ]</a>
+              <a href="author.html#4007">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

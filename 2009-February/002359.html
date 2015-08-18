@@ -1,0 +1,146 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> SH7203 / RCANTL1 driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SH7203%20/%20RCANTL1%20driver&In-Reply-To=%3C82bcfa4d0902231008m7f566f6ev6380d6128da9b61c%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002358.html">
+   <LINK REL="Next"  HREF="002360.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>SH7203 / RCANTL1 driver</H1>
+    <B>Kieran Bingham</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SH7203%20/%20RCANTL1%20driver&In-Reply-To=%3C82bcfa4d0902231008m7f566f6ev6380d6128da9b61c%40mail.gmail.com%3E"
+       TITLE="SH7203 / RCANTL1 driver">kieranbingham at gmail.com
+       </A><BR>
+    <I>Mon Feb 23 19:08:47 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002358.html">SH7203 / RCANTL1 driver
+</A></li>
+        <LI>Next message: <A HREF="002360.html">Kernel inclusion status
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2359">[ date ]</a>
+              <a href="thread.html#2359">[ thread ]</a>
+              <a href="subject.html#2359">[ subject ]</a>
+              <a href="author.html#2359">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;&gt;<i> Ahh yes, I had the struct in during development, then took it out for
+</I>&gt;&gt;<i> some reason :)
+</I>&gt;&gt;<i> Now its in - I have my bittiming files :)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> However, I keep getting the following, and I don't understand the process:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> ~ # echo 20000 &gt; /sysfs/class/net/can0/can_bittiming/bitrate
+</I>&gt;&gt;<i> ~ # ifconfig can0 up
+</I>&gt;&gt;<i> rcantl1 rcantl1.0: bitrate error 17837.9% too high
+</I>&gt;&gt;<i> rcantl1 rcantl1.0: Manually setting bittiming to 20kb/s
+</I>&gt;&gt;<i> rcantl1 rcantl1.0: Registered IRQ's 234 - &gt; 238
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I have set my consts as
+</I>&gt;&gt;<i> static struct can_bittiming_const rcantl1_bittiming_const = {
+</I>&gt;&gt;<i>    .tseg1_min = 4,
+</I>&gt;&gt;<i>    .tseg1_max = 16,
+</I>&gt;&gt;<i>    .tseg2_min = 2,
+</I>&gt;&gt;<i>    .tseg2_max = 8,
+</I>&gt;&gt;<i>    .sjw_max = 4,
+</I>&gt;&gt;<i>    .brp_min = 2,
+</I>&gt;&gt;<i>    .brp_max = 512,    /* I have tried lowering this to 64 thinking it
+</I>&gt;&gt;<i> was too high, but I'm sure the docs say 512 here */
+</I>&gt;&gt;<i>    .brp_inc = 1,
+</I>&gt;&gt;<i> };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> and in my probe function,  I get the peripheral clock with
+</I>&gt;&gt;<i>    priv-&gt;can.bittiming.clock = ((struct clk *) (clk_get(NULL,
+</I>&gt;&gt;<i> &quot;module_clock&quot;)))-&gt;rate;
+</I>&gt;<i>
+</I>&gt;<i> OK, you may need to divide it by 2, though, like for the SJA1000.
+</I>&gt;<i>
+</I>&gt;&gt;<i> and finally
+</I>&gt;&gt;<i> static int rcantl1_set_bittiming(struct net_device *dev)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i>    struct rcantl1_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i>    struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
+</I>&gt;&gt;<i>    u16 bcr0, bcr1;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>    bcr1 =    ( ( (bt-&gt;phase_seg1 - 1) &amp; 0x0F ) &lt;&lt; 12 ) |
+</I>&gt;<i>
+</I>&gt;<i> I'm missing bt-&gt;prop_seg here. Note that tsegt1 = (bt-&gt;prop_seg +
+</I>&gt;<i> bt-&gt;phase_seg1). I think it should be:
+</I>&gt;<i>
+</I>&gt;<i>   bcr1 =    ( ( (bt-&gt;prop_seg + bt-&gt;phase_seg1 - 1) &amp; 0x0F ) &lt;&lt; 12 ) |
+</I>&gt;<i>
+</I>&gt;&gt;<i>        ( ( (bt-&gt;phase_seg2 - 1) &amp; 0x07 ) &lt;&lt; 8  ) |
+</I>&gt;&gt;<i>        ( ( (bt-&gt;sjw - 1) &amp; 0x03 ) &lt;&lt; 4 ) |
+</I>&gt;&gt;<i>        ( ( (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES) &amp; 0x01 ) &lt;&lt; 0 );
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;&gt;<i>    bcr0 =    ( ( (bt-&gt;brp - 1) / 2 ) &amp; 0x7F );
+</I>&gt;<i>
+</I>&gt;<i> Then brp_inc should be set to 2.
+</I>&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>    dev_info(ND2D(dev), &quot;BCR0=0x%02x BCR1=0x%02x\n&quot;, bcr0, bcr1);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>    priv-&gt;write_reg(dev, RCANTL1_BCR1, bcr1);
+</I>&gt;&gt;<i>    priv-&gt;write_reg(dev, RCANTL1_BCR0, bcr0);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>    return 0;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> is there something obvious that I have missed ?
+</I>&gt;<i>
+</I>&gt;<i> See above.
+</I>Heheh - i'm glad it was obvious to you :)
+&gt;<i>
+</I>&gt;<i> Wolfgang.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>
+
+Thanks, its not there yet - but I'm getting somewhere now.
+Will continue tomorrow.
+
+Cheers
+ Kieran
+
+
+-- 
+
+Vince Lombardi  - &quot;Winning is habit. Unfortunately, so is losing.&quot;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002358.html">SH7203 / RCANTL1 driver
+</A></li>
+	<LI>Next message: <A HREF="002360.html">Kernel inclusion status
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2359">[ date ]</a>
+              <a href="thread.html#2359">[ thread ]</a>
+              <a href="subject.html#2359">[ subject ]</a>
+              <a href="author.html#2359">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

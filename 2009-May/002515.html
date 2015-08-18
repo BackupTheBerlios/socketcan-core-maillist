@@ -1,0 +1,745 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 2/2] AT91: support for CAN platform device
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/2%5D%20AT91%3A%20support%20for%20CAN%20platform%20device&In-Reply-To=%3C4A0D1AF2.3070208%40visionsystems.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002514.html">
+   <LINK REL="Next"  HREF="002457.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 2/2] AT91: support for CAN platform device</H1>
+    <B>Yegor Yefremov</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/2%5D%20AT91%3A%20support%20for%20CAN%20platform%20device&In-Reply-To=%3C4A0D1AF2.3070208%40visionsystems.de%3E"
+       TITLE="[PATCH 2/2] AT91: support for CAN platform device">yegor_sub1 at visionsystems.de
+       </A><BR>
+    <I>Fri May 15 09:34:10 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002514.html">AT91: support for CAN platform device
+</A></li>
+        <LI>Next message: <A HREF="002457.html">[PATCH v2-pre1 0/8] can: CAN network device driver interface and	drivers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2515">[ date ]</a>
+              <a href="thread.html#2515">[ thread ]</a>
+              <a href="subject.html#2515">[ subject ]</a>
+              <a href="author.html#2515">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Define and register CAN platform device stuff on the AT91SAM9263 development board.
+This code is necessary to use at91_can driver.
+
+Patches taken from Marc's GIT repository 
+(<A HREF="http://pasiphae.extern.pengutronix.de/?p=mkl/linux-can;a=summary">http://pasiphae.extern.pengutronix.de/?p=mkl/linux-can;a=summary</A>)
+commit 6db65b69b356ddff29c8475c18ba73815b33cb11
+commit a30536ee740a5c796ec3d8e41fea63b72aefa858
+
+Driver tested with 2.6.29 kernel on the AT91SAM9263 development board rev. B. 
+
+Signed-off-by: Yegor Yefremov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">yegorslists at googlemail.com</A>&gt;
+
+Index: trunk/kernel/2.6/arch/arm/mach-at91/board-sam9263ek.c
+===================================================================
+--- /dev/null
++++ trunk/kernel/2.6/arch/arm/mach-at91/board-sam9263ek.c
+@@ -0,0 +1,465 @@
++/*
++ * linux/arch/arm/mach-at91/board-sam9263ek.c
++ *
++ *  Copyright (C) 2005 SAN People
++ *  Copyright (C) 2007 Atmel Corporation.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++
++#include &lt;linux/types.h&gt;
++#include &lt;linux/init.h&gt;
++#include &lt;linux/mm.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/platform_device.h&gt;
++#include &lt;linux/spi/spi.h&gt;
++#include &lt;linux/spi/ads7846.h&gt;
++#include &lt;linux/i2c/at24.h&gt;
++#include &lt;linux/fb.h&gt;
++#include &lt;linux/gpio_keys.h&gt;
++#include &lt;linux/input.h&gt;
++#include &lt;linux/leds.h&gt;
++
++#include &lt;video/atmel_lcdc.h&gt;
++
++#include &lt;asm/setup.h&gt;
++#include &lt;asm/mach-types.h&gt;
++#include &lt;asm/irq.h&gt;
++
++#include &lt;asm/mach/arch.h&gt;
++#include &lt;asm/mach/map.h&gt;
++#include &lt;asm/mach/irq.h&gt;
++
++#include &lt;mach/hardware.h&gt;
++#include &lt;mach/board.h&gt;
++#include &lt;mach/gpio.h&gt;
++#include &lt;mach/at91sam9_smc.h&gt;
++#include &lt;mach/at91_shdwc.h&gt;
++
++#include &quot;sam9_smc.h&quot;
++#include &quot;generic.h&quot;
++
++
++static void __init ek_map_io(void)
++{
++	/* Initialize processor: 16.367 MHz crystal */
++	at91sam9263_initialize(16367660);
++
++	/* DGBU on ttyS0. (Rx &amp; Tx only) */
++	at91_register_uart(0, 0, 0);
++
++	/* USART0 on ttyS1. (Rx, Tx, RTS, CTS) */
++	at91_register_uart(AT91SAM9263_ID_US0, 1, ATMEL_UART_CTS | ATMEL_UART_RTS);
++
++	/* set serial console to ttyS0 (ie, DBGU) */
++	at91_set_serial_console(0);
++}
++
++static void __init ek_init_irq(void)
++{
++	at91sam9263_init_interrupts(NULL);
++}
++
++
++/*
++ * USB Host port
++ */
++static struct at91_usbh_data __initdata ek_usbh_data = {
++	.ports		= 2,
++	.vbus_pin	= { AT91_PIN_PA24, AT91_PIN_PA21 },
++};
++
++/*
++ * USB Device port
++ */
++static struct at91_udc_data __initdata ek_udc_data = {
++	.vbus_pin	= AT91_PIN_PA25,
++	.pullup_pin	= 0,		/* pull-up driven by UDC */
++};
++
++
++/*
++ * ADS7846 Touchscreen
++ */
++#if defined(CONFIG_TOUCHSCREEN_ADS7846) || defined(CONFIG_TOUCHSCREEN_ADS7846_MODULE)
++static int ads7843_pendown_state(void)
++{
++	return !at91_get_gpio_value(AT91_PIN_PA15);	/* Touchscreen PENIRQ */
++}
++
++static struct ads7846_platform_data ads_info = {
++	.model			= 7843,
++	.x_min			= 150,
++	.x_max			= 3830,
++	.y_min			= 190,
++	.y_max			= 3830,
++	.vref_delay_usecs	= 100,
++	.x_plate_ohms		= 450,
++	.y_plate_ohms		= 250,
++	.pressure_max		= 15000,
++	.debounce_max		= 1,
++	.debounce_rep		= 0,
++	.debounce_tol		= (~0),
++	.get_pendown_state	= ads7843_pendown_state,
++};
++
++static void __init ek_add_device_ts(void)
++{
++	at91_set_B_periph(AT91_PIN_PA15, 1);	/* External IRQ1, with pullup */
++	at91_set_gpio_input(AT91_PIN_PA31, 1);	/* Touchscreen BUSY signal */
++}
++#else
++static void __init ek_add_device_ts(void) {}
++#endif
++
++/*
++ * SPI devices.
++ */
++static struct spi_board_info ek_spi_devices[] = {
++#if defined(CONFIG_MTD_AT91_DATAFLASH_CARD)
++	{	/* DataFlash card */
++		.modalias	= &quot;mtd_dataflash&quot;,
++		.chip_select	= 0,
++		.max_speed_hz	= 15 * 1000 * 1000,
++		.bus_num	= 0,
++	},
++#endif
++#if defined(CONFIG_TOUCHSCREEN_ADS7846) || defined(CONFIG_TOUCHSCREEN_ADS7846_MODULE)
++	{
++		.modalias	= &quot;ads7846&quot;,
++		.chip_select	= 3,
++		.max_speed_hz	= 125000 * 26,	/* (max sample rate @ 3V) * (cmd + data + overhead) */
++		.bus_num	= 0,
++		.platform_data	= &amp;ads_info,
++		.irq		= AT91SAM9263_ID_IRQ1,
++	},
++#endif
++};
++
++
++/*
++ * MCI (SD/MMC)
++ */
++static struct at91_mmc_data __initdata ek_mmc_data = {
++	.wire4		= 1,
++	.det_pin	= AT91_PIN_PE18,
++	.wp_pin		= AT91_PIN_PE19,
++/*	.vcc_pin	= ... not connected */
++};
++
++
++/*
++ * MACB Ethernet device
++ */
++static struct at91_eth_data __initdata ek_macb_data = {
++	.phy_irq_pin	= AT91_PIN_PE31,
++	.is_rmii	= 1,
++};
++
++
++/*
++ * NAND flash
++ */
++static struct mtd_partition __initdata ek_nand_partition[] = {
++	{
++		.name	= &quot;Partition 1&quot;,
++		.offset	= 0,
++		.size	= SZ_64M,
++	},
++	{
++		.name	= &quot;Partition 2&quot;,
++		.offset	= MTDPART_OFS_NXTBLK,
++		.size	= MTDPART_SIZ_FULL,
++	},
++};
++
++static struct mtd_partition * __init nand_partitions(int size, int *num_partitions)
++{
++	*num_partitions = ARRAY_SIZE(ek_nand_partition);
++	return ek_nand_partition;
++}
++
++static struct atmel_nand_data __initdata ek_nand_data = {
++	.ale		= 21,
++	.cle		= 22,
++/*	.det_pin	= ... not connected */
++	.rdy_pin	= AT91_PIN_PA22,
++	.enable_pin	= AT91_PIN_PD15,
++	.partition_info	= nand_partitions,
++#if defined(CONFIG_MTD_NAND_ATMEL_BUSWIDTH_16)
++	.bus_width_16	= 1,
++#else
++	.bus_width_16	= 0,
++#endif
++};
++
++static struct sam9_smc_config __initdata ek_nand_smc_config = {
++	.ncs_read_setup		= 0,
++	.nrd_setup		= 1,
++	.ncs_write_setup	= 0,
++	.nwe_setup		= 1,
++
++	.ncs_read_pulse		= 3,
++	.nrd_pulse		= 3,
++	.ncs_write_pulse	= 3,
++	.nwe_pulse		= 3,
++
++	.read_cycle		= 5,
++	.write_cycle		= 5,
++
++	.mode			= AT91_SMC_READMODE | AT91_SMC_WRITEMODE | AT91_SMC_EXNWMODE_DISABLE,
++	.tdf_cycles		= 2,
++};
++
++static void __init ek_add_device_nand(void)
++{
++	/* setup bus-width (8 or 16) */
++	if (ek_nand_data.bus_width_16)
++		ek_nand_smc_config.mode |= AT91_SMC_DBW_16;
++	else
++		ek_nand_smc_config.mode |= AT91_SMC_DBW_8;
++
++	/* configure chip-select 3 (NAND) */
++	sam9_smc_configure(3, &amp;ek_nand_smc_config);
++
++	at91_add_device_nand(&amp;ek_nand_data);
++}
++
++
++/*
++ * I2C devices
++ */
++static struct at24_platform_data at24c512 = {
++	.byte_len	= SZ_512K / 8,
++	.page_size	= 128,
++	.flags		= AT24_FLAG_ADDR16,
++};
++
++
++static struct i2c_board_info __initdata ek_i2c_devices[] = {
++	{
++		I2C_BOARD_INFO(&quot;24c512&quot;, 0x50),
++		.platform_data = &amp;at24c512,
++	},
++	/* more devices can be added using expansion connectors */
++};
++
++/*
++ * LCD Controller
++ */
++#if defined(CONFIG_FB_ATMEL) || defined(CONFIG_FB_ATMEL_MODULE)
++static struct fb_videomode at91_tft_vga_modes[] = {
++	{
++		.name		= &quot;TX09D50VM1CCA @ 60&quot;,
++		.refresh	= 60,
++		.xres		= 240,		.yres		= 320,
++		.pixclock	= KHZ2PICOS(4965),
++
++		.left_margin	= 1,		.right_margin	= 33,
++		.upper_margin	= 1,		.lower_margin	= 0,
++		.hsync_len	= 5,		.vsync_len	= 1,
++
++		.sync		= FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
++		.vmode		= FB_VMODE_NONINTERLACED,
++	},
++};
++
++static struct fb_monspecs at91fb_default_monspecs = {
++	.manufacturer	= &quot;HIT&quot;,
++	.monitor	= &quot;TX09D70VM1CCA&quot;,
++
++	.modedb		= at91_tft_vga_modes,
++	.modedb_len	= ARRAY_SIZE(at91_tft_vga_modes),
++	.hfmin		= 15000,
++	.hfmax		= 64000,
++	.vfmin		= 50,
++	.vfmax		= 150,
++};
++
++#define AT91SAM9263_DEFAULT_LCDCON2 	(ATMEL_LCDC_MEMOR_LITTLE \
++					| ATMEL_LCDC_DISTYPE_TFT \
++					| ATMEL_LCDC_CLKMOD_ALWAYSACTIVE)
++
++static void at91_lcdc_power_control(int on)
++{
++	at91_set_gpio_value(AT91_PIN_PA30, on);
++}
++
++/* Driver datas */
++static struct atmel_lcdfb_info __initdata ek_lcdc_data = {
++	.lcdcon_is_backlight		= true,
++	.default_bpp			= 16,
++	.default_dmacon			= ATMEL_LCDC_DMAEN,
++	.default_lcdcon2		= AT91SAM9263_DEFAULT_LCDCON2,
++	.default_monspecs		= &amp;at91fb_default_monspecs,
++	.atmel_lcdfb_power_control	= at91_lcdc_power_control,
++	.guard_time			= 1,
++};
++
++#else
++static struct atmel_lcdfb_info __initdata ek_lcdc_data;
++#endif
++
++
++/*
++ * GPIO Buttons
++ */
++#if defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_MODULE)
++static struct gpio_keys_button ek_buttons[] = {
++	{	/* BP1, &quot;leftclic&quot; */
++		.code		= BTN_LEFT,
++		.gpio		= AT91_PIN_PC5,
++		.active_low	= 1,
++		.desc		= &quot;left_click&quot;,
++		.wakeup		= 1,
++	},
++	{	/* BP2, &quot;rightclic&quot; */
++		.code		= BTN_RIGHT,
++		.gpio		= AT91_PIN_PC4,
++		.active_low	= 1,
++		.desc		= &quot;right_click&quot;,
++		.wakeup		= 1,
++	}
++};
++
++static struct gpio_keys_platform_data ek_button_data = {
++	.buttons	= ek_buttons,
++	.nbuttons	= ARRAY_SIZE(ek_buttons),
++};
++
++static struct platform_device ek_button_device = {
++	.name		= &quot;gpio-keys&quot;,
++	.id		= -1,
++	.num_resources	= 0,
++	.dev		= {
++		.platform_data	= &amp;ek_button_data,
++	}
++};
++
++static void __init ek_add_device_buttons(void)
++{
++	at91_set_GPIO_periph(AT91_PIN_PC5, 1);	/* left button */
++	at91_set_deglitch(AT91_PIN_PC5, 1);
++	at91_set_GPIO_periph(AT91_PIN_PC4, 1);	/* right button */
++	at91_set_deglitch(AT91_PIN_PC4, 1);
++
++	platform_device_register(&amp;ek_button_device);
++}
++#else
++static void __init ek_add_device_buttons(void) {}
++#endif
++
++
++/*
++ * AC97
++ */
++static struct atmel_ac97_data ek_ac97_data = {
++	.reset_pin	= AT91_PIN_PA13,
++};
++
++
++/*
++ * LEDs ... these could all be PWM-driven, for variable brightness
++ */
++static struct gpio_led ek_leds[] = {
++	{	/* &quot;right&quot; led, green, userled2 (could be driven by pwm2) */
++		.name			= &quot;ds2&quot;,
++		.gpio			= AT91_PIN_PC29,
++		.active_low		= 1,
++		.default_trigger	= &quot;nand-disk&quot;,
++	},
++	{	/* &quot;power&quot; led, yellow (could be driven by pwm0) */
++		.name			= &quot;ds3&quot;,
++		.gpio			= AT91_PIN_PB7,
++		.default_trigger	= &quot;heartbeat&quot;,
++	}
++};
++
++/*
++ * PWM Leds
++ */
++static struct gpio_led ek_pwm_led[] = {
++	/* For now only DS1 is PWM-driven (by pwm1) */
++	{
++		.name			= &quot;ds1&quot;,
++		.gpio			= 1,	/* is PWM channel number */
++		.active_low		= 1,
++		.default_trigger	= &quot;none&quot;,
++	}
++};
++
++/*
++ * CAN
++ */
++static void sam9263ek_transceiver_enable(int enable)
++{
++	if (enable) {
++		at91_set_gpio_output(AT91_PIN_PA18, 1); /* CANRXEN */
++		at91_set_gpio_output(AT91_PIN_PA19, 0); /* CANRS */
++	} else {
++		at91_set_gpio_output(AT91_PIN_PA18, 0); /* CANRXEN */
++		at91_set_gpio_output(AT91_PIN_PA19, 1); /* CANRS */
++	}
++}
++
++static struct at91_can_data ek_can_data = {
++	.transceiver_enable = sam9263ek_transceiver_enable,
++};
++
++static void __init ek_board_init(void)
++{
++	/* Serial */
++	at91_add_device_serial();
++	/* USB Host */
++	at91_add_device_usbh(&amp;ek_usbh_data);
++	/* USB Device */
++	at91_add_device_udc(&amp;ek_udc_data);
++	/* SPI */
++	at91_set_gpio_output(AT91_PIN_PE20, 1);		/* select spi0 clock */
++	at91_add_device_spi(ek_spi_devices, ARRAY_SIZE(ek_spi_devices));
++	/* Touchscreen */
++	ek_add_device_ts();
++	/* MMC */
++	at91_add_device_mmc(1, &amp;ek_mmc_data);
++	/* Ethernet */
++	at91_add_device_eth(&amp;ek_macb_data);
++	/* NAND */
++	ek_add_device_nand();
++	/* I2C */
++	at91_add_device_i2c(ek_i2c_devices, ARRAY_SIZE(ek_i2c_devices));
++	/* LCD Controller */
++	at91_add_device_lcdc(&amp;ek_lcdc_data);
++	/* Push Buttons */
++	ek_add_device_buttons();
++	/* AC97 */
++	at91_add_device_ac97(&amp;ek_ac97_data);
++	/* LEDs */
++	at91_gpio_leds(ek_leds, ARRAY_SIZE(ek_leds));
++	at91_pwm_leds(ek_pwm_led, ARRAY_SIZE(ek_pwm_led));
++	/* CAN */
++	at91_add_device_can(&amp;ek_can_data);
++}
++
++MACHINE_START(AT91SAM9263EK, &quot;Atmel AT91SAM9263-EK&quot;)
++	/* Maintainer: Atmel */
++	.phys_io	= AT91_BASE_SYS,
++	.io_pg_offst	= (AT91_VA_BASE_SYS &gt;&gt; 18) &amp; 0xfffc,
++	.boot_params	= AT91_SDRAM_BASE + 0x100,
++	.timer		= &amp;at91sam926x_timer,
++	.map_io		= ek_map_io,
++	.init_irq	= ek_init_irq,
++	.init_machine	= ek_board_init,
++MACHINE_END
++
+Index: trunk/kernel/2.6/arch/arm/mach-at91/include/mach/board.h
+===================================================================
+--- /dev/null
++++ trunk/kernel/2.6/arch/arm/mach-at91/include/mach/board.h
+@@ -0,0 +1,197 @@
++/*
++ * arch/arm/mach-at91/include/mach/board.h
++ *
++ *  Copyright (C) 2005 HP Labs
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++
++/*
++ * These are data structures found in platform_device.dev.platform_data,
++ * and describing board-specific data needed by drivers.  For example,
++ * which pin is used for a given GPIO role.
++ *
++ * In 2.6, drivers should strongly avoid board-specific knowledge so
++ * that supporting new boards normally won't require driver patches.
++ * Most board-specific knowledge should be in arch/.../board-*.c files.
++ */
++
++#ifndef __ASM_ARCH_BOARD_H
++#define __ASM_ARCH_BOARD_H
++
++#include &lt;linux/mtd/partitions.h&gt;
++#include &lt;linux/device.h&gt;
++#include &lt;linux/i2c.h&gt;
++#include &lt;linux/leds.h&gt;
++#include &lt;linux/spi/spi.h&gt;
++#include &lt;linux/usb/atmel_usba_udc.h&gt;
++
++ /* USB Device */
++struct at91_udc_data {
++	u8	vbus_pin;		/* high == host powering us */
++	u8	pullup_pin;		/* active == D+ pulled up */
++	u8	pullup_active_low;	/* true == pullup_pin is active low */
++};
++extern void __init at91_add_device_udc(struct at91_udc_data *data);
++
++ /* USB High Speed Device */
++extern void __init at91_add_device_usba(struct usba_platform_data *data);
++
++ /* Compact Flash */
++struct at91_cf_data {
++	u8	irq_pin;		/* I/O IRQ */
++	u8	det_pin;		/* Card detect */
++	u8	vcc_pin;		/* power switching */
++	u8	rst_pin;		/* card reset */
++	u8	chipselect;		/* EBI Chip Select number */
++	u8	flags;
++#define AT91_CF_TRUE_IDE	0x01
++#define AT91_IDE_SWAP_A0_A2	0x02
++};
++extern void __init at91_add_device_cf(struct at91_cf_data *data);
++
++ /* MMC / SD */
++struct at91_mmc_data {
++	u8		det_pin;	/* card detect IRQ */
++	unsigned	slot_b:1;	/* uses Slot B */
++	unsigned	wire4:1;	/* (SD) supports DAT0..DAT3 */
++	u8		wp_pin;		/* (SD) writeprotect detect */
++	u8		vcc_pin;	/* power switching (high == on) */
++};
++extern void __init at91_add_device_mmc(short mmc_id, struct at91_mmc_data *data);
++
++ /* Ethernet (EMAC &amp; MACB) */
++struct at91_eth_data {
++	u32		phy_mask;
++	u8		phy_irq_pin;	/* PHY IRQ */
++	u8		is_rmii;	/* using RMII interface? */
++};
++extern void __init at91_add_device_eth(struct at91_eth_data *data);
++
++#if defined(CONFIG_ARCH_AT91SAM9260) || defined(CONFIG_ARCH_AT91SAM9263) || defined(CONFIG_ARCH_AT91SAM9G20) || defined(CONFIG_ARCH_AT91CAP9)
++#define eth_platform_data	at91_eth_data
++#endif
++
++ /* USB Host */
++struct at91_usbh_data {
++	u8		ports;		/* number of ports on root hub */
++	u8		vbus_pin[];	/* port power-control pin */
++};
++extern void __init at91_add_device_usbh(struct at91_usbh_data *data);
++
++ /* NAND / SmartMedia */
++struct atmel_nand_data {
++	u8		enable_pin;	/* chip enable */
++	u8		det_pin;	/* card detect */
++	u8		rdy_pin;	/* ready/busy */
++	u8              rdy_pin_active_low;     /* rdy_pin value is inverted */
++	u8		ale;		/* address line number connected to ALE */
++	u8		cle;		/* address line number connected to CLE */
++	u8		bus_width_16;	/* buswidth is 16 bit */
++	struct mtd_partition* (*partition_info)(int, int*);
++};
++extern void __init at91_add_device_nand(struct atmel_nand_data *data);
++
++ /* I2C*/
++extern void __init at91_add_device_i2c(struct i2c_board_info *devices, int nr_devices);
++
++ /* SPI */
++extern void __init at91_add_device_spi(struct spi_board_info *devices, int nr_devices);
++
++ /* Serial */
++#define ATMEL_UART_CTS	0x01
++#define ATMEL_UART_RTS	0x02
++#define ATMEL_UART_DSR	0x04
++#define ATMEL_UART_DTR	0x08
++#define ATMEL_UART_DCD	0x10
++#define ATMEL_UART_RI	0x20
++
++extern void __init at91_register_uart(unsigned id, unsigned portnr, unsigned pins);
++extern void __init at91_set_serial_console(unsigned portnr);
++
++struct at91_uart_config {
++	unsigned short	console_tty;	/* tty number of serial console */
++	unsigned short	nr_tty;		/* number of serial tty's */
++	short		tty_map[];	/* map UART to tty number */
++};
++extern struct platform_device *atmel_default_console_device;
++extern void __init __deprecated at91_init_serial(struct at91_uart_config *config);
++
++struct atmel_uart_data {
++	short		use_dma_tx;	/* use transmit DMA? */
++	short		use_dma_rx;	/* use receive DMA? */
++	void __iomem	*regs;		/* virtual base address, if any */
++};
++extern void __init at91_add_device_serial(void);
++
++/*
++ * PWM
++ */
++#define AT91_PWM0	0
++#define AT91_PWM1	1
++#define AT91_PWM2	2
++#define AT91_PWM3	3
++
++extern void __init at91_add_device_pwm(u32 mask);
++
++/*
++ * SSC -- accessed through ssc_request(id).  Drivers don't bind to SSC
++ * platform devices.  Their SSC ID is part of their configuration data,
++ * along with information about which SSC signals they should use.
++ */
++#define ATMEL_SSC_TK	0x01
++#define ATMEL_SSC_TF	0x02
++#define ATMEL_SSC_TD	0x04
++#define ATMEL_SSC_TX	(ATMEL_SSC_TK | ATMEL_SSC_TF | ATMEL_SSC_TD)
++
++#define ATMEL_SSC_RK	0x10
++#define ATMEL_SSC_RF	0x20
++#define ATMEL_SSC_RD	0x40
++#define ATMEL_SSC_RX	(ATMEL_SSC_RK | ATMEL_SSC_RF | ATMEL_SSC_RD)
++
++extern void __init at91_add_device_ssc(unsigned id, unsigned pins);
++
++ /* LCD Controller */
++struct atmel_lcdfb_info;
++extern void __init at91_add_device_lcdc(struct atmel_lcdfb_info *data);
++
++ /* AC97 */
++struct atmel_ac97_data {
++	u8		reset_pin;	/* reset */
++};
++extern void __init at91_add_device_ac97(struct atmel_ac97_data *data);
++
++ /* ISI */
++extern void __init at91_add_device_isi(void);
++
++ /* Touchscreen Controller */
++extern void __init at91_add_device_tsadcc(void);
++
++/* CAN */
++struct at91_can_data {
++	void (*transceiver_enable)(int enable);
++};
++extern void __init at91_add_device_can(struct at91_can_data *data);
++
++ /* LEDs */
++extern void __init at91_init_leds(u8 cpu_led, u8 timer_led);
++extern void __init at91_gpio_leds(struct gpio_led *leds, int nr);
++extern void __init at91_pwm_leds(struct gpio_led *leds, int nr);
++
++/* FIXME: this needs a better location, but gets stuff building again */
++extern int at91_suspend_entering_slow_clock(void);
++
++#endif
++
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002514.html">AT91: support for CAN platform device
+</A></li>
+	<LI>Next message: <A HREF="002457.html">[PATCH v2-pre1 0/8] can: CAN network device driver interface and	drivers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2515">[ date ]</a>
+              <a href="thread.html#2515">[ thread ]</a>
+              <a href="subject.html#2515">[ subject ]</a>
+              <a href="author.html#2515">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

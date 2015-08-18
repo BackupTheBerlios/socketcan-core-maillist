@@ -1,0 +1,279 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC PATCH 1/4] SPEAr320 CCAN driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20PATCH%201/4%5D%20SPEAr320%20CCAN%20driver&In-Reply-To=%3CD5ECB3C7A6F99444980976A8C6D89638169F8AB57A%40EAPEX1MAIL1.st.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004578.html">
+   <LINK REL="Next"  HREF="004566.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC PATCH 1/4] SPEAr320 CCAN driver</H1>
+    <B>Bhupesh SHARMA</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20PATCH%201/4%5D%20SPEAr320%20CCAN%20driver&In-Reply-To=%3CD5ECB3C7A6F99444980976A8C6D89638169F8AB57A%40EAPEX1MAIL1.st.com%3E"
+       TITLE="[RFC PATCH 1/4] SPEAr320 CCAN driver">bhupesh.sharma at st.com
+       </A><BR>
+    <I>Thu Aug 26 06:41:50 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004578.html">[RFC PATCH 0/4] Adding support for Bosch CCAN IPs present on	SPEAr320 device
+</A></li>
+        <LI>Next message: <A HREF="004566.html">[RFC PATCH 1/4] SPEAr320 CCAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4555">[ date ]</a>
+              <a href="thread.html#4555">[ thread ]</a>
+              <a href="subject.html#4555">[ subject ]</a>
+              <a href="author.html#4555">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>SPEAr320 design contains two boards:
+a) CPU board (which houses the ARM926ejs CPU and DDR in addition to some other interfaces like USB host etc..)
+b) Application PLC board (which contains two Bosch CCAN IPs that are interfaced to APB bus in addition to other interfaces like UART etc..)
+[See details here: <A HREF="http://www.st.com/stonline/products/families/embedded_mpu/spear_mpus/spear320_single_core.htm">http://www.st.com/stonline/products/families/embedded_mpu/spear_mpus/spear320_single_core.htm</A>]
+
+The SPEAr CAN driver relies on 'platform data/board specific details' that are passed by means of relevant evb files present in 'arch/arm/mach-spear3xx' directory.
+
+Signed-off-by: Bhupesh Sharma &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">bhupesh.sharma at st.com</A>&gt;
+
+Index: spear320_can.c
+===================================================================
+--- spear320_can.c	(revision 0)
++++ spear320_can.c	(revision 0)
+@@ -0,0 +1,203 @@
++/*
++ * drivers/net/can/spear320_can.c
++ *
++ * CAN bus driver for SPEAr320 SoC that houses two independent
++ * Bosch CCAN controllers.
++ *
++ * Copyright (C) 2010 ST Microelectronics
++ * Bhupesh Sharma &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">bhupesh.sharma at st.com</A>&gt;
++ *
++ * Borrowed heavily from the original code written for Hynix7202 by:
++ * - Sascha Hauer, Marc Kleine-Budde, Pengutronix &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;
++ * - Simon Kallweit, intefo AG &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">simon.kallweit at intefo.ch</A>&gt;
++ * which can be viewed here:
++ * <A HREF="http://svn.berlios.de/svnroot/repos/socketcan/trunk/kernel/2.6/">http://svn.berlios.de/svnroot/repos/socketcan/trunk/kernel/2.6/</A>
++ * drivers/net/can/old/ccan/
++ *
++ * TODO:
++ * - Power Management support to be added
++ *
++ * This file is licensed under the terms of the GNU General Public
++ * License version 2. This program is licensed &quot;as is&quot; without any
++ * warranty of any kind, whether express or implied.
++ */
++
++#include &lt;linux/io.h&gt;
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/platform_device.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;socketcan/can.h&gt;
++#include &lt;socketcan/can/dev.h&gt;
++
++#include &quot;bosch_ccan.h&quot;
++
++#define DRV_NAME	&quot;spear_can&quot;
++#define CAN_ENABLE	0x0e
++
++static u16 spear320_can_read_reg(const struct bosch_ccan_priv *priv,
++				enum ccan_regs reg)
++{
++	u16 val;
++
++	/* shifting 1 place because 16 bit registers are word aligned */
++	val = readw(priv-&gt;reg_base + (reg &lt;&lt; 1));
++	return val;
++}
++
++static void spear320_can_write_reg(const struct bosch_ccan_priv *priv,
++				enum ccan_regs reg, u16 val)
++{
++	/* shifting 1 place because 16 bit registers are word aligned */
++	writew(val, priv-&gt;reg_base + (reg &lt;&lt; 1));
++}
++
++static int spear320_can_drv_probe(struct platform_device *pdev)
++{
++	int ret;
++	void __iomem *addr;
++	struct net_device *dev;
++	struct bosch_ccan_priv *priv;
++	struct resource *mem, *irq;
++	struct clk *clk;
++
++	/* get the appropriate clk */
++	clk = clk_get(&amp;pdev-&gt;dev, NULL);
++	if (IS_ERR(clk)) {
++		dev_err(&amp;pdev-&gt;dev, &quot;no clock defined\n&quot;);
++		ret = -ENODEV;
++		goto exit;
++	}
++
++	/* get the platform data */
++	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	irq = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
++	if (!mem || !irq) {
++		ret = -ENODEV;
++		goto exit_free_clk;
++	}
++
++	if (!request_mem_region(mem-&gt;start, resource_size(mem), DRV_NAME)) {
++		dev_err(&amp;pdev-&gt;dev, &quot;resource unavailable\n&quot;);
++		ret = -ENODEV;
++		goto exit_free_clk;
++	}
++
++	addr = ioremap(mem-&gt;start, resource_size(mem));
++	if (!addr) {
++		dev_err(&amp;pdev-&gt;dev, &quot;failed to map can port\n&quot;);
++		ret = -ENOMEM;
++		goto exit_release_mem;
++	}
++
++	/* allocate the ccan device */
++	dev = alloc_bosch_ccandev(0);
++	if (!dev) {
++		clk_put(clk);
++		ret = -ENOMEM;
++		goto exit_iounmap;
++	}
++
++	priv = netdev_priv(dev);
++	dev-&gt;irq = irq-&gt;start;
++	priv-&gt;irq_flags = irq-&gt;flags;
++	priv-&gt;reg_base = addr;
++	priv-&gt;can.clock.freq = clk_get_rate(clk);
++	priv-&gt;read_reg = spear320_can_read_reg;
++	priv-&gt;write_reg = spear320_can_write_reg;
++	priv-&gt;clk = clk;
++
++	platform_set_drvdata(pdev, dev);
++	SET_NETDEV_DEV(dev, &amp;pdev-&gt;dev);
++
++	/* register ccan */
++	spear320_can_write_reg(priv, CAN_ENABLE, 1);
++	ret = register_bosch_ccandev(dev);
++	if (ret) {
++		dev_err(&amp;pdev-&gt;dev, &quot;registering %s failed (err=%d)\n&quot;,
++			DRV_NAME, ret);
++		goto exit_free_device;
++	}
++
++	dev_info(&amp;pdev-&gt;dev, &quot;%s device registered (reg_base=%p, irq=%d)\n&quot;,
++		 DRV_NAME, priv-&gt;reg_base, dev-&gt;irq);
++	return 0;
++
++exit_free_device:
++	platform_set_drvdata(pdev, NULL);
++	free_bosch_ccandev(dev);
++exit_iounmap:
++	iounmap(addr);
++exit_release_mem:
++	release_mem_region(mem-&gt;start, resource_size(mem));
++exit_free_clk:
++	clk_put(clk);
++exit:
++	dev_err(&amp;pdev-&gt;dev, &quot;probe failed\n&quot;);
++
++	return ret;
++}
++
++static int spear320_can_drv_remove(struct platform_device *pdev)
++{
++	struct net_device *dev = platform_get_drvdata(pdev);
++	struct bosch_ccan_priv *priv = netdev_priv(dev);
++	struct resource *mem;
++
++	unregister_bosch_ccandev(dev);
++	platform_set_drvdata(pdev, NULL);
++
++	if (priv-&gt;reg_base)
++		iounmap(priv-&gt;reg_base);
++
++	clk_put(priv-&gt;clk);
++
++	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	release_mem_region(mem-&gt;start, resource_size(mem));
++
++	free_bosch_ccandev(dev);
++
++	return 0;
++}
++
++#ifdef CONFIG_PM
++static int spear320_can_drv_suspend(struct platform_device *pdev,
++				pm_message_t state)
++{
++	return 0;
++}
++
++static int spear320_can_drv_resume(struct platform_device *pdev)
++{
++	return 0;
++}
++#endif /* CONFIG_PM */
++
++static struct platform_driver spear320_can_driver = {
++	.driver		= {
++		.name	= DRV_NAME,
++	},
++	.probe		= spear320_can_drv_probe,
++	.remove		= spear320_can_drv_remove,
++#ifdef CONFIG_PM
++	.suspend	= spear320_can_drv_suspend,
++	.resume		= spear320_can_drv_resume,
++#endif	/* CONFIG_PM */
++};
++
++static int __init spear320_can_init(void)
++{
++	return platform_driver_register(&amp;spear320_can_driver);
++}
++module_init(spear320_can_init);
++
++static void __exit spear320_can_cleanup(void)
++{
++	platform_driver_unregister(&amp;spear320_can_driver);
++}
++module_exit(spear320_can_cleanup);
++
++MODULE_AUTHOR(&quot;Bhupesh Sharma &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">bhupesh.sharma at st.com</A>&gt;&quot;);
++MODULE_LICENSE(&quot;GPL&quot;);
++MODULE_DESCRIPTION(&quot;CAN bus driver for SPEAr320 which has 2 CCAN controllers&quot;);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004578.html">[RFC PATCH 0/4] Adding support for Bosch CCAN IPs present on	SPEAr320 device
+</A></li>
+	<LI>Next message: <A HREF="004566.html">[RFC PATCH 1/4] SPEAr320 CCAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4555">[ date ]</a>
+              <a href="thread.html#4555">[ thread ]</a>
+              <a href="subject.html#4555">[ subject ]</a>
+              <a href="author.html#4555">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,323 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC PATCH] can: improved CAN error state handling
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20PATCH%5D%20can%3A%20improved%20CAN%20error%20state%20handling&In-Reply-To=%3C4C4B445C.9070706%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004500.html">
+   <LINK REL="Next"  HREF="004485.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC PATCH] can: improved CAN error state handling</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%20PATCH%5D%20can%3A%20improved%20CAN%20error%20state%20handling&In-Reply-To=%3C4C4B445C.9070706%40grandegger.com%3E"
+       TITLE="[RFC PATCH] can: improved CAN error state handling">wg at grandegger.com
+       </A><BR>
+    <I>Sat Jul 24 21:51:56 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004500.html">mcp251x: endless irq when MERRF while receiving
+</A></li>
+        <LI>Next message: <A HREF="004485.html">[RFC PATCH] can: improved CAN error state handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4480">[ date ]</a>
+              <a href="thread.html#4480">[ thread ]</a>
+              <a href="subject.html#4480">[ subject ]</a>
+              <a href="author.html#4480">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I found some time to work on this issue.
+
+So far we only report CAN error state changes to the worse:
+&quot;error-active -&gt; error-warning -&gt; error-passive -&gt; bus-off&quot;, but not
+&quot;bus-off -&gt; error-active&quot; or &quot;error-passive -&gt; error-warning -&gt;
+error-active&quot;. There have been request from other users to correct
+this behavior.
+
+This patch reports any state change reported by the SJA1000 and
+MSCAN-MPC5200 controller. It introduces &quot;CAN_ERR_CRTL_ACTIVE&quot; to
+signal state changes to error active. Furthermore, the SJA1000
+triggers now the bus-off recovery procedure when restarted. So far,
+the controller was *stopped* and then restarted. I did two tests to
+analyze the state changes behavior:
+
+1. First I forced the controller into the error-passive by sending
+   a message (with cansend) without cable connected (*). Then I
+   reconnected the cable (**) and continued to send messages (with
+   cangen) (***) until the error active state is reached:
+
+   On SJA1000:
+
+   # candump any,0:0,#FFFFFFFF
+   (*)
+   can0  20000004  [8] 00 08 00 00 00 00 60 00   ERROR-WARNING
+   can0  20000004  [8] 00 20 00 00 00 00 80 00   ERROR-PASSIVE
+   (**)
+   can0  123  [4] DE AD BE EF
+   (***)
+   can0  42A  [1] 00
+   ...
+   can0  42A  [1] 07
+   can0  20000004  [8] 00 08 00 00 00 00 7F 00   ERROR-WARNING
+   can0  42A  [1] 08
+   ...
+   can0  42A  [1] 27
+   can0  20000004  [8] 00 40 00 00 00 00 5F 00   ERROR-ACTIVE
+                                          \-- tx-err !!!
+   On MSCAN:
+
+   # candump any,0:0,#FFFFFFFF
+   (*)
+   can2  20000004  [8] 00 08 00 00 00 00 00 00   ERROR-WARNING
+   can2  20000004  [8] 00 20 00 00 00 00 00 00   ERROR-PASSIVE
+   (**)
+   can2  123  [4] DE AD BE EF
+   can2  20000004  [8] 00 08 00 00 00 00 00 00   ERROR-WARNING
+   (***)
+   can2  42A  [1] 00
+   can2  42A  [1] 01
+   ...
+   can2  42A  [1] 1E
+   can2  42A  [1] 1F
+   can2  20000004  [8] 00 40 00 00 00 00 00 00   ERROR-ACTIVE
+
+   As you can see, the state change to error-active is signaled
+   differently. The MSCAN seems not to respect the specs :-(.
+   When time permits, I will also try the MSCAN of the MPC5121.
+
+2. I forced the controller into bus-off by short-circuiting
+   the low and hi lines and sending a message (*), Then I
+   restarted the controller manually with
+   &quot;ip link set can0 type can restart&quot; (**):
+
+   On SJA1000:
+
+   # ./candump -t d any,0:0,#FFFFFFFF
+   (*)
+   can0  20000004  [8] 00 08 00 00 00 00 88 00   ERROR-WARNING
+   can0  20000004  [8] 00 20 00 00 00 00 88 00   ERROR-PASSIVE
+   can0  20000044  [8] 00 00 00 00 00 00 7F 00   BUS-OFF
+   (**)
+   can0  20000100  [8] 00 00 00 00 00 00 00 00   RESTARTED
+   can0  20000004  [8] 00 40 00 00 00 00 00 00   ERROR-ACTIVE
+                                          \-- tx-err !!!
+
+   On MSCAN:
+
+   # ./candump -t d any,0:0,#FFFFFFFF
+   (*)
+   can2  20000004  [8] 00 08 00 00 00 00 00 00   ERROR-WARNING
+   can2  20000040  [8] 00 00 00 00 00 00 00 00   BUS-OFF
+   (**)
+   can2  20000100  [8] 00 00 00 00 00 00 00 00   RESTARTED
+   can2  20000004  [8] 00 40 00 00 00 00 00 00   ERROR-ACTIVE
+
+   The MSCAN seems not to signal the ERROR-PASSIVE state before
+   going bus-off.
+
+Would be interesting to see, how other CAN controllers behave.
+Volunteers are welcome.
+
+What do you think? Would that patch/approach fit your needs?
+
+Wolfgang.
+
+---
+ drivers/net/can/mscan/mscan.c     |   17 ++++++++++----
+ drivers/net/can/sja1000/sja1000.c |   45 +++++++++++++++++++++++++++-----------
+ include/linux/can/error.h         |    1 
+ 3 files changed, 46 insertions(+), 17 deletions(-)
+
+Index: net-next-2.6/drivers/net/can/mscan/mscan.c
+===================================================================
+--- net-next-2.6.orig/drivers/net/can/mscan/mscan.c
++++ net-next-2.6/drivers/net/can/mscan/mscan.c
+@@ -363,20 +363,29 @@ static void mscan_get_err_frame(struct n
+ 	/* State changed */
+ 	if (old_state != priv-&gt;can.state) {
+ 		switch (priv-&gt;can.state) {
++		case CAN_STATE_ERROR_ACTIVE:
++			frame-&gt;can_id |= CAN_ERR_CRTL;
++			frame-&gt;data[1] = CAN_ERR_CRTL_ACTIVE;
++			break;
+ 		case CAN_STATE_ERROR_WARNING:
+ 			frame-&gt;can_id |= CAN_ERR_CRTL;
+ 			priv-&gt;can.can_stats.error_warning++;
+-			if ((priv-&gt;shadow_statflg &amp; MSCAN_RSTAT_MSK) &lt;
++			if ((priv-&gt;shadow_statflg &amp; MSCAN_RSTAT_MSK) !=
+ 			    (canrflg &amp; MSCAN_RSTAT_MSK))
+ 				frame-&gt;data[1] |= CAN_ERR_CRTL_RX_WARNING;
+-			if ((priv-&gt;shadow_statflg &amp; MSCAN_TSTAT_MSK) &lt;
++			if ((priv-&gt;shadow_statflg &amp; MSCAN_TSTAT_MSK) !=
+ 			    (canrflg &amp; MSCAN_TSTAT_MSK))
+ 				frame-&gt;data[1] |= CAN_ERR_CRTL_TX_WARNING;
+ 			break;
+ 		case CAN_STATE_ERROR_PASSIVE:
+ 			frame-&gt;can_id |= CAN_ERR_CRTL;
+ 			priv-&gt;can.can_stats.error_passive++;
+-			frame-&gt;data[1] |= CAN_ERR_CRTL_RX_PASSIVE;
++			if ((priv-&gt;shadow_statflg &amp; MSCAN_RSTAT_MSK) !=
++			    (canrflg &amp; MSCAN_RSTAT_MSK))
++				frame-&gt;data[1] |= CAN_ERR_CRTL_RX_PASSIVE;
++			if ((priv-&gt;shadow_statflg &amp; MSCAN_TSTAT_MSK) !=
++			    (canrflg &amp; MSCAN_TSTAT_MSK))
++				frame-&gt;data[1] |= CAN_ERR_CRTL_TX_PASSIVE;
+ 			break;
+ 		case CAN_STATE_BUS_OFF:
+ 			frame-&gt;can_id |= CAN_ERR_BUSOFF;
+@@ -393,8 +402,6 @@ static void mscan_get_err_frame(struct n
+ 			}
+ 			can_bus_off(dev);
+ 			break;
+-		default:
+-			break;
+ 		}
+ 	}
+ 	priv-&gt;shadow_statflg = canrflg &amp; MSCAN_STAT_MSK;
+Index: net-next-2.6/drivers/net/can/sja1000/sja1000.c
+===================================================================
+--- net-next-2.6.orig/drivers/net/can/sja1000/sja1000.c
++++ net-next-2.6/drivers/net/can/sja1000/sja1000.c
+@@ -165,6 +165,12 @@ static void sja1000_start(struct net_dev
+ {
+ 	struct sja1000_priv *priv = netdev_priv(dev);
+ 
++	if (priv-&gt;can.state == CAN_STATE_BUS_OFF) {
++		/* trigger bus-off recovery? */
++		priv-&gt;write_reg(priv, REG_MOD, 0x00);
++		return;
++	}
++
+ 	/* leave reset mode */
+ 	if (priv-&gt;can.state != CAN_STATE_STOPPED)
+ 		set_reset_mode(dev);
+@@ -390,7 +396,8 @@ static int sja1000_err(struct net_device
+ 
+ 	if (isrc &amp; IRQ_EI) {
+ 		/* error warning interrupt */
+-		dev_dbg(dev-&gt;dev.parent, &quot;error warning interrupt\n&quot;);
++		dev_dbg(dev-&gt;dev.parent, &quot;error warning interrupt (sr=%02x)\n&quot;,
++			status);
+ 
+ 		if (status &amp; SR_BS) {
+ 			state = CAN_STATE_BUS_OFF;
+@@ -398,8 +405,9 @@ static int sja1000_err(struct net_device
+ 			can_bus_off(dev);
+ 		} else if (status &amp; SR_ES) {
+ 			state = CAN_STATE_ERROR_WARNING;
+-		} else
++		} else {
+ 			state = CAN_STATE_ERROR_ACTIVE;
++		}
+ 	}
+ 	if (isrc &amp; IRQ_BEI) {
+ 		/* bus error interrupt */
+@@ -431,11 +439,16 @@ static int sja1000_err(struct net_device
+ 	}
+ 	if (isrc &amp; IRQ_EPI) {
+ 		/* error passive interrupt */
+-		dev_dbg(dev-&gt;dev.parent, &quot;error passive interrupt\n&quot;);
+-		if (status &amp; SR_ES)
+-			state = CAN_STATE_ERROR_PASSIVE;
+-		else
++		dev_dbg(dev-&gt;dev.parent, &quot;error passive interrupt (sr=%02x)\n&quot;,
++			status);
++		if (status &amp; SR_ES) {
++			if (priv-&gt;can.state == CAN_STATE_ERROR_WARNING)
++				state = CAN_STATE_ERROR_PASSIVE;
++			else
++				state = CAN_STATE_ERROR_WARNING;
++		} else {
+ 			state = CAN_STATE_ERROR_ACTIVE;
++		}
+ 	}
+ 	if (isrc &amp; IRQ_ALI) {
+ 		/* arbitration lost interrupt */
+@@ -447,28 +460,36 @@ static int sja1000_err(struct net_device
+ 		cf-&gt;data[0] = alc &amp; 0x1f;
+ 	}
+ 
+-	if (state != priv-&gt;can.state &amp;&amp; (state == CAN_STATE_ERROR_WARNING ||
+-					 state == CAN_STATE_ERROR_PASSIVE)) {
++	if (state != priv-&gt;can.state) {
+ 		uint8_t rxerr = priv-&gt;read_reg(priv, REG_RXERR);
+ 		uint8_t txerr = priv-&gt;read_reg(priv, REG_TXERR);
+ 		cf-&gt;can_id |= CAN_ERR_CRTL;
+-		if (state == CAN_STATE_ERROR_WARNING) {
++
++		switch (state) {
++		case CAN_STATE_ERROR_ACTIVE:
++			cf-&gt;data[1] = CAN_ERR_CRTL_ACTIVE;
++			break;
++		case CAN_STATE_ERROR_WARNING:
+ 			priv-&gt;can.can_stats.error_warning++;
+ 			cf-&gt;data[1] = (txerr &gt; rxerr) ?
+ 				CAN_ERR_CRTL_TX_WARNING :
+ 				CAN_ERR_CRTL_RX_WARNING;
+-		} else {
++			break;
++		case CAN_STATE_ERROR_PASSIVE:
+ 			priv-&gt;can.can_stats.error_passive++;
+ 			cf-&gt;data[1] = (txerr &gt; rxerr) ?
+ 				CAN_ERR_CRTL_TX_PASSIVE :
+ 				CAN_ERR_CRTL_RX_PASSIVE;
++			break;
++		default:
++			break;
+ 		}
++
+ 		cf-&gt;data[6] = txerr;
+ 		cf-&gt;data[7] = rxerr;
++		priv-&gt;can.state = state;
+ 	}
+ 
+-	priv-&gt;can.state = state;
+-
+ 	netif_rx(skb);
+ 
+ 	stats-&gt;rx_packets++;
+Index: net-next-2.6/include/linux/can/error.h
+===================================================================
+--- net-next-2.6.orig/include/linux/can/error.h
++++ net-next-2.6/include/linux/can/error.h
+@@ -41,6 +41,7 @@
+ #define CAN_ERR_CRTL_TX_PASSIVE  0x20 /* reached error passive status TX */
+ 				      /* (at least one error counter exceeds */
+ 				      /* the protocol-defined level of 127)  */
++#define CAN_ERR_CRTL_ACTIVE      0x40 /* recovered to error active state */
+ 
+ /* error in CAN protocol (type) / data[2] */
+ #define CAN_ERR_PROT_UNSPEC      0x00 /* unspecified */
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004500.html">mcp251x: endless irq when MERRF while receiving
+</A></li>
+	<LI>Next message: <A HREF="004485.html">[RFC PATCH] can: improved CAN error state handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4480">[ date ]</a>
+              <a href="thread.html#4480">[ thread ]</a>
+              <a href="subject.html#4480">[ subject ]</a>
+              <a href="author.html#4480">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

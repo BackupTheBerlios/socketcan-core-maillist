@@ -1,0 +1,143 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> len &amp; can_dlc checks in tx path
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20len%20%26%20can_dlc%20checks%20in%20tx%20path&In-Reply-To=%3C4B2A82C4.1080501%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003678.html">
+   <LINK REL="Next"  HREF="003680.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>len &amp; can_dlc checks in tx path</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20len%20%26%20can_dlc%20checks%20in%20tx%20path&In-Reply-To=%3C4B2A82C4.1080501%40hartkopp.net%3E"
+       TITLE="len &amp; can_dlc checks in tx path">socketcan at hartkopp.net
+       </A><BR>
+    <I>Thu Dec 17 20:13:08 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003678.html">len &amp; can_dlc checks in tx path
+</A></li>
+        <LI>Next message: <A HREF="003680.html">len &amp; can_dlc checks in tx path
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3679">[ date ]</a>
+              <a href="thread.html#3679">[ thread ]</a>
+              <a href="subject.html#3679">[ subject ]</a>
+              <a href="author.html#3679">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfram Sang wrote:
+&gt;<i> On Thu, Dec 17, 2009 at 04:16:41PM +0200, Daniel Baluta wrote:
+</I>&gt;&gt;<i> On Thu, Dec 17, 2009 at 4:04 PM, Wolfram Sang &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">w.sang at pengutronix.de</A>&gt; wrote:
+</I>&gt;&gt;&gt;&gt;<i> diff --git a/include/linux/can/dev.h b/include/linux/can/dev.h
+</I>&gt;&gt;&gt;&gt;<i> index 3db7767..b70d6f3 100644
+</I>&gt;&gt;&gt;&gt;<i> --- a/include/linux/can/dev.h
+</I>&gt;&gt;&gt;&gt;<i> +++ b/include/linux/can/dev.h
+</I>&gt;&gt;&gt;&gt;<i> @@ -77,6 +77,16 @@ void can_put_echo_skb(struct sk_buff *skb, struct
+</I>&gt;&gt;&gt;&gt;<i> net_device *dev,
+</I>&gt;&gt;&gt;&gt;<i>  void can_get_echo_skb(struct net_device *dev, unsigned int idx);
+</I>&gt;&gt;&gt;&gt;<i>  void can_free_echo_skb(struct net_device *dev, unsigned int idx);
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> +static inline int can_validate_skb(struct sk_buff *skb)
+</I>&gt;&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;&gt;<i> +     struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;&gt;<i> +     if (unlikely(skb-&gt;len != sizeof(struct can_frame) || cf-&gt;can_dlc &gt; 8))
+</I>&gt;&gt;&gt;&gt;<i> +             return 1;
+</I>&gt;&gt;&gt;<i> Maybe -Esomething?
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;&gt;<i> +     return 0;
+</I>&gt;&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;<i> or perhaps:
+</I>&gt;&gt;<i> return (unlikely(skb-&gt;len != sizeof(struct can_frame) || cf-&gt;can_dlc &gt; 8)
+</I>&gt;<i> 
+</I>&gt;<i> This is a new ndo_call, so it should follow common patterns IMHO.
+</I>&gt;<i> 
+</I>&gt;<i> That would be pretty much
+</I>&gt;<i> 
+</I>&gt;<i> 	Returning an int and use -E...
+</I>&gt;<i> 
+</I>&gt;<i> or maybe
+</I>&gt;<i> 
+</I>&gt;<i> 	Returning a bool, then we can do like you suggested above
+</I>&gt;<i> 
+</I>&gt;<i> But I think it is better using an int here, you never know what other ndo-users
+</I>&gt;<i> may need. And ndo_validate_addr uses this scheme, too.
+</I>&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> 
+</I>&gt;<i>    Wolfram
+</I>&gt;<i> 
+</I>&gt;<i> PS: Just saw that can_validate_skb() is inline. Why is that?
+</I>&gt;<i> 
+</I>
+For all these details please check ndo_validate_addr() one line above ...
+
+In common ethernet drivers ndo_validate_addr is set to eth_validate_addr()
+which is defined as extern in
+
+<A HREF="http://lxr.linux.no/#linux+v2.6.32/include/linux/etherdevice.h#L47">http://lxr.linux.no/#linux+v2.6.32/include/linux/etherdevice.h#L47</A>
+
+and implemented in
+
+<A HREF="http://lxr.linux.no/#linux+v2.6.32/net/ethernet/eth.c#L315">http://lxr.linux.no/#linux+v2.6.32/net/ethernet/eth.c#L315</A>
+
+As net/ethernet/eth.c is always built inside the kernel, it can be referenced.
+
+Our can_validate_skb() would reside in can_dev.ko which can be a module.
+
+Therefore it's inline (which is not soo bad, as it is pretty short).
+
+Besides of this difference i'm following all the common patterns.
+
+Regards,
+Oliver
+
+@@ -633,6 +636,10 @@ struct net_device_ops {
+ 						       void *addr);
+ #define HAVE_VALIDATE_ADDR
+ 	int			(*ndo_validate_addr)(struct net_device *dev);
++
++#define HAVE_VALIDATE_SKB
++	int			(*ndo_validate_skb)(struct sk_buff *skb);
++
+ #define HAVE_PRIVATE_IOCTL
+ 	int			(*ndo_do_ioctl)(struct net_device *dev,
+ 					        struct ifreq *ifr, int cmd);
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003678.html">len &amp; can_dlc checks in tx path
+</A></li>
+	<LI>Next message: <A HREF="003680.html">len &amp; can_dlc checks in tx path
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3679">[ date ]</a>
+              <a href="thread.html#3679">[ thread ]</a>
+              <a href="subject.html#3679">[ subject ]</a>
+              <a href="author.html#3679">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

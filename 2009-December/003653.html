@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> len &amp; can_dlc checks in tx path
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20len%20%26%20can_dlc%20checks%20in%20tx%20path&In-Reply-To=%3C4B252A97.4040109%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003652.html">
+   <LINK REL="Next"  HREF="003654.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>len &amp; can_dlc checks in tx path</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20len%20%26%20can_dlc%20checks%20in%20tx%20path&In-Reply-To=%3C4B252A97.4040109%40hartkopp.net%3E"
+       TITLE="len &amp; can_dlc checks in tx path">socketcan at hartkopp.net
+       </A><BR>
+    <I>Sun Dec 13 18:55:35 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003652.html">len &amp; can_dlc checks in tx path
+</A></li>
+        <LI>Next message: <A HREF="003654.html">len &amp; can_dlc checks in tx path
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3653">[ date ]</a>
+              <a href="thread.html#3653">[ thread ]</a>
+              <a href="subject.html#3653">[ subject ]</a>
+              <a href="author.html#3653">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger wrote:
+&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;<i> Hi Oliver,
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;&gt;&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;&gt;<i> Please also check for useless &quot;dlc &gt; 8&quot; checks in the
+</I>&gt;&gt;&gt;&gt;&gt;&gt;&gt;<i> start_xmit function.
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> I thought about that and i'm not really sure about it:
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> What if anyone uses PF_PACKET with CAN netdevices, which is a possible use-case?
+</I>&gt;&gt;&gt;&gt;&gt;<i> OK.
+</I>&gt;&gt;&gt;&gt;<i> Any ideas how to proceed in the start_xmit functions?
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> We could add something like this consistently to *all* start_xmit functions:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> Index: drivers/net/can/sja1000/sja1000.c
+</I>&gt;&gt;&gt;&gt;<i> ===================================================================
+</I>&gt;&gt;&gt;&gt;<i> --- drivers/net/can/sja1000/sja1000.c	(Revision 1095)
+</I>&gt;&gt;&gt;&gt;<i> +++ drivers/net/can/sja1000/sja1000.c	(Arbeitskopie)
+</I>&gt;&gt;&gt;&gt;<i> @@ -257,6 +257,13 @@
+</I>&gt;&gt;&gt;&gt;<i>  	uint8_t dreg;
+</I>&gt;&gt;&gt;&gt;<i>  	int i;
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> +	if (WARN_ONCE(skb-&gt;len != sizeof(*cf) || cf-&gt;can_dlc &gt; 8,
+</I>&gt;&gt;&gt;&gt;<i> +		      &quot;Dropped non conform skbuf: len %d, can_dlc %d\n&quot;,
+</I>&gt;&gt;&gt;&gt;<i> +		      skb-&gt;len, cf-&gt;can_dlc)) {
+</I>&gt;&gt;&gt;&gt;<i> +		kfree_skb(skb);
+</I>&gt;&gt;&gt;&gt;<i> +		return 0;
+</I>&gt;&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;&gt;<i>  	netif_stop_queue(dev);
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i>  	fi = dlc = cf-&gt;can_dlc;
+</I>&gt;&gt;&gt;<i> I'm just preparing a patch for the MSCAN touching the same topic, which
+</I>&gt;&gt;&gt;<i> I have attached below. What do you think? I also wonder if we should
+</I>&gt;&gt;&gt;<i> use dev_kfree_skb()?
+</I>&gt;&gt;<i> dev_kfree_skb() is mapped to consume_skb() which indicates that everything
+</I>&gt;&gt;<i> went ok in the receive path.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> IMO kfree_skb() is fine here.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> -	if (frame-&gt;can_dlc &gt; 8)
+</I>&gt;&gt;&gt;<i> -		return -EINVAL;
+</I>&gt;&gt;&gt;<i> +	if (skb-&gt;len != sizeof(*frame) || frame-&gt;can_dlc &gt; 8) {
+</I>&gt;&gt;&gt;<i> +		dev_err(dev-&gt;dev.parent,
+</I>&gt;&gt;&gt;<i> +			&quot;Dropping non-conform paket: len %d, can_dlc %d\n&quot;,
+</I>&gt;&gt;&gt;<i> +			skb-&gt;len, frame-&gt;can_dlc);
+</I>&gt;&gt;&gt;<i> +		kfree_skb(skb);
+</I>&gt;&gt;&gt;<i> +		return  NETDEV_TX_OK;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I can see several drawbacks in this implementation:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> - no 'unlikely()' hint for the gcc which is provided by WARN_ONCE
+</I>&gt;<i> 
+</I>&gt;<i> Well, some people care, others don't. We actually do not use it
+</I>&gt;<i> consequently in SocketCAN, at least.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> - dev_err() is not rate limited and may cause kernel log load
+</I>&gt;<i> 
+</I>&gt;<i> Rate-limitation might be a good thing though.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> But the NETDEV_TX_OK could be added into the original patch ;-)
+</I>&gt;<i> 
+</I>&gt;<i> Should be. WARN_ONCE() is also used to trigger a TX netdev timeout and I
+</I>&gt;<i> already got twice a *bug* report from a customer, thinking it's due to a
+</I>&gt;<i> bug in the kernel, but he has just forgotten to connect a cable. Hope
+</I>&gt;<i> this makes my concerns clear about using WARN_ONCE() here as well. Like
+</I>&gt;<i> with can_get_dlc(), we could provide a can_check_frame() to ensure that
+</I>&gt;<i> the check is done consistently.
+</I>
+Yes, i thought about an inline function like
+
+inline int no_can_skb((struct sk_buff *skb)
+{
+	struct can_frame *cf = (struct can_frame *)skb-&gt;data
+
+	return WARN_ONCE(skb-&gt;len != sizeof(*cf) || cf-&gt;can_dlc &gt; 8,
+			 &quot;Dropped non conform skbuf: len %d, can_dlc %d\n&quot;,
+			 skb-&gt;len, cf-&gt;can_dlc);
+}
+
+
+so that you can have this code in each drivers xmit function:
+
+	if (no_can_skb(skb)) {
+		kfree_skb(skb);
+		return NETDEV_TX_OK;
+	}
+
+Regards,
+Oliver
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003652.html">len &amp; can_dlc checks in tx path
+</A></li>
+	<LI>Next message: <A HREF="003654.html">len &amp; can_dlc checks in tx path
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3653">[ date ]</a>
+              <a href="thread.html#3653">[ thread ]</a>
+              <a href="subject.html#3653">[ subject ]</a>
+              <a href="author.html#3653">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

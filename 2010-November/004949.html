@@ -1,0 +1,1973 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add Flow	control,
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Add%20Flow%0A%09control%2C&In-Reply-To=%3C4CE0FF5A.3000100%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004962.html">
+   <LINK REL="Next"  HREF="004952.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add Flow	control,</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Add%20Flow%0A%09control%2C&In-Reply-To=%3C4CE0FF5A.3000100%40pengutronix.de%3E"
+       TITLE="[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add Flow	control,">mkl at pengutronix.de
+       </A><BR>
+    <I>Mon Nov 15 10:37:30 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004962.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add	Flow control,
+</A></li>
+        <LI>Next message: <A HREF="004952.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add Flow	control, 
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4949">[ date ]</a>
+              <a href="thread.html#4949">[ thread ]</a>
+              <a href="subject.html#4949">[ subject ]</a>
+              <a href="author.html#4949">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 11/15/2010 09:30 AM, Tomoya MORINAGA wrote:
+&gt;<i>  * Add Flow control
+</I>&gt;<i>  * Fix Data copy issue (endianness)
+</I>&gt;<i>  * Add Macro prefix &quot;PCH_&quot;
+</I>&gt;<i>  * Separate interface register structure
+</I>&gt;<i>  * Some functions are unified.
+</I>&gt;<i>  * Change MessageObject indication(PCH_RX_OBJ_START, etc..)
+</I>&gt;<i>  * Enumerate LEC macro
+</I>&gt;<i>  * Move MSI processing from open/close to probe/remove processing
+</I>&gt;<i>  * Use BIT(x)
+</I>&gt;<i>  * and more...
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+</I>&gt;<i> ---
+</I>&gt;<i>  drivers/net/can/pch_can.c | 1348 ++++++++++++++++++++-------------------------
+</I>&gt;<i>  1 files changed, 595 insertions(+), 753 deletions(-)
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+</I>&gt;<i> index 6727182..6a38593 100644
+</I>&gt;<i> --- a/drivers/net/can/pch_can.c
+</I>&gt;<i> +++ b/drivers/net/can/pch_can.c
+</I>&gt;<i> @@ -1,6 +1,6 @@
+</I>&gt;<i>  /*
+</I>&gt;<i>   * Copyright (C) 1999 - 2010 Intel Corporation.
+</I>&gt;<i> - * Copyright (C) 2010 OKI SEMICONDUCTOR Co., LTD.
+</I>&gt;<i> + * Copyright (C) 2010 OKI SEMICONDUCTOR CO., LTD.
+</I>&gt;<i>   *
+</I>&gt;<i>   * This program is free software; you can redistribute it and/or modify
+</I>&gt;<i>   * it under the terms of the GNU General Public License as published by
+</I>&gt;<i> @@ -32,106 +32,109 @@
+</I>&gt;<i>  #include &lt;linux/can/dev.h&gt;
+</I>&gt;<i>  #include &lt;linux/can/error.h&gt;
+</I>&gt;<i>  
+</I>&gt;<i> -#define MAX_MSG_OBJ		32
+</I>&gt;<i> -#define MSG_OBJ_RX		0 /* The receive message object flag. */
+</I>&gt;<i> -#define MSG_OBJ_TX		1 /* The transmit message object flag. */
+</I>&gt;<i> -
+</I>&gt;<i> -#define ENABLE			1 /* The enable flag */
+</I>&gt;<i> -#define DISABLE			0 /* The disable flag */
+</I>&gt;<i> -#define CAN_CTRL_INIT		0x0001 /* The INIT bit of CANCONT register. */
+</I>&gt;<i> -#define CAN_CTRL_IE		0x0002 /* The IE bit of CAN control register */
+</I>&gt;<i> -#define CAN_CTRL_IE_SIE_EIE	0x000e
+</I>&gt;<i> -#define CAN_CTRL_CCE		0x0040
+</I>&gt;<i> -#define CAN_CTRL_OPT		0x0080 /* The OPT bit of CANCONT register. */
+</I>&gt;<i> -#define CAN_OPT_SILENT		0x0008 /* The Silent bit of CANOPT reg. */
+</I>&gt;<i> -#define CAN_OPT_LBACK		0x0010 /* The LoopBack bit of CANOPT reg. */
+</I>&gt;<i> -#define CAN_CMASK_RX_TX_SET	0x00f3
+</I>&gt;<i> -#define CAN_CMASK_RX_TX_GET	0x0073
+</I>&gt;<i> -#define CAN_CMASK_ALL		0xff
+</I>&gt;<i> -#define CAN_CMASK_RDWR		0x80
+</I>&gt;<i> -#define CAN_CMASK_ARB		0x20
+</I>&gt;<i> -#define CAN_CMASK_CTRL		0x10
+</I>&gt;<i> -#define CAN_CMASK_MASK		0x40
+</I>&gt;<i> -#define CAN_CMASK_NEWDAT	0x04
+</I>&gt;<i> -#define CAN_CMASK_CLRINTPND	0x08
+</I>&gt;<i> -
+</I>&gt;<i> -#define CAN_IF_MCONT_NEWDAT	0x8000
+</I>&gt;<i> -#define CAN_IF_MCONT_INTPND	0x2000
+</I>&gt;<i> -#define CAN_IF_MCONT_UMASK	0x1000
+</I>&gt;<i> -#define CAN_IF_MCONT_TXIE	0x0800
+</I>&gt;<i> -#define CAN_IF_MCONT_RXIE	0x0400
+</I>&gt;<i> -#define CAN_IF_MCONT_RMTEN	0x0200
+</I>&gt;<i> -#define CAN_IF_MCONT_TXRQXT	0x0100
+</I>&gt;<i> -#define CAN_IF_MCONT_EOB	0x0080
+</I>&gt;<i> -#define CAN_IF_MCONT_DLC	0x000f
+</I>&gt;<i> -#define CAN_IF_MCONT_MSGLOST	0x4000
+</I>&gt;<i> -#define CAN_MASK2_MDIR_MXTD	0xc000
+</I>&gt;<i> -#define CAN_ID2_DIR		0x2000
+</I>&gt;<i> -#define CAN_ID_MSGVAL		0x8000
+</I>&gt;<i> -
+</I>&gt;<i> -#define CAN_STATUS_INT		0x8000
+</I>&gt;<i> -#define CAN_IF_CREQ_BUSY	0x8000
+</I>&gt;<i> -#define CAN_ID2_XTD		0x4000
+</I>&gt;<i> -
+</I>&gt;<i> -#define CAN_REC			0x00007f00
+</I>&gt;<i> -#define CAN_TEC			0x000000ff
+</I>&gt;<i> -
+</I>&gt;<i> -#define PCH_RX_OK		0x00000010
+</I>&gt;<i> -#define PCH_TX_OK		0x00000008
+</I>&gt;<i> -#define PCH_BUS_OFF		0x00000080
+</I>&gt;<i> -#define PCH_EWARN		0x00000040
+</I>&gt;<i> -#define PCH_EPASSIV		0x00000020
+</I>&gt;<i> -#define PCH_LEC0		0x00000001
+</I>&gt;<i> -#define PCH_LEC1		0x00000002
+</I>&gt;<i> -#define PCH_LEC2		0x00000004
+</I>&gt;<i> -#define PCH_LEC_ALL		(PCH_LEC0 | PCH_LEC1 | PCH_LEC2)
+</I>&gt;<i> -#define PCH_STUF_ERR		PCH_LEC0
+</I>&gt;<i> -#define PCH_FORM_ERR		PCH_LEC1
+</I>&gt;<i> -#define PCH_ACK_ERR		(PCH_LEC0 | PCH_LEC1)
+</I>&gt;<i> -#define PCH_BIT1_ERR		PCH_LEC2
+</I>&gt;<i> -#define PCH_BIT0_ERR		(PCH_LEC0 | PCH_LEC2)
+</I>&gt;<i> -#define PCH_CRC_ERR		(PCH_LEC1 | PCH_LEC2)
+</I>&gt;<i> +#define PCH_CTRL_INIT		BIT(0) /* The INIT bit of CANCONT register. */
+</I>&gt;<i> +#define PCH_CTRL_IE		BIT(1) /* The IE bit of CAN control register */
+</I>&gt;<i> +#define PCH_CTRL_IE_SIE_EIE	(BIT(3) | BIT(2) | BIT(1))
+</I>&gt;<i> +#define PCH_CTRL_CCE		BIT(6)
+</I>&gt;<i> +#define PCH_CTRL_OPT		BIT(7) /* The OPT bit of CANCONT register. */
+</I>&gt;<i> +#define PCH_OPT_SILENT		BIT(3) /* The Silent bit of CANOPT reg. */
+</I>&gt;<i> +#define PCH_OPT_LBACK		BIT(4) /* The LoopBack bit of CANOPT reg. */
+</I>&gt;<i> +
+</I>&gt;<i> +#define PCH_CMASK_RX_TX_SET	0x00f3
+</I>&gt;<i> +#define PCH_CMASK_RX_TX_GET	0x0073
+</I>&gt;<i> +#define PCH_CMASK_ALL		0xff
+</I>&gt;<i> +#define PCH_CMASK_NEWDAT	BIT(2)
+</I>&gt;<i> +#define PCH_CMASK_CLRINTPND	BIT(3)
+</I>&gt;<i> +#define PCH_CMASK_CTRL		BIT(4)
+</I>&gt;<i> +#define PCH_CMASK_ARB		BIT(5)
+</I>&gt;<i> +#define PCH_CMASK_MASK		BIT(6)
+</I>&gt;<i> +#define PCH_CMASK_RDWR		BIT(7)
+</I>&gt;<i> +#define PCH_IF_MCONT_NEWDAT	BIT(15)
+</I>&gt;<i> +#define PCH_IF_MCONT_MSGLOST	BIT(14)
+</I>&gt;<i> +#define PCH_IF_MCONT_INTPND	BIT(13)
+</I>&gt;<i> +#define PCH_IF_MCONT_UMASK	BIT(12)
+</I>&gt;<i> +#define PCH_IF_MCONT_TXIE	BIT(11)
+</I>&gt;<i> +#define PCH_IF_MCONT_RXIE	BIT(10)
+</I>&gt;<i> +#define PCH_IF_MCONT_RMTEN	BIT(9)
+</I>&gt;<i> +#define PCH_IF_MCONT_TXRQXT	BIT(8)
+</I>&gt;<i> +#define PCH_IF_MCONT_EOB	BIT(7)
+</I>&gt;<i> +#define PCH_IF_MCONT_DLC	(BIT(0) | BIT(1) | BIT(2) | BIT(3))
+</I>&gt;<i> +#define PCH_MASK2_MDIR_MXTD	(BIT(14) | BIT(15))
+</I>&gt;<i> +#define PCH_ID2_DIR		BIT(13)
+</I>&gt;<i> +#define PCH_ID2_XTD		BIT(14)
+</I>&gt;<i> +#define PCH_ID_MSGVAL		BIT(15)
+</I>&gt;<i> +#define PCH_IF_CREQ_BUSY	BIT(15)
+</I>&gt;<i> +
+</I>&gt;<i> +#define PCH_STATUS_INT		0x8000
+</I>&gt;<i> +#define PCH_REC			0x00007f00
+</I>&gt;<i> +#define PCH_TEC			0x000000ff
+</I>&gt;<i> +
+</I>&gt;<i> +#define PCH_TX_OK		BIT(3)
+</I>&gt;<i> +#define PCH_RX_OK		BIT(4)
+</I>&gt;<i> +#define PCH_EPASSIV		BIT(5)
+</I>&gt;<i> +#define PCH_EWARN		BIT(6)
+</I>&gt;<i> +#define PCH_BUS_OFF		BIT(7)
+</I>&gt;<i>  
+</I>&gt;<i>  /* bit position of certain controller bits. */
+</I>&gt;<i> -#define BIT_BITT_BRP		0
+</I>&gt;<i> -#define BIT_BITT_SJW		6
+</I>&gt;<i> -#define BIT_BITT_TSEG1		8
+</I>&gt;<i> -#define BIT_BITT_TSEG2		12
+</I>&gt;<i> -#define BIT_IF1_MCONT_RXIE	10
+</I>&gt;<i> -#define BIT_IF2_MCONT_TXIE	11
+</I>&gt;<i> -#define BIT_BRPE_BRPE		6
+</I>&gt;<i> -#define BIT_ES_TXERRCNT		0
+</I>&gt;<i> -#define BIT_ES_RXERRCNT		8
+</I>&gt;<i> -#define MSK_BITT_BRP		0x3f
+</I>&gt;<i> -#define MSK_BITT_SJW		0xc0
+</I>&gt;<i> -#define MSK_BITT_TSEG1		0xf00
+</I>&gt;<i> -#define MSK_BITT_TSEG2		0x7000
+</I>&gt;<i> -#define MSK_BRPE_BRPE		0x3c0
+</I>&gt;<i> -#define MSK_BRPE_GET		0x0f
+</I>&gt;<i> -#define MSK_CTRL_IE_SIE_EIE	0x07
+</I>&gt;<i> -#define MSK_MCONT_TXIE		0x08
+</I>&gt;<i> -#define MSK_MCONT_RXIE		0x10
+</I>&gt;<i> -#define PCH_CAN_NO_TX_BUFF	1
+</I>&gt;<i> -#define COUNTER_LIMIT		10
+</I>&gt;<i> -
+</I>&gt;<i> -#define PCH_CAN_CLK		50000000	/* 50MHz */
+</I>&gt;<i> -
+</I>&gt;<i> -/* Define the number of message object.
+</I>&gt;<i> +#define PCH_BIT_BRP_SHIFT		0
+</I>&gt;<i> +#define PCH_BIT_SJW_SHIFT		6
+</I>&gt;<i> +#define PCH_BIT_TSEG1_SHIFT		8
+</I>&gt;<i> +#define PCH_BIT_TSEG2_SHIFT		12
+</I>&gt;<i> +#define PCH_BIT_IF1_MCONT_RXIE_SHIFT	10
+</I>&gt;<i> +#define PCH_BIT_IF2_MCONT_TXIE_SHIFT	11
+</I>&gt;<i> +#define PCH_BIT_BRPE_BRPE_SHIFT		6
+</I>&gt;<i> +
+</I>&gt;<i> +#define PCH_MSK_BITT_BRP		0x3f
+</I>&gt;<i> +#define PCH_MSK_BRPE_BRPE		0x3c0
+</I>&gt;<i> +#define PCH_MSK_CTRL_IE_SIE_EIE		0x07
+</I>&gt;<i> +#define PCH_COUNTER_LIMIT		10
+</I>&gt;<i> +
+</I>&gt;<i> +#define PCH_RX_IFREG			0
+</I>&gt;<i> +#define PCH_TX_IFREG			1
+</I>&gt;<i> +
+</I>&gt;<i> +#define PCH_CAN_CLK			50000000	/* 50MHz */
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Define the number of message object.
+</I>&gt;<i>   * PCH CAN communications are done via Message RAM.
+</I>&gt;<i> - * The Message RAM consists of 32 message objects. */
+</I>&gt;<i> -#define PCH_RX_OBJ_NUM		26  /* 1~ PCH_RX_OBJ_NUM is Rx*/
+</I>&gt;<i> -#define PCH_TX_OBJ_NUM		6  /* PCH_RX_OBJ_NUM is RX ~ Tx*/
+</I>
+I would keep these two and use them to define the PCH_xx_OBJ_END...
+
+&gt;<i> -#define PCH_OBJ_NUM		(PCH_TX_OBJ_NUM + PCH_RX_OBJ_NUM)
+</I>&gt;<i> + * The Message RAM consists of 32 message objects.
+</I>&gt;<i> + */
+</I>&gt;<i> +#define PCH_RX_OBJ_START	1
+</I>&gt;<i> +#define PCH_RX_OBJ_END		26
+</I>&gt;<i> +#define PCH_TX_OBJ_START	27
+</I>                                ^^
+
+Which is (PCH_RX_OBJ_END + 1)
+
+&gt;<i> +#define PCH_TX_OBJ_END		32
+</I>&gt;<i>  
+</I>&gt;<i>  #define PCH_FIFO_THRESH		16
+</I>&gt;<i>  
+</I>&gt;<i> +enum pch_can_err {
+</I>&gt;<i> +	PCH_STUF_ERR = 1,
+</I>&gt;<i> +	PCH_FORM_ERR,
+</I>&gt;<i> +	PCH_ACK_ERR,
+</I>&gt;<i> +	PCH_BIT1_ERR,
+</I>&gt;<i> +	PCH_BIT0_ERR,
+</I>&gt;<i> +	PCH_CRC_ERR,
+</I>&gt;<i> +	PCH_LEC_ALL,
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i>  enum pch_can_mode {
+</I>&gt;<i>  	PCH_CAN_ENABLE,
+</I>&gt;<i>  	PCH_CAN_DISABLE,
+</I>&gt;<i>  	PCH_CAN_ALL,
+</I>&gt;<i>  	PCH_CAN_NONE,
+</I>&gt;<i>  	PCH_CAN_STOP,
+</I>&gt;<i> -	PCH_CAN_RUN
+</I>&gt;<i> +	PCH_CAN_RUN,
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +struct pch_can_if_regs {
+</I>&gt;<i> +	u32 creq;
+</I>&gt;<i> +	u32 cmask;
+</I>&gt;<i> +	u32 mask1;
+</I>&gt;<i> +	u32 mask2;
+</I>&gt;<i> +	u32 id1;
+</I>&gt;<i> +	u32 id2;
+</I>&gt;<i> +	u32 mcont;
+</I>&gt;<i> +	u32 data[4];
+</I>&gt;<i> +	u32 rsv[13];
+</I>&gt;<i>  };
+</I>&gt;<i>  
+</I>&gt;<i>  struct pch_can_regs {
+</I>&gt;<i> @@ -142,61 +145,44 @@ struct pch_can_regs {
+</I>&gt;<i>  	u32 intr;
+</I>&gt;<i>  	u32 opt;
+</I>&gt;<i>  	u32 brpe;
+</I>&gt;<i> -	u32 reserve1;
+</I>&gt;<i> -	u32 if1_creq;
+</I>&gt;<i> -	u32 if1_cmask;
+</I>&gt;<i> -	u32 if1_mask1;
+</I>&gt;<i> -	u32 if1_mask2;
+</I>&gt;<i> -	u32 if1_id1;
+</I>&gt;<i> -	u32 if1_id2;
+</I>&gt;<i> -	u32 if1_mcont;
+</I>&gt;<i> -	u32 if1_dataa1;
+</I>&gt;<i> -	u32 if1_dataa2;
+</I>&gt;<i> -	u32 if1_datab1;
+</I>&gt;<i> -	u32 if1_datab2;
+</I>&gt;<i> -	u32 reserve2;
+</I>&gt;<i> -	u32 reserve3[12];
+</I>&gt;<i> -	u32 if2_creq;
+</I>&gt;<i> -	u32 if2_cmask;
+</I>&gt;<i> -	u32 if2_mask1;
+</I>&gt;<i> -	u32 if2_mask2;
+</I>&gt;<i> -	u32 if2_id1;
+</I>&gt;<i> -	u32 if2_id2;
+</I>&gt;<i> -	u32 if2_mcont;
+</I>&gt;<i> -	u32 if2_dataa1;
+</I>&gt;<i> -	u32 if2_dataa2;
+</I>&gt;<i> -	u32 if2_datab1;
+</I>&gt;<i> -	u32 if2_datab2;
+</I>&gt;<i> -	u32 reserve4;
+</I>&gt;<i> -	u32 reserve5[20];
+</I>&gt;<i> +	u32 reserve;
+</I>&gt;<i> +	struct pch_can_if_regs ifregs[2]; /* [0]=if1  [1]=if2 */
+</I>&gt;<i> +	u32 reserve1[8];
+</I>&gt;<i>  	u32 treq1;
+</I>&gt;<i>  	u32 treq2;
+</I>&gt;<i> -	u32 reserve6[2];
+</I>&gt;<i> -	u32 reserve7[56];
+</I>&gt;<i> -	u32 reserve8[3];
+</I>&gt;<i> +	u32 reserve2[6];
+</I>&gt;<i> +	u32 data1;
+</I>&gt;<i> +	u32 data2;
+</I>&gt;<i> +	u32 reserve3[6];
+</I>&gt;<i> +	u32 canipend1;
+</I>&gt;<i> +	u32 canipend2;
+</I>&gt;<i> +	u32 reserve4[6];
+</I>&gt;<i> +	u32 canmval1;
+</I>&gt;<i> +	u32 canmval2;
+</I>&gt;<i> +	u32 reserve5[37];
+</I>&gt;<i>  	u32 srst;
+</I>&gt;<i>  };
+</I>&gt;<i>  
+</I>&gt;<i>  struct pch_can_priv {
+</I>&gt;<i>  	struct can_priv can;
+</I>&gt;<i> -	unsigned int can_num;
+</I>&gt;<i>  	struct pci_dev *dev;
+</I>&gt;<i> -	unsigned int tx_enable[MAX_MSG_OBJ];
+</I>&gt;<i> -	unsigned int rx_enable[MAX_MSG_OBJ];
+</I>&gt;<i> -	unsigned int rx_link[MAX_MSG_OBJ];
+</I>&gt;<i> +	unsigned int tx_enable[PCH_TX_OBJ_END];
+</I>&gt;<i> +	unsigned int rx_enable[PCH_TX_OBJ_END];
+</I>&gt;<i> +	unsigned int rx_link[PCH_TX_OBJ_END];
+</I>&gt;<i>  	unsigned int int_enables;
+</I>&gt;<i>  	unsigned int int_stat;
+</I>&gt;<i>  	struct net_device *ndev;
+</I>&gt;<i> -	spinlock_t msgif_reg_lock; /* Message Interface Registers Access Lock*/
+</I>&gt;<i> -	unsigned int msg_obj[MAX_MSG_OBJ];
+</I>&gt;<i> +	spinlock_t msgif_reg_lock; /* Message Interface Registers Access Lock */
+</I>        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+is it still used?
+
+&gt;<i> +	unsigned int msg_obj[PCH_TX_OBJ_END];
+</I>&gt;<i>  	struct pch_can_regs __iomem *regs;
+</I>&gt;<i>  	struct napi_struct napi;
+</I>&gt;<i>  	unsigned int tx_obj;	/* Point next Tx Obj index */
+</I>&gt;<i>  	unsigned int use_msi;
+</I>&gt;<i> +	unsigned int netif_stop;
+</I>&gt;<i>  };
+</I>&gt;<i>  
+</I>&gt;<i>  static struct can_bittiming_const pch_can_bittiming_const = {
+</I>&gt;<i> -	.name = KBUILD_MODNAME,
+</I>&gt;<i> +	.name = &quot;pch_can&quot;,
+</I>
+I do like the KBUILD_MODNAME more than the string.
+
+&gt;<i>  	.tseg1_min = 1,
+</I>&gt;<i>  	.tseg1_max = 16,
+</I>&gt;<i>  	.tseg2_min = 1,
+</I>&gt;<i> @@ -228,15 +214,15 @@ static void pch_can_set_run_mode(struct pch_can_priv *priv,
+</I>&gt;<i>  {
+</I>&gt;<i>  	switch (mode) {
+</I>&gt;<i>  	case PCH_CAN_RUN:
+</I>&gt;<i> -		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_INIT);
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, PCH_CTRL_INIT);
+</I>&gt;<i>  		break;
+</I>&gt;<i>  
+</I>&gt;<i>  	case PCH_CAN_STOP:
+</I>&gt;<i> -		pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_INIT);
+</I>&gt;<i> +		pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, PCH_CTRL_INIT);
+</I>&gt;<i>  		break;
+</I>&gt;<i>  
+</I>&gt;<i>  	default:
+</I>&gt;<i> -		dev_err(&amp;priv-&gt;ndev-&gt;dev, &quot;%s -&gt; Invalid Mode.\n&quot;, __func__);
+</I>&gt;<i> +		netdev_err(priv-&gt;ndev, &quot;%s -&gt; Invalid Mode.\n&quot;, __func__);
+</I>&gt;<i>  		break;
+</I>&gt;<i>  	}
+</I>&gt;<i>  }
+</I>&gt;<i> @@ -246,357 +232,184 @@ static void pch_can_set_optmode(struct pch_can_priv *priv)
+</I>&gt;<i>  	u32 reg_val = ioread32(&amp;priv-&gt;regs-&gt;opt);
+</I>&gt;<i>  
+</I>&gt;<i>  	if (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_LISTENONLY)
+</I>&gt;<i> -		reg_val |= CAN_OPT_SILENT;
+</I>&gt;<i> +		reg_val |= PCH_OPT_SILENT;
+</I>&gt;<i>  
+</I>&gt;<i>  	if (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_LOOPBACK)
+</I>&gt;<i> -		reg_val |= CAN_OPT_LBACK;
+</I>&gt;<i> +		reg_val |= PCH_OPT_LBACK;
+</I>&gt;<i>  
+</I>&gt;<i> -	pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_OPT);
+</I>&gt;<i> +	pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, PCH_CTRL_OPT);
+</I>&gt;<i>  	iowrite32(reg_val, &amp;priv-&gt;regs-&gt;opt);
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> -static void pch_can_set_int_custom(struct pch_can_priv *priv)
+</I>&gt;<i> +static void pch_can_rw_msg_obj(void __iomem *creq_addr, u32 num)
+</I>&gt;<i>  {
+</I>&gt;<i> -	/* Clearing the IE, SIE and EIE bits of Can control register. */
+</I>&gt;<i> -	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_IE_SIE_EIE);
+</I>&gt;<i> -
+</I>&gt;<i> -	/* Appropriately setting them. */
+</I>&gt;<i> -	pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont,
+</I>&gt;<i> -			((priv-&gt;int_enables &amp; MSK_CTRL_IE_SIE_EIE) &lt;&lt; 1));
+</I>&gt;<i> -}
+</I>&gt;<i> +	u32 counter = PCH_COUNTER_LIMIT;
+</I>        ^^^
+
+It's a normal variable, just make it an &quot;int&quot;.
+
+&gt;<i> +	u32 ifx_creq;
+</I>&gt;<i>  
+</I>&gt;<i> -/* This function retrieves interrupt enabled for the CAN device. */
+</I>&gt;<i> -static void pch_can_get_int_enables(struct pch_can_priv *priv, u32 *enables)
+</I>&gt;<i> -{
+</I>&gt;<i> -	/* Obtaining the status of IE, SIE and EIE interrupt bits. */
+</I>&gt;<i> -	*enables = ((ioread32(&amp;priv-&gt;regs-&gt;cont) &amp; CAN_CTRL_IE_SIE_EIE) &gt;&gt; 1);
+</I>&gt;<i> +	iowrite32(num, creq_addr);
+</I>&gt;<i> +	while (counter) {
+</I>&gt;<i> +		ifx_creq = ioread32(creq_addr) &amp; PCH_IF_CREQ_BUSY;
+</I>&gt;<i> +		if (!ifx_creq)
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		counter--;
+</I>&gt;<i> +		udelay(1);
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (!counter)
+</I>&gt;<i> +		pr_err(&quot;%s:IF1 BUSY Flag is set forever.\n&quot;, __func__);
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i>  static void pch_can_set_int_enables(struct pch_can_priv *priv,
+</I>&gt;<i>  				    enum pch_can_mode interrupt_no)
+</I>&gt;<i>  {
+</I>&gt;<i>  	switch (interrupt_no) {
+</I>&gt;<i> -	case PCH_CAN_ENABLE:
+</I>&gt;<i> -		pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_IE);
+</I>&gt;<i> -		break;
+</I>&gt;<i> -
+</I>&gt;<i>  	case PCH_CAN_DISABLE:
+</I>&gt;<i> -		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_IE);
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, PCH_CTRL_IE);
+</I>&gt;<i>  		break;
+</I>&gt;<i>  
+</I>&gt;<i>  	case PCH_CAN_ALL:
+</I>&gt;<i> -		pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_IE_SIE_EIE);
+</I>&gt;<i> +		pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, PCH_CTRL_IE_SIE_EIE);
+</I>&gt;<i>  		break;
+</I>&gt;<i>  
+</I>&gt;<i>  	case PCH_CAN_NONE:
+</I>&gt;<i> -		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_IE_SIE_EIE);
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, PCH_CTRL_IE_SIE_EIE);
+</I>&gt;<i>  		break;
+</I>&gt;<i>  
+</I>&gt;<i>  	default:
+</I>&gt;<i> -		dev_err(&amp;priv-&gt;ndev-&gt;dev, &quot;Invalid interrupt number.\n&quot;);
+</I>&gt;<i> +		netdev_err(priv-&gt;ndev, &quot;Invalid interrupt number.\n&quot;);
+</I>&gt;<i>  		break;
+</I>&gt;<i>  	}
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> -static void pch_can_check_if_busy(u32 __iomem *creq_addr, u32 num)
+</I>&gt;<i> -{
+</I>&gt;<i> -	u32 counter = COUNTER_LIMIT;
+</I>&gt;<i> -	u32 ifx_creq;
+</I>&gt;<i> -
+</I>&gt;<i> -	iowrite32(num, creq_addr);
+</I>&gt;<i> -	while (counter) {
+</I>&gt;<i> -		ifx_creq = ioread32(creq_addr) &amp; CAN_IF_CREQ_BUSY;
+</I>&gt;<i> -		if (!ifx_creq)
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		counter--;
+</I>&gt;<i> -		udelay(1);
+</I>&gt;<i> -	}
+</I>&gt;<i> -	if (!counter)
+</I>&gt;<i> -		pr_err(&quot;%s:IF1 BUSY Flag is set forever.\n&quot;, __func__);
+</I>&gt;<i> -}
+</I>&gt;<i> -
+</I>&gt;<i> -static void pch_can_set_rx_enable(struct pch_can_priv *priv, u32 buff_num,
+</I>&gt;<i> -				  u32 set)
+</I>&gt;<i> -{
+</I>&gt;<i> -	unsigned long flags;
+</I>&gt;<i> -
+</I>&gt;<i> -	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -	/* Reading the receive buffer data from RAM to Interface1 registers */
+</I>&gt;<i> -	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> -	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, buff_num);
+</I>&gt;<i> -
+</I>&gt;<i> -	/* Setting the IF1MASK1 register to access MsgVal and RxIE bits */
+</I>&gt;<i> -	iowrite32(CAN_CMASK_RDWR | CAN_CMASK_ARB | CAN_CMASK_CTRL,
+</I>&gt;<i> -		  &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> -
+</I>&gt;<i> -	if (set == ENABLE) {
+</I>&gt;<i> -		/* Setting the MsgVal and RxIE bits */
+</I>&gt;<i> -		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if1_mcont, CAN_IF_MCONT_RXIE);
+</I>&gt;<i> -		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if1_id2, CAN_ID_MSGVAL);
+</I>&gt;<i> -
+</I>&gt;<i> -	} else if (set == DISABLE) {
+</I>&gt;<i> -		/* Resetting the MsgVal and RxIE bits */
+</I>&gt;<i> -		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mcont, CAN_IF_MCONT_RXIE);
+</I>&gt;<i> -		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_id2, CAN_ID_MSGVAL);
+</I>&gt;<i> -	}
+</I>&gt;<i> -
+</I>&gt;<i> -	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, buff_num);
+</I>&gt;<i> -	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -}
+</I>&gt;<i> -
+</I>&gt;<i> -static void pch_can_rx_enable_all(struct pch_can_priv *priv)
+</I>&gt;<i> -{
+</I>&gt;<i> -	int i;
+</I>&gt;<i> -
+</I>&gt;<i> -	/* Traversing to obtain the object configured as receivers. */
+</I>&gt;<i> -	for (i = 0; i &lt; PCH_OBJ_NUM; i++) {
+</I>&gt;<i> -		if (priv-&gt;msg_obj[i] == MSG_OBJ_RX)
+</I>&gt;<i> -			pch_can_set_rx_enable(priv, i + 1, ENABLE);
+</I>&gt;<i> -	}
+</I>&gt;<i> -}
+</I>&gt;<i> -
+</I>&gt;<i> -static void pch_can_rx_disable_all(struct pch_can_priv *priv)
+</I>&gt;<i> +static void pch_can_set_rxtx(struct pch_can_priv *priv, u32 buff_num,
+</I>&gt;<i> +				    u32 set, u32 dir)
+</I>&gt;<i>  {
+</I>&gt;<i> -	int i;
+</I>&gt;<i> -
+</I>&gt;<i> -	/* Traversing to obtain the object configured as receivers. */
+</I>&gt;<i> -	for (i = 0; i &lt; PCH_OBJ_NUM; i++) {
+</I>&gt;<i> -		if (priv-&gt;msg_obj[i] == MSG_OBJ_RX)
+</I>&gt;<i> -			pch_can_set_rx_enable(priv, i + 1, DISABLE);
+</I>&gt;<i> -	}
+</I>&gt;<i> -}
+</I>&gt;<i> +	u32 ie;
+</I>&gt;<i>  
+</I>&gt;<i> -static void pch_can_set_tx_enable(struct pch_can_priv *priv, u32 buff_num,
+</I>&gt;<i> -				 u32 set)
+</I>&gt;<i> -{
+</I>&gt;<i> -	unsigned long flags;
+</I>&gt;<i> +	if (dir)
+</I>&gt;<i> +		ie = PCH_IF_MCONT_TXIE;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		ie = PCH_IF_MCONT_RXIE;
+</I>&gt;<i>  
+</I>&gt;<i> -	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i>  	/* Reading the Msg buffer from Message RAM to Interface2 registers. */
+</I>&gt;<i> -	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if2_cmask);
+</I>&gt;<i> -	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, buff_num);
+</I>&gt;<i> +	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[dir].cmask);
+</I>&gt;<i> +	pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[dir].creq, buff_num);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Setting the IF2CMASK register for accessing the
+</I>&gt;<i>  		MsgVal and TxIE bits */
+</I>&gt;<i> -	iowrite32(CAN_CMASK_RDWR | CAN_CMASK_ARB | CAN_CMASK_CTRL,
+</I>&gt;<i> -		 &amp;priv-&gt;regs-&gt;if2_cmask);
+</I>&gt;<i> +	iowrite32(PCH_CMASK_RDWR | PCH_CMASK_ARB | PCH_CMASK_CTRL,
+</I>&gt;<i> +		 &amp;priv-&gt;regs-&gt;ifregs[dir].cmask);
+</I>&gt;<i>  
+</I>&gt;<i> -	if (set == ENABLE) {
+</I>&gt;<i> +	if (set) {
+</I>&gt;<i>  		/* Setting the MsgVal and TxIE bits */
+</I>&gt;<i> -		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_mcont, CAN_IF_MCONT_TXIE);
+</I>&gt;<i> -		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_id2, CAN_ID_MSGVAL);
+</I>&gt;<i> -	} else if (set == DISABLE) {
+</I>&gt;<i> +		pch_can_bit_set(&amp;priv-&gt;regs-&gt;ifregs[dir].mcont, ie);
+</I>&gt;<i> +		pch_can_bit_set(&amp;priv-&gt;regs-&gt;ifregs[dir].id2, PCH_ID_MSGVAL);
+</I>&gt;<i> +	} else {
+</I>&gt;<i>  		/* Resetting the MsgVal and TxIE bits. */
+</I>&gt;<i> -		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_mcont, CAN_IF_MCONT_TXIE);
+</I>&gt;<i> -		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_id2, CAN_ID_MSGVAL);
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[dir].mcont, ie);
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[dir].id2, PCH_ID_MSGVAL);
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i> -	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, buff_num);
+</I>&gt;<i> -	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> +	pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[dir].creq, buff_num);
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> -static void pch_can_tx_enable_all(struct pch_can_priv *priv)
+</I>&gt;<i> +static void pch_can_set_rx_all(struct pch_can_priv *priv, u32 set)
+</I>&gt;<i>  {
+</I>&gt;<i>  	int i;
+</I>&gt;<i>  
+</I>&gt;<i> -	/* Traversing to obtain the object configured as transmit object. */
+</I>&gt;<i> -	for (i = 0; i &lt; PCH_OBJ_NUM; i++) {
+</I>&gt;<i> -		if (priv-&gt;msg_obj[i] == MSG_OBJ_TX)
+</I>&gt;<i> -			pch_can_set_tx_enable(priv, i + 1, ENABLE);
+</I>&gt;<i> -	}
+</I>&gt;<i> +	/* Traversing to obtain the object configured as receivers. */
+</I>&gt;<i> +	for (i = PCH_RX_OBJ_START; i &lt;= PCH_RX_OBJ_END; i++)
+</I>&gt;<i> +		pch_can_set_rxtx(priv, i, set, PCH_RX_IFREG);
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> -static void pch_can_tx_disable_all(struct pch_can_priv *priv)
+</I>&gt;<i> +static void pch_can_set_tx_all(struct pch_can_priv *priv, u32 set)
+</I>&gt;<i>  {
+</I>&gt;<i>  	int i;
+</I>&gt;<i>  
+</I>&gt;<i> -	/* Traversing to obtain the object configured as transmit object. */
+</I>&gt;<i> -	for (i = 0; i &lt; PCH_OBJ_NUM; i++) {
+</I>&gt;<i> -		if (priv-&gt;msg_obj[i] == MSG_OBJ_TX)
+</I>&gt;<i> -			pch_can_set_tx_enable(priv, i + 1, DISABLE);
+</I>&gt;<i> -	}
+</I>&gt;<i> -}
+</I>&gt;<i> -
+</I>&gt;<i> -static void pch_can_get_rx_enable(struct pch_can_priv *priv, u32 buff_num,
+</I>&gt;<i> -				 u32 *enable)
+</I>&gt;<i> -{
+</I>&gt;<i> -	unsigned long flags;
+</I>&gt;<i> -
+</I>&gt;<i> -	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> -	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, buff_num);
+</I>&gt;<i> -
+</I>&gt;<i> -	if (((ioread32(&amp;priv-&gt;regs-&gt;if1_id2)) &amp; CAN_ID_MSGVAL) &amp;&amp;
+</I>&gt;<i> -			((ioread32(&amp;priv-&gt;regs-&gt;if1_mcont)) &amp;
+</I>&gt;<i> -			CAN_IF_MCONT_RXIE))
+</I>&gt;<i> -		*enable = ENABLE;
+</I>&gt;<i> -	else
+</I>&gt;<i> -		*enable = DISABLE;
+</I>&gt;<i> -	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -}
+</I>&gt;<i> -
+</I>&gt;<i> -static void pch_can_get_tx_enable(struct pch_can_priv *priv, u32 buff_num,
+</I>&gt;<i> -				 u32 *enable)
+</I>&gt;<i> -{
+</I>&gt;<i> -	unsigned long flags;
+</I>&gt;<i> -
+</I>&gt;<i> -	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if2_cmask);
+</I>&gt;<i> -	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, buff_num);
+</I>&gt;<i> -
+</I>&gt;<i> -	if (((ioread32(&amp;priv-&gt;regs-&gt;if2_id2)) &amp; CAN_ID_MSGVAL) &amp;&amp;
+</I>&gt;<i> -			((ioread32(&amp;priv-&gt;regs-&gt;if2_mcont)) &amp;
+</I>&gt;<i> -			CAN_IF_MCONT_TXIE)) {
+</I>&gt;<i> -		*enable = ENABLE;
+</I>&gt;<i> -	} else {
+</I>&gt;<i> -		*enable = DISABLE;
+</I>&gt;<i> -	}
+</I>&gt;<i> -	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> +	/* Traversing to obtain the object configured as receivers. */
+</I>&gt;<i> +	for (i = PCH_TX_OBJ_START; i &lt;= PCH_TX_OBJ_END; i++)
+</I>&gt;<i> +		pch_can_set_rxtx(priv, i, set, PCH_TX_IFREG);
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> -static int pch_can_int_pending(struct pch_can_priv *priv)
+</I>&gt;<i> +static u32 pch_can_int_pending(struct pch_can_priv *priv)
+</I>&gt;<i>  {
+</I>&gt;<i>  	return ioread32(&amp;priv-&gt;regs-&gt;intr) &amp; 0xffff;
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> -static void pch_can_set_rx_buffer_link(struct pch_can_priv *priv,
+</I>&gt;<i> -				       u32 buffer_num, u32 set)
+</I>&gt;<i> -{
+</I>&gt;<i> -	unsigned long flags;
+</I>&gt;<i> -
+</I>&gt;<i> -	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> -	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, buffer_num);
+</I>&gt;<i> -	iowrite32(CAN_CMASK_RDWR | CAN_CMASK_CTRL, &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> -	if (set == ENABLE)
+</I>&gt;<i> -		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mcont, CAN_IF_MCONT_EOB);
+</I>&gt;<i> -	else
+</I>&gt;<i> -		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if1_mcont, CAN_IF_MCONT_EOB);
+</I>&gt;<i> -
+</I>&gt;<i> -	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, buffer_num);
+</I>&gt;<i> -	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -}
+</I>&gt;<i> -
+</I>&gt;<i> -static void pch_can_get_rx_buffer_link(struct pch_can_priv *priv,
+</I>&gt;<i> -				       u32 buffer_num, u32 *link)
+</I>&gt;<i> +static void pch_can_clear_if_buffers(struct pch_can_priv *priv)
+</I>&gt;<i>  {
+</I>&gt;<i> -	unsigned long flags;
+</I>&gt;<i> -
+</I>&gt;<i> -	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> -	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, buffer_num);
+</I>&gt;<i> -
+</I>&gt;<i> -	if (ioread32(&amp;priv-&gt;regs-&gt;if1_mcont) &amp; CAN_IF_MCONT_EOB)
+</I>&gt;<i> -		*link = DISABLE;
+</I>&gt;<i> -	else
+</I>&gt;<i> -		*link = ENABLE;
+</I>&gt;<i> -	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -}
+</I>&gt;<i> -
+</I>&gt;<i> -static void pch_can_clear_buffers(struct pch_can_priv *priv)
+</I>&gt;<i> -{
+</I>&gt;<i> -	int i;
+</I>&gt;<i> -
+</I>&gt;<i> -	for (i = 0; i &lt; PCH_RX_OBJ_NUM; i++) {
+</I>&gt;<i> -		iowrite32(CAN_CMASK_RX_TX_SET, &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> -		iowrite32(0xffff, &amp;priv-&gt;regs-&gt;if1_mask1);
+</I>&gt;<i> -		iowrite32(0xffff, &amp;priv-&gt;regs-&gt;if1_mask2);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_id1);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_id2);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_mcont);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_dataa1);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_dataa2);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_datab1);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_datab2);
+</I>&gt;<i> -		iowrite32(CAN_CMASK_RDWR | CAN_CMASK_MASK |
+</I>&gt;<i> -			  CAN_CMASK_ARB | CAN_CMASK_CTRL,
+</I>&gt;<i> -			  &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> -		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, i+1);
+</I>&gt;<i> -	}
+</I>&gt;<i> -
+</I>&gt;<i> -	for (i = i;  i &lt; PCH_OBJ_NUM; i++) {
+</I>&gt;<i> -		iowrite32(CAN_CMASK_RX_TX_SET, &amp;priv-&gt;regs-&gt;if2_cmask);
+</I>&gt;<i> -		iowrite32(0xffff, &amp;priv-&gt;regs-&gt;if2_mask1);
+</I>&gt;<i> -		iowrite32(0xffff, &amp;priv-&gt;regs-&gt;if2_mask2);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_id1);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_id2);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_mcont);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_dataa1);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_dataa2);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_datab1);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_datab2);
+</I>&gt;<i> -		iowrite32(CAN_CMASK_RDWR | CAN_CMASK_MASK |
+</I>&gt;<i> -			  CAN_CMASK_ARB | CAN_CMASK_CTRL,
+</I>&gt;<i> -			  &amp;priv-&gt;regs-&gt;if2_cmask);
+</I>&gt;<i> -		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, i+1);
+</I>&gt;<i> +	int i; /* Msg Obj ID (1~32) */
+</I>&gt;<i> +
+</I>&gt;<i> +	for (i = PCH_RX_OBJ_START; i &lt;= PCH_TX_OBJ_END; i++) {
+</I>&gt;<i> +		iowrite32(PCH_CMASK_RX_TX_SET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+</I>&gt;<i> +		iowrite32(0xffff, &amp;priv-&gt;regs-&gt;ifregs[0].mask1);
+</I>&gt;<i> +		iowrite32(0xffff, &amp;priv-&gt;regs-&gt;ifregs[0].mask2);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].id1);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].id2);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].mcont);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].data[0]);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].data[1]);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].data[2]);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].data[3]);
+</I>&gt;<i> +		iowrite32(PCH_CMASK_RDWR | PCH_CMASK_MASK |
+</I>&gt;<i> +			  PCH_CMASK_ARB | PCH_CMASK_CTRL,
+</I>&gt;<i> +			  &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+</I>&gt;<i> +		pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[0].creq, i);
+</I>&gt;<i>  	}
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i>  static void pch_can_config_rx_tx_buffers(struct pch_can_priv *priv)
+</I>&gt;<i>  {
+</I>&gt;<i>  	int i;
+</I>&gt;<i> -	unsigned long flags;
+</I>&gt;<i> -
+</I>&gt;<i> -	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i>  
+</I>&gt;<i> -	for (i = 0; i &lt; PCH_OBJ_NUM; i++) {
+</I>&gt;<i> -		if (priv-&gt;msg_obj[i] == MSG_OBJ_RX) {
+</I>&gt;<i> -			iowrite32(CAN_CMASK_RX_TX_GET,
+</I>&gt;<i> -				&amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> -			pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, i+1);
+</I>&gt;<i> +	for (i = PCH_RX_OBJ_START; i &lt;= PCH_RX_OBJ_END; i++) {
+</I>&gt;<i> +		iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+</I>&gt;<i> +		pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[0].creq, i);
+</I>&gt;<i>  
+</I>&gt;<i> -			iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_id1);
+</I>&gt;<i> -			iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_id2);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].id1);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].id2);
+</I>&gt;<i>  
+</I>&gt;<i> -			pch_can_bit_set(&amp;priv-&gt;regs-&gt;if1_mcont,
+</I>&gt;<i> -					CAN_IF_MCONT_UMASK);
+</I>&gt;<i> +		pch_can_bit_set(&amp;priv-&gt;regs-&gt;ifregs[0].mcont,
+</I>&gt;<i> +				PCH_IF_MCONT_UMASK);
+</I>&gt;<i>  
+</I>&gt;<i> -			/* Set FIFO mode set to 0 except last Rx Obj*/
+</I>&gt;<i> -			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mcont,
+</I>&gt;<i> -					  CAN_IF_MCONT_EOB);
+</I>&gt;<i> -			/* In case FIFO mode, Last EoB of Rx Obj must be 1 */
+</I>&gt;<i> -			if (i == (PCH_RX_OBJ_NUM - 1))
+</I>&gt;<i> -				pch_can_bit_set(&amp;priv-&gt;regs-&gt;if1_mcont,
+</I>&gt;<i> -						  CAN_IF_MCONT_EOB);
+</I>&gt;<i> +		if (i == PCH_RX_OBJ_END)
+</I>&gt;<i> +			pch_can_bit_set(&amp;priv-&gt;regs-&gt;ifregs[0].mcont,
+</I>&gt;<i> +					PCH_IF_MCONT_EOB);
+</I>&gt;<i> +		else
+</I>&gt;<i> +			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].mcont,
+</I>&gt;<i> +					  PCH_IF_MCONT_EOB);
+</I>&gt;<i>  
+</I>&gt;<i> -			iowrite32(0, &amp;priv-&gt;regs-&gt;if1_mask1);
+</I>&gt;<i> -			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mask2,
+</I>&gt;<i> -					  0x1fff | CAN_MASK2_MDIR_MXTD);
+</I>&gt;<i> +		iowrite32(0, &amp;priv-&gt;regs-&gt;ifregs[0].mask1);
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].mask2,
+</I>&gt;<i> +				  0x1fff | PCH_MASK2_MDIR_MXTD);
+</I>&gt;<i>  
+</I>&gt;<i> -			/* Setting CMASK for writing */
+</I>&gt;<i> -			iowrite32(CAN_CMASK_RDWR | CAN_CMASK_MASK |
+</I>&gt;<i> -				  CAN_CMASK_ARB | CAN_CMASK_CTRL,
+</I>&gt;<i> -				  &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> +		/* Setting CMASK for writing */
+</I>&gt;<i> +		iowrite32(PCH_CMASK_RDWR | PCH_CMASK_MASK | PCH_CMASK_ARB |
+</I>&gt;<i> +			  PCH_CMASK_CTRL, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+</I>&gt;<i>  
+</I>&gt;<i> -			pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, i+1);
+</I>&gt;<i> -		} else if (priv-&gt;msg_obj[i] == MSG_OBJ_TX) {
+</I>&gt;<i> -			iowrite32(CAN_CMASK_RX_TX_GET,
+</I>&gt;<i> -				&amp;priv-&gt;regs-&gt;if2_cmask);
+</I>&gt;<i> -			pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, i+1);
+</I>&gt;<i> +		pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[0].creq, i);
+</I>&gt;<i> +	}
+</I>&gt;<i>  
+</I>&gt;<i> -			/* Resetting DIR bit for reception */
+</I>&gt;<i> -			iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_id1);
+</I>&gt;<i> -			iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_id2);
+</I>&gt;<i> -			pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_id2, CAN_ID2_DIR);
+</I>&gt;<i> +	for (i = PCH_TX_OBJ_START; i &lt;= PCH_TX_OBJ_END; i++) {
+</I>&gt;<i> +		iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+</I>&gt;<i> +		pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[1].creq, i);
+</I>&gt;<i>  
+</I>&gt;<i> -			/* Setting EOB bit for transmitter */
+</I>&gt;<i> -			iowrite32(CAN_IF_MCONT_EOB, &amp;priv-&gt;regs-&gt;if2_mcont);
+</I>&gt;<i> +		/* Resetting DIR bit for reception */
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].id1);
+</I>&gt;<i> +		iowrite32(PCH_ID2_DIR, &amp;priv-&gt;regs-&gt;ifregs[1].id2);
+</I>&gt;<i>  
+</I>&gt;<i> -			pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_mcont,
+</I>&gt;<i> -					CAN_IF_MCONT_UMASK);
+</I>&gt;<i> +		/* Setting EOB bit for transmitter */
+</I>&gt;<i> +		iowrite32(PCH_IF_MCONT_EOB | PCH_IF_MCONT_UMASK,
+</I>&gt;<i> +			  &amp;priv-&gt;regs-&gt;ifregs[1].mcont);
+</I>&gt;<i>  
+</I>&gt;<i> -			iowrite32(0, &amp;priv-&gt;regs-&gt;if2_mask1);
+</I>&gt;<i> -			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_mask2, 0x1fff);
+</I>&gt;<i> +		iowrite32(0, &amp;priv-&gt;regs-&gt;ifregs[1].mask1);
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[1].mask2, 0x1fff);
+</I>&gt;<i>  
+</I>&gt;<i> -			/* Setting CMASK for writing */
+</I>&gt;<i> -			iowrite32(CAN_CMASK_RDWR | CAN_CMASK_MASK |
+</I>&gt;<i> -				  CAN_CMASK_ARB | CAN_CMASK_CTRL,
+</I>&gt;<i> -				  &amp;priv-&gt;regs-&gt;if2_cmask);
+</I>&gt;<i> +		/* Setting CMASK for writing */
+</I>&gt;<i> +		iowrite32(PCH_CMASK_RDWR | PCH_CMASK_MASK | PCH_CMASK_ARB |
+</I>&gt;<i> +			  PCH_CMASK_CTRL, &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+</I>&gt;<i>  
+</I>&gt;<i> -			pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, i+1);
+</I>&gt;<i> -		}
+</I>&gt;<i> +		pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[1].creq, i);
+</I>&gt;<i>  	}
+</I>&gt;<i> -	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i>  static void pch_can_init(struct pch_can_priv *priv)
+</I>&gt;<i> @@ -605,7 +418,7 @@ static void pch_can_init(struct pch_can_priv *priv)
+</I>&gt;<i>  	pch_can_set_run_mode(priv, PCH_CAN_STOP);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Clearing all the message object buffers. */
+</I>&gt;<i> -	pch_can_clear_buffers(priv);
+</I>&gt;<i> +	pch_can_clear_if_buffers(priv);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Configuring the respective message object as either rx/tx object. */
+</I>&gt;<i>  	pch_can_config_rx_tx_buffers(priv);
+</I>&gt;<i> @@ -623,57 +436,53 @@ static void pch_can_release(struct pch_can_priv *priv)
+</I>&gt;<i>  	pch_can_set_int_enables(priv, PCH_CAN_NONE);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Disabling all the receive object. */
+</I>&gt;<i> -	pch_can_rx_disable_all(priv);
+</I>&gt;<i> +	pch_can_set_rx_all(priv, 0);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Disabling all the transmit object. */
+</I>&gt;<i> -	pch_can_tx_disable_all(priv);
+</I>&gt;<i> +	pch_can_set_tx_all(priv, 0);
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i>  /* This function clears interrupt(s) from the CAN device. */
+</I>&gt;<i>  static void pch_can_int_clr(struct pch_can_priv *priv, u32 mask)
+</I>&gt;<i>  {
+</I>&gt;<i> -	if (mask == CAN_STATUS_INT) {
+</I>&gt;<i> -		ioread32(&amp;priv-&gt;regs-&gt;stat);
+</I>&gt;<i> -		return;
+</I>&gt;<i> -	}
+</I>&gt;<i> -
+</I>&gt;<i>  	/* Clear interrupt for transmit object */
+</I>&gt;<i> -	if (priv-&gt;msg_obj[mask - 1] == MSG_OBJ_TX) {
+</I>&gt;<i> -		/* Setting CMASK for clearing interrupts for
+</I>&gt;<i> -					 frame transmission. */
+</I>&gt;<i> -		iowrite32(CAN_CMASK_RDWR | CAN_CMASK_CTRL | CAN_CMASK_ARB,
+</I>&gt;<i> -			  &amp;priv-&gt;regs-&gt;if2_cmask);
+</I>&gt;<i> -
+</I>&gt;<i> -		/* Resetting the ID registers. */
+</I>&gt;<i> -		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_id2,
+</I>&gt;<i> -			       CAN_ID2_DIR | (0x7ff &lt;&lt; 2));
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_id1);
+</I>&gt;<i> -
+</I>&gt;<i> -		/* Claring NewDat, TxRqst &amp; IntPnd */
+</I>&gt;<i> -		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_mcont,
+</I>&gt;<i> -				  CAN_IF_MCONT_NEWDAT | CAN_IF_MCONT_INTPND |
+</I>&gt;<i> -				  CAN_IF_MCONT_TXRQXT);
+</I>&gt;<i> -		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, mask);
+</I>&gt;<i> -	} else if (priv-&gt;msg_obj[mask - 1] == MSG_OBJ_RX) {
+</I>&gt;<i> +	if ((mask &gt;= PCH_RX_OBJ_START) &amp;&amp; (mask &lt;= PCH_RX_OBJ_END)) {
+</I>&gt;<i>  		/* Setting CMASK for clearing the reception interrupts. */
+</I>&gt;<i> -		iowrite32(CAN_CMASK_RDWR | CAN_CMASK_CTRL | CAN_CMASK_ARB,
+</I>&gt;<i> -			  &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> +		iowrite32(PCH_CMASK_RDWR | PCH_CMASK_CTRL | PCH_CMASK_ARB,
+</I>&gt;<i> +			  &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+</I>&gt;<i>  
+</I>&gt;<i>  		/* Clearing the Dir bit. */
+</I>&gt;<i> -		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_id2, CAN_ID2_DIR);
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].id2, PCH_ID2_DIR);
+</I>&gt;<i>  
+</I>&gt;<i>  		/* Clearing NewDat &amp; IntPnd */
+</I>&gt;<i> -		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mcont,
+</I>&gt;<i> -				  CAN_IF_MCONT_NEWDAT | CAN_IF_MCONT_INTPND);
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].mcont,
+</I>&gt;<i> +				  PCH_IF_MCONT_NEWDAT | PCH_IF_MCONT_INTPND);
+</I>&gt;<i> +
+</I>&gt;<i> +		pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[0].creq, mask);
+</I>&gt;<i> +	} else if ((mask &gt;= PCH_TX_OBJ_START) &amp;&amp; (mask &lt;= PCH_TX_OBJ_END)) {
+</I>&gt;<i> +		/*
+</I>&gt;<i> +		 * Setting CMASK for clearing interrupts for frame transmission.
+</I>&gt;<i> +		 */
+</I>&gt;<i> +		iowrite32(PCH_CMASK_RDWR | PCH_CMASK_CTRL | PCH_CMASK_ARB,
+</I>&gt;<i> +			  &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* Resetting the ID registers. */
+</I>&gt;<i> +		pch_can_bit_set(&amp;priv-&gt;regs-&gt;ifregs[1].id2,
+</I>&gt;<i> +			       PCH_ID2_DIR | (0x7ff &lt;&lt; 2));
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].id1);
+</I>&gt;<i>  
+</I>&gt;<i> -		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, mask);
+</I>&gt;<i> +		/* Claring NewDat, TxRqst &amp; IntPnd */
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[1].mcont,
+</I>&gt;<i> +				  PCH_IF_MCONT_NEWDAT | PCH_IF_MCONT_INTPND |
+</I>&gt;<i> +				  PCH_IF_MCONT_TXRQXT);
+</I>&gt;<i> +		pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[1].creq, mask);
+</I>&gt;<i>  	}
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> -static int pch_can_get_buffer_status(struct pch_can_priv *priv)
+</I>&gt;<i> +static u32 pch_can_get_buffer_status(struct pch_can_priv *priv)
+</I>&gt;<i>  {
+</I>&gt;<i>  	return (ioread32(&amp;priv-&gt;regs-&gt;treq1) &amp; 0xffff) |
+</I>&gt;<i> -	       ((ioread32(&amp;priv-&gt;regs-&gt;treq2) &amp; 0xffff) &lt;&lt; 16);
+</I>&gt;<i> +	       (ioread32(&amp;priv-&gt;regs-&gt;treq2) &lt;&lt; 16);
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i>  static void pch_can_reset(struct pch_can_priv *priv)
+</I>&gt;<i> @@ -688,7 +497,7 @@ static void pch_can_error(struct net_device *ndev, u32 status)
+</I>&gt;<i>  	struct sk_buff *skb;
+</I>&gt;<i>  	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i>  	struct can_frame *cf;
+</I>&gt;<i> -	u32 errc;
+</I>&gt;<i> +	u32 errc, lec;
+</I>&gt;<i>  	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
+</I>&gt;<i>  	enum can_state state = priv-&gt;can.state;
+</I>&gt;<i>  
+</I>&gt;<i> @@ -697,13 +506,11 @@ static void pch_can_error(struct net_device *ndev, u32 status)
+</I>&gt;<i>  		return;
+</I>&gt;<i>  
+</I>&gt;<i>  	if (status &amp; PCH_BUS_OFF) {
+</I>&gt;<i> -		pch_can_tx_disable_all(priv);
+</I>&gt;<i> -		pch_can_rx_disable_all(priv);
+</I>&gt;<i> +		pch_can_set_tx_all(priv, 0);
+</I>&gt;<i> +		pch_can_set_rx_all(priv, 0);
+</I>&gt;<i>  		state = CAN_STATE_BUS_OFF;
+</I>&gt;<i>  		cf-&gt;can_id |= CAN_ERR_BUSOFF;
+</I>&gt;<i>  		can_bus_off(ndev);
+</I>&gt;<i> -		pch_can_set_run_mode(priv, PCH_CAN_RUN);
+</I>&gt;<i> -		dev_err(&amp;ndev-&gt;dev, &quot;%s -&gt; Bus Off occurres.\n&quot;, __func__);
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Warning interrupt. */
+</I>&gt;<i> @@ -712,11 +519,11 @@ static void pch_can_error(struct net_device *ndev, u32 status)
+</I>&gt;<i>  		priv-&gt;can.can_stats.error_warning++;
+</I>&gt;<i>  		cf-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;<i>  		errc = ioread32(&amp;priv-&gt;regs-&gt;errc);
+</I>&gt;<i> -		if (((errc &amp; CAN_REC) &gt;&gt; 8) &gt; 96)
+</I>&gt;<i> +		if (((errc &amp; PCH_REC) &gt;&gt; 8) &gt; 96)
+</I>&gt;<i>  			cf-&gt;data[1] |= CAN_ERR_CRTL_RX_WARNING;
+</I>&gt;<i> -		if ((errc &amp; CAN_TEC) &gt; 96)
+</I>&gt;<i> +		if ((errc &amp; PCH_TEC) &gt; 96)
+</I>&gt;<i>  			cf-&gt;data[1] |= CAN_ERR_CRTL_TX_WARNING;
+</I>&gt;<i> -		dev_warn(&amp;ndev-&gt;dev,
+</I>&gt;<i> +		netdev_dbg(ndev,
+</I>&gt;<i>  			&quot;%s -&gt; Error Counter is more than 96.\n&quot;, __func__);
+</I>&gt;<i>  	}
+</I>&gt;<i>  	/* Error passive interrupt. */
+</I>&gt;<i> @@ -725,45 +532,52 @@ static void pch_can_error(struct net_device *ndev, u32 status)
+</I>&gt;<i>  		state = CAN_STATE_ERROR_PASSIVE;
+</I>&gt;<i>  		cf-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;<i>  		errc = ioread32(&amp;priv-&gt;regs-&gt;errc);
+</I>&gt;<i> -		if (((errc &amp; CAN_REC) &gt;&gt; 8) &gt; 127)
+</I>&gt;<i> +		if (((errc &amp; PCH_REC) &gt;&gt; 8) &gt; 127)
+</I>&gt;<i>  			cf-&gt;data[1] |= CAN_ERR_CRTL_RX_PASSIVE;
+</I>&gt;<i> -		if ((errc &amp; CAN_TEC) &gt; 127)
+</I>&gt;<i> +		if ((errc &amp; PCH_TEC) &gt; 127)
+</I>&gt;<i>  			cf-&gt;data[1] |= CAN_ERR_CRTL_TX_PASSIVE;
+</I>&gt;<i> -		dev_err(&amp;ndev-&gt;dev,
+</I>&gt;<i> +		netdev_dbg(ndev,
+</I>&gt;<i>  			&quot;%s -&gt; CAN controller is ERROR PASSIVE .\n&quot;, __func__);
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i> -	if (status &amp; PCH_LEC_ALL) {
+</I>&gt;<i> +	lec = status &amp; PCH_LEC_ALL;
+</I>&gt;<i> +	switch (lec) {
+</I>&gt;<i> +	case PCH_STUF_ERR:
+</I>&gt;<i> +		cf-&gt;data[2] |= CAN_ERR_PROT_STUFF;
+</I>&gt;<i>  		priv-&gt;can.can_stats.bus_error++;
+</I>&gt;<i>  		stats-&gt;rx_errors++;
+</I>&gt;<i> -		switch (status &amp; PCH_LEC_ALL) {
+</I>&gt;<i> -		case PCH_STUF_ERR:
+</I>&gt;<i> -			cf-&gt;data[2] |= CAN_ERR_PROT_STUFF;
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		case PCH_FORM_ERR:
+</I>&gt;<i> -			cf-&gt;data[2] |= CAN_ERR_PROT_FORM;
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		case PCH_ACK_ERR:
+</I>&gt;<i> -			cf-&gt;data[2] |= CAN_ERR_PROT_LOC_ACK |
+</I>&gt;<i> -				       CAN_ERR_PROT_LOC_ACK_DEL;
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		case PCH_BIT1_ERR:
+</I>&gt;<i> -		case PCH_BIT0_ERR:
+</I>&gt;<i> -			cf-&gt;data[2] |= CAN_ERR_PROT_BIT;
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		case PCH_CRC_ERR:
+</I>&gt;<i> -			cf-&gt;data[2] |= CAN_ERR_PROT_LOC_CRC_SEQ |
+</I>&gt;<i> -				       CAN_ERR_PROT_LOC_CRC_DEL;
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		default:
+</I>&gt;<i> -			iowrite32(status | PCH_LEC_ALL, &amp;priv-&gt;regs-&gt;stat);
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		}
+</I>&gt;<i> -
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case PCH_FORM_ERR:
+</I>&gt;<i> +		cf-&gt;data[2] |= CAN_ERR_PROT_FORM;
+</I>&gt;<i> +		priv-&gt;can.can_stats.bus_error++;
+</I>&gt;<i> +		stats-&gt;rx_errors++;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case PCH_ACK_ERR:
+</I>&gt;<i> +		cf-&gt;can_id |= CAN_ERR_ACK;
+</I>&gt;<i> +		priv-&gt;can.can_stats.bus_error++;
+</I>&gt;<i> +		stats-&gt;rx_errors++;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case PCH_BIT1_ERR:
+</I>&gt;<i> +	case PCH_BIT0_ERR:
+</I>&gt;<i> +		cf-&gt;data[2] |= CAN_ERR_PROT_BIT;
+</I>&gt;<i> +		priv-&gt;can.can_stats.bus_error++;
+</I>&gt;<i> +		stats-&gt;rx_errors++;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case PCH_CRC_ERR:
+</I>&gt;<i> +		cf-&gt;data[2] |= CAN_ERR_PROT_LOC_CRC_SEQ |
+</I>&gt;<i> +			       CAN_ERR_PROT_LOC_CRC_DEL;
+</I>&gt;<i> +		priv-&gt;can.can_stats.bus_error++;
+</I>&gt;<i> +		stats-&gt;rx_errors++;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case PCH_LEC_ALL: /* Written by CPU. No error status */
+</I>&gt;<i> +		break;
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i> +	cf-&gt;data[6] = ioread32(&amp;priv-&gt;regs-&gt;errc) &amp; PCH_TEC;
+</I>&gt;<i> +	cf-&gt;data[7] = (ioread32(&amp;priv-&gt;regs-&gt;errc) &amp; PCH_REC) &gt;&gt; 8;
+</I>&gt;<i> +
+</I>&gt;<i>  	priv-&gt;can.state = state;
+</I>&gt;<i> -	netif_rx(skb);
+</I>&gt;<i> +	netif_receive_skb(skb);
+</I>&gt;<i>  
+</I>&gt;<i>  	stats-&gt;rx_packets++;
+</I>&gt;<i>  	stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;<i> @@ -775,199 +589,214 @@ static irqreturn_t pch_can_interrupt(int irq, void *dev_id)
+</I>&gt;<i>  	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i>  
+</I>&gt;<i>  	pch_can_set_int_enables(priv, PCH_CAN_NONE);
+</I>&gt;<i> -
+</I>&gt;<i>  	napi_schedule(&amp;priv-&gt;napi);
+</I>&gt;<i>  
+</I>&gt;<i>  	return IRQ_HANDLED;
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> -static int pch_can_rx_normal(struct net_device *ndev, u32 int_stat)
+</I>&gt;<i> +static void pch_fifo_thresh(struct pch_can_priv *priv, int obj_id)
+</I>&gt;<i> +{
+</I>&gt;<i> +	if (obj_id &lt; PCH_FIFO_THRESH) {
+</I>&gt;<i> +		iowrite32(PCH_CMASK_RDWR | PCH_CMASK_CTRL |
+</I>&gt;<i> +			  PCH_CMASK_ARB, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* Clearing the Dir bit. */
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].id2, PCH_ID2_DIR);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* Clearing NewDat &amp; IntPnd */
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].mcont,
+</I>&gt;<i> +				  PCH_IF_MCONT_INTPND);
+</I>&gt;<i> +		pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[0].creq, obj_id);
+</I>&gt;<i> +	} else if (obj_id &gt; PCH_FIFO_THRESH) {
+</I>&gt;<i> +		pch_can_int_clr(priv, obj_id);
+</I>&gt;<i> +	} else if (obj_id == PCH_FIFO_THRESH) {
+</I>&gt;<i> +		int cnt;
+</I>&gt;<i> +		for (cnt = 0; cnt &lt; PCH_FIFO_THRESH; cnt++)
+</I>&gt;<i> +			pch_can_int_clr(priv, cnt+1);
+</I>&gt;<i> +	}
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int pch_can_rx_msg_lost(struct net_device *ndev, int obj_id)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> +	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
+</I>&gt;<i> +	struct sk_buff *skb;
+</I>&gt;<i> +	struct can_frame *cf;
+</I>&gt;<i> +
+</I>&gt;<i> +	netdev_dbg(priv-&gt;ndev, &quot;Msg Obj is overwritten.\n&quot;);
+</I>&gt;<i> +	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].mcont,
+</I>&gt;<i> +			  PCH_IF_MCONT_MSGLOST);
+</I>&gt;<i> +	iowrite32(PCH_CMASK_RDWR | PCH_CMASK_CTRL,
+</I>&gt;<i> +		  &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+</I>&gt;<i> +	pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[0].creq, obj_id);
+</I>&gt;<i> +
+</I>&gt;<i> +	skb = alloc_can_err_skb(ndev, &amp;cf);
+</I>&gt;<i> +	if (!skb)
+</I>&gt;<i> +		return -ENOMEM;
+</I>&gt;<i> +
+</I>&gt;<i> +	cf-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;<i> +	cf-&gt;data[1] = CAN_ERR_CRTL_RX_OVERFLOW;
+</I>&gt;<i> +	stats-&gt;rx_over_errors++;
+</I>&gt;<i> +	stats-&gt;rx_errors++;
+</I>&gt;<i> +
+</I>&gt;<i> +	netif_receive_skb(skb);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int pch_can_rx_normal(struct net_device *ndev, u32 obj_num, int quota)
+</I>&gt;<i>  {
+</I>&gt;<i>  	u32 reg;
+</I>&gt;<i>  	canid_t id;
+</I>&gt;<i>  	u32 ide;
+</I>&gt;<i>  	u32 rtr;
+</I>&gt;<i> -	int i, j, k;
+</I>&gt;<i>  	int rcv_pkts = 0;
+</I>&gt;<i> +	int rtn;
+</I>&gt;<i> +	int next_flag = 0;
+</I>&gt;<i>  	struct sk_buff *skb;
+</I>&gt;<i>  	struct can_frame *cf;
+</I>&gt;<i>  	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i>  	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
+</I>&gt;<i> +	u8 *can_data;
+</I>&gt;<i> +	int i;
+</I>&gt;<i>  
+</I>&gt;<i> -	/* Reading the messsage object from the Message RAM */
+</I>&gt;<i> -	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> -	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, int_stat);
+</I>&gt;<i> +	do {
+</I>&gt;<i> +		/* Reading the messsage object from the Message RAM */
+</I>&gt;<i> +		iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+</I>&gt;<i> +		pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[0].creq, obj_num);
+</I>&gt;<i>  
+</I>&gt;<i> -	/* Reading the MCONT register. */
+</I>&gt;<i> -	reg = ioread32(&amp;priv-&gt;regs-&gt;if1_mcont);
+</I>&gt;<i> -	reg &amp;= 0xffff;
+</I>&gt;<i> +		/* Reading the MCONT register. */
+</I>&gt;<i> +		reg = ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].mcont);
+</I>&gt;<i> +
+</I>&gt;<i> +		if (reg &amp; PCH_IF_MCONT_EOB)
+</I>&gt;<i> +			break;
+</I>&gt;<i>  
+</I>&gt;<i> -	for (k = int_stat; !(reg &amp; CAN_IF_MCONT_EOB); k++) {
+</I>&gt;<i>  		/* If MsgLost bit set. */
+</I>&gt;<i> -		if (reg &amp; CAN_IF_MCONT_MSGLOST) {
+</I>&gt;<i> -			dev_err(&amp;priv-&gt;ndev-&gt;dev, &quot;Msg Obj is overwritten.\n&quot;);
+</I>&gt;<i> -			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mcont,
+</I>&gt;<i> -					  CAN_IF_MCONT_MSGLOST);
+</I>&gt;<i> -			iowrite32(CAN_CMASK_RDWR | CAN_CMASK_CTRL,
+</I>&gt;<i> -				  &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> -			pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, k);
+</I>&gt;<i> -
+</I>&gt;<i> -			skb = alloc_can_err_skb(ndev, &amp;cf);
+</I>&gt;<i> +		if (reg &amp; PCH_IF_MCONT_MSGLOST) {
+</I>&gt;<i> +			rtn = pch_can_rx_msg_lost(ndev, obj_num);
+</I>&gt;<i> +			if (!rtn)
+</I>&gt;<i> +				return rtn;
+</I>&gt;<i> +			rcv_pkts++;
+</I>&gt;<i> +			quota--;
+</I>&gt;<i> +			next_flag = 1;
+</I>&gt;<i> +		} else if (!(reg &amp; PCH_IF_MCONT_NEWDAT))
+</I>&gt;<i> +			next_flag = 1;
+</I>&gt;<i> +
+</I>&gt;<i> +		if (!next_flag) {
+</I>&gt;<i> +			skb = alloc_can_skb(priv-&gt;ndev, &amp;cf);
+</I>&gt;<i>  			if (!skb)
+</I>&gt;<i>  				return -ENOMEM;
+</I>&gt;<i>  
+</I>&gt;<i> -			priv-&gt;can.can_stats.error_passive++;
+</I>&gt;<i> -			priv-&gt;can.state = CAN_STATE_ERROR_PASSIVE;
+</I>&gt;<i> -			cf-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;<i> -			cf-&gt;data[1] |= CAN_ERR_CRTL_RX_OVERFLOW;
+</I>&gt;<i> -			cf-&gt;data[2] |= CAN_ERR_PROT_OVERLOAD;
+</I>&gt;<i> -			stats-&gt;rx_packets++;
+</I>&gt;<i> -			stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;<i> +			/* Get Received data */
+</I>&gt;<i> +			ide = ((ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].id2)) &amp;
+</I>&gt;<i> +					 PCH_ID2_XTD);
+</I>&gt;<i> +			if (ide) {
+</I>&gt;<i> +				id = (ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].id1) &amp;
+</I>&gt;<i> +					       0xffff);
+</I>&gt;<i> +				id |= (((ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].id2)) &amp;
+</I>&gt;<i> +						  0x1fff) &lt;&lt; 16);
+</I>&gt;<i> +				cf-&gt;can_id = id | CAN_EFF_FLAG;
+</I>&gt;<i> +			} else {
+</I>&gt;<i> +				id = (((ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].id2)) &amp;
+</I>&gt;<i> +						(CAN_SFF_MASK &lt;&lt; 2)) &gt;&gt; 2);
+</I>&gt;<i> +				cf-&gt;can_id = id;
+</I>&gt;<i> +			}
+</I>&gt;<i> +
+</I>&gt;<i> +			rtr = ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].id2) &amp;
+</I>&gt;<i> +					PCH_ID2_DIR;
+</I>
+Try to minimize the ioread to &quot;id2&quot;. I suggest to read id2 only _once_
+and use it multiple times.
+
+&gt;<i> +
+</I>&gt;<i> +			if (rtr)
+</I>&gt;<i> +				cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;<i> +
+</I>&gt;<i> +			cf-&gt;can_dlc = get_can_dlc((ioread32(&amp;priv-&gt;regs-&gt;
+</I>&gt;<i> +						   ifregs[0].mcont)) &amp; 0xF);
+</I>&gt;<i> +
+</I>&gt;<i> +			can_data = (u8 *)&amp;priv-&gt;regs-&gt;ifregs[0].data[0];
+</I>&gt;<i> +			for (i = 0; i &lt; cf-&gt;can_dlc; i += 2, can_data += 4) {
+</I>&gt;<i> +				cf-&gt;data[i] = ioread8(can_data);
+</I>&gt;<i> +				cf-&gt;data[i+1] = ioread8(can_data + 1);
+</I>                                         ^^^
+
+codingstyle: &quot;i + 1&quot;, please use checkpatch.pl.
+
+&gt;<i> +			}
+</I>
+Either use ioread8 or ioread16 in both the rx and tx path.
+
+&gt;<i>  
+</I>&gt;<i>  			netif_receive_skb(skb);
+</I>&gt;<i>  			rcv_pkts++;
+</I>&gt;<i> -			goto RX_NEXT;
+</I>&gt;<i> -		}
+</I>&gt;<i> -		if (!(reg &amp; CAN_IF_MCONT_NEWDAT))
+</I>&gt;<i> -			goto RX_NEXT;
+</I>&gt;<i> -
+</I>&gt;<i> -		skb = alloc_can_skb(priv-&gt;ndev, &amp;cf);
+</I>&gt;<i> -		if (!skb)
+</I>&gt;<i> -			return -ENOMEM;
+</I>&gt;<i> -
+</I>&gt;<i> -		/* Get Received data */
+</I>&gt;<i> -		ide = ((ioread32(&amp;priv-&gt;regs-&gt;if1_id2)) &amp; CAN_ID2_XTD) &gt;&gt; 14;
+</I>&gt;<i> -		if (ide) {
+</I>&gt;<i> -			id = (ioread32(&amp;priv-&gt;regs-&gt;if1_id1) &amp; 0xffff);
+</I>&gt;<i> -			id |= (((ioread32(&amp;priv-&gt;regs-&gt;if1_id2)) &amp;
+</I>&gt;<i> -					    0x1fff) &lt;&lt; 16);
+</I>&gt;<i> -			cf-&gt;can_id = (id &amp; CAN_EFF_MASK) | CAN_EFF_FLAG;
+</I>&gt;<i> -		} else {
+</I>&gt;<i> -			id = (((ioread32(&amp;priv-&gt;regs-&gt;if1_id2)) &amp;
+</I>&gt;<i> -					  (CAN_SFF_MASK &lt;&lt; 2)) &gt;&gt; 2);
+</I>&gt;<i> -			cf-&gt;can_id = (id &amp; CAN_SFF_MASK);
+</I>&gt;<i> -		}
+</I>&gt;<i> +			stats-&gt;rx_packets++;
+</I>&gt;<i> +			quota--;
+</I>&gt;<i> +			stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;<i>  
+</I>&gt;<i> -		rtr = (ioread32(&amp;priv-&gt;regs-&gt;if1_id2) &amp;  CAN_ID2_DIR);
+</I>&gt;<i> -		if (rtr) {
+</I>&gt;<i> -			cf-&gt;can_dlc = 0;
+</I>&gt;<i> -			cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;<i> -		} else {
+</I>&gt;<i> -			cf-&gt;can_dlc = ((ioread32(&amp;priv-&gt;regs-&gt;if1_mcont)) &amp;
+</I>&gt;<i> -						   0x0f);
+</I>&gt;<i> +			pch_fifo_thresh(priv, obj_num);
+</I>&gt;<i>  		}
+</I>&gt;<i> +		obj_num++;
+</I>&gt;<i> +		next_flag = 0;
+</I>&gt;<i> +	} while (quota &gt; 0);
+</I>&gt;<i>  
+</I>&gt;<i> -		for (i = 0, j = 0; i &lt; cf-&gt;can_dlc; j++) {
+</I>&gt;<i> -			reg = ioread32(&amp;priv-&gt;regs-&gt;if1_dataa1 + j*4);
+</I>&gt;<i> -			cf-&gt;data[i++] = cpu_to_le32(reg &amp; 0xff);
+</I>&gt;<i> -			if (i == cf-&gt;can_dlc)
+</I>&gt;<i> -				break;
+</I>&gt;<i> -			cf-&gt;data[i++] = cpu_to_le32((reg &gt;&gt; 8) &amp; 0xff);
+</I>&gt;<i> -		}
+</I>&gt;<i> +	return rcv_pkts;
+</I>&gt;<i> +}
+</I>&gt;<i>  
+</I>&gt;<i> -		netif_receive_skb(skb);
+</I>&gt;<i> -		rcv_pkts++;
+</I>&gt;<i> -		stats-&gt;rx_packets++;
+</I>&gt;<i> -		stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;<i> -
+</I>&gt;<i> -		if (k &lt; PCH_FIFO_THRESH) {
+</I>&gt;<i> -			iowrite32(CAN_CMASK_RDWR | CAN_CMASK_CTRL |
+</I>&gt;<i> -				  CAN_CMASK_ARB, &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> -
+</I>&gt;<i> -			/* Clearing the Dir bit. */
+</I>&gt;<i> -			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_id2, CAN_ID2_DIR);
+</I>&gt;<i> -
+</I>&gt;<i> -			/* Clearing NewDat &amp; IntPnd */
+</I>&gt;<i> -			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mcont,
+</I>&gt;<i> -					  CAN_IF_MCONT_INTPND);
+</I>&gt;<i> -			pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, k);
+</I>&gt;<i> -		} else if (k &gt; PCH_FIFO_THRESH) {
+</I>&gt;<i> -			pch_can_int_clr(priv, k);
+</I>&gt;<i> -		} else if (k == PCH_FIFO_THRESH) {
+</I>&gt;<i> -			int cnt;
+</I>&gt;<i> -			for (cnt = 0; cnt &lt; PCH_FIFO_THRESH; cnt++)
+</I>&gt;<i> -				pch_can_int_clr(priv, cnt+1);
+</I>&gt;<i> -		}
+</I>&gt;<i> -RX_NEXT:
+</I>&gt;<i> -		/* Reading the messsage object from the Message RAM */
+</I>&gt;<i> -		iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if1_cmask);
+</I>&gt;<i> -		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, k + 1);
+</I>&gt;<i> -		reg = ioread32(&amp;priv-&gt;regs-&gt;if1_mcont);
+</I>&gt;<i> -	}
+</I>&gt;<i> +static void pch_can_tx_complete(struct net_device *ndev, u32 int_stat)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> +	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
+</I>&gt;<i> +	u32 dlc;
+</I>&gt;<i>  
+</I>&gt;<i> -	return rcv_pkts;
+</I>&gt;<i> +	can_get_echo_skb(ndev, int_stat - PCH_RX_OBJ_END - 1);
+</I>&gt;<i> +	iowrite32(PCH_CMASK_RX_TX_GET | PCH_CMASK_CLRINTPND,
+</I>&gt;<i> +		  &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+</I>&gt;<i> +	dlc = get_can_dlc(ioread32(&amp;priv-&gt;regs-&gt;ifregs[1].mcont) &amp;
+</I>&gt;<i> +			  PCH_IF_MCONT_DLC);
+</I>&gt;<i> +	pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[1].creq, int_stat);
+</I>&gt;<i> +	stats-&gt;tx_bytes += dlc;
+</I>&gt;<i> +	stats-&gt;tx_packets++;
+</I>&gt;<i> +	if ((int_stat == PCH_TX_OBJ_END) &amp;&amp; (priv-&gt;netif_stop == 1)) {
+</I>
+No need for the netif_stop variable. netif_wake_queue does the check anyway.
+
+&gt;<i> +		netif_wake_queue(ndev);
+</I>&gt;<i> +		priv-&gt;netif_stop = 0;
+</I>&gt;<i> +	}
+</I>&gt;<i>  }
+</I>&gt;<i> +
+</I>&gt;<i>  static int pch_can_rx_poll(struct napi_struct *napi, int quota)
+</I>&gt;<i>  {
+</I>&gt;<i>  	struct net_device *ndev = napi-&gt;dev;
+</I>&gt;<i>  	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> -	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
+</I>&gt;<i> -	u32 dlc;
+</I>&gt;<i>  	u32 int_stat;
+</I>&gt;<i>  	int rcv_pkts = 0;
+</I>&gt;<i>  	u32 reg_stat;
+</I>&gt;<i> -	unsigned long flags;
+</I>&gt;<i>  
+</I>&gt;<i>  	int_stat = pch_can_int_pending(priv);
+</I>&gt;<i>  	if (!int_stat)
+</I>&gt;<i> -		return 0;
+</I>&gt;<i> +		goto end;
+</I>&gt;<i>  
+</I>&gt;<i> -INT_STAT:
+</I>&gt;<i> -	if (int_stat == CAN_STATUS_INT) {
+</I>&gt;<i> +	if ((int_stat == PCH_STATUS_INT) &amp;&amp; (quota &gt; 0)) {
+</I>&gt;<i>  		reg_stat = ioread32(&amp;priv-&gt;regs-&gt;stat);
+</I>&gt;<i>  		if (reg_stat &amp; (PCH_BUS_OFF | PCH_LEC_ALL)) {
+</I>&gt;<i> -			if ((reg_stat &amp; PCH_LEC_ALL) != PCH_LEC_ALL)
+</I>&gt;<i> +			if ((reg_stat &amp; PCH_LEC_ALL) != PCH_LEC_ALL) {
+</I>&gt;<i>  				pch_can_error(ndev, reg_stat);
+</I>&gt;<i> +				quota--;
+</I>&gt;<i> +			}
+</I>&gt;<i>  		}
+</I>&gt;<i>  
+</I>&gt;<i> -		if (reg_stat &amp; PCH_TX_OK) {
+</I>&gt;<i> -			spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -			iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if2_cmask);
+</I>&gt;<i> -			pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq,
+</I>&gt;<i> -					       ioread32(&amp;priv-&gt;regs-&gt;intr));
+</I>&gt;<i> -			spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> +		if (reg_stat &amp; PCH_TX_OK)
+</I>&gt;<i>  			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;stat, PCH_TX_OK);
+</I>&gt;<i> -		}
+</I>&gt;<i>  
+</I>&gt;<i>  		if (reg_stat &amp; PCH_RX_OK)
+</I>&gt;<i>  			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;stat, PCH_RX_OK);
+</I>&gt;<i>  
+</I>&gt;<i>  		int_stat = pch_can_int_pending(priv);
+</I>&gt;<i> -		if (int_stat == CAN_STATUS_INT)
+</I>&gt;<i> -			goto INT_STAT;
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i> -MSG_OBJ:
+</I>&gt;<i> -	if ((int_stat &gt;= 1) &amp;&amp; (int_stat &lt;= PCH_RX_OBJ_NUM)) {
+</I>&gt;<i> -		spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -		rcv_pkts = pch_can_rx_normal(ndev, int_stat);
+</I>&gt;<i> -		spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -		if (rcv_pkts &lt; 0)
+</I>&gt;<i> -			return 0;
+</I>&gt;<i> -	} else if ((int_stat &gt; PCH_RX_OBJ_NUM) &amp;&amp; (int_stat &lt;= PCH_OBJ_NUM)) {
+</I>&gt;<i> -		if (priv-&gt;msg_obj[int_stat - 1] == MSG_OBJ_TX) {
+</I>&gt;<i> -			/* Handle transmission interrupt */
+</I>&gt;<i> -			can_get_echo_skb(ndev, int_stat - PCH_RX_OBJ_NUM - 1);
+</I>&gt;<i> -			spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -			iowrite32(CAN_CMASK_RX_TX_GET | CAN_CMASK_CLRINTPND,
+</I>&gt;<i> -				  &amp;priv-&gt;regs-&gt;if2_cmask);
+</I>&gt;<i> -			dlc = ioread32(&amp;priv-&gt;regs-&gt;if2_mcont) &amp;
+</I>&gt;<i> -				       CAN_IF_MCONT_DLC;
+</I>&gt;<i> -			pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, int_stat);
+</I>&gt;<i> -			spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -			if (dlc &gt; 8)
+</I>&gt;<i> -				dlc = 8;
+</I>&gt;<i> -			stats-&gt;tx_bytes += dlc;
+</I>&gt;<i> -			stats-&gt;tx_packets++;
+</I>&gt;<i> -		}
+</I>&gt;<i> +	if (quota == 0)
+</I>&gt;<i> +		goto end;
+</I>&gt;<i> +
+</I>&gt;<i> +	if ((int_stat &gt;= PCH_RX_OBJ_START) &amp;&amp; (int_stat &lt;= PCH_RX_OBJ_END)) {
+</I>&gt;<i> +		rcv_pkts += pch_can_rx_normal(ndev, int_stat, quota);
+</I>&gt;<i> +		quota -= rcv_pkts;
+</I>&gt;<i> +		if (quota &lt; 0)
+</I>&gt;<i> +			goto end;
+</I>&gt;<i> +	} else if ((int_stat &gt;= PCH_TX_OBJ_START) &amp;&amp;
+</I>&gt;<i> +		   (int_stat &lt;= PCH_TX_OBJ_END)) {
+</I>&gt;<i> +		/* Handle transmission interrupt */
+</I>&gt;<i> +		pch_can_tx_complete(ndev, int_stat);
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i> -	int_stat = pch_can_int_pending(priv);
+</I>&gt;<i> -	if (int_stat == CAN_STATUS_INT)
+</I>&gt;<i> -		goto INT_STAT;
+</I>&gt;<i> -	else if (int_stat &gt;= 1 &amp;&amp; int_stat &lt;= 32)
+</I>&gt;<i> -		goto MSG_OBJ;
+</I>&gt;<i> -
+</I>&gt;<i> +end:
+</I>&gt;<i>  	napi_complete(napi);
+</I>&gt;<i>  	pch_can_set_int_enables(priv, PCH_CAN_ALL);
+</I>&gt;<i>  
+</I>&gt;<i> @@ -980,20 +809,18 @@ static int pch_set_bittiming(struct net_device *ndev)
+</I>&gt;<i>  	const struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
+</I>&gt;<i>  	u32 canbit;
+</I>&gt;<i>  	u32 bepe;
+</I>&gt;<i> -	u32 brp;
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Setting the CCE bit for accessing the Can Timing register. */
+</I>&gt;<i> -	pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_CCE);
+</I>&gt;<i> -
+</I>&gt;<i> -	brp = (bt-&gt;tq) / (1000000000/PCH_CAN_CLK) - 1;
+</I>&gt;<i> -	canbit = brp &amp; MSK_BITT_BRP;
+</I>&gt;<i> -	canbit |= (bt-&gt;sjw - 1) &lt;&lt; BIT_BITT_SJW;
+</I>&gt;<i> -	canbit |= (bt-&gt;phase_seg1 + bt-&gt;prop_seg - 1) &lt;&lt; BIT_BITT_TSEG1;
+</I>&gt;<i> -	canbit |= (bt-&gt;phase_seg2 - 1) &lt;&lt; BIT_BITT_TSEG2;
+</I>&gt;<i> -	bepe = (brp &amp; MSK_BRPE_BRPE) &gt;&gt; BIT_BRPE_BRPE;
+</I>&gt;<i> +	pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, PCH_CTRL_CCE);
+</I>&gt;<i> +
+</I>&gt;<i> +	canbit = (bt-&gt;brp - 1) &amp; PCH_MSK_BITT_BRP;
+</I>&gt;<i> +	canbit |= (bt-&gt;sjw - 1) &lt;&lt; PCH_BIT_SJW_SHIFT;
+</I>&gt;<i> +	canbit |= (bt-&gt;phase_seg1 + bt-&gt;prop_seg - 1) &lt;&lt; PCH_BIT_TSEG1_SHIFT;
+</I>&gt;<i> +	canbit |= (bt-&gt;phase_seg2 - 1) &lt;&lt; PCH_BIT_TSEG2_SHIFT;
+</I>&gt;<i> +	bepe = ((bt-&gt;brp - 1) &amp; PCH_MSK_BRPE_BRPE) &gt;&gt; PCH_BIT_BRPE_BRPE_SHIFT;
+</I>&gt;<i>  	iowrite32(canbit, &amp;priv-&gt;regs-&gt;bitt);
+</I>&gt;<i>  	iowrite32(bepe, &amp;priv-&gt;regs-&gt;brpe);
+</I>&gt;<i> -	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_CCE);
+</I>&gt;<i> +	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, PCH_CTRL_CCE);
+</I>&gt;<i>  
+</I>&gt;<i>  	return 0;
+</I>&gt;<i>  }
+</I>&gt;<i> @@ -1008,8 +835,8 @@ static void pch_can_start(struct net_device *ndev)
+</I>&gt;<i>  	pch_set_bittiming(ndev);
+</I>&gt;<i>  	pch_can_set_optmode(priv);
+</I>&gt;<i>  
+</I>&gt;<i> -	pch_can_tx_enable_all(priv);
+</I>&gt;<i> -	pch_can_rx_enable_all(priv);
+</I>&gt;<i> +	pch_can_set_tx_all(priv, 1);
+</I>&gt;<i> +	pch_can_set_rx_all(priv, 1);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Setting the CAN to run mode. */
+</I>&gt;<i>  	pch_can_set_run_mode(priv, PCH_CAN_RUN);
+</I>&gt;<i> @@ -1041,27 +868,18 @@ static int pch_can_open(struct net_device *ndev)
+</I>&gt;<i>  	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i>  	int retval;
+</I>&gt;<i>  
+</I>&gt;<i> -	retval = pci_enable_msi(priv-&gt;dev);
+</I>&gt;<i> -	if (retval) {
+</I>&gt;<i> -		dev_info(&amp;ndev-&gt;dev, &quot;PCH CAN opened without MSI\n&quot;);
+</I>&gt;<i> -		priv-&gt;use_msi = 0;
+</I>&gt;<i> -	} else {
+</I>&gt;<i> -		dev_info(&amp;ndev-&gt;dev, &quot;PCH CAN opened with MSI\n&quot;);
+</I>&gt;<i> -		priv-&gt;use_msi = 1;
+</I>&gt;<i> -	}
+</I>&gt;<i> -
+</I>&gt;<i> -	/* Regsitering the interrupt. */
+</I>&gt;<i> +	/* Regstering the interrupt. */
+</I>&gt;<i>  	retval = request_irq(priv-&gt;dev-&gt;irq, pch_can_interrupt, IRQF_SHARED,
+</I>&gt;<i>  			     ndev-&gt;name, ndev);
+</I>&gt;<i>  	if (retval) {
+</I>&gt;<i> -		dev_err(&amp;ndev-&gt;dev, &quot;request_irq failed.\n&quot;);
+</I>&gt;<i> +		netdev_err(ndev, &quot;request_irq failed.\n&quot;);
+</I>&gt;<i>  		goto req_irq_err;
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Open common can device */
+</I>&gt;<i>  	retval = open_candev(ndev);
+</I>&gt;<i>  	if (retval) {
+</I>&gt;<i> -		dev_err(ndev-&gt;dev.parent, &quot;open_candev() failed %d\n&quot;, retval);
+</I>&gt;<i> +		netdev_err(ndev, &quot;open_candev() failed %d\n&quot;, retval);
+</I>&gt;<i>  		goto err_open_candev;
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i> @@ -1075,9 +893,6 @@ static int pch_can_open(struct net_device *ndev)
+</I>&gt;<i>  err_open_candev:
+</I>&gt;<i>  	free_irq(priv-&gt;dev-&gt;irq, ndev);
+</I>&gt;<i>  req_irq_err:
+</I>&gt;<i> -	if (priv-&gt;use_msi)
+</I>&gt;<i> -		pci_disable_msi(priv-&gt;dev);
+</I>&gt;<i> -
+</I>&gt;<i>  	pch_can_release(priv);
+</I>&gt;<i>  
+</I>&gt;<i>  	return retval;
+</I>&gt;<i> @@ -1091,102 +906,70 @@ static int pch_close(struct net_device *ndev)
+</I>&gt;<i>  	napi_disable(&amp;priv-&gt;napi);
+</I>&gt;<i>  	pch_can_release(priv);
+</I>&gt;<i>  	free_irq(priv-&gt;dev-&gt;irq, ndev);
+</I>&gt;<i> -	if (priv-&gt;use_msi)
+</I>&gt;<i> -		pci_disable_msi(priv-&gt;dev);
+</I>&gt;<i>  	close_candev(ndev);
+</I>&gt;<i>  	priv-&gt;can.state = CAN_STATE_STOPPED;
+</I>&gt;<i>  	return 0;
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> -static int pch_get_msg_obj_sts(struct net_device *ndev, u32 obj_id)
+</I>&gt;<i> -{
+</I>&gt;<i> -	u32 buffer_status = 0;
+</I>&gt;<i> -	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> -
+</I>&gt;<i> -	/* Getting the message object status. */
+</I>&gt;<i> -	buffer_status = (u32) pch_can_get_buffer_status(priv);
+</I>&gt;<i> -
+</I>&gt;<i> -	return buffer_status &amp; obj_id;
+</I>&gt;<i> -}
+</I>&gt;<i> -
+</I>&gt;<i> -
+</I>&gt;<i>  static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+</I>&gt;<i>  {
+</I>&gt;<i> -	int i, j;
+</I>&gt;<i> -	unsigned long flags;
+</I>&gt;<i>  	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i>  	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i> -	int tx_buffer_avail = 0;
+</I>&gt;<i> +	int tx_obj_no = 0;
+</I>&gt;<i> +	int i;
+</I>&gt;<i>  
+</I>&gt;<i>  	if (can_dropped_invalid_skb(ndev, skb))
+</I>&gt;<i>  		return NETDEV_TX_OK;
+</I>&gt;<i>  
+</I>&gt;<i> -	if (priv-&gt;tx_obj == (PCH_OBJ_NUM + 1)) { /* Point tail Obj */
+</I>&gt;<i> -		while (pch_get_msg_obj_sts(ndev, (((1 &lt;&lt; PCH_TX_OBJ_NUM)-1) &lt;&lt;
+</I>&gt;<i> -					   PCH_RX_OBJ_NUM)))
+</I>&gt;<i> -			udelay(500);
+</I>&gt;<i> -
+</I>&gt;<i> -		priv-&gt;tx_obj = PCH_RX_OBJ_NUM + 1; /* Point head of Tx Obj ID */
+</I>&gt;<i> -		tx_buffer_avail = priv-&gt;tx_obj; /* Point Tail of Tx Obj */
+</I>&gt;<i> +	if (priv-&gt;tx_obj == PCH_TX_OBJ_END) {
+</I>&gt;<i> +		if (ioread32(&amp;priv-&gt;regs-&gt;treq2) &amp; 0xfc00) {
+</I>
+what does this if check?
+
+&gt;<i> +			netif_stop_queue(ndev);
+</I>&gt;<i> +			priv-&gt;netif_stop = 1;
+</I>&gt;<i> +		}
+</I>&gt;<i> +		tx_obj_no = priv-&gt;tx_obj;
+</I>&gt;<i> +		priv-&gt;tx_obj = PCH_TX_OBJ_START;
+</I>&gt;<i>  	} else {
+</I>&gt;<i> -		tx_buffer_avail = priv-&gt;tx_obj;
+</I>&gt;<i> +		tx_obj_no = priv-&gt;tx_obj;
+</I>&gt;<i> +		priv-&gt;tx_obj++;
+</I>&gt;<i>  	}
+</I>&gt;<i> -	priv-&gt;tx_obj++;
+</I>&gt;<i> -
+</I>&gt;<i> -	/* Attaining the lock. */
+</I>&gt;<i> -	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> -
+</I>&gt;<i> -	/* Reading the Msg Obj from the Msg RAM to the Interface register. */
+</I>&gt;<i> -	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if2_cmask);
+</I>&gt;<i> -	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, tx_buffer_avail);
+</I>&gt;<i>  
+</I>&gt;<i> -	/* Setting the CMASK register. */
+</I>&gt;<i> -	pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_cmask, CAN_CMASK_ALL);
+</I>&gt;<i> +	/* Setting the CMASK register to set value */
+</I>&gt;<i> +	iowrite32(PCH_CMASK_RX_TX_SET, &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* If ID extended is set. */
+</I>&gt;<i> -	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_id1, 0xffff);
+</I>&gt;<i> -	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_id2, 0x1fff | CAN_ID2_XTD);
+</I>&gt;<i>  	if (cf-&gt;can_id &amp; CAN_EFF_FLAG) {
+</I>&gt;<i> -		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_id1, cf-&gt;can_id &amp; 0xffff);
+</I>&gt;<i> -		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_id2,
+</I>&gt;<i> -				((cf-&gt;can_id &gt;&gt; 16) &amp; 0x1fff) | CAN_ID2_XTD);
+</I>&gt;<i> +		iowrite32(cf-&gt;can_id &amp; 0xffff, &amp;priv-&gt;regs-&gt;ifregs[1].id1);
+</I>&gt;<i> +		iowrite32(((cf-&gt;can_id &gt;&gt; 16) &amp; 0x1fff) | PCH_ID2_XTD,
+</I>&gt;<i> +			    &amp;priv-&gt;regs-&gt;ifregs[1].id2);
+</I>&gt;<i>  	} else {
+</I>&gt;<i> -		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_id1, 0);
+</I>&gt;<i> -		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_id2,
+</I>&gt;<i> -				(cf-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 2);
+</I>&gt;<i> +		iowrite32(0, &amp;priv-&gt;regs-&gt;ifregs[1].id1);
+</I>&gt;<i> +		iowrite32((cf-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 2,
+</I>&gt;<i> +			   &amp;priv-&gt;regs-&gt;ifregs[1].id2);
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i> +	pch_can_bit_set(&amp;priv-&gt;regs-&gt;ifregs[1].id2, PCH_ID_MSGVAL);
+</I>
+Please don't read-modify-write the id2 register. Prepare the value for
+id2, then write it to hardware!
+
+&gt;<i> +
+</I>&gt;<i> +	/* If remote frame has to be transmitted.. */
+</I>&gt;<i> +	if (!(cf-&gt;can_id &amp; CAN_RTR_FLAG))
+</I>&gt;<i> +		pch_can_bit_set(&amp;priv-&gt;regs-&gt;ifregs[1].id2, PCH_ID2_DIR);
+</I>
+dito
+
+&gt;<i> +
+</I>&gt;<i>  	/* If remote frame has to be transmitted.. */
+</I>&gt;<i>  	if (cf-&gt;can_id &amp; CAN_RTR_FLAG)
+</I>&gt;<i> -		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_id2, CAN_ID2_DIR);
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[1].id2, PCH_ID2_DIR);
+</I>
+dito
+
+&gt;<i>  
+</I>&gt;<i> -	for (i = 0, j = 0; i &lt; cf-&gt;can_dlc; j++) {
+</I>&gt;<i> -		iowrite32(le32_to_cpu(cf-&gt;data[i++]),
+</I>&gt;<i> -			 (&amp;priv-&gt;regs-&gt;if2_dataa1) + j*4);
+</I>&gt;<i> -		if (i == cf-&gt;can_dlc)
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		iowrite32(le32_to_cpu(cf-&gt;data[i++] &lt;&lt; 8),
+</I>&gt;<i> -			 (&amp;priv-&gt;regs-&gt;if2_dataa1) + j*4);
+</I>&gt;<i> +	/* Copy data to register */
+</I>&gt;<i> +	for (i = 0; i &lt; cf-&gt;can_dlc; i += 2) {
+</I>&gt;<i> +		iowrite16(cf-&gt;data[i] | (cf-&gt;data[i+1] &lt;&lt; 8),
+</I>                                                  ^^^
+&gt;<i> +			  &amp;priv-&gt;regs-&gt;ifregs[1].data[i/2]);
+</I>                                                      ^^^
+codingstyle
+&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i> -	can_put_echo_skb(skb, ndev, tx_buffer_avail - PCH_RX_OBJ_NUM - 1);
+</I>&gt;<i> +	can_put_echo_skb(skb, ndev, tx_obj_no - PCH_RX_OBJ_END - 1);
+</I>&gt;<i>  
+</I>&gt;<i> -	/* Updating the size of the data. */
+</I>&gt;<i> -	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_mcont, 0x0f);
+</I>&gt;<i> -	pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_mcont, cf-&gt;can_dlc);
+</I>&gt;<i> +	/* Set the size of the data. Update if2_mcont*/
+</I>&gt;<i> +	iowrite32(cf-&gt;can_dlc | PCH_IF_MCONT_NEWDAT | PCH_IF_MCONT_TXRQXT |
+</I>&gt;<i> +		  PCH_IF_MCONT_TXIE, &amp;priv-&gt;regs-&gt;ifregs[1].mcont);
+</I>&gt;<i>  
+</I>&gt;<i> -	/* Clearing IntPend, NewDat &amp; TxRqst */
+</I>&gt;<i> -	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_mcont,
+</I>&gt;<i> -			  CAN_IF_MCONT_NEWDAT | CAN_IF_MCONT_INTPND |
+</I>&gt;<i> -			  CAN_IF_MCONT_TXRQXT);
+</I>&gt;<i> -
+</I>&gt;<i> -	/* Setting NewDat, TxRqst bits */
+</I>&gt;<i> -	pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_mcont,
+</I>&gt;<i> -			CAN_IF_MCONT_NEWDAT | CAN_IF_MCONT_TXRQXT);
+</I>&gt;<i> -
+</I>&gt;<i> -	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, tx_buffer_avail);
+</I>&gt;<i> -
+</I>&gt;<i> -	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+</I>&gt;<i> +	pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[1].creq, tx_obj_no);
+</I>&gt;<i>  
+</I>&gt;<i>  	return NETDEV_TX_OK;
+</I>&gt;<i>  }
+</I>&gt;<i> @@ -1203,21 +986,90 @@ static void __devexit pch_can_remove(struct pci_dev *pdev)
+</I>&gt;<i>  	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i>  
+</I>&gt;<i>  	unregister_candev(priv-&gt;ndev);
+</I>&gt;<i> -	free_candev(priv-&gt;ndev);
+</I>&gt;<i>  	pci_iounmap(pdev, priv-&gt;regs);
+</I>&gt;<i> +	if (priv-&gt;use_msi)
+</I>&gt;<i> +		pci_disable_msi(priv-&gt;dev);
+</I>&gt;<i>  	pci_release_regions(pdev);
+</I>&gt;<i>  	pci_disable_device(pdev);
+</I>&gt;<i>  	pci_set_drvdata(pdev, NULL);
+</I>&gt;<i>  	pch_can_reset(priv);
+</I>&gt;<i> +	free_candev(priv-&gt;ndev);
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i>  #ifdef CONFIG_PM
+</I>&gt;<i> +static void pch_can_set_int_custom(struct pch_can_priv *priv)
+</I>&gt;<i> +{
+</I>&gt;<i> +	/* Clearing the IE, SIE and EIE bits of Can control register. */
+</I>&gt;<i> +	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, PCH_CTRL_IE_SIE_EIE);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Appropriately setting them. */
+</I>&gt;<i> +	pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont,
+</I>&gt;<i> +			((priv-&gt;int_enables &amp; PCH_MSK_CTRL_IE_SIE_EIE) &lt;&lt; 1));
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* This function retrieves interrupt enabled for the CAN device. */
+</I>&gt;<i> +static u32 pch_can_get_int_enables(struct pch_can_priv *priv)
+</I>&gt;<i> +{
+</I>&gt;<i> +	/* Obtaining the status of IE, SIE and EIE interrupt bits. */
+</I>&gt;<i> +	return (ioread32(&amp;priv-&gt;regs-&gt;cont) &amp; PCH_CTRL_IE_SIE_EIE) &gt;&gt; 1;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static u32 pch_can_get_rxtx_ir(struct pch_can_priv *priv, u32 buff_num, u32 dir)
+</I>&gt;<i> +{
+</I>&gt;<i> +	u32 ie, enable;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (dir)
+</I>&gt;<i> +		ie = PCH_IF_MCONT_RXIE;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		ie = PCH_IF_MCONT_TXIE;
+</I>&gt;<i> +
+</I>&gt;<i> +	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[dir].cmask);
+</I>&gt;<i> +	pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[dir].creq, buff_num);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (((ioread32(&amp;priv-&gt;regs-&gt;ifregs[dir].id2)) &amp; PCH_ID_MSGVAL) &amp;&amp;
+</I>&gt;<i> +			((ioread32(&amp;priv-&gt;regs-&gt;ifregs[dir].mcont)) &amp; ie))
+</I>&gt;<i> +		enable = 1;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		enable = 0;
+</I>&gt;<i> +	return enable;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void pch_can_set_rx_buffer_link(struct pch_can_priv *priv,
+</I>&gt;<i> +				       u32 buffer_num, u32 set)
+</I>&gt;<i> +{
+</I>&gt;<i> +	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+</I>&gt;<i> +	pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[0].creq, buffer_num);
+</I>&gt;<i> +	iowrite32(PCH_CMASK_RDWR | PCH_CMASK_CTRL,
+</I>&gt;<i> +		  &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+</I>&gt;<i> +	if (set)
+</I>&gt;<i> +		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[0].mcont,
+</I>&gt;<i> +				  PCH_IF_MCONT_EOB);
+</I>&gt;<i> +	else
+</I>&gt;<i> +		pch_can_bit_set(&amp;priv-&gt;regs-&gt;ifregs[0].mcont, PCH_IF_MCONT_EOB);
+</I>&gt;<i> +
+</I>&gt;<i> +	pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[0].creq, buffer_num);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static u32 pch_can_get_rx_buffer_link(struct pch_can_priv *priv, u32 buffer_num)
+</I>&gt;<i> +{
+</I>&gt;<i> +	u32 link;
+</I>&gt;<i> +
+</I>&gt;<i> +	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+</I>&gt;<i> +	pch_can_rw_msg_obj(&amp;priv-&gt;regs-&gt;ifregs[0].creq, buffer_num);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].mcont) &amp; PCH_IF_MCONT_EOB)
+</I>&gt;<i> +		link = 0;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		link = 1;
+</I>&gt;<i> +	return link;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i>  static int pch_can_suspend(struct pci_dev *pdev, pm_message_t state)
+</I>&gt;<i>  {
+</I>&gt;<i> -	int i;			/* Counter variable. */
+</I>&gt;<i> -	int retval;		/* Return value. */
+</I>&gt;<i> +	int i;
+</I>&gt;<i> +	int retval;
+</I>&gt;<i>  	u32 buf_stat;	/* Variable for reading the transmit buffer status. */
+</I>&gt;<i> -	u32 counter = 0xFFFFFF;
+</I>&gt;<i> +	u32 counter = PCH_COUNTER_LIMIT;
+</I>&gt;<i>  
+</I>&gt;<i>  	struct net_device *dev = pci_get_drvdata(pdev);
+</I>&gt;<i>  	struct pch_can_priv *priv = netdev_priv(dev);
+</I>&gt;<i> @@ -1226,7 +1078,7 @@ static int pch_can_suspend(struct pci_dev *pdev, pm_message_t state)
+</I>&gt;<i>  	pch_can_set_run_mode(priv, PCH_CAN_STOP);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Indicate that we are aboutto/in suspend */
+</I>&gt;<i> -	priv-&gt;can.state = CAN_STATE_SLEEPING;
+</I>&gt;<i> +	priv-&gt;can.state = CAN_STATE_STOPPED;
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Waiting for all transmission to complete. */
+</I>&gt;<i>  	while (counter) {
+</I>&gt;<i> @@ -1240,31 +1092,24 @@ static int pch_can_suspend(struct pci_dev *pdev, pm_message_t state)
+</I>&gt;<i>  		dev_err(&amp;pdev-&gt;dev, &quot;%s -&gt; Transmission time out.\n&quot;, __func__);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Save interrupt configuration and then disable them */
+</I>&gt;<i> -	pch_can_get_int_enables(priv, &amp;(priv-&gt;int_enables));
+</I>&gt;<i> +	priv-&gt;int_enables = pch_can_get_int_enables(priv);
+</I>&gt;<i>  	pch_can_set_int_enables(priv, PCH_CAN_DISABLE);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Save Tx buffer enable state */
+</I>&gt;<i> -	for (i = 0; i &lt; PCH_OBJ_NUM; i++) {
+</I>&gt;<i> -		if (priv-&gt;msg_obj[i] == MSG_OBJ_TX)
+</I>&gt;<i> -			pch_can_get_tx_enable(priv, i + 1,
+</I>&gt;<i> -					      &amp;(priv-&gt;tx_enable[i]));
+</I>&gt;<i> -	}
+</I>&gt;<i> +	for (i = PCH_TX_OBJ_START; i &lt;= PCH_TX_OBJ_END; i++)
+</I>&gt;<i> +		priv-&gt;tx_enable[i] = pch_can_get_rxtx_ir(priv, i, PCH_TX_IFREG);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Disable all Transmit buffers */
+</I>&gt;<i> -	pch_can_tx_disable_all(priv);
+</I>&gt;<i> +	pch_can_set_tx_all(priv, 0);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Save Rx buffer enable state */
+</I>&gt;<i> -	for (i = 0; i &lt; PCH_OBJ_NUM; i++) {
+</I>&gt;<i> -		if (priv-&gt;msg_obj[i] == MSG_OBJ_RX) {
+</I>&gt;<i> -			pch_can_get_rx_enable(priv, i + 1,
+</I>&gt;<i> -						&amp;(priv-&gt;rx_enable[i]));
+</I>&gt;<i> -			pch_can_get_rx_buffer_link(priv, i + 1,
+</I>&gt;<i> -						&amp;(priv-&gt;rx_link[i]));
+</I>&gt;<i> -		}
+</I>&gt;<i> +	for (i = PCH_RX_OBJ_START; i &lt;= PCH_RX_OBJ_END; i++) {
+</I>&gt;<i> +		priv-&gt;rx_enable[i] = pch_can_get_rxtx_ir(priv, i, PCH_RX_IFREG);
+</I>&gt;<i> +		priv-&gt;rx_link[i] = pch_can_get_rx_buffer_link(priv, i);
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Disable all Receive buffers */
+</I>&gt;<i> -	pch_can_rx_disable_all(priv);
+</I>&gt;<i> +	pch_can_set_rx_all(priv, 0);
+</I>&gt;<i>  	retval = pci_save_state(pdev);
+</I>&gt;<i>  	if (retval) {
+</I>&gt;<i>  		dev_err(&amp;pdev-&gt;dev, &quot;pci_save_state failed.\n&quot;);
+</I>&gt;<i> @@ -1279,8 +1124,8 @@ static int pch_can_suspend(struct pci_dev *pdev, pm_message_t state)
+</I>&gt;<i>  
+</I>&gt;<i>  static int pch_can_resume(struct pci_dev *pdev)
+</I>&gt;<i>  {
+</I>&gt;<i> -	int i;			/* Counter variable. */
+</I>&gt;<i> -	int retval;		/* Return variable. */
+</I>&gt;<i> +	int i;
+</I>&gt;<i> +	int retval;
+</I>&gt;<i>  	struct net_device *dev = pci_get_drvdata(pdev);
+</I>&gt;<i>  	struct pch_can_priv *priv = netdev_priv(dev);
+</I>&gt;<i>  
+</I>&gt;<i> @@ -1312,23 +1157,16 @@ static int pch_can_resume(struct pci_dev *pdev)
+</I>&gt;<i>  	pch_can_set_optmode(priv);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Enabling the transmit buffer. */
+</I>&gt;<i> -	for (i = 0; i &lt; PCH_OBJ_NUM; i++) {
+</I>&gt;<i> -		if (priv-&gt;msg_obj[i] == MSG_OBJ_TX) {
+</I>&gt;<i> -			pch_can_set_tx_enable(priv, i + 1,
+</I>&gt;<i> -					      priv-&gt;tx_enable[i]);
+</I>&gt;<i> -		}
+</I>&gt;<i> -	}
+</I>&gt;<i> +	for (i = PCH_RX_OBJ_START; i &lt;= PCH_RX_OBJ_END; i++)
+</I>&gt;<i> +		pch_can_set_rxtx(priv, i, priv-&gt;tx_enable[i], PCH_TX_IFREG);
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Configuring the receive buffer and enabling them. */
+</I>&gt;<i> -	for (i = 0; i &lt; PCH_OBJ_NUM; i++) {
+</I>&gt;<i> -		if (priv-&gt;msg_obj[i] == MSG_OBJ_RX) {
+</I>&gt;<i> -			/* Restore buffer link */
+</I>&gt;<i> -			pch_can_set_rx_buffer_link(priv, i + 1,
+</I>&gt;<i> -						   priv-&gt;rx_link[i]);
+</I>&gt;<i> -
+</I>&gt;<i> -			/* Restore buffer enables */
+</I>&gt;<i> -			pch_can_set_rx_enable(priv, i + 1, priv-&gt;rx_enable[i]);
+</I>&gt;<i> -		}
+</I>&gt;<i> +	for (i = PCH_TX_OBJ_START; i &lt;= PCH_TX_OBJ_END; i++) {
+</I>&gt;<i> +		/* Restore buffer link */
+</I>&gt;<i> +		pch_can_set_rx_buffer_link(priv, i, priv-&gt;rx_link[i]);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* Restore buffer enables */
+</I>&gt;<i> +		pch_can_set_rxtx(priv, i, priv-&gt;rx_enable[i], PCH_RX_IFREG);
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Enable CAN Interrupts */
+</I>&gt;<i> @@ -1349,8 +1187,8 @@ static int pch_can_get_berr_counter(const struct net_device *dev,
+</I>&gt;<i>  {
+</I>&gt;<i>  	struct pch_can_priv *priv = netdev_priv(dev);
+</I>&gt;<i>  
+</I>&gt;<i> -	bec-&gt;txerr = ioread32(&amp;priv-&gt;regs-&gt;errc) &amp; CAN_TEC;
+</I>&gt;<i> -	bec-&gt;rxerr = (ioread32(&amp;priv-&gt;regs-&gt;errc) &amp; CAN_REC) &gt;&gt; 8;
+</I>&gt;<i> +	bec-&gt;txerr = ioread32(&amp;priv-&gt;regs-&gt;errc) &amp; PCH_TEC;
+</I>&gt;<i> +	bec-&gt;rxerr = (ioread32(&amp;priv-&gt;regs-&gt;errc) &amp; PCH_REC) &gt;&gt; 8;
+</I>&gt;<i>  
+</I>&gt;<i>  	return 0;
+</I>&gt;<i>  }
+</I>&gt;<i> @@ -1361,7 +1199,6 @@ static int __devinit pch_can_probe(struct pci_dev *pdev,
+</I>&gt;<i>  	struct net_device *ndev;
+</I>&gt;<i>  	struct pch_can_priv *priv;
+</I>&gt;<i>  	int rc;
+</I>&gt;<i> -	int index;
+</I>&gt;<i>  	void __iomem *addr;
+</I>&gt;<i>  
+</I>&gt;<i>  	rc = pci_enable_device(pdev);
+</I>&gt;<i> @@ -1383,7 +1220,8 @@ static int __devinit pch_can_probe(struct pci_dev *pdev,
+</I>&gt;<i>  		goto probe_exit_ipmap;
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i> -	ndev = alloc_candev(sizeof(struct pch_can_priv), PCH_TX_OBJ_NUM);
+</I>                                                         ^^^^^^^^^^^^^^
+
+I like that define....
+
+&gt;<i> +	ndev = alloc_candev(sizeof(struct pch_can_priv),
+</I>&gt;<i> +			    PCH_TX_OBJ_END - PCH_TX_OBJ_START + 1);
+</I>
+more readable than this     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+&gt;<i>  	if (!ndev) {
+</I>&gt;<i>  		rc = -ENOMEM;
+</I>&gt;<i>  		dev_err(&amp;pdev-&gt;dev, &quot;Failed alloc_candev\n&quot;);
+</I>&gt;<i> @@ -1399,7 +1237,7 @@ static int __devinit pch_can_probe(struct pci_dev *pdev,
+</I>&gt;<i>  	priv-&gt;can.do_get_berr_counter = pch_can_get_berr_counter;
+</I>&gt;<i>  	priv-&gt;can.ctrlmode_supported = CAN_CTRLMODE_LISTENONLY |
+</I>&gt;<i>  				       CAN_CTRLMODE_LOOPBACK;
+</I>&gt;<i> -	priv-&gt;tx_obj = PCH_RX_OBJ_NUM + 1; /* Point head of Tx Obj */
+</I>&gt;<i> +	priv-&gt;tx_obj = PCH_TX_OBJ_START; /* Point head of Tx Obj */
+</I>&gt;<i>  
+</I>&gt;<i>  	ndev-&gt;irq = pdev-&gt;irq;
+</I>&gt;<i>  	ndev-&gt;flags |= IFF_ECHO;
+</I>&gt;<i> @@ -1407,15 +1245,18 @@ static int __devinit pch_can_probe(struct pci_dev *pdev,
+</I>&gt;<i>  	pci_set_drvdata(pdev, ndev);
+</I>&gt;<i>  	SET_NETDEV_DEV(ndev, &amp;pdev-&gt;dev);
+</I>&gt;<i>  	ndev-&gt;netdev_ops = &amp;pch_can_netdev_ops;
+</I>&gt;<i> -
+</I>&gt;<i>  	priv-&gt;can.clock.freq = PCH_CAN_CLK; /* Hz */
+</I>&gt;<i> -	for (index = 0; index &lt; PCH_RX_OBJ_NUM;)
+</I>&gt;<i> -		priv-&gt;msg_obj[index++] = MSG_OBJ_RX;
+</I>&gt;<i>  
+</I>&gt;<i> -	for (index = index;  index &lt; PCH_OBJ_NUM;)
+</I>&gt;<i> -		priv-&gt;msg_obj[index++] = MSG_OBJ_TX;
+</I>&gt;<i> +	netif_napi_add(ndev, &amp;priv-&gt;napi, pch_can_rx_poll, PCH_RX_OBJ_END);
+</I>&gt;<i>  
+</I>&gt;<i> -	netif_napi_add(ndev, &amp;priv-&gt;napi, pch_can_rx_poll, PCH_RX_OBJ_NUM);
+</I>&gt;<i> +	rc = pci_enable_msi(priv-&gt;dev);
+</I>&gt;<i> +	if (rc) {
+</I>&gt;<i> +		dev_info(&amp;ndev-&gt;dev, &quot;PCH CAN opened without MSI\n&quot;);
+</I>&gt;<i> +		priv-&gt;use_msi = 0;
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		dev_info(&amp;ndev-&gt;dev, &quot;PCH CAN opened with MSI\n&quot;);
+</I>&gt;<i> +		priv-&gt;use_msi = 1;
+</I>&gt;<i> +	}
+</I>&gt;<i>  
+</I>&gt;<i>  	rc = register_candev(ndev);
+</I>&gt;<i>  	if (rc) {
+</I>&gt;<i> @@ -1426,7 +1267,8 @@ static int __devinit pch_can_probe(struct pci_dev *pdev,
+</I>&gt;<i>  	return 0;
+</I>&gt;<i>  
+</I>&gt;<i>  probe_exit_reg_candev:
+</I>&gt;<i> -	free_candev(ndev);
+</I>&gt;<i> +	if (priv-&gt;use_msi)
+</I>&gt;<i> +		pci_disable_msi(priv-&gt;dev);
+</I>&gt;<i>  probe_exit_alloc_candev:
+</I>&gt;<i>  	pci_iounmap(pdev, addr);
+</I>&gt;<i>  probe_exit_ipmap:
+</I>&gt;<i> @@ -1458,6 +1300,6 @@ static void __exit pch_can_pci_exit(void)
+</I>&gt;<i>  }
+</I>&gt;<i>  module_exit(pch_can_pci_exit);
+</I>&gt;<i>  
+</I>&gt;<i> -MODULE_DESCRIPTION(&quot;Controller Area Network Driver&quot;);
+</I>&gt;<i> +MODULE_DESCRIPTION(&quot;Intel EG20T PCH CAN(Controller Area Network) Driver&quot;);
+</I>&gt;<i>  MODULE_LICENSE(&quot;GPL v2&quot;);
+</I>&gt;<i>  MODULE_VERSION(&quot;0.94&quot;);
+</I>
+cheers, Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101115/33624a8d/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101115/33624a8d/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004962.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add	Flow control,
+</A></li>
+	<LI>Next message: <A HREF="004952.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add Flow	control, 
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4949">[ date ]</a>
+              <a href="thread.html#4949">[ thread ]</a>
+              <a href="subject.html#4949">[ subject ]</a>
+              <a href="author.html#4949">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

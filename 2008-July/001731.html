@@ -1,0 +1,141 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Again bit time settings
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Again%20bit%20time%20settings&In-Reply-To=%3C4884607D.6080804%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001734.html">
+   <LINK REL="Next"  HREF="001736.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Again bit time settings</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Again%20bit%20time%20settings&In-Reply-To=%3C4884607D.6080804%40grandegger.com%3E"
+       TITLE="Again bit time settings">wg at grandegger.com
+       </A><BR>
+    <I>Mon Jul 21 12:10:05 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001734.html">Again bit time settings
+</A></li>
+        <LI>Next message: <A HREF="001736.html">AT91 SoC CAN controller device driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1731">[ date ]</a>
+              <a href="thread.html#1731">[ thread ]</a>
+              <a href="subject.html#1731">[ subject ]</a>
+              <a href="author.html#1731">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hans J. Koch wrote:
+&gt;<i> On Mon, Jul 21, 2008 at 09:20:39AM +0200, Robert Schwebel wrote:
+</I>&gt;&gt;<i> Hi Wolfgang &amp; Hans,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> On Mon, Jul 21, 2008 at 01:23:03AM +0200, Hans J. Koch wrote:
+</I>&gt;&gt;&gt;&gt;<i>     can_sam
+</I>&gt;&gt;&gt;<i> can_sam is not hardware independent, and not needed. The sja1000 driver
+</I>&gt;&gt;&gt;<i> can decide how to set this. If userspace should be able to set it, we
+</I>&gt;&gt;&gt;<i> need a &quot;capability&quot; sysfs attribute, and sja1000 could set a flag like
+</I>&gt;&gt;&gt;<i> &quot;HAS_SPECIAL_LOWSPEED_HANDLING&quot;. Then can_sam could be replaced by a
+</I>&gt;&gt;&gt;<i> generic can_enable_lowspeed_handling attribute. That's hardware
+</I>&gt;&gt;&gt;<i> independent. Drivers that don't have such a thing simply don't set that
+</I>&gt;&gt;&gt;<i> capability flag. That's what WLAN drivers do.
+</I>&gt;&gt;<i> Ack.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i>   &quot;can_contoller&quot; will show the name of the CAN controller, which could be
+</I>&gt;&gt;&gt;&gt;<i>   used by a canconfig tool calculating and even setting proper
+</I>&gt;&gt;&gt;&gt;<i>   bit-timing parameters.
+</I>&gt;&gt;&gt;<i> Sorry, but we should really avoid that. It's real crap if I have to
+</I>&gt;&gt;&gt;<i> write code like
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> if (chip == sja1000) {
+</I>&gt;&gt;&gt;<i>   ...
+</I>&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;<i> else if (chip == at91sam9263) {
+</I>&gt;&gt;&gt;<i>   ...
+</I>&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;<i> else if (chip == ...) {
+</I>&gt;&gt;&gt;<i>   ...
+</I>&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> If you find code like this in a userspace library the kernel interface
+</I>&gt;&gt;&gt;<i> is simply _broken_.
+</I>&gt;&gt;<i> Yes. IMHO, it would be bad enough to have to *rely* on a userspace
+</I>&gt;&gt;<i> library. Look at for example wlan, where you *always* have the wrong
+</I>&gt;&gt;<i> revisions of that tools. The absolute minimum would be revisionable
+</I>&gt;&gt;<i> interfaces, but it's always better dont to *need* userspace support.
+</I>&gt;<i> 
+</I>&gt;<i> I agree. I still believe that it's possible to have an algorithm built
+</I>&gt;<i> into the core that does the bittiming calculations in a generic way if
+</I>&gt;<i> each driver exports its capabilities. It can't be rocket science to
+</I>&gt;<i> write an algorithm that does this:
+</I>&gt;<i> 
+</I>&gt;<i> input:
+</I>&gt;<i> - clock frequency
+</I>&gt;<i> - min and max divider settings (leads to possible time quanta lengths)
+</I>&gt;<i> - min and max number of time quantas (ideally 8 and 25)
+</I>&gt;<i> - desired bitrate
+</I>&gt;<i> 
+</I>&gt;<i> output:
+</I>&gt;<i> - bittimings so that bitrate has the least error and timings follow the
+</I>&gt;<i>   recommendations as close as possible.
+</I>&gt;<i> 
+</I>&gt;<i> (I'm aware that it's bad to make such a statement without having code to
+</I>&gt;<i> offer...)
+</I>
+I have posted an algorithm recently with works pretty well for most CAN 
+controllers:
+
+<A HREF="https://lists.berlios.de/pipermail/socketcan-core/2008-June/001530.html.">https://lists.berlios.de/pipermail/socketcan-core/2008-June/001530.html.</A>
+
+But it's not a simple calculation.
+
+&gt;<i> If all the values metioned above and the bittimings (sync, prop, phase1,
+</I>&gt;<i> phase2) are available in sysfs, there is no _need_ for any userspace
+</I>&gt;<i> tools or libraries. It's just convenient, and if the kernel to userspace
+</I>&gt;<i> interface is designed properly, all versions of such tools or libraries
+</I>&gt;<i> should always work with every kernel. Without having to know the chip
+</I>&gt;<i> type.
+</I>
+That's a dream :-(.
+
+&gt;<i> Vladislav Gribov made some suggestions for a userspace table system, I
+</I>&gt;<i> really don't understand why his concept is ignored.
+</I>
+Maybe I have missed something. Please point me to the mail.
+
+Thanks.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001734.html">Again bit time settings
+</A></li>
+	<LI>Next message: <A HREF="001736.html">AT91 SoC CAN controller device driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1731">[ date ]</a>
+              <a href="thread.html#1731">[ thread ]</a>
+              <a href="subject.html#1731">[ subject ]</a>
+              <a href="author.html#1731">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

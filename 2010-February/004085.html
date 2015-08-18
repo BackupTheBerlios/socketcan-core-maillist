@@ -1,0 +1,116 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> netlink based CAN gateway kernel module
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20netlink%20based%20CAN%20gateway%20kernel%20module&In-Reply-To=%3C4B83B8CF.30008%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004082.html">
+   <LINK REL="Next"  HREF="004086.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>netlink based CAN gateway kernel module</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20netlink%20based%20CAN%20gateway%20kernel%20module&In-Reply-To=%3C4B83B8CF.30008%40hartkopp.net%3E"
+       TITLE="netlink based CAN gateway kernel module">socketcan at hartkopp.net
+       </A><BR>
+    <I>Tue Feb 23 12:15:27 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004082.html">netlink based CAN gateway kernel module
+</A></li>
+        <LI>Next message: <A HREF="004086.html">netlink based CAN gateway kernel module
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4085">[ date ]</a>
+              <a href="thread.html#4085">[ thread ]</a>
+              <a href="subject.html#4085">[ subject ]</a>
+              <a href="author.html#4085">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Bertil B&#228;ck wrote:
+&gt;&gt;<i>
+</I>&gt;&gt;<i> The routing of CAN frames inside the kernel makes sense because of the missing 
+</I>&gt;&gt;<i> copy to/from userspace and the scheduling that happens to userspace apps.
+</I>&gt;&gt;<i> First tests proved a low latency (about 22 usecs on my Core2Duo 2GHz) and
+</I>&gt;&gt;<i> especially a low jitter for the routed CAN frames.
+</I>&gt;&gt;<i>   
+</I>&gt;<i> Would like to try this out, but could you describe how you measured to
+</I>&gt;<i> get 22usec? What CAN hardware did you use, how many ports you have
+</I>&gt;<i> tested with would also be nice to know :)
+</I>&gt;<i> 
+</I>&gt;<i> I try to use a test like the following:
+</I>&gt;<i> /&quot;Routing delay is measured from the last bit of an message on one port
+</I>&gt;<i> and the first bit of the of the same message on another port. Measured @
+</I>&gt;<i> 1Mbps and the last frame of a 30 message back to back burst.&quot;/
+</I>
+Hello Bertil,
+
+so far i just made a simple measurement with the virtual CAN interfaces.
+
+My setup is:
+
+- setup vcan0 and vcan1
+- set this simple 1:1 routing job: cangw -A -s vcan0 -d vcan1 -e
+- start on a terminal: candump -ta any
+- in a second terminal type : cansend vcan0 123#
+
+The result is
+
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">user at host</A>:~$ candump -ta any
+ (1266922451.156115)  vcan0  123  [0]
+ (1266922451.156139)  vcan1  123  [0]
+ (1266922463.923817)  vcan0  123  [0]
+ (1266922463.923837)  vcan1  123  [0]
+ (1266922467.714736)  vcan0  123  [0]
+ (1266922467.714757)  vcan1  123  [0]
+
+which is something around 20 usecs.
+
+In both cases (vcan0/vcan1) the timestamp is set at netif_rx().
+
+The can-gw just put's the (routed) CAN frame into the destination netdev
+tx-queue within the NET_RX softirq of the source netdev.
+
+See at gw_rcv() in net/can/gw.c
+
+Of course it depends on the status of the current destination tx queue how
+fast the routed CAN frame is send on the wire.
+
+This is not guaranteed of course. The idea of the can-gw is just to make it as
+fast as possible (and to get rid of the routing in userspace).
+
+Regards,
+Oliver
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004082.html">netlink based CAN gateway kernel module
+</A></li>
+	<LI>Next message: <A HREF="004086.html">netlink based CAN gateway kernel module
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4085">[ date ]</a>
+              <a href="thread.html#4085">[ thread ]</a>
+              <a href="subject.html#4085">[ subject ]</a>
+              <a href="author.html#4085">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

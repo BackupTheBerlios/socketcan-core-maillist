@@ -1,0 +1,153 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 15/19 v5] can: EG20T PCH: Move MSI processing	open/close to probe/remove
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%2015/19%20v5%5D%20can%3A%20EG20T%20PCH%3A%20Move%20MSI%20processing%0A%09open/close%20to%20probe/remove&In-Reply-To=%3C4CEF19E6.6020803%40dsn.okisemi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005095.html">
+   <LINK REL="Next"  HREF="005097.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 15/19 v5] can: EG20T PCH: Move MSI processing	open/close to probe/remove</H1>
+    <B>Tomoya MORINAGA</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%2015/19%20v5%5D%20can%3A%20EG20T%20PCH%3A%20Move%20MSI%20processing%0A%09open/close%20to%20probe/remove&In-Reply-To=%3C4CEF19E6.6020803%40dsn.okisemi.com%3E"
+       TITLE="[PATCH net-next-2.6 15/19 v5] can: EG20T PCH: Move MSI processing	open/close to probe/remove">tomoya-linux at dsn.okisemi.com
+       </A><BR>
+    <I>Fri Nov 26 03:22:30 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005095.html">[PATCH net-next-2.6 14/19 v5] can: EG20T PCH: Comment optimization
+</A></li>
+        <LI>Next message: <A HREF="005097.html">[PATCH net-next-2.6 16/19 v5] can: EG20T PCH: Fix incorrect return	processing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5096">[ date ]</a>
+              <a href="thread.html#5096">[ thread ]</a>
+              <a href="subject.html#5096">[ subject ]</a>
+              <a href="author.html#5096">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Move MSI processing to probe/remove processing.
+ Currently, in case this driver is integrated as module, and when this
+ module is re-installed, no interrupts is to be occurred.
+ For the above issue, move MSI processing to open/release processing.
+
+Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+---
+ drivers/net/can/pch_can.c |   29 ++++++++++++++---------------
+ 1 files changed, 14 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+index f824a91..e2132b7 100644
+--- a/drivers/net/can/pch_can.c
++++ b/drivers/net/can/pch_can.c
+@@ -856,15 +856,6 @@ static int pch_can_open(struct net_device *ndev)
+ 	struct pch_can_priv *priv = netdev_priv(ndev);
+ 	int retval;
+ 
+-	retval = pci_enable_msi(priv-&gt;dev);
+-	if (retval) {
+-		netdev_err(ndev, &quot;PCH CAN opened without MSI\n&quot;);
+-		priv-&gt;use_msi = 0;
+-	} else {
+-		netdev_err(ndev, &quot;PCH CAN opened with MSI\n&quot;);
+-		priv-&gt;use_msi = 1;
+-	}
+-
+ 	/* Regstering the interrupt. */
+ 	retval = request_irq(priv-&gt;dev-&gt;irq, pch_can_interrupt, IRQF_SHARED,
+ 			     ndev-&gt;name, ndev);
+@@ -890,9 +881,6 @@ static int pch_can_open(struct net_device *ndev)
+ err_open_candev:
+ 	free_irq(priv-&gt;dev-&gt;irq, ndev);
+ req_irq_err:
+-	if (priv-&gt;use_msi)
+-		pci_disable_msi(priv-&gt;dev);
+-
+ 	pch_can_release(priv);
+ 
+ 	return retval;
+@@ -906,8 +894,6 @@ static int pch_close(struct net_device *ndev)
+ 	napi_disable(&amp;priv-&gt;napi);
+ 	pch_can_release(priv);
+ 	free_irq(priv-&gt;dev-&gt;irq, ndev);
+-	if (priv-&gt;use_msi)
+-		pci_disable_msi(priv-&gt;dev);
+ 	close_candev(ndev);
+ 	priv-&gt;can.state = CAN_STATE_STOPPED;
+ 	return 0;
+@@ -986,12 +972,14 @@ static void __devexit pch_can_remove(struct pci_dev *pdev)
+ 	struct pch_can_priv *priv = netdev_priv(ndev);
+ 
+ 	unregister_candev(priv-&gt;ndev);
+-	free_candev(priv-&gt;ndev);
+ 	pci_iounmap(pdev, priv-&gt;regs);
++	if (priv-&gt;use_msi)
++		pci_disable_msi(priv-&gt;dev);
+ 	pci_release_regions(pdev);
+ 	pci_disable_device(pdev);
+ 	pci_set_drvdata(pdev, NULL);
+ 	pch_can_reset(priv);
++	free_candev(priv-&gt;ndev);
+ }
+ 
+ #ifdef CONFIG_PM
+@@ -1249,6 +1237,15 @@ static int __devinit pch_can_probe(struct pci_dev *pdev,
+ 
+ 	netif_napi_add(ndev, &amp;priv-&gt;napi, pch_can_poll, PCH_RX_OBJ_END);
+ 
++	rc = pci_enable_msi(priv-&gt;dev);
++	if (rc) {
++		netdev_err(ndev, &quot;PCH CAN opened without MSI\n&quot;);
++		priv-&gt;use_msi = 0;
++	} else {
++		netdev_err(ndev, &quot;PCH CAN opened with MSI\n&quot;);
++		priv-&gt;use_msi = 1;
++	}
++
+ 	rc = register_candev(ndev);
+ 	if (rc) {
+ 		dev_err(&amp;pdev-&gt;dev, &quot;Failed register_candev %d\n&quot;, rc);
+@@ -1258,6 +1255,8 @@ static int __devinit pch_can_probe(struct pci_dev *pdev,
+ 	return 0;
+ 
+ probe_exit_reg_candev:
++	if (priv-&gt;use_msi)
++		pci_disable_msi(priv-&gt;dev);
+ 	free_candev(ndev);
+ probe_exit_alloc_candev:
+ 	pci_iounmap(pdev, addr);
+-- 
+1.6.0.6
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005095.html">[PATCH net-next-2.6 14/19 v5] can: EG20T PCH: Comment optimization
+</A></li>
+	<LI>Next message: <A HREF="005097.html">[PATCH net-next-2.6 16/19 v5] can: EG20T PCH: Fix incorrect return	processing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5096">[ date ]</a>
+              <a href="thread.html#5096">[ thread ]</a>
+              <a href="subject.html#5096">[ subject ]</a>
+              <a href="author.html#5096">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

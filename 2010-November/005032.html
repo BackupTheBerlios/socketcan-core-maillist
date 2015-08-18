@@ -1,0 +1,138 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 16/17 v2] can: EG20T PCH: Fix incorrect return	processing
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%2016/17%20v2%5D%20can%3A%20EG20T%20PCH%3A%20Fix%20incorrect%20return%0A%09processing&In-Reply-To=%3C4CECC118.9070301%40dsn.okisemi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005031.html">
+   <LINK REL="Next"  HREF="005033.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 16/17 v2] can: EG20T PCH: Fix incorrect return	processing</H1>
+    <B>Tomoya MORINAGA</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%2016/17%20v2%5D%20can%3A%20EG20T%20PCH%3A%20Fix%20incorrect%20return%0A%09processing&In-Reply-To=%3C4CECC118.9070301%40dsn.okisemi.com%3E"
+       TITLE="[PATCH net-next-2.6 16/17 v2] can: EG20T PCH: Fix incorrect return	processing">tomoya-linux at dsn.okisemi.com
+       </A><BR>
+    <I>Wed Nov 24 08:39:04 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005031.html">[PATCH net-next-2.6 15/17 v2] can: EG20T PCH: Move MSI processing	open/close to probe/remove
+</A></li>
+        <LI>Next message: <A HREF="005033.html">[PATCH net-next-2.6 17/17 v2] can: EG20T PCH: Optimize &quot;if&quot; condition	in rx/tx processing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5032">[ date ]</a>
+              <a href="thread.html#5032">[ thread ]</a>
+              <a href="subject.html#5032">[ subject ]</a>
+              <a href="author.html#5032">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Fix incorrect return processing
+
+Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+---
+ drivers/net/can/pch_can.c |   21 +++++++++++----------
+ 1 files changed, 11 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+index c612a99..ecb1a8c 100644
+--- a/drivers/net/can/pch_can.c
++++ b/drivers/net/can/pch_can.c
+@@ -589,9 +589,11 @@ static irqreturn_t pch_can_interrupt(int irq, void
+*dev_id)
+ 	struct net_device *ndev = (struct net_device *)dev_id;
+ 	struct pch_can_priv *priv = netdev_priv(ndev);
+ +	if (!pch_can_int_pending(priv))
++		return IRQ_NONE;
++
+ 	pch_can_set_int_enables(priv, PCH_CAN_NONE);
+ 	napi_schedule(&amp;priv-&gt;napi);
+-
+ 	return IRQ_HANDLED;
+ }
+ @@ -674,7 +676,7 @@ static int pch_can_rx_normal(struct net_device
+*ndev, u32 obj_num, int quota)
+ 		if (reg &amp; PCH_IF_MCONT_MSGLOST) {
+ 			rtn = pch_can_rx_msg_lost(ndev, obj_num);
+ 			if (!rtn)
+-				return rtn;
++				return rcv_pkts;
+ 			rcv_pkts++;
+ 			quota--;
+ 			obj_num++;
+@@ -685,8 +687,10 @@ static int pch_can_rx_normal(struct net_device
+*ndev, u32 obj_num, int quota)
+ 		}
+  		skb = alloc_can_skb(priv-&gt;ndev, &amp;cf);
+-		if (!skb)
+-			return -ENOMEM;
++		if (!skb) {
++			netdev_err(ndev, &quot;alloc_can_skb Failed\n&quot;);
++			return rcv_pkts;
++		}
+  		/* Get Received data */
+ 		id2 = ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].id2);
+@@ -747,8 +751,8 @@ static int pch_can_poll(struct napi_struct *napi,
+int quota)
+ 	struct net_device *ndev = napi-&gt;dev;
+ 	struct pch_can_priv *priv = netdev_priv(ndev);
+ 	u32 int_stat;
+-	int rcv_pkts = 0;
+ 	u32 reg_stat;
++	int quota_save = quota;
+  	int_stat = pch_can_int_pending(priv);
+ 	if (!int_stat)
+@@ -777,10 +781,7 @@ static int pch_can_poll(struct napi_struct *napi,
+int quota)
+ 		goto end;
+  	if ((int_stat &gt;= PCH_RX_OBJ_START) &amp;&amp; (int_stat &lt;= PCH_RX_OBJ_END)) {
+-		rcv_pkts += pch_can_rx_normal(ndev, int_stat, quota);
+-		quota -= rcv_pkts;
+-		if (quota &lt; 0)
+-			goto end;
++		quota -= pch_can_rx_normal(ndev, int_stat, quota);
+ 	} else if ((int_stat &gt;= PCH_TX_OBJ_START) &amp;&amp;
+ 		   (int_stat &lt;= PCH_TX_OBJ_END)) {
+ 		/* Handle transmission interrupt */
+@@ -791,7 +792,7 @@ end:
+ 	napi_complete(napi);
+ 	pch_can_set_int_enables(priv, PCH_CAN_ALL);
+ -	return rcv_pkts;
++	return (quota_save - quota);
+ }
+  static int pch_set_bittiming(struct net_device *ndev)
+-- 
+1.6.0.6
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005031.html">[PATCH net-next-2.6 15/17 v2] can: EG20T PCH: Move MSI processing	open/close to probe/remove
+</A></li>
+	<LI>Next message: <A HREF="005033.html">[PATCH net-next-2.6 17/17 v2] can: EG20T PCH: Optimize &quot;if&quot; condition	in rx/tx processing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5032">[ date ]</a>
+              <a href="thread.html#5032">[ thread ]</a>
+              <a href="subject.html#5032">[ subject ]</a>
+              <a href="author.html#5032">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

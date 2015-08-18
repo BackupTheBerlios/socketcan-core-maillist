@@ -1,0 +1,292 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2] add the driver for Analog Devices Blackfin on-chip	CAN	controllers
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20add%20the%20driver%20for%20Analog%20Devices%20Blackfin%20on-chip%0A%09CAN%09controllers&In-Reply-To=%3C4B1F9A9A.9060900%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003620.html">
+   <LINK REL="Next"  HREF="003621.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2] add the driver for Analog Devices Blackfin on-chip	CAN	controllers</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20add%20the%20driver%20for%20Analog%20Devices%20Blackfin%20on-chip%0A%09CAN%09controllers&In-Reply-To=%3C4B1F9A9A.9060900%40pengutronix.de%3E"
+       TITLE="[PATCH v2] add the driver for Analog Devices Blackfin on-chip	CAN	controllers">mkl at pengutronix.de
+       </A><BR>
+    <I>Wed Dec  9 13:39:54 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003620.html">[PATCH v2] add the driver for Analog Devices Blackfin on-chip	CAN	controllers
+</A></li>
+        <LI>Next message: <A HREF="003621.html">[PATCH v3] add the driver for Analog Devices Blackfin on-chip CAN	controllers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3619">[ date ]</a>
+              <a href="thread.html#3619">[ thread ]</a>
+              <a href="subject.html#3619">[ subject ]</a>
+              <a href="author.html#3619">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+Barry Song wrote:
+&gt;<i> Signed-off-by: Barry Song &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">21cnbao at gmail.com</A>&gt;
+</I>&gt;<i> Signed-off-by: H.J. Oertel &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">oe at port.de</A>&gt;
+</I>&gt;<i> ---
+</I>&gt;<i> 	-v2: cleanup according to Wolfgang Grandegger's feedback
+</I>&gt;<i> 	1.delete some unnecessary debug print
+</I>&gt;<i> 	2.delete ndo_tx_timeout entry as it is not needed in can 
+</I>&gt;<i> 	3.use alloc_can_skb, alloc_can_err_skb instead of netdev_alloc_skb
+</I>&gt;<i> 	4.add timeout while polling can status
+</I>&gt;<i> 	5.rename BFIN_CAN_READ/WRITE_MSG to bfin_can_read/write_data
+</I>&gt;<i> 	6.use kernel BIT instead of bit shift
+</I>&gt;<i> 	7.use void __iomem * for CAN memory base memory instead of u32
+</I>&gt;<i> 	8.delete &quot;dev-&gt;last_rx = jiffies&quot; since it is not needed now
+</I>&gt;<i> 	9.delete redundant &quot;echo_skb&quot; member in bfin can private data
+</I>&gt;<i> 	10.follow can convention to use &quot;_&quot; instead of &quot;-&quot; for file names
+</I>&gt;<i> 
+</I>&gt;<i>  drivers/net/can/Kconfig    |    9 +
+</I>&gt;<i>  drivers/net/can/Makefile   |    1 +
+</I>&gt;<i>  drivers/net/can/bfin_can.c |  786 ++++++++++++++++++++++++++++++++++++++++++++
+</I>&gt;<i>  3 files changed, 796 insertions(+), 0 deletions(-)
+</I>&gt;<i>  create mode 100644 drivers/net/can/bfin_can.c
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/Kconfig b/drivers/net/can/Kconfig
+</I>&gt;<i> index bb803fa..8c485aa 100644
+</I>&gt;<i> --- a/drivers/net/can/Kconfig
+</I>&gt;<i> +++ b/drivers/net/can/Kconfig
+</I>&gt;<i> @@ -54,6 +54,15 @@ config CAN_MCP251X
+</I>&gt;<i>  	---help---
+</I>&gt;<i>  	  Driver for the Microchip MCP251x SPI CAN controllers.
+</I>&gt;<i>  
+</I>&gt;<i> +config CAN_BFIN
+</I>&gt;<i> +	depends on CAN_DEV &amp;&amp; (BF534 || BF536 || BF537 || BF538 || BF539 || BF54x)
+</I>&gt;<i> +	tristate &quot;Analog Devices Blackfin on-chip CAN&quot;
+</I>&gt;<i> +	---help---
+</I>&gt;<i> +	  Driver for the Analog Devices Blackfin on-chip CAN controllers
+</I>&gt;<i> +
+</I>&gt;<i> +	  To compile this driver as a module, choose M here: the
+</I>&gt;<i> +	  module will be called bfin_can.
+</I>&gt;<i> +
+</I>&gt;<i>  source &quot;drivers/net/can/mscan/Kconfig&quot;
+</I>&gt;<i>  
+</I>&gt;<i>  source &quot;drivers/net/can/sja1000/Kconfig&quot;
+</I>&gt;<i> diff --git a/drivers/net/can/Makefile b/drivers/net/can/Makefile
+</I>&gt;<i> index 56899fe..7a702f2 100644
+</I>&gt;<i> --- a/drivers/net/can/Makefile
+</I>&gt;<i> +++ b/drivers/net/can/Makefile
+</I>&gt;<i> @@ -14,5 +14,6 @@ obj-$(CONFIG_CAN_MSCAN)		+= mscan/
+</I>&gt;<i>  obj-$(CONFIG_CAN_AT91)		+= at91_can.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_TI_HECC)	+= ti_hecc.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_MCP251X)	+= mcp251x.o
+</I>&gt;<i> +obj-$(CONFIG_CAN_BFIN)		+= bfin_can.o
+</I>&gt;<i>  
+</I>&gt;<i>  ccflags-$(CONFIG_CAN_DEBUG_DEVICES) := -DDEBUG
+</I>&gt;<i> diff --git a/drivers/net/can/bfin_can.c b/drivers/net/can/bfin_can.c
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..36a9f8c
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/bfin_can.c
+</I>&gt;<i> @@ -0,0 +1,786 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Blackfin On-Chip CAN Driver
+</I>&gt;<i> + *
+</I>&gt;<i> + * Copyright 2004-2009 Analog Devices Inc.
+</I>&gt;<i> + *
+</I>&gt;<i> + * Enter bugs at <A HREF="http://blackfin.uclinux.org/">http://blackfin.uclinux.org/</A>
+</I>&gt;<i> + *
+</I>&gt;<i> + * Licensed under the GPL-2 or later.
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;linux/module.h&gt;
+</I>&gt;<i> +#include &lt;linux/init.h&gt;
+</I>&gt;<i> +#include &lt;linux/kernel.h&gt;
+</I>&gt;<i> +#include &lt;linux/types.h&gt;
+</I>&gt;<i> +#include &lt;linux/bitops.h&gt;
+</I>&gt;<i> +#include &lt;linux/interrupt.h&gt;
+</I>&gt;<i> +#include &lt;linux/errno.h&gt;
+</I>&gt;<i> +#include &lt;linux/netdevice.h&gt;
+</I>&gt;<i> +#include &lt;linux/skbuff.h&gt;
+</I>&gt;<i> +#include &lt;linux/platform_device.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;linux/can.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/dev.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/error.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;asm/portmux.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#define DRV_NAME &quot;bfin_can&quot;
+</I>&gt;<i> +#define BFIN_CAN_TIMEOUT 100
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * registers offset
+</I>&gt;<i> + */
+</I>&gt;<i> +#define OFFSET_MB_MASK              0x100
+</I>&gt;<i> +#define OFFSET_MASK_AML             0x0
+</I>&gt;<i> +#define OFFSET_MASK_AMH             0x4
+</I>&gt;<i> +#define OFFSET_MB_OBJ               0x200
+</I>&gt;<i> +#define OFFSET_OBJ_DATA             0x0
+</I>&gt;<i> +#define OFFSET_OBJ_DLC              0x10
+</I>&gt;<i> +#define OFFSET_OBJ_ID0              0x18
+</I>&gt;<i> +#define OFFSET_OBJ_ID1              0x1C
+</I>&gt;<i> +#define OFFSET_CLOCK                0x80
+</I>&gt;<i> +#define OFFSET_TIMING               0x84
+</I>&gt;<i> +#define OFFSET_STATUS               0x8C
+</I>&gt;<i> +#define OFFSET_CEC                  0x90
+</I>&gt;<i> +#define OFFSET_GIS                  0x94
+</I>&gt;<i> +#define OFFSET_GIM                  0x98
+</I>&gt;<i> +#define OFFSET_CONTROL              0xA0
+</I>&gt;<i> +#define OFFSET_INTR                 0xA4
+</I>&gt;<i> +#define OFFSET_ESR                  0xB4
+</I>&gt;<i> +#define OFFSET_MBIM1                0x28
+</I>&gt;<i> +#define OFFSET_MBIM2                0x68
+</I>&gt;<i> +#define OFFSET_MC1                  0x0
+</I>&gt;<i> +#define OFFSET_MC2                  0x40
+</I>&gt;<i> +#define OFFSET_MD1                  0x4
+</I>&gt;<i> +#define OFFSET_MD2                  0x44
+</I>&gt;<i> +#define OFFSET_TRS2                 0x48
+</I>&gt;<i> +#define OFFSET_MBTIF1               0x20
+</I>&gt;<i> +#define OFFSET_MBTIF2               0x60
+</I>&gt;<i> +#define OFFSET_MBRIF1               0x24
+</I>&gt;<i> +#define OFFSET_MBRIF2               0x64
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * transmit and receive channels
+</I>&gt;<i> + */
+</I>&gt;<i> +#define TRANSMIT_CHL		24
+</I>&gt;<i> +#define RECEIVE_STD_CHL 	0
+</I>&gt;<i> +#define RECEIVE_EXT_CHL 	4
+</I>&gt;<i> +#define RECEIVE_RTR_CHL 	8
+</I>&gt;<i> +#define RECEIVE_EXT_RTR_CHL 	12
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * bfin can private data
+</I>&gt;<i> + */
+</I>&gt;<i> +struct bfin_can_priv {
+</I>&gt;<i> +	struct can_priv can;	/* must be the first member */
+</I>&gt;<i> +	struct net_device *dev;
+</I>&gt;<i> +	void __iomem *membase;
+</I>&gt;<i> +	int rx_irq;
+</I>&gt;<i> +	int tx_irq;
+</I>&gt;<i> +	int err_irq;
+</I>&gt;<i> +	unsigned short *pin_list;
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * read/write CAN registers and messages
+</I>&gt;<i> + */
+</I>&gt;<i> +#define can_membase(priv)  \
+</I>&gt;<i> +	((priv)-&gt;membase)
+</I>&gt;<i> +#define can_channel_membase(priv, channel) \
+</I>&gt;<i> +	((priv)-&gt;membase + OFFSET_MB_OBJ + ((channel) &lt;&lt; 5))
+</I>&gt;<i> +#define can_mask_membase(priv, channel)  \
+</I>&gt;<i> +	((priv)-&gt;membase + OFFSET_MB_MASK + ((channel) &lt;&lt; 3))
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_WRITE_REG(val, addr) \
+</I>&gt;<i> +	writew((val), (addr))
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_READ_REG(addr) \
+</I>&gt;<i> +	readw((addr))
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_WRITE_CTRL(priv, off, val) \
+</I>&gt;<i> +	CAN_WRITE_REG(val, can_membase((priv)) + (off))
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_READ_CTRL(priv, off) \
+</I>&gt;<i> +	CAN_READ_REG(can_membase((priv)) + (off))
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_WRITE_AML(priv, channel, aml) \
+</I>&gt;<i> +	(CAN_WRITE_REG((aml), can_mask_membase(priv, channel) + OFFSET_MASK_AML))
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_WRITE_AMH(priv, channel, amh) \
+</I>&gt;<i> +	(CAN_WRITE_REG((amh), can_mask_membase(priv, channel) + OFFSET_MASK_AMH))
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_WRITE_DLC(priv, channel, length) \
+</I>&gt;<i> +	(CAN_WRITE_REG((length), can_channel_membase(priv, channel) + OFFSET_OBJ_DLC))
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_READ_DLC(priv, channel) \
+</I>&gt;<i> +	(CAN_READ_REG(can_channel_membase((priv), (channel)) + OFFSET_OBJ_DLC))
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_READ_OID(priv, channel) \
+</I>&gt;<i> +	((CAN_READ_REG(can_channel_membase((priv), (channel)) + OFFSET_OBJ_ID1) &amp; 0x1ffc) &gt;&gt; 2)
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_READ_XOID(priv, channel) \
+</I>&gt;<i> +	(((CAN_READ_REG(can_channel_membase((priv), (channel)) + OFFSET_OBJ_ID1) &amp; 0x1fff) &lt;&lt; 16) \
+</I>&gt;<i> +	 + ((CAN_READ_REG(can_channel_membase((priv), (channel)) + OFFSET_OBJ_ID0))))
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_READ_ID1(priv, channel) \
+</I>&gt;<i> +	(CAN_READ_REG(can_channel_membase((priv), (channel)) + OFFSET_OBJ_ID1))
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_WRITE_ID0(priv, channel, val) \
+</I>&gt;<i> +	CAN_WRITE_REG((val), can_channel_membase((priv), (channel)) + OFFSET_OBJ_ID0)
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_WRITE_OID(priv, channel, id) \
+</I>&gt;<i> +	CAN_WRITE_REG(((id) &lt;&lt; 2) | AME, can_channel_membase((priv), (channel)) + OFFSET_OBJ_ID1)
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_WRITE_XOID(priv, channel, id)  \
+</I>&gt;<i> +	do { \
+</I>&gt;<i> +		CAN_WRITE_REG((id), can_channel_membase((priv), (channel)) + OFFSET_OBJ_ID0); \
+</I>&gt;<i> +		CAN_WRITE_REG((((id) &amp; 0x1FFF0000) &gt;&gt; 16) + IDE + AME, \
+</I>&gt;<i> +				can_channel_membase((priv), (channel)) + OFFSET_OBJ_ID1); \
+</I>&gt;<i> +	} while (0)
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_WRITE_OID_RTR(priv, channel, id) \
+</I>&gt;<i> +	CAN_WRITE_REG(((id) &lt;&lt; 2) | RTR | AME, can_channel_membase((priv), (channel)) + OFFSET_OBJ_ID1)
+</I>&gt;<i> +
+</I>&gt;<i> +#define CAN_WRITE_XOID_RTR(priv, channel, id)  \
+</I>&gt;<i> +	do { \
+</I>&gt;<i> +		CAN_WRITE_REG((id), can_channel_membase((priv), (channel)) + OFFSET_OBJ_ID0); \
+</I>&gt;<i> +		CAN_WRITE_REG((((id) &amp; 0x1FFF0000) &gt;&gt; 16) + IDE + RTR + AME, \
+</I>&gt;<i> +				can_channel_membase((priv), (channel)) + OFFSET_OBJ_ID1); \
+</I>&gt;<i> +	} while (0)
+</I>
+If you want to stay to the register offsets, consider converting these
+defines into static inline functions. If you put the register offsets
+into an enum you also have type checking with sparse.
+
+cheers, Marc
+- --
+Pengutronix e.K.                         | Marc Kleine-Budde           |
+Linux Solutions for Science and Industry | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund                 | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686         | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.9 (GNU/Linux)
+Comment: Using GnuPG with Mozilla - <A HREF="http://enigmail.mozdev.org">http://enigmail.mozdev.org</A>
+
+iEYEARECAAYFAksfmpoACgkQjTAFq1RaXHMKfwCffQJ+spRj42tTDNPyY0pxcyFd
+5w8AnjEt4NV0O75AE3CU+RV0sZG7UtJl
+=e5G1
+-----END PGP SIGNATURE-----
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003620.html">[PATCH v2] add the driver for Analog Devices Blackfin on-chip	CAN	controllers
+</A></li>
+	<LI>Next message: <A HREF="003621.html">[PATCH v3] add the driver for Analog Devices Blackfin on-chip CAN	controllers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3619">[ date ]</a>
+              <a href="thread.html#3619">[ thread ]</a>
+              <a href="subject.html#3619">[ subject ]</a>
+              <a href="author.html#3619">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

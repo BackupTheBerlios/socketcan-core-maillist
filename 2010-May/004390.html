@@ -1,0 +1,234 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> at91_can: BUG: sleeping function called from invalid context	at	2.6.33.4-rt20/kernel/rtmutex.c:684
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20at91_can%3A%20BUG%3A%20sleeping%20function%20called%20from%20invalid%20context%0A%09at%092.6.33.4-rt20/kernel/rtmutex.c%3A684&In-Reply-To=%3C20100520094819.GA11187%40aepfle.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004389.html">
+   <LINK REL="Next"  HREF="004391.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>at91_can: BUG: sleeping function called from invalid context	at	2.6.33.4-rt20/kernel/rtmutex.c:684</H1>
+    <B>Olaf Hering</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20at91_can%3A%20BUG%3A%20sleeping%20function%20called%20from%20invalid%20context%0A%09at%092.6.33.4-rt20/kernel/rtmutex.c%3A684&In-Reply-To=%3C20100520094819.GA11187%40aepfle.de%3E"
+       TITLE="at91_can: BUG: sleeping function called from invalid context	at	2.6.33.4-rt20/kernel/rtmutex.c:684">olaf at aepfle.de
+       </A><BR>
+    <I>Thu May 20 11:48:19 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004389.html">at91_can: BUG: sleeping function called from invalid context	at	2.6.33.4-rt20/kernel/rtmutex.c:684
+</A></li>
+        <LI>Next message: <A HREF="004391.html">at91_can: BUG: sleeping function called from invalid context	at	2.6.33.4-rt20/kernel/rtmutex.c:684
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4390">[ date ]</a>
+              <a href="thread.html#4390">[ thread ]</a>
+              <a href="subject.html#4390">[ subject ]</a>
+              <a href="author.html#4390">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, May 20, Wolfgang Grandegger wrote:
+
+&gt;<i> On 05/20/2010 11:07 AM, Olaf Hering wrote:
+</I>&gt;<i> &gt; Hello,
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; when at91_can is compiled as a module, the BUG below occours in dmesg
+</I>&gt;<i> &gt; with 2.6.33.4-rt20.
+</I>&gt;<i> &gt; I think this does not happen when its compiled into the kernel.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Any ideas how to fix it?
+</I>&gt;<i> 
+</I>&gt;<i> It seems that you are using the old deprecated SysFS interface. Any
+</I>&gt;<i> chance switching to the netlink interface?
+</I>
+I just loaded the driver with modprobe.
+The sysfs lines are most likely come from netdev support, when
+/sys/class/net/canN is created.
+
+These are the used commands:
+
+modprobe -v at91_can
+ip link set can0 up type can bitrate 1000000
+ip link set can0 down
+ip link set can0 up txqueuelen 1000 type can bitrate 1000000
+dmesg
+
+Even ip link set up generates a BUG:
+
+
+
+[  100.030000] at91_can netdevice driver
+[  100.040000] BUG: sleeping function called from invalid context at /opt/cross/sys-root/arm-linux-gnueabi/usr/src/linux-2.6.33-arm9-kernel-source/kernel/rtmutex.c:684
+[  100.040000] pcnt: 1 0 in_atomic(): 1, irqs_disabled(): 128, pid: 495, name: modprobe
+[  100.040000] 3 locks held by modprobe/495:
+[  100.040000]  #0:  (&amp;__lockdep_no_validate__){+.+.+.}, at: [&lt;c01e3194&gt;] __driver_attach+0x44/0x8c
+[  100.040000]  #1:  (&amp;__lockdep_no_validate__){+.+.+.}, at: [&lt;c01e31a0&gt;] __driver_attach+0x50/0x8c
+[  100.040000]  #2:  (rtnl_mutex){+.+.+.}, at: [&lt;c027ff18&gt;] rtnl_lock+0x14/0x1c
+[  100.040000] irq event stamp: 9153
+[  100.040000] hardirqs last  enabled at (9152): [&lt;c0324a78&gt;] _raw_spin_unlock_irqrestore+0x44/0x70
+[  100.040000] hardirqs last disabled at (9153): [&lt;c032495c&gt;] _raw_spin_lock_irqsave+0x28/0x6c
+[  100.040000] softirqs last  enabled at (0): [&lt;c004844c&gt;] copy_process+0x378/0xf68
+[  100.040000] softirqs last disabled at (0): [&lt;(null)&gt;] (null)
+[  100.040000] [&lt;c0033ea4&gt;] (unwind_backtrace+0x0/0xdc) from [&lt;c032164c&gt;] (dump_stack+0x18/0x1c)
+[  100.040000] [&lt;c032164c&gt;] (dump_stack+0x18/0x1c) from [&lt;c0041f18&gt;] (__might_sleep+0x110/0x130)
+[  100.040000] [&lt;c0041f18&gt;] (__might_sleep+0x110/0x130) from [&lt;c0323f14&gt;] (rt_spin_lock+0x44/0xa0)
+[  100.040000] [&lt;c0323f14&gt;] (rt_spin_lock+0x44/0xa0) from [&lt;c0033b44&gt;] (unwind_frame+0x74/0x3d4)
+[  100.040000] [&lt;c0033b44&gt;] (unwind_frame+0x74/0x3d4) from [&lt;c0031970&gt;] (walk_stackframe+0x34/0x40)
+[  100.040000] [&lt;c0031970&gt;] (walk_stackframe+0x34/0x40) from [&lt;c0031a10&gt;] (save_stack_trace_tsk+0x94/0xc4)
+[  100.040000] [&lt;c0031a10&gt;] (save_stack_trace_tsk+0x94/0xc4) from [&lt;c0031a64&gt;] (save_stack_trace+0x24/0x28)
+[  100.040000] [&lt;c0031a64&gt;] (save_stack_trace+0x24/0x28) from [&lt;c006e348&gt;] (save_trace+0x44/0xd8)
+[  100.040000] [&lt;c006e348&gt;] (save_trace+0x44/0xd8) from [&lt;c006e458&gt;] (add_lock_to_list+0x7c/0xc8)
+[  100.040000] [&lt;c006e458&gt;] (add_lock_to_list+0x7c/0xc8) from [&lt;c0071fd4&gt;] (__lock_acquire+0x14e0/0x18a8)
+[  100.040000] [&lt;c0071fd4&gt;] (__lock_acquire+0x14e0/0x18a8) from [&lt;c0072408&gt;] (lock_acquire+0x6c/0x80)
+[  100.040000] [&lt;c0072408&gt;] (lock_acquire+0x6c/0x80) from [&lt;c032498c&gt;] (_raw_spin_lock_irqsave+0x58/0x6c)
+[  100.040000] [&lt;c032498c&gt;] (_raw_spin_lock_irqsave+0x58/0x6c) from [&lt;c0323350&gt;] (rt_spin_lock_slowlock+0x2c/0x23c)
+[  100.040000] [&lt;c0323350&gt;] (rt_spin_lock_slowlock+0x2c/0x23c) from [&lt;c0323f38&gt;] (rt_spin_lock+0x68/0xa0)
+[  100.040000] [&lt;c0323f38&gt;] (rt_spin_lock+0x68/0xa0) from [&lt;c01a1204&gt;] (idr_pre_get+0x40/0x7c)
+[  100.040000] [&lt;c01a1204&gt;] (idr_pre_get+0x40/0x7c) from [&lt;c01a1258&gt;] (ida_pre_get+0x18/0x60)
+[  100.040000] [&lt;c01a1258&gt;] (ida_pre_get+0x18/0x60) from [&lt;c00f81bc&gt;] (sysfs_new_dirent+0x90/0x11c)
+[  100.040000] [&lt;c00f81bc&gt;] (sysfs_new_dirent+0x90/0x11c) from [&lt;c00f77dc&gt;] (sysfs_add_file_mode+0x28/0xa0)
+[  100.040000] [&lt;c00f77dc&gt;] (sysfs_add_file_mode+0x28/0xa0) from [&lt;c00f9cbc&gt;] (internal_create_group+0x128/0x1d4)
+[  100.040000] [&lt;c00f9cbc&gt;] (internal_create_group+0x128/0x1d4) from [&lt;c00f9d9c&gt;] (sysfs_create_group+0x18/0x1c)
+[  100.040000] [&lt;c00f9d9c&gt;] (sysfs_create_group+0x18/0x1c) from [&lt;c01e0648&gt;] (device_add_groups+0x24/0x78)
+[  100.040000] [&lt;c01e0648&gt;] (device_add_groups+0x24/0x78) from [&lt;c01e0d5c&gt;] (device_add+0x294/0x4ac)
+[  100.040000] [&lt;c01e0d5c&gt;] (device_add+0x294/0x4ac) from [&lt;c028301c&gt;] (netdev_register_kobject+0x58/0x68)
+[  100.040000] [&lt;c028301c&gt;] (netdev_register_kobject+0x58/0x68) from [&lt;c0277358&gt;] (register_netdevice+0x264/0x464)
+[  100.040000] [&lt;c0277358&gt;] (register_netdevice+0x264/0x464) from [&lt;c027759c&gt;] (register_netdev+0x44/0x54)
+[  100.040000] [&lt;c027759c&gt;] (register_netdev+0x44/0x54) from [&lt;c020f580&gt;] (register_candev+0x18/0x20)
+[  100.040000] [&lt;c020f580&gt;] (register_candev+0x18/0x20) from [&lt;bf00416c&gt;] (at91_can_probe+0x16c/0x218 [at91_can])
+[  100.040000] [&lt;bf00416c&gt;] (at91_can_probe+0x16c/0x218 [at91_can]) from [&lt;c01e4094&gt;] (platform_drv_probe+0x1c/0x20)
+[  100.040000] [&lt;c01e4094&gt;] (platform_drv_probe+0x1c/0x20) from [&lt;c01e30a0&gt;] (driver_probe_device+0xb0/0x160)
+[  100.040000] [&lt;c01e30a0&gt;] (driver_probe_device+0xb0/0x160) from [&lt;c01e31b8&gt;] (__driver_attach+0x68/0x8c)
+[  100.040000] [&lt;c01e31b8&gt;] (__driver_attach+0x68/0x8c) from [&lt;c01e2890&gt;] (bus_for_each_dev+0x54/0x94)
+[  100.040000] [&lt;c01e2890&gt;] (bus_for_each_dev+0x54/0x94) from [&lt;c01e2f04&gt;] (driver_attach+0x20/0x28)
+[  100.040000] [&lt;c01e2f04&gt;] (driver_attach+0x20/0x28) from [&lt;c01e2170&gt;] (bus_add_driver+0xa8/0x22c)
+[  100.040000] [&lt;c01e2170&gt;] (bus_add_driver+0xa8/0x22c) from [&lt;c01e34d0&gt;] (driver_register+0xb4/0x144)
+[  100.040000] [&lt;c01e34d0&gt;] (driver_register+0xb4/0x144) from [&lt;c01e4338&gt;] (platform_driver_register+0x4c/0x60)
+[  100.040000] [&lt;c01e4338&gt;] (platform_driver_register+0x4c/0x60) from [&lt;bf004238&gt;] (at91_can_module_init+0x20/0x30 [at91_can])
+[  100.040000] [&lt;bf004238&gt;] (at91_can_module_init+0x20/0x30 [at91_can]) from [&lt;c002d3c4&gt;] (do_one_initcall+0x64/0x1d0)
+[  100.040000] [&lt;c002d3c4&gt;] (do_one_initcall+0x64/0x1d0) from [&lt;c007c7b4&gt;] (sys_init_module+0xc4/0x1f0)
+[  100.040000] [&lt;c007c7b4&gt;] (sys_init_module+0xc4/0x1f0) from [&lt;c002e020&gt;] (ret_fast_syscall+0x0/0x34)
+[  100.050000] at91_can at91_can: device registered (reg_base=c48a8000, irq=12)
+[  195.120000] at91_can at91_can: bitrate error 0.0%
+[  195.120000] at91_can at91_can: writing AT91_BR: 0x00090222
+[  195.130000] BUG: sleeping function called from invalid context at /opt/cross/sys-root/arm-linux-gnueabi/usr/src/linux-2.6.33-arm9-kernel-source/kernel/rtmutex.c:684
+[  195.130000] pcnt: 1 0 in_atomic(): 1, irqs_disabled(): 128, pid: 497, name: ip
+[  195.130000] 1 lock held by ip/497:
+[  195.130000]  #0:  (rtnl_mutex){+.+.+.}, at: [&lt;c027ff18&gt;] rtnl_lock+0x14/0x1c
+[  195.130000] irq event stamp: 20051
+[  195.130000] hardirqs last  enabled at (20050): [&lt;c0324a78&gt;] _raw_spin_unlock_irqrestore+0x44/0x70
+[  195.130000] hardirqs last disabled at (20051): [&lt;c032495c&gt;] _raw_spin_lock_irqsave+0x28/0x6c
+[  195.130000] softirqs last  enabled at (0): [&lt;c004844c&gt;] copy_process+0x378/0xf68
+[  195.130000] softirqs last disabled at (0): [&lt;(null)&gt;] (null)
+[  195.130000] [&lt;c0033ea4&gt;] (unwind_backtrace+0x0/0xdc) from [&lt;c032164c&gt;] (dump_stack+0x18/0x1c)
+[  195.130000] [&lt;c032164c&gt;] (dump_stack+0x18/0x1c) from [&lt;c0041f18&gt;] (__might_sleep+0x110/0x130)
+[  195.130000] [&lt;c0041f18&gt;] (__might_sleep+0x110/0x130) from [&lt;c0323f14&gt;] (rt_spin_lock+0x44/0xa0)
+[  195.130000] [&lt;c0323f14&gt;] (rt_spin_lock+0x44/0xa0) from [&lt;c0033b44&gt;] (unwind_frame+0x74/0x3d4)
+[  195.130000] [&lt;c0033b44&gt;] (unwind_frame+0x74/0x3d4) from [&lt;c0031970&gt;] (walk_stackframe+0x34/0x40)
+[  195.130000] [&lt;c0031970&gt;] (walk_stackframe+0x34/0x40) from [&lt;c0031a10&gt;] (save_stack_trace_tsk+0x94/0xc4)
+[  195.130000] [&lt;c0031a10&gt;] (save_stack_trace_tsk+0x94/0xc4) from [&lt;c0031a64&gt;] (save_stack_trace+0x24/0x28)
+[  195.130000] [&lt;c0031a64&gt;] (save_stack_trace+0x24/0x28) from [&lt;c006e348&gt;] (save_trace+0x44/0xd8)
+[  195.130000] [&lt;c006e348&gt;] (save_trace+0x44/0xd8) from [&lt;c006e458&gt;] (add_lock_to_list+0x7c/0xc8)
+[  195.130000] [&lt;c006e458&gt;] (add_lock_to_list+0x7c/0xc8) from [&lt;c0071fd4&gt;] (__lock_acquire+0x14e0/0x18a8)
+[  195.130000] [&lt;c0071fd4&gt;] (__lock_acquire+0x14e0/0x18a8) from [&lt;c0072408&gt;] (lock_acquire+0x6c/0x80)
+[  195.130000] [&lt;c0072408&gt;] (lock_acquire+0x6c/0x80) from [&lt;c032498c&gt;] (_raw_spin_lock_irqsave+0x58/0x6c)
+[  195.130000] [&lt;c032498c&gt;] (_raw_spin_lock_irqsave+0x58/0x6c) from [&lt;c0323350&gt;] (rt_spin_lock_slowlock+0x2c/0x23c)
+[  195.130000] [&lt;c0323350&gt;] (rt_spin_lock_slowlock+0x2c/0x23c) from [&lt;c0323f38&gt;] (rt_spin_lock+0x68/0xa0)
+[  195.130000] [&lt;c0323f38&gt;] (rt_spin_lock+0x68/0xa0) from [&lt;c00393c0&gt;] (clk_enable+0x1c/0x38)
+[  195.130000] [&lt;c00393c0&gt;] (clk_enable+0x1c/0x38) from [&lt;bf000420&gt;] (at91_open+0x1c/0xdc [at91_can])
+[  195.130000] [&lt;bf000420&gt;] (at91_open+0x1c/0xdc [at91_can]) from [&lt;c0276094&gt;] (dev_open+0xbc/0x120)
+[  195.130000] [&lt;c0276094&gt;] (dev_open+0xbc/0x120) from [&lt;c02754e0&gt;] (dev_change_flags+0xac/0x184)
+[  195.130000] [&lt;c02754e0&gt;] (dev_change_flags+0xac/0x184) from [&lt;c027f624&gt;] (do_setlink+0x23c/0x308)
+[  195.130000] [&lt;c027f624&gt;] (do_setlink+0x23c/0x308) from [&lt;c0280410&gt;] (rtnl_newlink+0x2bc/0x484)
+[  195.130000] [&lt;c0280410&gt;] (rtnl_newlink+0x2bc/0x484) from [&lt;c0280128&gt;] (rtnetlink_rcv_msg+0x1dc/0x208)
+[  195.130000] [&lt;c0280128&gt;] (rtnetlink_rcv_msg+0x1dc/0x208) from [&lt;c02872bc&gt;] (netlink_rcv_skb+0x54/0xb8)
+[  195.130000] [&lt;c02872bc&gt;] (netlink_rcv_skb+0x54/0xb8) from [&lt;c027ff40&gt;] (rtnetlink_rcv+0x20/0x2c)
+[  195.130000] [&lt;c027ff40&gt;] (rtnetlink_rcv+0x20/0x2c) from [&lt;c0286f54&gt;] (netlink_unicast+0x274/0x320)
+[  195.130000] [&lt;c0286f54&gt;] (netlink_unicast+0x274/0x320) from [&lt;c0287898&gt;] (netlink_sendmsg+0x25c/0x270)
+[  195.130000] [&lt;c0287898&gt;] (netlink_sendmsg+0x25c/0x270) from [&lt;c0263d40&gt;] (sock_sendmsg+0x98/0xb4)
+[  195.130000] [&lt;c0263d40&gt;] (sock_sendmsg+0x98/0xb4) from [&lt;c02642fc&gt;] (sys_sendmsg+0x1b8/0x214)
+[  195.130000] [&lt;c02642fc&gt;] (sys_sendmsg+0x1b8/0x214) from [&lt;c002e020&gt;] (ret_fast_syscall+0x0/0x34)
+[  195.140000] at91_can at91_can: RX buffer overflow
+[  195.140000] at91_can at91_can: order of incoming frames cannot be guaranteed
+[  195.140000] at91_can at91_can: RX buffer overflow
+[  195.140000] at91_can at91_can: order of incoming frames cannot be guaranteed
+[  195.150000] at91_can at91_can: RX buffer overflow
+[  195.150000] at91_can at91_can: order of incoming frames cannot be guaranteed
+[  195.150000] at91_can at91_can: RX buffer overflow
+[  195.150000] at91_can at91_can: order of incoming frames cannot be guaranteed
+[  195.150000] at91_can at91_can: RX buffer overflow
+[  195.150000] at91_can at91_can: order of incoming frames cannot be guaranteed
+[  195.150000] at91_can at91_can: RX buffer overflow
+[  195.150000] at91_can at91_can: order of incoming frames cannot be guaranteed
+[  228.490000] BUG: sleeping function called from invalid context at /opt/cross/sys-root/arm-linux-gnueabi/usr/src/linux-2.6.33-arm9-kernel-source/kernel/rtmutex.c:684
+[  228.490000] pcnt: 0 0 in_atomic(): 0, irqs_disabled(): 128, pid: 502, name: ip
+[  228.490000] 1 lock held by ip/502:
+[  228.490000]  #0:  (rtnl_mutex){+.+.+.}, at: [&lt;c027ff18&gt;] rtnl_lock+0x14/0x1c
+[  228.490000] irq event stamp: 7404
+[  228.490000] hardirqs last  enabled at (7404): [&lt;c0324a78&gt;] _raw_spin_unlock_irqrestore+0x44/0x70
+[  228.490000] hardirqs last disabled at (7403): [&lt;c032495c&gt;] _raw_spin_lock_irqsave+0x28/0x6c
+[  228.490000] softirqs last  enabled at (0): [&lt;c004844c&gt;] copy_process+0x378/0xf68
+[  228.490000] softirqs last disabled at (0): [&lt;(null)&gt;] (null)
+[  228.490000] [&lt;c0033ea4&gt;] (unwind_backtrace+0x0/0xdc) from [&lt;c032164c&gt;] (dump_stack+0x18/0x1c)
+[  228.490000] [&lt;c032164c&gt;] (dump_stack+0x18/0x1c) from [&lt;c0041f18&gt;] (__might_sleep+0x110/0x130)
+[  228.490000] [&lt;c0041f18&gt;] (__might_sleep+0x110/0x130) from [&lt;c0323f14&gt;] (rt_spin_lock+0x44/0xa0)
+[  228.490000] [&lt;c0323f14&gt;] (rt_spin_lock+0x44/0xa0) from [&lt;c0033b44&gt;] (unwind_frame+0x74/0x3d4)
+[  228.490000] [&lt;c0033b44&gt;] (unwind_frame+0x74/0x3d4) from [&lt;c0031970&gt;] (walk_stackframe+0x34/0x40)
+[  228.490000] [&lt;c0031970&gt;] (walk_stackframe+0x34/0x40) from [&lt;c0031a10&gt;] (save_stack_trace_tsk+0x94/0xc4)
+[  228.490000] [&lt;c0031a10&gt;] (save_stack_trace_tsk+0x94/0xc4) from [&lt;c0031a64&gt;] (save_stack_trace+0x24/0x28)
+[  228.490000] [&lt;c0031a64&gt;] (save_stack_trace+0x24/0x28) from [&lt;c006e348&gt;] (save_trace+0x44/0xd8)
+[  228.490000] [&lt;c006e348&gt;] (save_trace+0x44/0xd8) from [&lt;c006e458&gt;] (add_lock_to_list+0x7c/0xc8)
+[  228.490000] [&lt;c006e458&gt;] (add_lock_to_list+0x7c/0xc8) from [&lt;c0071fd4&gt;] (__lock_acquire+0x14e0/0x18a8)
+[  228.490000] [&lt;c0071fd4&gt;] (__lock_acquire+0x14e0/0x18a8) from [&lt;c0072408&gt;] (lock_acquire+0x6c/0x80)
+[  228.490000] [&lt;c0072408&gt;] (lock_acquire+0x6c/0x80) from [&lt;c0323f60&gt;] (rt_spin_lock+0x90/0xa0)
+[  228.490000] [&lt;c0323f60&gt;] (rt_spin_lock+0x90/0xa0) from [&lt;c00f10a0&gt;] (remove_proc_entry+0xac/0x214)
+[  228.490000] [&lt;c00f10a0&gt;] (remove_proc_entry+0xac/0x214) from [&lt;c00807bc&gt;] (unregister_handler_proc+0x30/0x34)
+[  228.490000] [&lt;c00807bc&gt;] (unregister_handler_proc+0x30/0x34) from [&lt;c007eec0&gt;] (__free_irq+0x104/0x17c)
+[  228.490000] [&lt;c007eec0&gt;] (__free_irq+0x104/0x17c) from [&lt;c007ef7c&gt;] (free_irq+0x44/0x64)
+[  228.490000] [&lt;c007ef7c&gt;] (free_irq+0x44/0x64) from [&lt;bf0003ec&gt;] (at91_close+0xf0/0x108 [at91_can])
+[  228.490000] [&lt;bf0003ec&gt;] (at91_close+0xf0/0x108 [at91_can]) from [&lt;c0275b64&gt;] (dev_close+0x94/0xc4)
+[  228.490000] [&lt;c0275b64&gt;] (dev_close+0x94/0xc4) from [&lt;c02754e0&gt;] (dev_change_flags+0xac/0x184)
+[  228.490000] [&lt;c02754e0&gt;] (dev_change_flags+0xac/0x184) from [&lt;c027f624&gt;] (do_setlink+0x23c/0x308)
+[  228.490000] [&lt;c027f624&gt;] (do_setlink+0x23c/0x308) from [&lt;c0280410&gt;] (rtnl_newlink+0x2bc/0x484)
+[  228.490000] [&lt;c0280410&gt;] (rtnl_newlink+0x2bc/0x484) from [&lt;c0280128&gt;] (rtnetlink_rcv_msg+0x1dc/0x208)
+[  228.490000] [&lt;c0280128&gt;] (rtnetlink_rcv_msg+0x1dc/0x208) from [&lt;c02872bc&gt;] (netlink_rcv_skb+0x54/0xb8)
+[  228.490000] [&lt;c02872bc&gt;] (netlink_rcv_skb+0x54/0xb8) from [&lt;c027ff40&gt;] (rtnetlink_rcv+0x20/0x2c)
+[  228.490000] [&lt;c027ff40&gt;] (rtnetlink_rcv+0x20/0x2c) from [&lt;c0286f54&gt;] (netlink_unicast+0x274/0x320)
+[  228.490000] [&lt;c0286f54&gt;] (netlink_unicast+0x274/0x320) from [&lt;c0287898&gt;] (netlink_sendmsg+0x25c/0x270)
+[  228.490000] [&lt;c0287898&gt;] (netlink_sendmsg+0x25c/0x270) from [&lt;c0263d40&gt;] (sock_sendmsg+0x98/0xb4)
+[  228.490000] [&lt;c0263d40&gt;] (sock_sendmsg+0x98/0xb4) from [&lt;c02642fc&gt;] (sys_sendmsg+0x1b8/0x214)
+[  228.490000] [&lt;c02642fc&gt;] (sys_sendmsg+0x1b8/0x214) from [&lt;c002e020&gt;] (ret_fast_syscall+0x0/0x34)
+[  230.030000] at91_can at91_can: bitrate error 0.0%
+[  230.030000] at91_can at91_can: writing AT91_BR: 0x00090222
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004389.html">at91_can: BUG: sleeping function called from invalid context	at	2.6.33.4-rt20/kernel/rtmutex.c:684
+</A></li>
+	<LI>Next message: <A HREF="004391.html">at91_can: BUG: sleeping function called from invalid context	at	2.6.33.4-rt20/kernel/rtmutex.c:684
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4390">[ date ]</a>
+              <a href="thread.html#4390">[ thread ]</a>
+              <a href="subject.html#4390">[ subject ]</a>
+              <a href="author.html#4390">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Issue with mcp251x.c CAN driver [ MCP2515]
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Issue%20with%20mcp251x.c%20CAN%20driver%20%5B%20MCP2515%5D&In-Reply-To=%3Ccabda6420909292251l1dc8f93co3121f45e43ad993f%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003189.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Issue with mcp251x.c CAN driver [ MCP2515]</H1>
+    <B>christian pellegrin</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Issue%20with%20mcp251x.c%20CAN%20driver%20%5B%20MCP2515%5D&In-Reply-To=%3Ccabda6420909292251l1dc8f93co3121f45e43ad993f%40mail.gmail.com%3E"
+       TITLE="Issue with mcp251x.c CAN driver [ MCP2515]">chripell at evolware.org
+       </A><BR>
+    <I>Wed Sep 30 07:51:46 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003189.html">[PATCH V4] net-next:can: add TI CAN (HECC) driver
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3190">[ date ]</a>
+              <a href="thread.html#3190">[ thread ]</a>
+              <a href="subject.html#3190">[ subject ]</a>
+              <a href="author.html#3190">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Wed, Sep 30, 2009 at 6:49 AM, Rakesh Jagota &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">jrakesh at gdatech.com</A>&gt; wrote:
+&gt;<i> Hi Christian,
+</I>&gt;<i>
+</I>
+Hi,
+
+&gt;<i> with SPI interface. The Can driver works but I observed data loss:
+</I>&gt;<i>
+</I>&gt;<i> mcp2515 spi2.0: EFLG = 0x40
+</I>
+Yes this means input overrun. Keep in mind that the CAN controller
+runs over SPI, it's not suited for high performance applications. If
+the system is under load it's even worse because the workqueues
+compete with other kernel process for the CPU time (and by default
+with a lower non-RT priority). It depends on the implementation of the
+SPI driver too. If the system is under load a dirty hack could be the
+following patch:
+
+------------------------------ kernel/workqueue.c ------------------------------
+index 4048e92..bfeeee2 100644
+@@ -974,3 +974,36 @@ void __init init_workqueues(void)
+ 	keventd_wq = create_workqueue(&quot;events&quot;);
+ 	BUG_ON(!keventd_wq);
+ }
++
++void set_workqueue_max_prio(struct workqueue_struct *wq, int rt)
++{
++ struct task_struct *p;
++ int cpu;
++ int r = 0;
++ struct sched_param param = {
++   .sched_priority = MAX_RT_PRIO - 1,
++ };
++
++ if (is_single_threaded(wq)) {
++   p = wq-&gt;cpu_wq-&gt;thread;
++   if (rt)
++     r = sched_setscheduler(wq-&gt;cpu_wq-&gt;thread, SCHED_FIFO, &amp;param);
++   else
++     set_user_nice(p, -20);
++   if (r)
++     printk(&quot;maxprio setting failed: %d\n&quot;, r);
++ } else {
++   for_each_online_cpu(cpu) {
++     struct cpu_workqueue_struct *cwq = wq-&gt;cpu_wq + cpu;
++
++     p = cwq-&gt;thread;
++     if (rt)
++       r = sched_setscheduler(wq-&gt;cpu_wq-&gt;thread, SCHED_FIFO, &amp;param);
++     else
++       set_user_nice(p, -20);
++     if (r)
++       printk(&quot;maxprio setting failed: %d\n&quot;, r);
++   }
++ }
++}
++EXPORT_SYMBOL_GPL(set_workqueue_max_prio);
+
+and then increasing the priority of the worqueues with something like:
+
+set_workqueue_max_prio(&amp;priv-&gt;tx_work, 1);
+set_workqueue_max_prio(&amp;priv-&gt;irq_work, 1);
+
+after INIT_WORK-ing them. Please keep in mind that this exposes the
+system to DOS attacks via CAN interface. Anyway this is a more general
+problem, perhaps the drivers should be written without using
+workqueues as they are implemented nowadays in Linux. But they will
+became much more messy!
+
+&gt;<i> I would like to know about your inputs on data corruption and packet loss.
+</I>
+packet loss is ok but corruption *isn't*. Can you send me some
+examples of data corruption?
+
+&gt;<i>
+</I>&gt;<i> Even I used to see one more error message &quot;write: No buffer space available&quot;
+</I>
+that's ok too, you are sending data from user program too fast for the
+driver to finish transmission.
+
+&gt;<i>
+</I>&gt;<i> Looking forward for your suggestion so that I can fix this issue.
+</I>&gt;<i>
+</I>
+I think the only possible problem here is the data corruption you
+mentioned. Can you send some examples of it? Anyway I think you
+shouldn't use devices wired via SPI for high-performance and high
+throughput data streams. Have a look at how SPI is implemented on your
+platform too, perhaps you are suffering low performance (low clock,
+high delays between transfers, use of worqueues) at that layer too (I
+never worked with the imx arch).
+
+Bye!
+
+-- 
+Christian Pellegrin, see <A HREF="http://www.evolware.org/chri/">http://www.evolware.org/chri/</A>
+&quot;Real Programmers don't play tennis, or any other sport which requires
+you to change clothes. Mountain climbing is OK, and Real Programmers
+wear their climbing boots to work in case a mountain should suddenly
+spring up in the middle of the computer room.&quot;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003189.html">[PATCH V4] net-next:can: add TI CAN (HECC) driver
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3190">[ date ]</a>
+              <a href="thread.html#3190">[ thread ]</a>
+              <a href="subject.html#3190">[ subject ]</a>
+              <a href="author.html#3190">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

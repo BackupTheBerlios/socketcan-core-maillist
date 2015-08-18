@@ -1,0 +1,128 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 7/8] can: janz-ican3: cleanup of ican3_to_can_frame
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%207/8%5D%20can%3A%20janz-ican3%3A%20cleanup%20of%20ican3_to_can_frame&In-Reply-To=%3C20101021183456.GG7540%40ovro.caltech.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004846.html">
+   <LINK REL="Next"  HREF="004853.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 7/8] can: janz-ican3: cleanup of ican3_to_can_frame</H1>
+    <B>Ira W. Snyder</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%207/8%5D%20can%3A%20janz-ican3%3A%20cleanup%20of%20ican3_to_can_frame&In-Reply-To=%3C20101021183456.GG7540%40ovro.caltech.edu%3E"
+       TITLE="[PATCH 7/8] can: janz-ican3: cleanup of ican3_to_can_frame">iws at ovro.caltech.edu
+       </A><BR>
+    <I>Thu Oct 21 20:34:56 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004846.html">[PATCH 7/8] can: janz-ican3: cleanup of ican3_to_can_frame
+</A></li>
+        <LI>Next message: <A HREF="004853.html">[PATCH 7/8] can: janz-ican3: cleanup of ican3_to_can_frame
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4850">[ date ]</a>
+              <a href="thread.html#4850">[ thread ]</a>
+              <a href="subject.html#4850">[ subject ]</a>
+              <a href="author.html#4850">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, Oct 21, 2010 at 07:53:31PM +0200, Marc Kleine-Budde wrote:
+&gt;<i> This patch cleans up the ICAN3 to Linux CAN Frame Conversion function:
+</I>&gt;<i> 
+</I>&gt;<i> - Use get_can_dlc() to limit the dlc value.
+</I>&gt;<i> - Don't copy the whole frame, only copy the amount of bytes specified
+</I>&gt;<i>   in cf-&gt;can_dlc.
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+</I>&gt;<i> Cc: Ira W. Snyder &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">iws at ovro.caltech.edu</A>&gt;
+</I>
+Looks fine. If you're up for it, roll the following into the same patch.
+It forces the TX path to respect the cf-&gt;can_dlc length when memcpy()ing
+data into the transmit frame.
+
+For the patch as-is, please add my Acked-by.
+
+Thanks,
+Ira
+
+diff --git a/drivers/net/can/janz-ican3.c b/drivers/net/can/janz-ican3.c
+index 8715162..e8e6695 100644
+--- a/drivers/net/can/janz-ican3.c
++++ b/drivers/net/can/janz-ican3.c
+@@ -863,7 +863,7 @@ static void can_frame_to_ican3(struct ican3_dev *mod,
+ 	}
+ 
+ 	/* copy the data bits into the descriptor */
+-	memcpy(&amp;desc-&gt;data[6], cf-&gt;data, sizeof(cf-&gt;data));
++	memcpy(&amp;desc-&gt;data[6], cf-&gt;data, cf-&gt;can_dlc);
+ }
+ 
+ /*
+
+&gt;<i> ---
+</I>&gt;<i>  drivers/net/can/janz-ican3.c |    8 ++++----
+</I>&gt;<i>  1 files changed, 4 insertions(+), 4 deletions(-)
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/janz-ican3.c b/drivers/net/can/janz-ican3.c
+</I>&gt;<i> index 6e533dc..7416f25 100644
+</I>&gt;<i> --- a/drivers/net/can/janz-ican3.c
+</I>&gt;<i> +++ b/drivers/net/can/janz-ican3.c
+</I>&gt;<i> @@ -812,10 +812,10 @@ static void ican3_to_can_frame(struct ican3_dev *mod,
+</I>&gt;<i>  
+</I>&gt;<i>  		cf-&gt;can_id |= desc-&gt;data[0] &lt;&lt; 3;
+</I>&gt;<i>  		cf-&gt;can_id |= (desc-&gt;data[1] &amp; 0xe0) &gt;&gt; 5;
+</I>&gt;<i> -		cf-&gt;can_dlc = desc-&gt;data[1] &amp; ICAN3_CAN_DLC_MASK;
+</I>&gt;<i> -		memcpy(cf-&gt;data, &amp;desc-&gt;data[2], sizeof(cf-&gt;data));
+</I>&gt;<i> +		cf-&gt;can_dlc = get_can_dlc(desc-&gt;data[1] &amp; ICAN3_CAN_DLC_MASK);
+</I>&gt;<i> +		memcpy(cf-&gt;data, &amp;desc-&gt;data[2], cf-&gt;can_dlc);
+</I>&gt;<i>  	} else {
+</I>&gt;<i> -		cf-&gt;can_dlc = desc-&gt;data[0] &amp; ICAN3_CAN_DLC_MASK;
+</I>&gt;<i> +		cf-&gt;can_dlc = get_can_dlc(desc-&gt;data[0] &amp; ICAN3_CAN_DLC_MASK);
+</I>&gt;<i>  		if (desc-&gt;data[0] &amp; ICAN3_EFF_RTR)
+</I>&gt;<i>  			cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;<i>  
+</I>&gt;<i> @@ -830,7 +830,7 @@ static void ican3_to_can_frame(struct ican3_dev *mod,
+</I>&gt;<i>  			cf-&gt;can_id |= desc-&gt;data[3] &gt;&gt; 5;  /* 2-0   */
+</I>&gt;<i>  		}
+</I>&gt;<i>  
+</I>&gt;<i> -		memcpy(cf-&gt;data, &amp;desc-&gt;data[6], sizeof(cf-&gt;data));
+</I>&gt;<i> +		memcpy(cf-&gt;data, &amp;desc-&gt;data[6], cf-&gt;can_dlc);
+</I>&gt;<i>  	}
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> -- 
+</I>&gt;<i> 1.7.0.4
+</I>&gt;<i> 
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004846.html">[PATCH 7/8] can: janz-ican3: cleanup of ican3_to_can_frame
+</A></li>
+	<LI>Next message: <A HREF="004853.html">[PATCH 7/8] can: janz-ican3: cleanup of ican3_to_can_frame
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4850">[ date ]</a>
+              <a href="thread.html#4850">[ thread ]</a>
+              <a href="subject.html#4850">[ subject ]</a>
+              <a href="author.html#4850">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

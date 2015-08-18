@@ -1,0 +1,286 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH RFC] one shot mode for mcp2515 and handling of unsupported 	ctrlmodes
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20RFC%5D%20one%20shot%20mode%20for%20mcp2515%20and%20handling%20of%20unsupported%20%0A%09ctrlmodes&In-Reply-To=%3Ccabda6421001101038s65d4621bh36b4df725ed44bd3%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003822.html">
+   <LINK REL="Next"  HREF="003801.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH RFC] one shot mode for mcp2515 and handling of unsupported 	ctrlmodes</H1>
+    <B>christian pellegrin</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20RFC%5D%20one%20shot%20mode%20for%20mcp2515%20and%20handling%20of%20unsupported%20%0A%09ctrlmodes&In-Reply-To=%3Ccabda6421001101038s65d4621bh36b4df725ed44bd3%40mail.gmail.com%3E"
+       TITLE="[PATCH RFC] one shot mode for mcp2515 and handling of unsupported 	ctrlmodes">chripell at gmail.com
+       </A><BR>
+    <I>Sun Jan 10 19:38:44 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003822.html">[PATCH net-next-2.6] can: Unify droping of invalid tx skbs and	netdev	stats
+</A></li>
+        <LI>Next message: <A HREF="003801.html">[PATCH RFC] one shot mode for mcp2515 and handling of unsupported	ctrlmodes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3799">[ date ]</a>
+              <a href="thread.html#3799">[ thread ]</a>
+              <a href="subject.html#3799">[ subject ]</a>
+              <a href="author.html#3799">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+here are the patches against kernel 2.6.33-rc3 and tip of iproute2 git
+repository that add one-shot mode for MCP2515 and implement ctrlmode
+checks as discussed in a previous thread. Let me know if it's ok so I
+can rebase and submit the patch to linux-netdev with proper
+signed-off-by and provide a patch against socketcan SVN trunk.
+
+----8&lt;-----
+diff --git a/drivers/net/can/at91_can.c b/drivers/net/can/at91_can.c
+index 166cc7e..0dc5b82 100644
+--- a/drivers/net/can/at91_can.c
++++ b/drivers/net/can/at91_can.c
+@@ -1070,6 +1070,7 @@ static int __init at91_can_probe(struct
+platform_device *pdev)
+ 	priv-&gt;can.bittiming_const = &amp;at91_bittiming_const;
+ 	priv-&gt;can.do_set_bittiming = at91_set_bittiming;
+ 	priv-&gt;can.do_set_mode = at91_set_mode;
++	priv-&gt;can.ctrlmode_supported = CAN_CTRLMODE_3_SAMPLES;
+ 	priv-&gt;reg_base = addr;
+ 	priv-&gt;dev = dev;
+ 	priv-&gt;clk = clk;
+diff --git a/drivers/net/can/bfin_can.c b/drivers/net/can/bfin_can.c
+index 0ec1524..3962ee1 100644
+--- a/drivers/net/can/bfin_can.c
++++ b/drivers/net/can/bfin_can.c
+@@ -600,6 +600,7 @@ struct net_device *alloc_bfin_candev(void)
+ 	priv-&gt;can.bittiming_const = &amp;bfin_can_bittiming_const;
+ 	priv-&gt;can.do_set_bittiming = bfin_can_set_bittiming;
+ 	priv-&gt;can.do_set_mode = bfin_can_set_mode;
++	priv-&gt;can.ctrlmode_supported = CAN_CTRLMODE_3_SAMPLES;
+
+ 	return dev;
+ }
+diff --git a/drivers/net/can/dev.c b/drivers/net/can/dev.c
+index c1bb29f..63568f0 100644
+--- a/drivers/net/can/dev.c
++++ b/drivers/net/can/dev.c
+@@ -592,6 +592,8 @@ static int can_changelink(struct net_device *dev,
+ 		if (dev-&gt;flags &amp; IFF_UP)
+ 			return -EBUSY;
+ 		cm = nla_data(data[IFLA_CAN_CTRLMODE]);
++		if (cm-&gt;flags &amp; ~priv-&gt;ctrlmode_supported)
++			return -EINVAL;
+ 		priv-&gt;ctrlmode &amp;= ~cm-&gt;mask;
+ 		priv-&gt;ctrlmode |= cm-&gt;flags;
+ 	}
+diff --git a/drivers/net/can/mcp251x.c b/drivers/net/can/mcp251x.c
+index 9c5a153..9213478 100644
+--- a/drivers/net/can/mcp251x.c
++++ b/drivers/net/can/mcp251x.c
+@@ -545,7 +545,9 @@ static void mcp251x_set_normal_mode(struct spi_device *spi)
+ 		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_LOOPBACK);
+ 	} else {
+ 		/* Put device into normal mode */
+-		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_NORMAL);
++		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_NORMAL |
++				  (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_ONE_SHOT ?
++				   CANCTRL_OSM : 0));
+
+ 		/* Wait for the device to enter normal mode */
+ 		timeout = jiffies + HZ;
+@@ -952,6 +954,10 @@ static int __devinit mcp251x_can_probe(struct
+spi_device *spi)
+ 	priv-&gt;can.bittiming_const = &amp;mcp251x_bittiming_const;
+ 	priv-&gt;can.do_set_mode = mcp251x_do_set_mode;
+ 	priv-&gt;can.clock.freq = pdata-&gt;oscillator_frequency / 2;
++	priv-&gt;can.ctrlmode_supported = CAN_CTRLMODE_3_SAMPLES |
++		CAN_CTRLMODE_LOOPBACK;
++	if (pdata-&gt;model == CAN_MCP251X_MCP2515)
++		priv-&gt;can.ctrlmode_supported |= CAN_CTRLMODE_ONE_SHOT;
+ 	priv-&gt;net = net;
+ 	dev_set_drvdata(&amp;spi-&gt;dev, priv);
+
+diff --git a/drivers/net/can/mscan/mscan.c b/drivers/net/can/mscan/mscan.c
+index 07346f8..46a7b7e 100644
+--- a/drivers/net/can/mscan/mscan.c
++++ b/drivers/net/can/mscan/mscan.c
+@@ -655,6 +655,7 @@ struct net_device *alloc_mscandev(void)
+ 	priv-&gt;can.bittiming_const = &amp;mscan_bittiming_const;
+ 	priv-&gt;can.do_set_bittiming = mscan_do_set_bittiming;
+ 	priv-&gt;can.do_set_mode = mscan_do_set_mode;
++	priv-&gt;can.ctrlmode_supported = CAN_CTRLMODE_3_SAMPLES;
+
+ 	for (i = 0; i &lt; TX_QUEUE_SIZE; i++) {
+ 		priv-&gt;tx_queue[i].id = i;
+diff --git a/drivers/net/can/sja1000/sja1000.c
+b/drivers/net/can/sja1000/sja1000.c
+index 542a4f7..c40977c 100644
+--- a/drivers/net/can/sja1000/sja1000.c
++++ b/drivers/net/can/sja1000/sja1000.c
+@@ -564,6 +564,7 @@ struct net_device *alloc_sja1000dev(int sizeof_priv)
+ 	priv-&gt;can.bittiming_const = &amp;sja1000_bittiming_const;
+ 	priv-&gt;can.do_set_bittiming = sja1000_set_bittiming;
+ 	priv-&gt;can.do_set_mode = sja1000_set_mode;
++	priv-&gt;can.ctrlmode_supported = CAN_CTRLMODE_3_SAMPLES;
+
+ 	if (sizeof_priv)
+ 		priv-&gt;priv = (void *)priv + sizeof(struct sja1000_priv);
+diff --git a/drivers/net/can/ti_hecc.c b/drivers/net/can/ti_hecc.c
+index 5c993c2..7cfa469 100644
+--- a/drivers/net/can/ti_hecc.c
++++ b/drivers/net/can/ti_hecc.c
+@@ -907,6 +907,7 @@ static int ti_hecc_probe(struct platform_device *pdev)
+ 	priv-&gt;can.bittiming_const = &amp;ti_hecc_bittiming_const;
+ 	priv-&gt;can.do_set_mode = ti_hecc_do_set_mode;
+ 	priv-&gt;can.do_get_state = ti_hecc_get_state;
++	priv-&gt;can.ctrlmode_supported = CAN_CTRLMODE_3_SAMPLES;
+
+ 	ndev-&gt;irq = irq-&gt;start;
+ 	ndev-&gt;flags |= IFF_ECHO;
+diff --git a/drivers/net/can/usb/ems_usb.c b/drivers/net/can/usb/ems_usb.c
+index efbb05c..7eca74e 100644
+--- a/drivers/net/can/usb/ems_usb.c
++++ b/drivers/net/can/usb/ems_usb.c
+@@ -1019,6 +1019,7 @@ static int ems_usb_probe(struct usb_interface *intf,
+ 	dev-&gt;can.bittiming_const = &amp;ems_usb_bittiming_const;
+ 	dev-&gt;can.do_set_bittiming = ems_usb_set_bittiming;
+ 	dev-&gt;can.do_set_mode = ems_usb_set_mode;
++	dev-&gt;can.ctrlmode_supported = CAN_CTRLMODE_3_SAMPLES;
+
+ 	netdev-&gt;flags |= IFF_ECHO; /* we support local echo */
+
+diff --git a/include/linux/can/dev.h b/include/linux/can/dev.h
+index 3db7767..4cb4f72 100644
+--- a/include/linux/can/dev.h
++++ b/include/linux/can/dev.h
+@@ -38,6 +38,7 @@ struct can_priv {
+
+ 	enum can_state state;
+ 	u32 ctrlmode;
++	u32 ctrlmode_supported;
+
+ 	int restart_ms;
+ 	struct timer_list restart_timer;
+diff --git a/include/linux/can/netlink.h b/include/linux/can/netlink.h
+index 9ecbb78..7c860e8 100644
+--- a/include/linux/can/netlink.h
++++ b/include/linux/can/netlink.h
+@@ -80,6 +80,7 @@ struct can_ctrlmode {
+ #define CAN_CTRLMODE_LOOPBACK	0x1	/* Loopback mode */
+ #define CAN_CTRLMODE_LISTENONLY	0x2 	/* Listen-only mode */
+ #define CAN_CTRLMODE_3_SAMPLES	0x4	/* Triple sampling mode */
++#define CAN_CTRLMODE_ONE_SHOT   0x8     /* One-Shot mode */
+
+ /*
+  * CAN device statistics
+----8&lt;-----
+diff --git a/include/linux/can/netlink.h b/include/linux/can/netlink.h
+index 9ecbb78..bd969a6 100644
+--- a/include/linux/can/netlink.h
++++ b/include/linux/can/netlink.h
+@@ -80,6 +80,8 @@ struct can_ctrlmode {
+ #define CAN_CTRLMODE_LOOPBACK	0x1	/* Loopback mode */
+ #define CAN_CTRLMODE_LISTENONLY	0x2 	/* Listen-only mode */
+ #define CAN_CTRLMODE_3_SAMPLES	0x4	/* Triple sampling mode */
++#define CAN_CTRLMODE_ONE_SHOT   0x8     /* One-Shot mode */
++
+
+ /*
+  * CAN device statistics
+diff --git a/ip/iplink_can.c b/ip/iplink_can.c
+index 50221e1..5d0d82c 100644
+--- a/ip/iplink_can.c
++++ b/ip/iplink_can.c
+@@ -30,6 +30,7 @@ static void usage(void)
+ 	        &quot;\t[ loopback { on | off } ]\n&quot;
+ 	        &quot;\t[ listen-only { on | off } ]\n&quot;
+ 	        &quot;\t[ triple-sampling { on | off } ]\n&quot;
++	        &quot;\t[ one-shot { on | off } ]\n&quot;
+ 		&quot;\n&quot;
+ 	        &quot;\t[ restart-ms TIME-MS ]\n&quot;
+ 	        &quot;\t[ restart ]\n&quot;
+@@ -84,6 +85,7 @@ static void print_ctrlmode(FILE *f, __u32 cm)
+ 	_PF(CAN_CTRLMODE_LOOPBACK, &quot;LOOPBACK&quot;);
+ 	_PF(CAN_CTRLMODE_LISTENONLY, &quot;LISTEN-ONLY&quot;);
+ 	_PF(CAN_CTRLMODE_3_SAMPLES, &quot;TRIPLE-SAMPLING&quot;);
++	_PF(CAN_CTRLMODE_ONE_SHOT, &quot;ONE-SHOT&quot;);
+ #undef _PF
+ 	if (cm)
+ 		fprintf(f, &quot;%x&quot;, cm);
+@@ -142,6 +144,10 @@ static int can_parse_opt(struct link_util *lu,
+int argc, char **argv,
+ 			NEXT_ARG();
+ 			set_ctrlmode(&quot;triple-sampling&quot;, *argv, &amp;cm,
+ 				     CAN_CTRLMODE_3_SAMPLES);
++		} else if (matches(*argv, &quot;one-shot&quot;) == 0) {
++			NEXT_ARG();
++			set_ctrlmode(&quot;one-shot&quot;, *argv, &amp;cm,
++				     CAN_CTRLMODE_ONE_SHOT);
+ 		} else if (matches(*argv, &quot;restart&quot;) == 0) {
+ 			__u32 val = 1;
+
+diff --git a/ip/iptunnel.c b/ip/iptunnel.c
+index dcd7ee6..c7411da 100644
+--- a/ip/iptunnel.c
++++ b/ip/iptunnel.c
+@@ -21,6 +21,7 @@
+ #include &lt;linux/if.h&gt;
+ #include &lt;linux/if_arp.h&gt;
+ #include &lt;linux/ip.h&gt;
++#include &lt;asm/byteorder.h&gt;
+ #include &lt;linux/if_tunnel.h&gt;
+
+ #include &quot;rt_names.h&quot;
+diff --git a/ip/link_gre.c b/ip/link_gre.c
+index 9f8bde6..9ffa77e 100644
+--- a/ip/link_gre.c
++++ b/ip/link_gre.c
+@@ -17,6 +17,7 @@
+ #include &lt;arpa/inet.h&gt;
+
+ #include &lt;linux/ip.h&gt;
++#include &lt;asm/byteorder.h&gt;
+ #include &lt;linux/if_tunnel.h&gt;
+ #include &quot;rt_names.h&quot;
+ #include &quot;utils.h&quot;
+----8&lt;-----
+
+-- 
+Christian Pellegrin, see <A HREF="http://www.evolware.org/chri/">http://www.evolware.org/chri/</A>
+&quot;Real Programmers don't play tennis, or any other sport which requires
+you to change clothes. Mountain climbing is OK, and Real Programmers
+wear their climbing boots to work in case a mountain should suddenly
+spring up in the middle of the computer room.&quot;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003822.html">[PATCH net-next-2.6] can: Unify droping of invalid tx skbs and	netdev	stats
+</A></li>
+	<LI>Next message: <A HREF="003801.html">[PATCH RFC] one shot mode for mcp2515 and handling of unsupported	ctrlmodes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3799">[ date ]</a>
+              <a href="thread.html#3799">[ thread ]</a>
+              <a href="subject.html#3799">[ subject ]</a>
+              <a href="author.html#3799">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

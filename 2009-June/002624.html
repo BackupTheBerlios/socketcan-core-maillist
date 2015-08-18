@@ -1,0 +1,211 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> merging branches/netlink: please test
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20merging%20branches/netlink%3A%20please%20test&In-Reply-To=%3C4A324905.6000801%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002623.html">
+   <LINK REL="Next"  HREF="002625.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>merging branches/netlink: please test</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20merging%20branches/netlink%3A%20please%20test&In-Reply-To=%3C4A324905.6000801%40grandegger.com%3E"
+       TITLE="merging branches/netlink: please test">wg at grandegger.com
+       </A><BR>
+    <I>Fri Jun 12 14:24:37 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002623.html">merging branches/netlink: please test
+</A></li>
+        <LI>Next message: <A HREF="002625.html">merging branches/netlink: please test
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2624">[ date ]</a>
+              <a href="thread.html#2624">[ thread ]</a>
+              <a href="subject.html#2624">[ subject ]</a>
+              <a href="author.html#2624">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Yegor,
+
+Yegor Yefremov wrote:
+&gt;<i> Hi Wolfgang,
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> Applied! Obviously I did not compile this driver :-(. Thanks.
+</I>&gt;&gt;&gt;&gt;&gt;<i> What are we going to do with at91 platform stuff? Russel has discarded the patches. Should the files be integrated in svn version? But if you make the add-patch and try to patch the kernel you'll definitely get an error, cause at91sam9263_devices.c already exists. That's why I tried to submit the patches directly to the arm mailings list. For me it belong right there. What do you think about it?
+</I>&gt;&gt;&gt;&gt;<i> I would try to get it into the kernel together with the socket-can
+</I>&gt;&gt;&gt;&gt;<i> driver for the AT91. 
+</I>&gt;&gt;&gt;<i> Ack
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> Unfortunately, there are some issues with that driver.
+</I>&gt;&gt;&gt;<i> What issues do you mean?
+</I>&gt;&gt;<i> See
+</I>&gt;&gt;<i> <A HREF="http://svn.berlios.de/svnroot/repos/socketcan/branches/netlink/kernel/2.6/README.known-issues">http://svn.berlios.de/svnroot/repos/socketcan/branches/netlink/kernel/2.6/README.known-issues</A>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Should not be a big deal to fix them.
+</I>&gt;<i> 
+</I>&gt;<i> I've fixed three of them and will try to fix the others next week. So if the implementation is O.K. then they can be removed from README.know-issues.
+</I>&gt;<i> 
+</I>&gt;<i> Resolved FIXMEs:
+</I>&gt;<i> 
+</I>&gt;<i> - remove at91_get_state() as already done by upper layer
+</I>&gt;<i> - remove tx timeout callback
+</I>&gt;<i> - don't use netdev-&gt;base_addr
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Yegor Yefremov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">yegorslists at googlemail.com</A>&gt;
+</I>&gt;<i> 
+</I>&gt;<i> Index: netlink/kernel/2.6/drivers/net/can/at91_can.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- netlink.orig/kernel/2.6/drivers/net/can/at91_can.c
+</I>&gt;<i> +++ netlink/kernel/2.6/drivers/net/can/at91_can.c
+</I>&gt;<i> @@ -153,6 +153,7 @@ struct at91_priv {
+</I>&gt;<i>  	unsigned int		tx_echo;
+</I>&gt;<i>  
+</I>&gt;<i>  	unsigned int		rx_bank;
+</I>&gt;<i> +	void __iomem		*reg_base; /* ioremap'ed address to registers */
+</I>&gt;<i>  };
+</I>&gt;<i>  
+</I>&gt;<i>  
+</I>&gt;<i> @@ -186,13 +187,15 @@ static inline int get_tx_echo_mb(struct 
+</I>&gt;<i>  
+</I>&gt;<i>  static inline u32 at91_read(struct net_device *dev, enum at91_reg reg)
+</I>&gt;<i>  {
+</I>&gt;<i> -	return readl((void __iomem *)dev-&gt;base_addr + reg);
+</I>&gt;<i> +	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	return readl((void __iomem *)priv-&gt;reg_base + reg);
+</I>
+Please remove the unnecessary cast.
+
+&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i>  static inline void
+</I>&gt;<i>  at91_write(struct net_device *dev, enum at91_reg reg, u32 value)
+</I>&gt;<i>  {
+</I>&gt;<i> -	writel(value, (void __iomem *)dev-&gt;base_addr + reg);
+</I>&gt;<i> +	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	writel(value, (void __iomem *)priv-&gt;reg_base + reg);
+</I>&gt;<i>  }
+</I>
+Ditto.
+
+&gt;<i>  
+</I>&gt;<i> @@ -489,13 +492,6 @@ static void at91_irq_rx(struct net_devic
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i>  
+</I>&gt;<i> -static void at91_tx_timeout(struct net_device *dev)
+</I>&gt;<i> -{
+</I>&gt;<i> -	dev-&gt;stats.tx_errors++;
+</I>&gt;<i> -	dev_dbg(ND2D(dev), &quot;TX timeout!\n&quot;);
+</I>&gt;<i> -}
+</I>&gt;<i> -
+</I>&gt;<i> -
+</I>&gt;<i>  /*
+</I>&gt;<i>   * theory of operation:
+</I>&gt;<i>   *
+</I>&gt;<i> @@ -991,14 +987,6 @@ static int at91_close(struct net_device 
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i>  
+</I>&gt;<i> -static int at91_get_state(const struct net_device *dev, u32 *state)
+</I>&gt;<i> -{
+</I>&gt;<i> -	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;<i> -	*state = priv-&gt;can.state;
+</I>&gt;<i> -	return 0;
+</I>&gt;<i> -}
+</I>&gt;<i> -
+</I>&gt;<i> -
+</I>&gt;<i>  static int at91_set_mode(struct net_device *dev, u32 _mode)
+</I>&gt;<i>  {
+</I>&gt;<i>  	enum can_mode mode = _mode;
+</I>&gt;<i> @@ -1024,7 +1012,6 @@ static const struct net_device_ops at91_
+</I>&gt;<i>  	.ndo_open	= at91_open,
+</I>&gt;<i>  	.ndo_stop	= at91_close,
+</I>&gt;<i>  	.ndo_start_xmit	= at91_start_xmit,
+</I>&gt;<i> -	.ndo_tx_timeout	= at91_tx_timeout,
+</I>&gt;<i>  };
+</I>&gt;<i>  #endif
+</I>&gt;<i>  
+</I>&gt;<i> @@ -1076,20 +1063,18 @@ static int __init at91_can_probe(struct 
+</I>&gt;<i>  	dev-&gt;open		= at91_open;
+</I>&gt;<i>  	dev-&gt;stop		= at91_close;
+</I>&gt;<i>  	dev-&gt;hard_start_xmit	= at91_start_xmit;
+</I>&gt;<i> -	dev-&gt;tx_timeout		= at91_tx_timeout;
+</I>&gt;<i>  #endif
+</I>&gt;<i>  	dev-&gt;get_stats		= at91_get_stats;
+</I>&gt;<i>  	dev-&gt;irq		= irq;
+</I>&gt;<i> -	dev-&gt;base_addr		= (unsigned long)addr;
+</I>
+Ditto.
+
+&gt;<i>  	dev-&gt;flags		|= IFF_ECHO;
+</I>&gt;<i>  
+</I>&gt;<i>  	priv = netdev_priv(dev);
+</I>&gt;<i>  	priv-&gt;can.clock.freq		= clk_get_rate(clk);
+</I>&gt;<i>  	priv-&gt;can.bittiming_const	= &amp;at91_bittiming_const;
+</I>&gt;<i>  	priv-&gt;can.do_set_bittiming	= at91_set_bittiming;
+</I>&gt;<i> -	priv-&gt;can.do_get_state		= at91_get_state;
+</I>&gt;<i>  	priv-&gt;can.do_set_mode		= at91_set_mode;
+</I>&gt;<i>  	priv-&gt;clk			= clk;
+</I>&gt;<i> +	priv-&gt;reg_base			= (unsigned long)addr;
+</I>&gt;<i>  
+</I>&gt;<i>  	priv-&gt;pdata		= pdev-&gt;dev.platform_data;
+</I>&gt;<i>  
+</I>&gt;<i> @@ -1103,8 +1088,8 @@ static int __init at91_can_probe(struct 
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i>  
+</I>&gt;<i> -	dev_info(&amp;pdev-&gt;dev, &quot;device registered (base_addr=%#lx, irq=%d)\n&quot;,
+</I>&gt;<i> -		 dev-&gt;base_addr, dev-&gt;irq);
+</I>&gt;<i> +	dev_info(&amp;pdev-&gt;dev, &quot;device registered (reg_base=%#lx, irq=%d)\n&quot;,
+</I>&gt;<i> +		 priv-&gt;reg_base, dev-&gt;irq);
+</I>
+The proper format for priv-&gt;reg_base is &quot;0x%p&quot;.
+
+&gt;<i>  	return 0;
+</I>&gt;<i>  
+</I>&gt;<i> @@ -1133,7 +1118,7 @@ static int __devexit at91_can_remove(str
+</I>&gt;<i>  
+</I>&gt;<i>  	free_netdev(dev);
+</I>&gt;<i>  
+</I>&gt;<i> -	iounmap((void __iomem *)dev-&gt;base_addr);
+</I>&gt;<i> +	iounmap((void __iomem *)priv-&gt;reg_base);
+</I>
+No cast, please.
+
+I'm going to apply your with the modifications mentioned above.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002623.html">merging branches/netlink: please test
+</A></li>
+	<LI>Next message: <A HREF="002625.html">merging branches/netlink: please test
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2624">[ date ]</a>
+              <a href="thread.html#2624">[ thread ]</a>
+              <a href="subject.html#2624">[ subject ]</a>
+              <a href="author.html#2624">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

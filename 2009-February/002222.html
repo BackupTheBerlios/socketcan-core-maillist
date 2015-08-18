@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Added ISO 15765-2 CAN transport protocol for protocol family CAN
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Added%20ISO%2015765-2%20CAN%20transport%20protocol%20for%20protocol%20family%20CAN&In-Reply-To=%3C498708ED.5000001%40volkswagen.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002220.html">
+   <LINK REL="Next"  HREF="002238.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Added ISO 15765-2 CAN transport protocol for protocol family CAN</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Added%20ISO%2015765-2%20CAN%20transport%20protocol%20for%20protocol%20family%20CAN&In-Reply-To=%3C498708ED.5000001%40volkswagen.de%3E"
+       TITLE="Added ISO 15765-2 CAN transport protocol for protocol family CAN">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Mon Feb  2 15:53:33 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002220.html">using the sja1000_platform driver
+</A></li>
+        <LI>Next message: <A HREF="002238.html">AW: Added ISO 15765-2 CAN transport protocol for protocol family CAN
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2222">[ date ]</a>
+              <a href="thread.html#2222">[ thread ]</a>
+              <a href="subject.html#2222">[ subject ]</a>
+              <a href="author.html#2222">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ren&#233; M&#252;ller wrote:
+&gt;<i> Oliver Hartkopp schrieb:
+</I>&gt;<i>   
+</I>&gt;&gt;<i> Hi all,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> i added the CAN ISO-TP transport protocol for discussions and ongoing 
+</I>&gt;&gt;<i> development to the SocketCAN SVN (rev866).
+</I>&gt;&gt;<i>   
+</I>&gt;&gt;<i>     
+</I>&gt;<i> [snip]
+</I>&gt;<i>   
+</I>&gt;&gt;<i> Feedback is most welcome!
+</I>&gt;&gt;<i>   
+</I>&gt;&gt;<i>     
+</I>&gt;<i>
+</I>&gt;<i> Hi Oliver,
+</I>&gt;<i>
+</I>&gt;<i> thanks for your implementation! Now I had the time to look into it.
+</I>&gt;<i> After some tests I can say it runs very smooth. I wrote some own tools
+</I>&gt;<i> and I found only one problem with OBD.
+</I>&gt;<i>
+</I>&gt;<i> As described in ISO 15765-4 there is a mix of functional and physical
+</I>&gt;<i> CAN identifier (chapter 6.3.2) for OBD-Communication. At the moment I
+</I>&gt;<i> can define only one ID for the sender and one ID for the receiver. So in
+</I>&gt;<i> case of OBD-Communication there is no possibility to receive a segmented
+</I>&gt;<i> response.
+</I>&gt;<i>   
+</I>Hi Ren&#233;,
+
+according to the spec  there is a functional request on a special ID and 
+then the rest of the communication is indeed handled via 'physical' 
+request and response IDs (which build a quasi point-to-point ISO-TP 
+channel).
+
+&gt;<i> As stated in my e-mail on socketcan-users in May last year, we
+</I>&gt;<i> integrated the transport layer in our application. Our main problem is
+</I>&gt;<i> the timing. We are working with linux and python, so there are
+</I>&gt;<i> non-deterministic delays. I would prefer to use the ISO-TP
+</I>&gt;<i> implementation inside socketcan. This way we can contribute some real
+</I>&gt;<i> use-cases and tests to the project.
+</I>&gt;<i>
+</I>&gt;<i> We solved the functional addressing with a third CAN identifier for the
+</I>&gt;<i> Flow Control frame. For the functional request we use the sender CAN
+</I>&gt;<i> identifier, for the physical response the receiver CAN identifier and
+</I>&gt;<i> for the Flow Control Frame we use the third CAN identifier. How can this
+</I>&gt;<i> done with the current implementation of ISO-TP? I tried to open two sockets:
+</I>&gt;<i> - socket 1: sender ID 0x7df, receiver ID 0x7e8
+</I>&gt;<i> - socket 2: sender ID 0x7e8, receiver ID 0x7e0
+</I>&gt;<i>   
+</I>
+0x7DF is the functional adressing CAN ID. AFAICS it's not for 
+communication purposes!
+
+I would suggest to do it like this (as a tester equipment):
+
+Create a single frame ISO-TP-PDU 'by hand' which is quite easy as 
+functional addressing is always single frame.
+Send this functional request via CAN_RAW(!) socket.
+
+Before sending the functional request create as much as ISO-TP sockets 
+you need.
+
+e.g. these CAN ID pairs
+
+7E0 / 7E8
+7E1 / 7E9
+7E2 / 7E9
+7E3 / 7EA
+
+...
+
+And on these sockets you have a correct bi-directional flow-controlled 
+information flow.
+
+By using select() you should be able to receive from all these sockets 
+simultaneously.
+
+Or did i miss anything in the spec??
+
+Regards,
+Oliver
+
+(and thanks for testing)
+
+&gt;<i> Then I used socket 1 to send the request and socket 2 to receive the
+</I>&gt;<i> response. While testing this, I noticed that this is the wrong approach :)
+</I>&gt;<i>
+</I>&gt;<i> What do you think of OBD-Communication as a use-case? Would it be worth
+</I>&gt;<i> to implement a third CAN identifier? Maybe I can contribute a patch
+</I>&gt;<i> implementing this. But first I want to discuss the details with you.
+</I>&gt;<i> Maybe I overlook something in the current implementation.
+</I>&gt;<i>
+</I>&gt;<i> Greetings,
+</I>&gt;<i> Ren&#233;
+</I>&gt;<i>   
+</I>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002220.html">using the sja1000_platform driver
+</A></li>
+	<LI>Next message: <A HREF="002238.html">AW: Added ISO 15765-2 CAN transport protocol for protocol family CAN
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2222">[ date ]</a>
+              <a href="thread.html#2222">[ thread ]</a>
+              <a href="subject.html#2222">[ subject ]</a>
+              <a href="author.html#2222">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

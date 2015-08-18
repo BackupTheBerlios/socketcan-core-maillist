@@ -1,0 +1,1565 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Fix%20build%0A%09warnings&In-Reply-To=%3C4CCAA3D4.8070408%40dsn.okisemi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004896.html">
+   <LINK REL="Next"  HREF="004901.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings</H1>
+    <B>Tomoya</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Fix%20build%0A%09warnings&In-Reply-To=%3C4CCAA3D4.8070408%40dsn.okisemi.com%3E"
+       TITLE="[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings">tomoya-linux at dsn.okisemi.com
+       </A><BR>
+    <I>Fri Oct 29 12:37:08 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004896.html">can: About Socket CAN with MSI issue
+</A></li>
+        <LI>Next message: <A HREF="004901.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4900">[ date ]</a>
+              <a href="thread.html#4900">[ thread ]</a>
+              <a href="subject.html#4900">[ subject ]</a>
+              <a href="author.html#4900">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Wolfgang and Marc,
+ 
+&gt;&gt;&gt;<i> what does this loop do? why is it nessecarry? I don't like delay loops
+</I>&gt;&gt;&gt;<i>   in the hot path of a driver.
+</I>&gt;&gt;<i> This loop is for waiting for all tx Message Object completion.
+</I>&gt;&gt;<i> This is Topcliff CAN HW specification.
+</I>&gt;<i> What do you mean with &quot;tx Message Object completion&quot;? Is TX done not
+</I>&gt;<i> signaled via interrupt?
+</I>Yes Tx done is signaled via interrupt.
+On the other hand, register &quot;CANTREQx&quot; also shows the status of Message Object.
+Reading the register, CAN driver can know the Message Object is empty or not.
+In case of this processing, using this register is better, I think.
+
+&gt;<i> Please explain why you need to wait multiples of
+</I>&gt;&gt;<i> 500us here in the hot TX path.
+</I>You are right. The value &quot;500us&quot; was too big.
+According to Topcliff document, it takes 3~6 cycles for transferring between
+register and Message Object RAM.
+Since 50MHz is, 1cycle=0.02usec, 6cycle=0.12. May be true.
+I will modify 500usec to 1usec.
+
+&gt;&gt;&gt;&gt;<i> All these check if busy in the code make me a bit nervous, can you
+</I>&gt;&gt;&gt;&gt;<i> please explain why they are needed. A pointer to the manual is okay, too.
+</I>&gt;&gt;&gt;<i> Me too. I already ask in my previous mail how long that functions
+</I>&gt;&gt;&gt;<i> usually blocks.
+</I>&gt;&gt;<i> When accessing read/write from/to Message RAM,
+</I>&gt;&gt;<i> Since it takes much time for transferring between Register and Message RAM,
+</I>&gt;<i>Much time means how many mirco-seconds?
+</I>ditto
+
+&gt;&gt;<i> SW must check busy flag of CAN register.
+</I>&gt;&gt;<i> This is a Topcliff HW specification.
+</I>&gt;<i>Maybe the busy check could also be done *before* the Message RAM is
+</I>&gt;<i>accessed to avoid (or minimize) waiting.
+</I>Yes, *before* is right.
+If there is *after* processing, this is a bug.
+Can you see anyway ? 
+
+&gt;<i> Can you give us a pointer into intel's documentation?
+</I>You have already had Intel's data sheet(Topcliff/Atom E6xx series), right ?
+What's document for ?
+
+&gt;&gt;<i> If you figured out how to use the endianess conversion functions from
+</I>&gt;&gt;<i> the cpu_to_{le,be}-{le,to}_to_cpup family use them here, too.
+</I>Sorry, I misunderstood the spec of Topcliff CAN endianess.
+I have understood endianess conversion is not necessary.
+(CAN data is set as Big-Endian in Topcliff CAN register)
+
+&gt;<i>You have to change the definition of the regs struct a bit:
+</I>&gt;&gt;<i>	u32 if1_mcont;
+</I>&gt;&gt;<i>	u32 if1_data[4];
+</I>&gt;&gt;<i>	u32 reserve2;
+</I>Uh, I can't find this. Where is this ?
+
+&gt;<i> BTW: Where can I get this Intel Hardware to improve and test the driver?
+</I>We don't know, please contact to Intel,
+Topcliff is formally called &quot;Atom E6xx series&quot; <A HREF="http://edc.intel.com/Platforms/Atom-E6xx/">http://edc.intel.com/Platforms/Atom-E6xx/</A>
+
+I have completed modifying for your comments excepting above.
+Receiving many comments, your indication may be dropped. If you find, please indicate again?.
+For your confirming my modification, I show current whole of CAN driver.
+
+-- 
+Thanks, Tomoya(OKI SEMICONDUCTOR CO., LTD.)
+
+--- /dev/null
++++ b/drivers/net/can/pch_can.c
+@@ -0,0 +1,1436 @@
++/*
++ * Copyright (C) 1999 - 2010 Intel Corporation.
++ * Copyright (C) 2010 OKI SEMICONDUCTOR CO., LTD.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307, USA.
++ */
++
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/delay.h&gt;
++#include &lt;linux/io.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/sched.h&gt;
++#include &lt;linux/pci.h&gt;
++#include &lt;linux/init.h&gt;
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/types.h&gt;
++#include &lt;linux/errno.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/skbuff.h&gt;
++#include &lt;linux/can.h&gt;
++#include &lt;linux/can/dev.h&gt;
++#include &lt;linux/can/error.h&gt;
++
++#define MAX_MSG_OBJ		32
++#define MSG_OBJ_RX		0 /* The receive message object flag. */
++#define MSG_OBJ_TX		1 /* The transmit message object flag. */
++
++#define CAN_CTRL_INIT		0x0001 /* The INIT bit of CANCONT register. */
++#define CAN_CTRL_IE		0x0002 /* The IE bit of CAN control register */
++#define CAN_CTRL_IE_SIE_EIE	0x000e
++#define CAN_CTRL_CCE		0x0040
++#define CAN_CTRL_OPT		0x0080 /* The OPT bit of CANCONT register. */
++#define CAN_OPT_SILENT		0x0008 /* The Silent bit of CANOPT reg. */
++#define CAN_OPT_LBACK		0x0010 /* The LoopBack bit of CANOPT reg. */
++#define CAN_CMASK_RX_TX_SET	0x00f3
++#define CAN_CMASK_RX_TX_GET	0x0073
++#define CAN_CMASK_ALL		0xff
++#define CAN_CMASK_RDWR		0x80
++#define CAN_CMASK_ARB		0x20
++#define CAN_CMASK_CTRL		0x10
++#define CAN_CMASK_MASK		0x40
++#define CAN_CMASK_NEWDAT	0x04
++#define CAN_CMASK_CLRINTPND	0x08
++
++#define CAN_IF_MCONT_NEWDAT	0x8000
++#define CAN_IF_MCONT_INTPND	0x2000
++#define CAN_IF_MCONT_UMASK	0x1000
++#define CAN_IF_MCONT_TXIE	0x0800
++#define CAN_IF_MCONT_RXIE	0x0400
++#define CAN_IF_MCONT_RMTEN	0x0200
++#define CAN_IF_MCONT_TXRQXT	0x0100
++#define CAN_IF_MCONT_EOB	0x0080
++#define CAN_IF_MCONT_DLC	0x000f
++#define CAN_IF_MCONT_MSGLOST	0x4000
++#define CAN_MASK2_MDIR_MXTD	0xc000
++#define CAN_ID2_DIR		0x2000
++#define CAN_ID_MSGVAL		0x8000
++
++#define CAN_STATUS_INT		0x8000
++#define CAN_IF_CREQ_BUSY	0x8000
++#define CAN_ID2_XTD		0x4000
++
++#define CAN_REC			0x00007f00
++#define CAN_TEC			0x000000ff
++
++#define PCH_RX_OK		0x00000010
++#define PCH_TX_OK		0x00000008
++#define PCH_BUS_OFF		0x00000080
++#define PCH_EWARN		0x00000040
++#define PCH_EPASSIV		0x00000020
++#define PCH_LEC0		0x00000001
++#define PCH_LEC1		0x00000002
++#define PCH_LEC2		0x00000004
++#define PCH_LEC_ALL		(PCH_LEC0 | PCH_LEC1 | PCH_LEC2)
++#define PCH_STUF_ERR		PCH_LEC0
++#define PCH_FORM_ERR		PCH_LEC1
++#define PCH_ACK_ERR		(PCH_LEC0 | PCH_LEC1)
++#define PCH_BIT1_ERR		PCH_LEC2
++#define PCH_BIT0_ERR		(PCH_LEC0 | PCH_LEC2)
++#define PCH_CRC_ERR		(PCH_LEC1 | PCH_LEC2)
++
++/* bit position of certain controller bits. */
++#define BIT_BITT_BRP		0
++#define BIT_BITT_SJW		6
++#define BIT_BITT_TSEG1		8
++#define BIT_BITT_TSEG2		12
++#define BIT_IF1_MCONT_RXIE	10
++#define BIT_IF2_MCONT_TXIE	11
++#define BIT_BRPE_BRPE		6
++#define BIT_ES_TXERRCNT		0
++#define BIT_ES_RXERRCNT		8
++#define MSK_BITT_BRP		0x3f
++#define MSK_BITT_SJW		0xc0
++#define MSK_BITT_TSEG1		0xf00
++#define MSK_BITT_TSEG2		0x7000
++#define MSK_BRPE_BRPE		0x3c0
++#define MSK_BRPE_GET		0x0f
++#define MSK_CTRL_IE_SIE_EIE	0x07
++#define MSK_MCONT_TXIE		0x08
++#define MSK_MCONT_RXIE		0x10
++#define PCH_CAN_NO_TX_BUFF	1
++#define COUNTER_LIMIT		10
++
++#define PCH_CAN_CLK		50000000	/* 50MHz */
++
++/*
++ * Define the number of message object.
++ * PCH CAN communications are done via Message RAM.
++ * The Message RAM consists of 32 message objects.
++ */
++#define PCH_RX_OBJ_NUM		26  /* 1~ PCH_RX_OBJ_NUM is Rx*/
++#define PCH_TX_OBJ_NUM		6  /* PCH_RX_OBJ_NUM is RX ~ Tx*/
++#define PCH_OBJ_NUM		(PCH_TX_OBJ_NUM + PCH_RX_OBJ_NUM)
++
++#define PCH_FIFO_THRESH		16
++
++enum pch_can_mode {
++	PCH_CAN_ENABLE,
++	PCH_CAN_DISABLE,
++	PCH_CAN_ALL,
++	PCH_CAN_NONE,
++	PCH_CAN_STOP,
++	PCH_CAN_RUN,
++};
++
++struct pch_can_regs {
++	u32 cont;
++	u32 stat;
++	u32 errc;
++	u32 bitt;
++	u32 intr;
++	u32 opt;
++	u32 brpe;
++	u32 reserve1;
++	u32 if1_creq;
++	u32 if1_cmask;
++	u32 if1_mask1;
++	u32 if1_mask2;
++	u32 if1_id1;
++	u32 if1_id2;
++	u32 if1_mcont;
++	u32 if1_dataa1;
++	u32 if1_dataa2;
++	u32 if1_datab1;
++	u32 if1_datab2;
++	u32 reserve2;
++	u32 reserve3[12];
++	u32 if2_creq;
++	u32 if2_cmask;
++	u32 if2_mask1;
++	u32 if2_mask2;
++	u32 if2_id1;
++	u32 if2_id2;
++	u32 if2_mcont;
++	u32 if2_dataa1;
++	u32 if2_dataa2;
++	u32 if2_datab1;
++	u32 if2_datab2;
++	u32 reserve4;
++	u32 reserve5[20];
++	u32 treq1;
++	u32 treq2;
++	u32 reserve6[2];
++	u32 reserve7[56];
++	u32 reserve8[3];
++	u32 srst;
++};
++
++struct pch_can_priv {
++	struct can_priv can;
++	struct pci_dev *dev;
++	unsigned int tx_enable[MAX_MSG_OBJ];
++	unsigned int rx_enable[MAX_MSG_OBJ];
++	unsigned int rx_link[MAX_MSG_OBJ];
++	unsigned int int_enables;
++	unsigned int int_stat;
++	struct net_device *ndev;
++	spinlock_t msgif_reg_lock; /* Message Interface Registers Access Lock*/
++	unsigned int msg_obj[MAX_MSG_OBJ];
++	struct pch_can_regs __iomem *regs;
++	struct napi_struct napi;
++	unsigned int tx_obj;	/* Point next Tx Obj index */
++	unsigned int use_msi;
++};
++
++static struct can_bittiming_const pch_can_bittiming_const = {
++	.name = &quot;pch_can&quot;,
++	.tseg1_min = 1,
++	.tseg1_max = 16,
++	.tseg2_min = 1,
++	.tseg2_max = 8,
++	.sjw_max = 4,
++	.brp_min = 1,
++	.brp_max = 1024, /* 6bit + extended 4bit */
++	.brp_inc = 1,
++};
++
++static DEFINE_PCI_DEVICE_TABLE(pch_pci_tbl) = {
++	{PCI_VENDOR_ID_INTEL, 0x8818, PCI_ANY_ID, PCI_ANY_ID,},
++	{0,}
++};
++MODULE_DEVICE_TABLE(pci, pch_pci_tbl);
++
++static inline void pch_can_bit_set(u32 *addr, u32 mask)
++{
++	iowrite32(ioread32(addr) | mask, addr);
++}
++
++static inline void pch_can_bit_clear(u32 *addr, u32 mask)
++{
++	iowrite32(ioread32(addr) &amp; ~mask, addr);
++}
++
++static void pch_can_set_run_mode(struct pch_can_priv *priv,
++				 enum pch_can_mode mode)
++{
++	switch (mode) {
++	case PCH_CAN_RUN:
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_INIT);
++		break;
++
++	case PCH_CAN_STOP:
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_INIT);
++		break;
++
++	default:
++		dev_err(&amp;priv-&gt;ndev-&gt;dev, &quot;%s -&gt; Invalid Mode.\n&quot;, __func__);
++		break;
++	}
++}
++
++static void pch_can_set_optmode(struct pch_can_priv *priv)
++{
++	u32 reg_val = ioread32(&amp;priv-&gt;regs-&gt;opt);
++
++	if (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_LISTENONLY)
++		reg_val |= CAN_OPT_SILENT;
++
++	if (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_LOOPBACK)
++		reg_val |= CAN_OPT_LBACK;
++
++	pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_OPT);
++	iowrite32(reg_val, &amp;priv-&gt;regs-&gt;opt);
++}
++
++static void pch_can_check_if_busy(u32 __iomem *creq_addr, u32 num)
++{
++	u32 counter = COUNTER_LIMIT;
++	u32 ifx_creq;
++
++	iowrite32(num, creq_addr);
++	while (counter) {
++		ifx_creq = ioread32(creq_addr) &amp; CAN_IF_CREQ_BUSY;
++		if (!ifx_creq)
++			break;
++		counter--;
++		udelay(1);
++	}
++	if (!counter)
++		pr_err(&quot;%s:IF1 BUSY Flag is set forever.\n&quot;, __func__);
++}
++
++static void pch_can_set_int_enables(struct pch_can_priv *priv,
++				    enum pch_can_mode interrupt_no)
++{
++	switch (interrupt_no) {
++	case PCH_CAN_ENABLE:
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_IE);
++		break;
++
++	case PCH_CAN_DISABLE:
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_IE);
++		break;
++
++	case PCH_CAN_ALL:
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_IE_SIE_EIE);
++		break;
++
++	case PCH_CAN_NONE:
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_IE_SIE_EIE);
++		break;
++
++	default:
++		dev_err(&amp;priv-&gt;ndev-&gt;dev, &quot;Invalid interrupt number.\n&quot;);
++		break;
++	}
++}
++
++static void pch_can_set_rx_enable(struct pch_can_priv *priv, u32 buff_num,
++				  int set)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
++	/* Reading the receive buffer data from RAM to Interface1 registers */
++	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if1_cmask);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, buff_num);
++
++	/* Setting the IF1MASK1 register to access MsgVal and RxIE bits */
++	iowrite32(CAN_CMASK_RDWR | CAN_CMASK_ARB | CAN_CMASK_CTRL,
++		  &amp;priv-&gt;regs-&gt;if1_cmask);
++
++	if (set == 1) {
++		/* Setting the MsgVal and RxIE bits */
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if1_mcont, CAN_IF_MCONT_RXIE);
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if1_id2, CAN_ID_MSGVAL);
++
++	} else if (set == 0) {
++		/* Resetting the MsgVal and RxIE bits */
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mcont, CAN_IF_MCONT_RXIE);
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_id2, CAN_ID_MSGVAL);
++	}
++
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, buff_num);
++	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
++}
++
++static void pch_can_rx_enable_all(struct pch_can_priv *priv)
++{
++	int i;
++
++	/* Traversing to obtain the object configured as receivers. */
++	for (i = 1; i &lt;= PCH_RX_OBJ_NUM; i++)
++		pch_can_set_rx_enable(priv, i, 1);
++}
++
++static void pch_can_rx_disable_all(struct pch_can_priv *priv)
++{
++	int i;
++
++	/* Traversing to obtain the object configured as receivers. */
++	for (i = 1; i &lt;= PCH_RX_OBJ_NUM; i++)
++		pch_can_set_rx_enable(priv, i, 0);
++}
++
++static void pch_can_set_tx_enable(struct pch_can_priv *priv, u32 buff_num,
++				 u32 set)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
++	/* Reading the Msg buffer from Message RAM to Interface2 registers. */
++	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if2_cmask);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, buff_num);
++
++	/* Setting the IF2CMASK register for accessing the
++		MsgVal and TxIE bits */
++	iowrite32(CAN_CMASK_RDWR | CAN_CMASK_ARB | CAN_CMASK_CTRL,
++		 &amp;priv-&gt;regs-&gt;if2_cmask);
++
++	if (set == 1) {
++		/* Setting the MsgVal and TxIE bits */
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_mcont, CAN_IF_MCONT_TXIE);
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_id2, CAN_ID_MSGVAL);
++	} else if (set == 0) {
++		/* Resetting the MsgVal and TxIE bits. */
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_mcont, CAN_IF_MCONT_TXIE);
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_id2, CAN_ID_MSGVAL);
++	}
++
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, buff_num);
++	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
++}
++
++static void pch_can_tx_enable_all(struct pch_can_priv *priv)
++{
++	int i;
++
++	/* Traversing to obtain the object configured as transmit object. */
++	for (i = PCH_RX_OBJ_NUM + 1; i &lt;= PCH_OBJ_NUM; i++)
++		pch_can_set_tx_enable(priv, i, 1);
++}
++
++static void pch_can_tx_disable_all(struct pch_can_priv *priv)
++{
++	int i;
++
++	/* Traversing to obtain the object configured as transmit object. */
++	for (i = PCH_RX_OBJ_NUM + 1; i &lt;= PCH_OBJ_NUM; i++)
++		pch_can_set_tx_enable(priv, i, 0);
++}
++
++static int pch_can_int_pending(struct pch_can_priv *priv)
++{
++	return ioread32(&amp;priv-&gt;regs-&gt;intr) &amp; 0xffff;
++}
++
++static void pch_can_clear_buffers(struct pch_can_priv *priv)
++{
++	int i; /* Msg Obj ID (1~32) */
++
++	for (i = 1; i &lt;= PCH_RX_OBJ_NUM; i++) {
++		iowrite32(CAN_CMASK_RX_TX_SET, &amp;priv-&gt;regs-&gt;if1_cmask);
++		iowrite32(0xffff, &amp;priv-&gt;regs-&gt;if1_mask1);
++		iowrite32(0xffff, &amp;priv-&gt;regs-&gt;if1_mask2);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_id1);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_id2);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_mcont);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_dataa1);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_dataa2);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_datab1);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_datab2);
++		iowrite32(CAN_CMASK_RDWR | CAN_CMASK_MASK |
++			  CAN_CMASK_ARB | CAN_CMASK_CTRL,
++			  &amp;priv-&gt;regs-&gt;if1_cmask);
++		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, i);
++	}
++
++	for (i = PCH_RX_OBJ_NUM + 1; i &lt;= PCH_OBJ_NUM; i++) {
++		iowrite32(CAN_CMASK_RX_TX_SET, &amp;priv-&gt;regs-&gt;if2_cmask);
++		iowrite32(0xffff, &amp;priv-&gt;regs-&gt;if2_mask1);
++		iowrite32(0xffff, &amp;priv-&gt;regs-&gt;if2_mask2);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_id1);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_id2);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_mcont);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_dataa1);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_dataa2);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_datab1);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_datab2);
++		iowrite32(CAN_CMASK_RDWR | CAN_CMASK_MASK | CAN_CMASK_ARB |
++			  CAN_CMASK_CTRL, &amp;priv-&gt;regs-&gt;if2_cmask);
++		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, i);
++	}
++}
++
++static void pch_can_config_rx_tx_buffers(struct pch_can_priv *priv)
++{
++	int i;
++	unsigned long flags;
++
++	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
++
++	for (i = 1; i &lt;= PCH_RX_OBJ_NUM; i++) {
++		iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if1_cmask);
++		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, i);
++
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_id1);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if1_id2);
++
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if1_mcont, CAN_IF_MCONT_UMASK);
++
++		/* Set FIFO mode set to 0 except last Rx Obj*/
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mcont, CAN_IF_MCONT_EOB);
++		/* In case FIFO mode, Last EoB of Rx Obj must be 1 */
++		if (i == (PCH_RX_OBJ_NUM - 1))
++			pch_can_bit_set(&amp;priv-&gt;regs-&gt;if1_mcont,
++					CAN_IF_MCONT_EOB);
++
++		iowrite32(0, &amp;priv-&gt;regs-&gt;if1_mask1);
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mask2,
++				  0x1fff | CAN_MASK2_MDIR_MXTD);
++
++		/* Setting CMASK for writing */
++		iowrite32(CAN_CMASK_RDWR | CAN_CMASK_MASK | CAN_CMASK_ARB |
++			  CAN_CMASK_CTRL, &amp;priv-&gt;regs-&gt;if1_cmask);
++
++		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, i);
++	}
++
++	for (i = PCH_RX_OBJ_NUM + 1; i &lt;= PCH_OBJ_NUM; i++) {
++		iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if2_cmask);
++		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, i);
++
++		/* Resetting DIR bit for reception */
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_id1);
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_id2);
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_id2, CAN_ID2_DIR);
++
++		/* Setting EOB bit for transmitter */
++		iowrite32(CAN_IF_MCONT_EOB, &amp;priv-&gt;regs-&gt;if2_mcont);
++
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_mcont,
++				CAN_IF_MCONT_UMASK);
++
++		iowrite32(0, &amp;priv-&gt;regs-&gt;if2_mask1);
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_mask2, 0x1fff);
++
++		/* Setting CMASK for writing */
++		iowrite32(CAN_CMASK_RDWR | CAN_CMASK_MASK | CAN_CMASK_ARB |
++			  CAN_CMASK_CTRL, &amp;priv-&gt;regs-&gt;if2_cmask);
++
++		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, i);
++	}
++
++	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
++}
++
++static void pch_can_init(struct pch_can_priv *priv)
++{
++	/* Stopping the Can device. */
++	pch_can_set_run_mode(priv, PCH_CAN_STOP);
++
++	/* Clearing all the message object buffers. */
++	pch_can_clear_buffers(priv);
++
++	/* Configuring the respective message object as either rx/tx object. */
++	pch_can_config_rx_tx_buffers(priv);
++
++	/* Enabling the interrupts. */
++	pch_can_set_int_enables(priv, PCH_CAN_ALL);
++}
++
++static void pch_can_release(struct pch_can_priv *priv)
++{
++	/* Stooping the CAN device. */
++	pch_can_set_run_mode(priv, PCH_CAN_STOP);
++
++	/* Disabling the interrupts. */
++	pch_can_set_int_enables(priv, PCH_CAN_NONE);
++
++	/* Disabling all the receive object. */
++	pch_can_rx_disable_all(priv);
++
++	/* Disabling all the transmit object. */
++	pch_can_tx_disable_all(priv);
++}
++
++/* This function clears interrupt(s) from the CAN device. */
++static void pch_can_int_clr(struct pch_can_priv *priv, u32 mask)
++{
++	if (mask == CAN_STATUS_INT) {
++		ioread32(&amp;priv-&gt;regs-&gt;stat);
++		return;
++	}
++
++	/* Clear interrupt for transmit object */
++	if ((mask &gt;= 1) &amp;&amp; (mask &lt;= PCH_RX_OBJ_NUM)) {
++		/* Setting CMASK for clearing the reception interrupts. */
++		iowrite32(CAN_CMASK_RDWR | CAN_CMASK_CTRL | CAN_CMASK_ARB,
++			  &amp;priv-&gt;regs-&gt;if1_cmask);
++
++		/* Clearing the Dir bit. */
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_id2, CAN_ID2_DIR);
++
++		/* Clearing NewDat &amp; IntPnd */
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mcont,
++				  CAN_IF_MCONT_NEWDAT | CAN_IF_MCONT_INTPND);
++
++		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, mask);
++	} else if ((mask &gt; PCH_RX_OBJ_NUM) &amp;&amp; (mask &lt;= PCH_OBJ_NUM)) {
++		/* Setting CMASK for clearing interrupts for
++		   frame transmission. */
++		iowrite32(CAN_CMASK_RDWR | CAN_CMASK_CTRL | CAN_CMASK_ARB,
++			  &amp;priv-&gt;regs-&gt;if2_cmask);
++
++		/* Resetting the ID registers. */
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_id2,
++			       CAN_ID2_DIR | (0x7ff &lt;&lt; 2));
++		iowrite32(0x0, &amp;priv-&gt;regs-&gt;if2_id1);
++
++		/* Claring NewDat, TxRqst &amp; IntPnd */
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_mcont,
++				  CAN_IF_MCONT_NEWDAT | CAN_IF_MCONT_INTPND |
++				  CAN_IF_MCONT_TXRQXT);
++		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, mask);
++	}
++}
++
++static u32 pch_can_get_buffer_status(struct pch_can_priv *priv)
++{
++	return (ioread32(&amp;priv-&gt;regs-&gt;treq1) &amp; 0xffff) |
++	       ((ioread32(&amp;priv-&gt;regs-&gt;treq2) &amp; 0xffff) &lt;&lt; 16);
++}
++
++static void pch_can_reset(struct pch_can_priv *priv)
++{
++	/* write to sw reset register */
++	iowrite32(1, &amp;priv-&gt;regs-&gt;srst);
++	iowrite32(0, &amp;priv-&gt;regs-&gt;srst);
++}
++
++static void pch_can_error(struct net_device *ndev, u32 status)
++{
++	struct sk_buff *skb;
++	struct pch_can_priv *priv = netdev_priv(ndev);
++	struct can_frame *cf;
++	u32 errc;
++	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
++	enum can_state state = priv-&gt;can.state;
++
++	skb = alloc_can_err_skb(ndev, &amp;cf);
++	if (!skb)
++		return;
++
++	if (status &amp; PCH_BUS_OFF) {
++		pch_can_tx_disable_all(priv);
++		pch_can_rx_disable_all(priv);
++		state = CAN_STATE_BUS_OFF;
++		cf-&gt;can_id |= CAN_ERR_BUSOFF;
++		can_bus_off(ndev);
++	}
++
++	/* Warning interrupt. */
++	if (status &amp; PCH_EWARN) {
++		state = CAN_STATE_ERROR_WARNING;
++		priv-&gt;can.can_stats.error_warning++;
++		cf-&gt;can_id |= CAN_ERR_CRTL;
++		errc = ioread32(&amp;priv-&gt;regs-&gt;errc);
++		if (((errc &amp; CAN_REC) &gt;&gt; 8) &gt; 96)
++			cf-&gt;data[1] |= CAN_ERR_CRTL_RX_WARNING;
++		if ((errc &amp; CAN_TEC) &gt; 96)
++			cf-&gt;data[1] |= CAN_ERR_CRTL_TX_WARNING;
++		dev_warn(&amp;ndev-&gt;dev,
++			&quot;%s -&gt; Error Counter is more than 96.\n&quot;, __func__);
++	}
++	/* Error passive interrupt. */
++	if (status &amp; PCH_EPASSIV) {
++		priv-&gt;can.can_stats.error_passive++;
++		state = CAN_STATE_ERROR_PASSIVE;
++		cf-&gt;can_id |= CAN_ERR_CRTL;
++		errc = ioread32(&amp;priv-&gt;regs-&gt;errc);
++		if (((errc &amp; CAN_REC) &gt;&gt; 8) &gt; 127)
++			cf-&gt;data[1] |= CAN_ERR_CRTL_RX_PASSIVE;
++		if ((errc &amp; CAN_TEC) &gt; 127)
++			cf-&gt;data[1] |= CAN_ERR_CRTL_TX_PASSIVE;
++		dev_err(&amp;ndev-&gt;dev,
++			&quot;%s -&gt; CAN controller is ERROR PASSIVE .\n&quot;, __func__);
++	}
++
++	if (status &amp; PCH_LEC_ALL) {
++		priv-&gt;can.can_stats.bus_error++;
++		stats-&gt;rx_errors++;
++		switch (status &amp; PCH_LEC_ALL) {
++		case PCH_STUF_ERR:
++			cf-&gt;data[2] |= CAN_ERR_PROT_STUFF;
++			break;
++		case PCH_FORM_ERR:
++			cf-&gt;data[2] |= CAN_ERR_PROT_FORM;
++			break;
++		case PCH_ACK_ERR:
++			cf-&gt;data[2] |= CAN_ERR_PROT_LOC_ACK |
++				       CAN_ERR_PROT_LOC_ACK_DEL;
++			break;
++		case PCH_BIT1_ERR:
++		case PCH_BIT0_ERR:
++			cf-&gt;data[2] |= CAN_ERR_PROT_BIT;
++			break;
++		case PCH_CRC_ERR:
++			cf-&gt;data[2] |= CAN_ERR_PROT_LOC_CRC_SEQ |
++				       CAN_ERR_PROT_LOC_CRC_DEL;
++			break;
++		default:
++			iowrite32(status | PCH_LEC_ALL, &amp;priv-&gt;regs-&gt;stat);
++			break;
++		}
++
++	}
++
++	priv-&gt;can.state = state;
++	netif_receive_skb(skb);
++
++	stats-&gt;rx_packets++;
++	stats-&gt;rx_bytes += cf-&gt;can_dlc;
++}
++
++static irqreturn_t pch_can_interrupt(int irq, void *dev_id)
++{
++	struct net_device *ndev = (struct net_device *)dev_id;
++	struct pch_can_priv *priv = netdev_priv(ndev);
++
++	pch_can_set_int_enables(priv, PCH_CAN_NONE);
++	napi_schedule(&amp;priv-&gt;napi);
++
++	return IRQ_HANDLED;
++}
++
++static void pch_fifo_thresh(struct pch_can_priv *priv, int obj_id)
++{
++	if (obj_id &lt; PCH_FIFO_THRESH) {
++		iowrite32(CAN_CMASK_RDWR | CAN_CMASK_CTRL |
++			  CAN_CMASK_ARB, &amp;priv-&gt;regs-&gt;if1_cmask);
++
++		/* Clearing the Dir bit. */
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_id2, CAN_ID2_DIR);
++
++		/* Clearing NewDat &amp; IntPnd */
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mcont,
++				  CAN_IF_MCONT_INTPND);
++		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, obj_id);
++	} else if (obj_id &gt; PCH_FIFO_THRESH) {
++		pch_can_int_clr(priv, obj_id);
++	} else if (obj_id == PCH_FIFO_THRESH) {
++		int cnt;
++		for (cnt = 0; cnt &lt; PCH_FIFO_THRESH; cnt++)
++			pch_can_int_clr(priv, cnt+1);
++	}
++}
++
++static int pch_can_rx_msg_lost(struct net_device *ndev, int obj_id)
++{
++	struct pch_can_priv *priv = netdev_priv(ndev);
++	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
++	struct sk_buff *skb;
++	struct can_frame *cf;
++
++	dev_err(&amp;priv-&gt;ndev-&gt;dev, &quot;Msg Obj is overwritten.\n&quot;);
++	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mcont,
++			  CAN_IF_MCONT_MSGLOST);
++	iowrite32(CAN_CMASK_RDWR | CAN_CMASK_CTRL,
++		  &amp;priv-&gt;regs-&gt;if1_cmask);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, obj_id);
++
++	skb = alloc_can_err_skb(ndev, &amp;cf);
++	if (!skb)
++		return -ENOMEM;
++
++	priv-&gt;can.can_stats.error_passive++;
++	priv-&gt;can.state = CAN_STATE_ERROR_PASSIVE;
++	cf-&gt;can_id |= CAN_ERR_CRTL;
++	cf-&gt;data[1] = CAN_ERR_CRTL_RX_OVERFLOW;
++	stats-&gt;rx_over_errors++;
++	stats-&gt;rx_errors++;
++
++	netif_receive_skb(skb);
++
++	return 0;
++}
++
++static int pch_can_rx_normal(struct net_device *ndev, u32 obj_num, int quota)
++{
++	u32 reg;
++	canid_t id;
++	u32 ide;
++	u32 rtr;
++	int rcv_pkts = 0;
++	int rtn;
++	int next_flag = 0;
++	struct sk_buff *skb;
++	struct can_frame *cf;
++	struct pch_can_priv *priv = netdev_priv(ndev);
++	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
++
++	/* Reading the messsage object from the Message RAM */
++	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if1_cmask);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, obj_num);
++
++	/* Reading the MCONT register. */
++	reg = ioread32(&amp;priv-&gt;regs-&gt;if1_mcont);
++	reg &amp;= 0xffff;
++
++	for (; (!(reg &amp; CAN_IF_MCONT_EOB)) &amp;&amp; (quota &gt; 0);
++						obj_num++, next_flag = 0) {
++		/* If MsgLost bit set. */
++		if (reg &amp; CAN_IF_MCONT_MSGLOST) {
++			rtn = pch_can_rx_msg_lost(ndev, obj_num);
++			if (!rtn)
++				return rtn;
++			rcv_pkts++;
++			quota--;
++			next_flag = 1;
++		} else if (!(reg &amp; CAN_IF_MCONT_NEWDAT))
++			next_flag = 1;
++
++		if (!next_flag) {
++			skb = alloc_can_skb(priv-&gt;ndev, &amp;cf);
++			if (!skb)
++				return -ENOMEM;
++
++			/* Get Received data */
++			ide = ((ioread32(&amp;priv-&gt;regs-&gt;if1_id2)) &amp; CAN_ID2_XTD);
++			if (ide) {
++				id = (ioread32(&amp;priv-&gt;regs-&gt;if1_id1) &amp; 0xffff);
++				id |= (((ioread32(&amp;priv-&gt;regs-&gt;if1_id2)) &amp;
++						    0x1fff) &lt;&lt; 16);
++				cf-&gt;can_id = (id &amp; CAN_EFF_MASK) | CAN_EFF_FLAG;
++			} else {
++				id = (((ioread32(&amp;priv-&gt;regs-&gt;if1_id2)) &amp;
++						  (CAN_SFF_MASK &lt;&lt; 2)) &gt;&gt; 2);
++				cf-&gt;can_id = (id &amp; CAN_SFF_MASK);
++			}
++
++			rtr = ioread32(&amp;priv-&gt;regs-&gt;if1_id2) &amp;  CAN_ID2_DIR;
++
++			if (rtr)
++				cf-&gt;can_id |= CAN_RTR_FLAG;
++
++			cf-&gt;can_dlc = get_can_dlc((ioread32(&amp;priv-&gt;regs-&gt;
++						   if1_mcont)) &amp; 0xF);
++			*(u16 *)(cf-&gt;data + 0) = ioread16(&amp;priv-&gt;regs-&gt;
++							  if1_dataa1);
++			*(u16 *)(cf-&gt;data + 2) = ioread16(&amp;priv-&gt;regs-&gt;
++							  if1_dataa2);
++			*(u16 *)(cf-&gt;data + 4) = ioread16(&amp;priv-&gt;regs-&gt;
++							  if1_datab1);
++			*(u16 *)(cf-&gt;data + 6) = ioread16(&amp;priv-&gt;regs-&gt;
++							  if1_datab2);
++
++			netif_receive_skb(skb);
++			rcv_pkts++;
++			stats-&gt;rx_packets++;
++			quota--;
++			stats-&gt;rx_bytes += cf-&gt;can_dlc;
++
++			pch_fifo_thresh(priv, obj_num);
++		}
++
++		/* Reading the messsage object from the Message RAM */
++		iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if1_cmask);
++		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, obj_num + 1);
++		reg = ioread32(&amp;priv-&gt;regs-&gt;if1_mcont);
++	}
++
++	return rcv_pkts;
++}
++
++static void pch_can_tx_complete(struct net_device *ndev, u32 int_stat)
++{
++	struct pch_can_priv *priv = netdev_priv(ndev);
++	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
++	unsigned long flags;
++	u32 dlc;
++
++	can_get_echo_skb(ndev, int_stat - PCH_RX_OBJ_NUM - 1);
++	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
++	iowrite32(CAN_CMASK_RX_TX_GET | CAN_CMASK_CLRINTPND,
++		  &amp;priv-&gt;regs-&gt;if2_cmask);
++	dlc = ioread32(&amp;priv-&gt;regs-&gt;if2_mcont) &amp; CAN_IF_MCONT_DLC;
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, int_stat);
++	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
++	if (dlc &gt; 8)
++		dlc = 8;
++	stats-&gt;tx_bytes += dlc;
++	stats-&gt;tx_packets++;
++}
++
++static int pch_can_rx_poll(struct napi_struct *napi, int quota)
++{
++	struct net_device *ndev = napi-&gt;dev;
++	struct pch_can_priv *priv = netdev_priv(ndev);
++	u32 int_stat;
++	int rcv_pkts = 0;
++	u32 reg_stat;
++	unsigned long flags;
++
++	int_stat = pch_can_int_pending(priv);
++	if (!int_stat)
++		goto END;
++
++	if ((int_stat == CAN_STATUS_INT) &amp;&amp; (quota &gt; 0)) {
++		reg_stat = ioread32(&amp;priv-&gt;regs-&gt;stat);
++		if (reg_stat &amp; (PCH_BUS_OFF | PCH_LEC_ALL)) {
++			if ((reg_stat &amp; PCH_LEC_ALL) != PCH_LEC_ALL) {
++				pch_can_error(ndev, reg_stat);
++				quota--;
++			}
++		}
++
++		if (reg_stat &amp; PCH_TX_OK) {
++			spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
++			iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if2_cmask);
++			pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq,
++					       ioread32(&amp;priv-&gt;regs-&gt;intr));
++			spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
++			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;stat, PCH_TX_OK);
++		}
++
++		if (reg_stat &amp; PCH_RX_OK)
++			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;stat, PCH_RX_OK);
++
++		int_stat = pch_can_int_pending(priv);
++	}
++
++	if (quota == 0)
++		goto END;
++
++	if ((int_stat &gt;= 1) &amp;&amp; (int_stat &lt;= PCH_RX_OBJ_NUM)) {
++		spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
++		rcv_pkts += pch_can_rx_normal(ndev, int_stat, quota);
++		spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
++		quota -= rcv_pkts;
++		if (rcv_pkts &lt; 0)
++			goto END;
++	} else if ((int_stat &gt; PCH_RX_OBJ_NUM) &amp;&amp; (int_stat &lt;= PCH_OBJ_NUM)) {
++		/* Handle transmission interrupt */
++		pch_can_tx_complete(ndev, int_stat);
++	}
++
++END:
++	napi_complete(napi);
++	pch_can_set_int_enables(priv, PCH_CAN_ALL);
++
++	return rcv_pkts;
++}
++
++static int pch_set_bittiming(struct net_device *ndev)
++{
++	struct pch_can_priv *priv = netdev_priv(ndev);
++	const struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
++	u32 canbit;
++	u32 bepe;
++
++	/* Setting the CCE bit for accessing the Can Timing register. */
++	pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_CCE);
++
++	canbit = (bt-&gt;brp - 1) &amp; MSK_BITT_BRP;
++	canbit |= (bt-&gt;sjw - 1) &lt;&lt; BIT_BITT_SJW;
++	canbit |= (bt-&gt;phase_seg1 + bt-&gt;prop_seg - 1) &lt;&lt; BIT_BITT_TSEG1;
++	canbit |= (bt-&gt;phase_seg2 - 1) &lt;&lt; BIT_BITT_TSEG2;
++	bepe = ((bt-&gt;brp - 1) &amp; MSK_BRPE_BRPE) &gt;&gt; BIT_BRPE_BRPE;
++	iowrite32(canbit, &amp;priv-&gt;regs-&gt;bitt);
++	iowrite32(bepe, &amp;priv-&gt;regs-&gt;brpe);
++	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_CCE);
++
++	return 0;
++}
++
++static void pch_can_start(struct net_device *ndev)
++{
++	struct pch_can_priv *priv = netdev_priv(ndev);
++
++	if (priv-&gt;can.state != CAN_STATE_STOPPED)
++		pch_can_reset(priv);
++
++	pch_set_bittiming(ndev);
++	pch_can_set_optmode(priv);
++
++	pch_can_tx_enable_all(priv);
++	pch_can_rx_enable_all(priv);
++
++	/* Setting the CAN to run mode. */
++	pch_can_set_run_mode(priv, PCH_CAN_RUN);
++
++	priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
++
++	return;
++}
++
++static int pch_can_do_set_mode(struct net_device *ndev, enum can_mode mode)
++{
++	int ret = 0;
++
++	switch (mode) {
++	case CAN_MODE_START:
++		pch_can_start(ndev);
++		netif_wake_queue(ndev);
++		break;
++	default:
++		ret = -EOPNOTSUPP;
++		break;
++	}
++
++	return ret;
++}
++
++static int pch_can_open(struct net_device *ndev)
++{
++	struct pch_can_priv *priv = netdev_priv(ndev);
++	int retval;
++
++	/* Regsitering the interrupt. */
++	retval = request_irq(priv-&gt;dev-&gt;irq, pch_can_interrupt, IRQF_SHARED,
++			     ndev-&gt;name, ndev);
++	if (retval) {
++		dev_err(&amp;ndev-&gt;dev, &quot;request_irq failed.\n&quot;);
++		goto req_irq_err;
++	}
++
++	/* Open common can device */
++	retval = open_candev(ndev);
++	if (retval) {
++		dev_err(ndev-&gt;dev.parent, &quot;open_candev() failed %d\n&quot;, retval);
++		goto err_open_candev;
++	}
++
++	pch_can_init(priv);
++	pch_can_start(ndev);
++	napi_enable(&amp;priv-&gt;napi);
++	netif_start_queue(ndev);
++
++	return 0;
++
++err_open_candev:
++	free_irq(priv-&gt;dev-&gt;irq, ndev);
++req_irq_err:
++	pch_can_release(priv);
++
++	return retval;
++}
++
++static int pch_close(struct net_device *ndev)
++{
++	struct pch_can_priv *priv = netdev_priv(ndev);
++
++	netif_stop_queue(ndev);
++	napi_disable(&amp;priv-&gt;napi);
++	pch_can_release(priv);
++	free_irq(priv-&gt;dev-&gt;irq, ndev);
++	close_candev(ndev);
++	priv-&gt;can.state = CAN_STATE_STOPPED;
++	return 0;
++}
++
++static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
++{
++	unsigned long flags;
++	struct pch_can_priv *priv = netdev_priv(ndev);
++	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
++	int tx_buffer_avail = 0;
++
++	if (can_dropped_invalid_skb(ndev, skb))
++		return NETDEV_TX_OK;
++
++	if (priv-&gt;tx_obj == (PCH_OBJ_NUM + 1)) { /* Point tail Obj + 1 */
++		while (ioread32(&amp;priv-&gt;regs-&gt;treq2) &amp; 0xfc00)
++			udelay(1);
++		priv-&gt;tx_obj = PCH_RX_OBJ_NUM + 1; /* Point head of Tx Obj ID */
++	}
++
++	tx_buffer_avail = priv-&gt;tx_obj;
++	priv-&gt;tx_obj++;
++
++	/* Attaining the lock. */
++	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
++
++	/* Setting the CMASK register to set value*/
++	iowrite32(CAN_CMASK_RX_TX_SET, &amp;priv-&gt;regs-&gt;if2_cmask);
++
++	/* If ID extended is set. */
++	if (cf-&gt;can_id &amp; CAN_EFF_FLAG) {
++		iowrite32(cf-&gt;can_id &amp; 0xffff, &amp;priv-&gt;regs-&gt;if2_id1);
++		iowrite32(((cf-&gt;can_id &gt;&gt; 16) &amp; 0x1fff) | CAN_ID2_XTD,
++			    &amp;priv-&gt;regs-&gt;if2_id2);
++	} else {
++		iowrite32(0, &amp;priv-&gt;regs-&gt;if2_id1);
++		iowrite32((cf-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 2,
++			   &amp;priv-&gt;regs-&gt;if2_id2);
++	}
++
++	pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_id2, CAN_ID_MSGVAL);
++
++	/* If remote frame has to be transmitted.. */
++	if (!(cf-&gt;can_id &amp; CAN_RTR_FLAG))
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_id2, CAN_ID2_DIR);
++
++	/* If remote frame has to be transmitted.. */
++	if (cf-&gt;can_id &amp; CAN_RTR_FLAG)
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if2_id2, CAN_ID2_DIR);
++
++	/* Copy data to register */
++	if (cf-&gt;can_dlc &gt; 0) {
++		u32 data1 = *((u16 *)&amp;cf-&gt;data[0]);
++		iowrite32(data1, &amp;priv-&gt;regs-&gt;if2_dataa1);
++	}
++	if (cf-&gt;can_dlc &gt; 2) {
++		u32 data1 = *((u16 *)&amp;cf-&gt;data[2]);
++		iowrite32(data1, &amp;priv-&gt;regs-&gt;if2_dataa2);
++	}
++	if (cf-&gt;can_dlc &gt; 4) {
++		u32 data1 = *((u16 *)&amp;cf-&gt;data[4]);
++		iowrite32(data1, &amp;priv-&gt;regs-&gt;if2_datab1);
++	}
++	if (cf-&gt;can_dlc &gt; 6) {
++		u32 data1 = *((u16 *)&amp;cf-&gt;data[6]);
++		iowrite32(data1, &amp;priv-&gt;regs-&gt;if2_datab2);
++	}
++
++	can_put_echo_skb(skb, ndev, tx_buffer_avail - PCH_RX_OBJ_NUM - 1);
++
++	/* Set the size of the data. */
++	iowrite32(cf-&gt;can_dlc, &amp;priv-&gt;regs-&gt;if2_mcont);
++
++	/* Update if2_mcont */
++	pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_mcont,
++			CAN_IF_MCONT_NEWDAT | CAN_IF_MCONT_TXRQXT |
++			CAN_IF_MCONT_TXIE);
++
++	if (tx_buffer_avail == PCH_RX_OBJ_NUM) /* If points tail of FIFO  */
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if2_mcont, CAN_IF_MCONT_EOB);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, tx_buffer_avail);
++	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
++
++	return NETDEV_TX_OK;
++}
++
++static const struct net_device_ops pch_can_netdev_ops = {
++	.ndo_open		= pch_can_open,
++	.ndo_stop		= pch_close,
++	.ndo_start_xmit		= pch_xmit,
++};
++
++static void __devexit pch_can_remove(struct pci_dev *pdev)
++{
++	struct net_device *ndev = pci_get_drvdata(pdev);
++	struct pch_can_priv *priv = netdev_priv(ndev);
++
++	unregister_candev(priv-&gt;ndev);
++	pci_iounmap(pdev, priv-&gt;regs);
++	if (priv-&gt;use_msi)
++		pci_disable_msi(priv-&gt;dev);
++	pci_release_regions(pdev);
++	pci_disable_device(pdev);
++	pci_set_drvdata(pdev, NULL);
++	free_candev(priv-&gt;ndev);
++}
++
++#ifdef CONFIG_PM
++static void pch_can_set_int_custom(struct pch_can_priv *priv)
++{
++	/* Clearing the IE, SIE and EIE bits of Can control register. */
++	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;cont, CAN_CTRL_IE_SIE_EIE);
++
++	/* Appropriately setting them. */
++	pch_can_bit_set(&amp;priv-&gt;regs-&gt;cont,
++			((priv-&gt;int_enables &amp; MSK_CTRL_IE_SIE_EIE) &lt;&lt; 1));
++}
++
++/* This function retrieves interrupt enabled for the CAN device. */
++static u32 pch_can_get_int_enables(struct pch_can_priv *priv)
++{
++	/* Obtaining the status of IE, SIE and EIE interrupt bits. */
++	return (ioread32(&amp;priv-&gt;regs-&gt;cont) &amp; CAN_CTRL_IE_SIE_EIE) &gt;&gt; 1;
++}
++
++static u32 pch_can_get_rx_enable(struct pch_can_priv *priv, u32 buff_num)
++{
++	unsigned long flags;
++	u32 enable;
++
++	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
++	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if1_cmask);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, buff_num);
++
++	if (((ioread32(&amp;priv-&gt;regs-&gt;if1_id2)) &amp; CAN_ID_MSGVAL) &amp;&amp;
++			((ioread32(&amp;priv-&gt;regs-&gt;if1_mcont)) &amp;
++			CAN_IF_MCONT_RXIE))
++		enable = 1;
++	else
++		enable = 0;
++	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
++	return enable;
++}
++
++static u32 pch_can_get_tx_enable(struct pch_can_priv *priv, u32 buff_num)
++{
++	unsigned long flags;
++	u32 enable;
++
++	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
++
++	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if2_cmask);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if2_creq, buff_num);
++	if (((ioread32(&amp;priv-&gt;regs-&gt;if2_id2)) &amp; CAN_ID_MSGVAL) &amp;&amp;
++			((ioread32(&amp;priv-&gt;regs-&gt;if2_mcont)) &amp;
++			CAN_IF_MCONT_TXIE)) {
++		enable = 1;
++	} else {
++		enable = 0;
++	}
++	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
++
++	return enable;
++}
++
++static void pch_can_set_rx_buffer_link(struct pch_can_priv *priv,
++				       u32 buffer_num, u32 set)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
++	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if1_cmask);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, buffer_num);
++	iowrite32(CAN_CMASK_RDWR | CAN_CMASK_CTRL, &amp;priv-&gt;regs-&gt;if1_cmask);
++	if (set == 1)
++		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;if1_mcont, CAN_IF_MCONT_EOB);
++	else
++		pch_can_bit_set(&amp;priv-&gt;regs-&gt;if1_mcont, CAN_IF_MCONT_EOB);
++
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, buffer_num);
++	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
++}
++
++static u32 pch_can_get_rx_buffer_link(struct pch_can_priv *priv, u32 buffer_num)
++{
++	unsigned long flags;
++	u32 link;
++
++	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
++	iowrite32(CAN_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;if1_cmask);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;if1_creq, buffer_num);
++
++	if (ioread32(&amp;priv-&gt;regs-&gt;if1_mcont) &amp; CAN_IF_MCONT_EOB)
++		link = 0;
++	else
++		link = 1;
++	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
++	return link;
++}
++
++static int pch_can_suspend(struct pci_dev *pdev, pm_message_t state)
++{
++	int i;
++	int retval;
++	u32 buf_stat;	/* Variable for reading the transmit buffer status. */
++	u32 counter = COUNTER_LIMIT;
++
++	struct net_device *dev = pci_get_drvdata(pdev);
++	struct pch_can_priv *priv = netdev_priv(dev);
++
++	/* Stop the CAN controller */
++	pch_can_set_run_mode(priv, PCH_CAN_STOP);
++
++	/* Indicate that we are aboutto/in suspend */
++	priv-&gt;can.state = CAN_STATE_STOPPED;
++
++	/* Waiting for all transmission to complete. */
++	while (counter) {
++		buf_stat = pch_can_get_buffer_status(priv);
++		if (!buf_stat)
++			break;
++		counter--;
++		udelay(1);
++	}
++	if (!counter)
++		dev_err(&amp;pdev-&gt;dev, &quot;%s -&gt; Transmission time out.\n&quot;, __func__);
++
++	/* Save interrupt configuration and then disable them */
++	priv-&gt;int_enables = pch_can_get_int_enables(priv);
++	pch_can_set_int_enables(priv, PCH_CAN_DISABLE);
++
++	/* Save Tx buffer enable state */
++	for (i = PCH_RX_OBJ_NUM + 1; i &lt;= PCH_OBJ_NUM; i++)
++		priv-&gt;tx_enable[i] = pch_can_get_tx_enable(priv, i);
++
++	/* Disable all Transmit buffers */
++	pch_can_tx_disable_all(priv);
++
++	/* Save Rx buffer enable state */
++	for (i = 1; i &lt;= PCH_RX_OBJ_NUM; i++) {
++		priv-&gt;rx_enable[i] = pch_can_get_rx_enable(priv, i);
++		priv-&gt;rx_link[i] = pch_can_get_rx_buffer_link(priv, i);
++	}
++
++	/* Disable all Receive buffers */
++	pch_can_rx_disable_all(priv);
++	retval = pci_save_state(pdev);
++	if (retval) {
++		dev_err(&amp;pdev-&gt;dev, &quot;pci_save_state failed.\n&quot;);
++	} else {
++		pci_enable_wake(pdev, PCI_D3hot, 0);
++		pci_disable_device(pdev);
++		pci_set_power_state(pdev, pci_choose_state(pdev, state));
++	}
++
++	return retval;
++}
++
++static int pch_can_resume(struct pci_dev *pdev)
++{
++	int i;
++	int retval;
++	struct net_device *dev = pci_get_drvdata(pdev);
++	struct pch_can_priv *priv = netdev_priv(dev);
++
++	pci_set_power_state(pdev, PCI_D0);
++	pci_restore_state(pdev);
++	retval = pci_enable_device(pdev);
++	if (retval) {
++		dev_err(&amp;pdev-&gt;dev, &quot;pci_enable_device failed.\n&quot;);
++		return retval;
++	}
++
++	pci_enable_wake(pdev, PCI_D3hot, 0);
++
++	priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
++
++	/* Disabling all interrupts. */
++	pch_can_set_int_enables(priv, PCH_CAN_DISABLE);
++
++	/* Setting the CAN device in Stop Mode. */
++	pch_can_set_run_mode(priv, PCH_CAN_STOP);
++
++	/* Configuring the transmit and receive buffers. */
++	pch_can_config_rx_tx_buffers(priv);
++
++	/* Restore the CAN state */
++	pch_set_bittiming(dev);
++
++	/* Listen/Active */
++	pch_can_set_optmode(priv);
++
++	/* Enabling the transmit buffer. */
++	for (i = 1; i &lt;= PCH_RX_OBJ_NUM; i++)
++		pch_can_set_tx_enable(priv, i, priv-&gt;tx_enable[i]);
++
++	/* Configuring the receive buffer and enabling them. */
++	for (i = PCH_RX_OBJ_NUM + 1; i &lt;= PCH_OBJ_NUM; i++) {
++		/* Restore buffer link */
++		pch_can_set_rx_buffer_link(priv, i, priv-&gt;rx_link[i]);
++
++		/* Restore buffer enables */
++		pch_can_set_rx_enable(priv, i, priv-&gt;rx_enable[i]);
++	}
++
++	/* Enable CAN Interrupts */
++	pch_can_set_int_custom(priv);
++
++	/* Restore Run Mode */
++	pch_can_set_run_mode(priv, PCH_CAN_RUN);
++
++	return retval;
++}
++#else
++#define pch_can_suspend NULL
++#define pch_can_resume NULL
++#endif
++
++static int pch_can_get_berr_counter(const struct net_device *dev,
++				    struct can_berr_counter *bec)
++{
++	struct pch_can_priv *priv = netdev_priv(dev);
++
++	bec-&gt;txerr = ioread32(&amp;priv-&gt;regs-&gt;errc) &amp; CAN_TEC;
++	bec-&gt;rxerr = (ioread32(&amp;priv-&gt;regs-&gt;errc) &amp; CAN_REC) &gt;&gt; 8;
++
++	return 0;
++}
++
++static int __devinit pch_can_probe(struct pci_dev *pdev,
++				   const struct pci_device_id *id)
++{
++	struct net_device *ndev;
++	struct pch_can_priv *priv;
++	int rc;
++	void __iomem *addr;
++
++	rc = pci_enable_device(pdev);
++	if (rc) {
++		dev_err(&amp;pdev-&gt;dev, &quot;Failed pci_enable_device %d\n&quot;, rc);
++		goto probe_exit_endev;
++	}
++
++	rc = pci_request_regions(pdev, KBUILD_MODNAME);
++	if (rc) {
++		dev_err(&amp;pdev-&gt;dev, &quot;Failed pci_request_regions %d\n&quot;, rc);
++		goto probe_exit_pcireq;
++	}
++
++	addr = pci_iomap(pdev, 1, 0);
++	if (!addr) {
++		rc = -EIO;
++		dev_err(&amp;pdev-&gt;dev, &quot;Failed pci_iomap\n&quot;);
++		goto probe_exit_ipmap;
++	}
++
++	ndev = alloc_candev(sizeof(struct pch_can_priv), PCH_TX_OBJ_NUM);
++	if (!ndev) {
++		rc = -ENOMEM;
++		dev_err(&amp;pdev-&gt;dev, &quot;Failed alloc_candev\n&quot;);
++		goto probe_exit_alloc_candev;
++	}
++
++	priv = netdev_priv(ndev);
++	priv-&gt;ndev = ndev;
++	priv-&gt;regs = addr;
++	priv-&gt;dev = pdev;
++	priv-&gt;can.bittiming_const = &amp;pch_can_bittiming_const;
++	priv-&gt;can.do_set_mode = pch_can_do_set_mode;
++	priv-&gt;can.do_get_berr_counter = pch_can_get_berr_counter;
++	priv-&gt;can.ctrlmode_supported = CAN_CTRLMODE_LISTENONLY |
++				       CAN_CTRLMODE_LOOPBACK;
++	priv-&gt;tx_obj = PCH_RX_OBJ_NUM + 1; /* Point head of Tx Obj */
++
++	ndev-&gt;irq = pdev-&gt;irq;
++	ndev-&gt;flags |= IFF_ECHO;
++
++	pci_set_drvdata(pdev, ndev);
++	SET_NETDEV_DEV(ndev, &amp;pdev-&gt;dev);
++	ndev-&gt;netdev_ops = &amp;pch_can_netdev_ops;
++	priv-&gt;can.clock.freq = PCH_CAN_CLK; /* Hz */
++
++	netif_napi_add(ndev, &amp;priv-&gt;napi, pch_can_rx_poll, PCH_RX_OBJ_NUM);
++
++	rc = pci_enable_msi(priv-&gt;dev);
++	if (rc) {
++		dev_info(&amp;ndev-&gt;dev, &quot;PCH CAN opened without MSI\n&quot;);
++		priv-&gt;use_msi = 0;
++	} else {
++		dev_info(&amp;ndev-&gt;dev, &quot;PCH CAN opened with MSI\n&quot;);
++		priv-&gt;use_msi = 1;
++	}
++
++	rc = register_candev(ndev);
++	if (rc) {
++		dev_err(&amp;pdev-&gt;dev, &quot;Failed register_candev %d\n&quot;, rc);
++		goto probe_exit_reg_candev;
++	}
++
++	return 0;
++
++probe_exit_reg_candev:
++	free_candev(ndev);
++probe_exit_alloc_candev:
++	pci_iounmap(pdev, addr);
++probe_exit_ipmap:
++	pci_release_regions(pdev);
++probe_exit_pcireq:
++	pci_disable_device(pdev);
++probe_exit_endev:
++	return rc;
++}
++
++static struct pci_driver pch_can_pcidev = {
++	.name = &quot;pch_can&quot;,
++	.id_table = pch_pci_tbl,
++	.probe = pch_can_probe,
++	.remove = __devexit_p(pch_can_remove),
++	.suspend = pch_can_suspend,
++	.resume = pch_can_resume,
++};
++
++static int __init pch_can_pci_init(void)
++{
++	return pci_register_driver(&amp;pch_can_pcidev);
++}
++module_init(pch_can_pci_init);
++
++static void __exit pch_can_pci_exit(void)
++{
++	pci_unregister_driver(&amp;pch_can_pcidev);
++}
++module_exit(pch_can_pci_exit);
++
++MODULE_DESCRIPTION(&quot;Intel EG20T PCH CAN(Controller Area Network) Driver&quot;);
++MODULE_LICENSE(&quot;GPL v2&quot;);
++MODULE_VERSION(&quot;0.94&quot;);
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004896.html">can: About Socket CAN with MSI issue
+</A></li>
+	<LI>Next message: <A HREF="004901.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4900">[ date ]</a>
+              <a href="thread.html#4900">[ thread ]</a>
+              <a href="subject.html#4900">[ subject ]</a>
+              <a href="author.html#4900">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,160 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 2/3] can: at91_can: don't use mailbox 0
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/3%5D%20can%3A%20at91_can%3A%20don%27t%20use%20mailbox%200&In-Reply-To=%3C1294741688-22699-3-git-send-email-mkl%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005331.html">
+   <LINK REL="Next"  HREF="005333.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 2/3] can: at91_can: don't use mailbox 0</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/3%5D%20can%3A%20at91_can%3A%20don%27t%20use%20mailbox%200&In-Reply-To=%3C1294741688-22699-3-git-send-email-mkl%40pengutronix.de%3E"
+       TITLE="[PATCH 2/3] can: at91_can: don't use mailbox 0">mkl at pengutronix.de
+       </A><BR>
+    <I>Tue Jan 11 11:28:07 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005331.html">[PATCH 1/3] can: at91_can: clean up usage of AT91_MB_RX_FIRST and	AT91_MB_RX_NUM
+</A></li>
+        <LI>Next message: <A HREF="005333.html">[PATCH 3/3] can: at91_can: make can_id of mailbox 0 configurable
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5332">[ date ]</a>
+              <a href="thread.html#5332">[ thread ]</a>
+              <a href="subject.html#5332">[ subject ]</a>
+              <a href="author.html#5332">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Due to a chip bug (errata 50.2.6.3 &amp; 50.3.5.3 in
+&quot;AT91SAM9263 Preliminary 6249H-ATARM-27-Jul-09&quot;) the contents of mailbox
+0 may be send under certain conditions (even if disabled or in rx mode).
+
+The workaround in the errata suggests not to use the mailbox and load it
+with a unused identifier.
+
+This patch implements the first part of the workaround, it updates
+AT91_MB_RX_NUM and AT91_MB_RX_FIRST (and the inline documentation)
+so that mailbox 0 stays unused.
+
+Signed-off-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+---
+ drivers/net/can/at91_can.c |   32 ++++++++++++++++++++------------
+ 1 files changed, 20 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/net/can/at91_can.c b/drivers/net/can/at91_can.c
+index 892c3d8..16e45a5 100644
+--- a/drivers/net/can/at91_can.c
++++ b/drivers/net/can/at91_can.c
+@@ -40,16 +40,16 @@
+ 
+ #include &lt;mach/board.h&gt;
+ 
+-#define AT91_NAPI_WEIGHT	12
++#define AT91_NAPI_WEIGHT	11
+ 
+ /*
+  * RX/TX Mailbox split
+  * don't dare to touch
+  */
+-#define AT91_MB_RX_NUM		12
++#define AT91_MB_RX_NUM		11
+ #define AT91_MB_TX_SHIFT	2
+ 
+-#define AT91_MB_RX_FIRST	0
++#define AT91_MB_RX_FIRST	1
+ #define AT91_MB_RX_LAST		(AT91_MB_RX_FIRST + AT91_MB_RX_NUM - 1)
+ 
+ #define AT91_MB_RX_MASK(i)	((1 &lt;&lt; (i)) - 1)
+@@ -236,10 +236,14 @@ static void at91_setup_mailboxes(struct net_device *dev)
+ 	unsigned int i;
+ 
+ 	/*
+-	 * The first 12 mailboxes are used as a reception FIFO. The
+-	 * last mailbox is configured with overwrite option. The
+-	 * overwrite flag indicates a FIFO overflow.
++	 * Due to a chip bug (errata 50.2.6.3 &amp; 50.3.5.3) the first
++	 * mailbox is disabled. The next 11 mailboxes are used as a
++	 * reception FIFO. The last mailbox is configured with
++	 * overwrite option. The overwrite flag indicates a FIFO
++	 * overflow.
+ 	 */
++	for (i = 0; i &lt; AT91_MB_RX_FIRST; i++)
++		set_mb_mode(priv, i, AT91_MB_MODE_DISABLED);
+ 	for (i = AT91_MB_RX_FIRST; i &lt; AT91_MB_RX_LAST; i++)
+ 		set_mb_mode(priv, i, AT91_MB_MODE_RX);
+ 	set_mb_mode(priv, AT91_MB_RX_LAST, AT91_MB_MODE_RX_OVRWR);
+@@ -541,27 +545,31 @@ static void at91_read_msg(struct net_device *dev, unsigned int mb)
+  *
+  * Theory of Operation:
+  *
+- * 12 of the 16 mailboxes on the chip are reserved for RX. we split
+- * them into 2 groups. The lower group holds 8 and upper 4 mailboxes.
++ * 11 of the 16 mailboxes on the chip are reserved for RX. we split
++ * them into 2 groups. The lower group holds 7 and upper 4 mailboxes.
+  *
+  * Like it or not, but the chip always saves a received CAN message
+  * into the first free mailbox it finds (starting with the
+  * lowest). This makes it very difficult to read the messages in the
+  * right order from the chip. This is how we work around that problem:
+  *
+- * The first message goes into mb nr. 0 and issues an interrupt. All
++ * The first message goes into mb nr. 1 and issues an interrupt. All
+  * rx ints are disabled in the interrupt handler and a napi poll is
+  * scheduled. We read the mailbox, but do _not_ reenable the mb (to
+  * receive another message).
+  *
+  *    lower mbxs      upper
+- *   ______^______    __^__
+- *  /             \  /     \
++ *     ____^______    __^__
++ *    /           \  /     \
+  * +-+-+-+-+-+-+-+-++-+-+-+-+
+- * |x|x|x|x|x|x|x|x|| | | | |
++ * | |x|x|x|x|x|x|x|| | | | |
+  * +-+-+-+-+-+-+-+-++-+-+-+-+
+  *  0 0 0 0 0 0  0 0 0 0 1 1  \ mail
+  *  0 1 2 3 4 5  6 7 8 9 0 1  / box
++ *  ^
++ *  |
++ *   \
++ *     unused, due to chip bug
+  *
+  * The variable priv-&gt;rx_next points to the next mailbox to read a
+  * message from. As long we're in the lower mailboxes we just read the
+-- 
+1.7.2.3
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005331.html">[PATCH 1/3] can: at91_can: clean up usage of AT91_MB_RX_FIRST and	AT91_MB_RX_NUM
+</A></li>
+	<LI>Next message: <A HREF="005333.html">[PATCH 3/3] can: at91_can: make can_id of mailbox 0 configurable
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5332">[ date ]</a>
+              <a href="thread.html#5332">[ thread ]</a>
+              <a href="subject.html#5332">[ subject ]</a>
+              <a href="author.html#5332">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,210 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> merging branches/netlink: please test
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20merging%20branches/netlink%3A%20please%20test&In-Reply-To=%3C4A2FC32E.6000507%40visionsystems.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002614.html">
+   <LINK REL="Next"  HREF="002616.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>merging branches/netlink: please test</H1>
+    <B>Yegor Yefremov</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20merging%20branches/netlink%3A%20please%20test&In-Reply-To=%3C4A2FC32E.6000507%40visionsystems.de%3E"
+       TITLE="merging branches/netlink: please test">yegor_sub1 at visionsystems.de
+       </A><BR>
+    <I>Wed Jun 10 16:29:02 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002614.html">merging branches/netlink: please test
+</A></li>
+        <LI>Next message: <A HREF="002616.html">merging branches/netlink: please test
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2615">[ date ]</a>
+              <a href="thread.html#2615">[ thread ]</a>
+              <a href="subject.html#2615">[ subject ]</a>
+              <a href="author.html#2615">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello Wolfgang,
+&gt;<i> Hello,
+</I>&gt;<i> 
+</I>&gt;<i> as you might have already realized, we are currently working on the SVN
+</I>&gt;<i> branch &quot;branches/netlink&quot;, which is in sync with the Socket-CAN code
+</I>&gt;<i> showing up in the 2.6.31 kernel soon. The major change is the support
+</I>&gt;<i> for the netlink interface, but backward compatibility for the deprecated
+</I>&gt;<i> sysfs interface is still available. I have done, with the help of
+</I>&gt;<i> Oliver, all the necessary porting and the existing drivers should work,
+</I>&gt;<i> in principle, but we cannot test most of them. We actually plan to merge
+</I>&gt;<i> this branch into &quot;trunk&quot; in, let's say, one week from now and it would
+</I>&gt;<i> therefore be nice if you could provide some feedback and especially do
+</I>&gt;<i> some testing on the real hardware at your hand, if not already done.
+</I>&gt;<i> FYI, I have added a &quot;README.known-issues&quot; with problems I realized while
+</I>&gt;<i> touching the drivers.
+</I>
+I found some issues see the patch below:
+
+Small fixes
+
+- add at91_can.c to FILES-2.6-ALL
+- fixes for the new can_priv struct and can_status values
+
+Signed-off-by: Yegor Yefremov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">yegorslists at googlemail.com</A>&gt;
+
+Index: netlink/FILES-2.6-ALL
+===================================================================
+--- netlink.orig/FILES-2.6-ALL
++++ netlink/FILES-2.6-ALL
+@@ -27,6 +27,7 @@ kernel/2.6/drivers/net/can/softing/Makef
+ kernel/2.6/drivers/net/can/dev.c
+ kernel/2.6/drivers/net/can/sysfs.h
+ kernel/2.6/drivers/net/can/mcp251x.c
++kernel/2.6/drivers/net/can/at91_can.c
+ kernel/2.6/drivers/net/can/Makefile
+ kernel/2.6/drivers/net/can/mscan/mscan.c
+ kernel/2.6/drivers/net/can/mscan/mpc52xx_can.c
+Index: netlink/kernel/2.6/drivers/net/can/at91_can.c
+===================================================================
+--- netlink.orig/kernel/2.6/drivers/net/can/at91_can.c
++++ netlink/kernel/2.6/drivers/net/can/at91_can.c
+@@ -611,11 +611,11 @@
+ 	if (unlikely(reg_sr &amp; AT91_IRQ_BOFF))
+ 		new_state = CAN_STATE_BUS_OFF;
+ 	else if (unlikely(reg_sr &amp; AT91_IRQ_ERRP))
+-		new_state = CAN_STATE_BUS_PASSIVE;
++		new_state = CAN_STATE_ERROR_PASSIVE;
+ 	else if (unlikely(reg_sr &amp; AT91_IRQ_WARN))
+-		new_state = CAN_STATE_BUS_WARNING;
++		new_state = CAN_STATE_ERROR_WARNING;
+ 	else if (likely(reg_sr &amp; AT91_IRQ_ERRA))
+-		new_state = CAN_STATE_ACTIVE;
++		new_state = CAN_STATE_ERROR_ACTIVE;
+ 	else {
+ 		BUG();	/* FIXME */
+ 		return;
+@@ -628,22 +628,22 @@
+ 
+ 
+ 	switch (priv-&gt;can.state) {
+-	case CAN_STATE_ACTIVE:
++	case CAN_STATE_ERROR_ACTIVE:
+ 		/*
+ 		 * from: ACTIVE
+ 		 * to  : BUS_WARNING, BUS_PASSIVE, BUS_OFF
+ 		 * =&gt;  : there was a warning int
+ 		 */
+-		if (new_state &gt;= CAN_STATE_BUS_WARNING &amp;&amp;
++		if (new_state &gt;= CAN_STATE_ERROR_WARNING &amp;&amp;
+ 		    new_state &lt;= CAN_STATE_BUS_OFF)
+ 			priv-&gt;can.can_stats.error_warning++;
+-	case CAN_STATE_BUS_WARNING:	/* fallthrough */
++	case CAN_STATE_ERROR_WARNING:	/* fallthrough */
+ 		/*
+ 		 * from: ACTIVE, BUS_WARNING
+ 		 * to  : BUS_PASSIVE, BUS_OFF
+ 		 * =&gt;  : error passive int
+ 		 */
+-		if (new_state &gt;= CAN_STATE_BUS_PASSIVE &amp;&amp;
++		if (new_state &gt;= CAN_STATE_ERROR_PASSIVE &amp;&amp;
+ 		    new_state &lt;= CAN_STATE_BUS_OFF)
+ 			priv-&gt;can.can_stats.error_passive++;
+ 		break;
+@@ -654,7 +654,7 @@
+ 		 * success it leaves bus off. so we have to reenable
+ 		 * the carrier.
+ 		 */
+-		if (new_state &lt;= CAN_STATE_BUS_PASSIVE)
++		if (new_state &lt;= CAN_STATE_ERROR_PASSIVE)
+ 			netif_carrier_on(dev);
+ 		break;
+ 	default:
+@@ -664,18 +664,18 @@
+ 
+ 	/* process state changes depending on the new state */
+ 	switch (new_state) {
+-	case CAN_STATE_ACTIVE:
++	case CAN_STATE_ERROR_ACTIVE:
+ 		/*
+ 		 * actually we want to enable AT91_IRQ_WARN here, but
+ 		 * it screws up the system under certain
+ 		 * circumstances. so just enable AT91_IRQ_ERRP, thus
+ 		 * the &quot;fallthrough&quot;
+ 		 */
+-	case CAN_STATE_BUS_WARNING:	/* fallthrough */
++	case CAN_STATE_ERROR_WARNING:	/* fallthrough */
+ 		reg_idr = AT91_IRQ_ERRA | AT91_IRQ_WARN | AT91_IRQ_BOFF;
+ 		reg_ier = AT91_IRQ_ERRP;
+ 		break;
+-	case CAN_STATE_BUS_PASSIVE:
++	case CAN_STATE_ERROR_PASSIVE:
+ 		reg_idr = AT91_IRQ_ERRA | AT91_IRQ_WARN | AT91_IRQ_ERRP;
+ 		reg_ier = AT91_IRQ_BOFF;
+ 		break;
+@@ -730,11 +730,11 @@
+ 		cf-&gt;can_dlc = CAN_ERR_DLC;
+ 
+ 		switch (new_state) {
+-		case CAN_STATE_BUS_WARNING:
+-		case CAN_STATE_BUS_PASSIVE:
++		case CAN_STATE_ERROR_WARNING:
++		case CAN_STATE_ERROR_PASSIVE:
+ 			cf-&gt;can_id |= CAN_ERR_CRTL;
+ 
+-			if (new_state == CAN_STATE_BUS_WARNING)
++			if (new_state == CAN_STATE_ERROR_WARNING)
+ 				cf-&gt;data[1] = (tec &gt; rec) ?
+ 					CAN_ERR_CRTL_TX_WARNING :
+ 					CAN_ERR_CRTL_RX_WARNING;
+@@ -881,7 +881,7 @@
+ 		((bt-&gt;phase_seg2 - 1) &lt;&lt;  0);
+ 
+ 	dev_dbg(ND2D(dev), &quot;writing AT91_BR: 0x%08x, can_sys_clock: %d\n&quot;,
+-		  reg_br, priv-&gt;can.bittiming.clock);
++		  reg_br, priv-&gt;can.clock.freq);
+ 	at91_write(dev, AT91_BR, reg_br);
+ 
+ 	return 0;
+@@ -909,7 +909,7 @@
+ 	reg_mr = at91_read(dev, AT91_MR);
+ 	at91_write(dev, AT91_MR, reg_mr | AT91_MR_AT91EN);
+ 
+-	priv-&gt;can.state = CAN_STATE_ACTIVE;
++	priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
+ 
+ 	/* Enable interrupts */
+ 	reg_ier =
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002614.html">merging branches/netlink: please test
+</A></li>
+	<LI>Next message: <A HREF="002616.html">merging branches/netlink: please test
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2615">[ date ]</a>
+              <a href="thread.html#2615">[ thread ]</a>
+              <a href="subject.html#2615">[ subject ]</a>
+              <a href="author.html#2615">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

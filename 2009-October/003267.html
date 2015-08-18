@@ -1,0 +1,148 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 5/5] CAN transceiver on Softing driver example
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%205/5%5D%20CAN%20transceiver%20on%20Softing%20driver%20example&In-Reply-To=%3C20091014154451.GB18680%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003268.html">
+   <LINK REL="Next"  HREF="003269.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 5/5] CAN transceiver on Softing driver example</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%205/5%5D%20CAN%20transceiver%20on%20Softing%20driver%20example&In-Reply-To=%3C20091014154451.GB18680%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH 5/5] CAN transceiver on Softing driver example">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed Oct 14 17:44:51 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003268.html">[Patch 4/5] include/linux update
+</A></li>
+        <LI>Next message: <A HREF="003269.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3267">[ date ]</a>
+              <a href="thread.html#3267">[ thread ]</a>
+              <a href="subject.html#3267">[ subject ]</a>
+              <a href="author.html#3267">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The regular CAN transceiver interface is targeted at platform devices.
+
+This is a real example how the use a PCA82C251 on a CAN board (softing
+PCMCIA, which has 2 such transceivers, with 0 Ohm slope resistor.
+
+The main use of this modification is to serve as an example. This
+Softing PCMCIA board is, due to double bus/single interface, not the
+easiest board anyway.
+I think anyway that the patch is rather small, so anyone could
+understand the idea.
+
+Signed-of-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+---
+Index: drivers/net/can/softing/softing.h
+===================================================================
+--- drivers/net/can/softing/softing.h	(revision 1069)
++++ drivers/net/can/softing/softing.h	(working copy)
+@@ -64,6 +64,7 @@
+ struct softing {
+ 	int nbus;
+ 	struct softing_priv *bus[2];
++	struct can_transceiver *cantr[2];
+ 	spinlock_t	 spin; /* protect this structure &amp; DPRAM access */
+ 	ktime_t boot_time;
+ 	u32 sample_at_boot_time;
+Index: drivers/net/can/softing/softing_main.c
+===================================================================
+--- drivers/net/can/softing/softing_main.c	(revision 1069)
++++ drivers/net/can/softing/softing_main.c	(working copy)
+@@ -26,6 +26,8 @@
+ #include &lt;linux/interrupt.h&gt;
+ #include &lt;linux/mutex.h&gt;
+ #include &lt;linux/io.h&gt;
++#include &lt;socketcan/can/transceiver.h&gt;
++#include &lt;socketcan/can/platform/pca82c251.h&gt;
+ 
+ #include &quot;softing.h&quot;
+ 
+@@ -696,6 +698,7 @@
+ 			continue;
+ 		softing_bus_sysfs_remove(card-&gt;bus[j]);
+ 		unregister_candev(card-&gt;bus[j]-&gt;netdev);
++		pca82c251_destroy(card-&gt;cantr[j]);
+ 		free_candev(card-&gt;bus[j]-&gt;netdev);
+ 		card-&gt;bus[j] = 0;
+ 	}
+@@ -706,6 +709,11 @@
+ }
+ EXPORT_SYMBOL(rm_softing);
+ 
++static const struct pca82c251_platform_data transceiver = {
++	.gpio = -1,
++	.slope_resistor = 0,
++};
++
+ int mk_softing(struct softing *card)
+ {
+ 	int j;
+@@ -770,6 +778,14 @@
+ 		card-&gt;bus[j]-&gt;index = j;
+ 	}
+ 	for (j = 0; j &lt; card-&gt;nbus; ++j) {
++		card-&gt;cantr[j] = pca82c251_create(card-&gt;dev, &amp;transceiver);
++		if (!card-&gt;cantr[j])
++			goto cantr_failed;
++	}
++
++	for (j = 0; j &lt; card-&gt;nbus; ++j) {
++		/* assign the trasceiver now */
++		card-&gt;bus[j]-&gt;can.cantr = card-&gt;cantr[j];
+ 		if (reg_netdev(card-&gt;bus[j])) {
+ 			dev_alert(card-&gt;dev,
+ 				&quot;failed to register can[%i]\n&quot;, j);
+@@ -786,6 +802,13 @@
+ 		softing_bus_sysfs_remove(card-&gt;bus[j]);
+ 		unregister_candev(card-&gt;bus[j]-&gt;netdev);
+ 	}
++cantr_failed:
++	for (j = 0; j &lt; card-&gt;nbus; ++j) {
++		if (!card-&gt;cantr[j])
++			continue;
++		pca82c251_destroy(card-&gt;cantr[j]);
++		card-&gt;cantr[j] = 0;
++	}
+ netdev_failed:
+ 	for (j = 0; j &lt; card-&gt;nbus; ++j) {
+ 		if (!card-&gt;bus[j])
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003268.html">[Patch 4/5] include/linux update
+</A></li>
+	<LI>Next message: <A HREF="003269.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3267">[ date ]</a>
+              <a href="thread.html#3267">[ thread ]</a>
+              <a href="subject.html#3267">[ subject ]</a>
+              <a href="author.html#3267">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

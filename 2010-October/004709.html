@@ -1,0 +1,251 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> ts-can1
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20ts-can1&In-Reply-To=%3C20101011084730.GA6028%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004708.html">
+   <LINK REL="Next"  HREF="004698.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>ts-can1</H1>
+    <B>Wolfram Sang</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20ts-can1&In-Reply-To=%3C20101011084730.GA6028%40pengutronix.de%3E"
+       TITLE="ts-can1">w.sang at pengutronix.de
+       </A><BR>
+    <I>Mon Oct 11 10:47:30 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004708.html">ts-can1
+</A></li>
+        <LI>Next message: <A HREF="004698.html">ts-can1
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4709">[ date ]</a>
+              <a href="thread.html#4709">[ thread ]</a>
+              <a href="subject.html#4709">[ subject ]</a>
+              <a href="author.html#4709">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Andre,
+
+thanks for this version. Code is much more readable IMHO. Just a few
+minor things:
+
+&gt;<i> +/* Probe for a TSCAN1 device with JP1:JP2 jumper setting ID */
+</I>&gt;<i> +static int __devinit tscan1_match(struct device *dev, unsigned id)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int pld_base, sja1000_base, irq, i;
+</I>&gt;<i> +	struct net_device *netdev;
+</I>&gt;<i> +	struct sja1000_priv *priv;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Request PLD I/O register region */
+</I>
+I'd think this comment explains the obvious, but maybe that's just me :)
+
+&gt;<i> +	pld_base = TSCAN1_PLD_ADDRESS + id * TSCAN1_PLD_SIZE;
+</I>&gt;<i> +	if (!request_region(pld_base, TSCAN1_PLD_SIZE, &quot;tscan1&quot;))
+</I>&gt;<i> +		return -EBUSY;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Check magic values in PLD board identifier registers */
+</I>
+ditto
+
+&gt;<i> +	if (inb(pld_base + TSCAN1_ID1) != TSCAN1_ID1_VALUE ||
+</I>&gt;<i> +	    inb(pld_base + TSCAN1_ID2) != TSCAN1_ID2_VALUE)
+</I>&gt;<i> +		goto out_release;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Read JP4:JP5 jumper settings to find out the selected IRQ */
+</I>
+ditto
+
+&gt;<i> +	switch (inb(pld_base + TSCAN1_JUMPERS) &amp; (TSCAN1_JP4 | TSCAN1_JP5)) {
+</I>&gt;<i> +	case TSCAN1_JP4:
+</I>&gt;<i> +		irq = 6;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case TSCAN1_JP5:
+</I>&gt;<i> +		irq = 7;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case TSCAN1_JP4 | TSCAN1_JP5:
+</I>&gt;<i> +		irq = 5;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	default:
+</I>&gt;<i> +		goto out_release;
+</I>
+Maybe an errror message here? Do you really want to quit with -ENODEV?
+
+&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	netdev = alloc_sja1000dev(0);
+</I>&gt;<i> +	if (!netdev)
+</I>&gt;<i> +		goto out_release;
+</I>
+That should really be -ENOMEM.
+
+&gt;<i> +
+</I>&gt;<i> +	dev_set_drvdata(dev, netdev);
+</I>&gt;<i> +	SET_NETDEV_DEV(netdev, dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	netdev-&gt;base_addr = pld_base;
+</I>&gt;<i> +	netdev-&gt;irq = irq;
+</I>&gt;<i> +
+</I>&gt;<i> +	priv = netdev_priv(netdev);
+</I>&gt;<i> +	priv-&gt;read_reg = tscan1_read;
+</I>&gt;<i> +	priv-&gt;write_reg = tscan1_write;
+</I>&gt;<i> +	priv-&gt;can.clock.freq = TSCAN1_SJA1000_XTAL / 2;
+</I>&gt;<i> +	priv-&gt;cdr = CDR_CBP | CDR_CLK_OFF;
+</I>&gt;<i> +	priv-&gt;ocr = OCR_TX0_PUSHPULL;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Select the first SJA1000 I/O address that is free and that works */
+</I>&gt;<i> +	for (i = 0; i &lt; ARRAY_SIZE(tscan1_sja1000_addresses); i++) {
+</I>&gt;<i> +		sja1000_base = tscan1_sja1000_addresses[i];
+</I>&gt;<i> +		if (!request_region(sja1000_base, TSCAN1_SJA1000_SIZE,
+</I>&gt;<i> +								&quot;tscan1&quot;))
+</I>&gt;<i> +			continue;
+</I>&gt;<i> +
+</I>&gt;<i> +		/* Set the SJA1000 I/O base address and enable it */
+</I>&gt;<i> +		outb(TSCAN1_MODE_ENABLE | i, pld_base + TSCAN1_MODE);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* Probe and register SJA1000 */
+</I>&gt;<i> +		priv-&gt;reg_base = (void __iomem *)sja1000_base;
+</I>&gt;<i> +		if (!register_sja1000dev(netdev)) {
+</I>
+Maybe here a comment like: /* Success. Turn off the LED and return */ to
+make it really obvious that this is the success-path?
+
+&gt;<i> +			outb(0, pld_base + TSCAN1_LED); /* turn the LED off */
+</I>&gt;<i> +			netdev_info(netdev, &quot;TS-CAN1 at 0x%x 0x%x irq %d\n&quot;,
+</I>&gt;<i> +						pld_base, sja1000_base, irq);
+</I>&gt;<i> +			return 0;
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		/* The probe for an SJA1000 at this address failed: release */
+</I>
+Maybe incorporate some of the explanation you gave in your mail? Like:
+&quot;... might have failed because of BIOS-settings. Release and try next
+region&quot; ?
+
+&gt;<i> +		outb(0, pld_base + TSCAN1_MODE);
+</I>&gt;<i> +		release_region(sja1000_base, TSCAN1_SJA1000_SIZE);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_set_drvdata(dev, NULL);
+</I>&gt;<i> +	free_sja1000dev(netdev);
+</I>&gt;<i> +out_release:
+</I>&gt;<i> +	release_region(pld_base, TSCAN1_PLD_SIZE);
+</I>&gt;<i> +	return -ENODEV;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int __devexit tscan1_remove(struct device *dev, unsigned id /*unused*/)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *netdev;
+</I>&gt;<i> +	struct sja1000_priv *priv;
+</I>&gt;<i> +	int pld_base, sja1000_base;
+</I>&gt;<i> +
+</I>&gt;<i> +	netdev = dev_get_drvdata(dev);
+</I>&gt;<i> +	unregister_sja1000dev(netdev);
+</I>&gt;<i> +	dev_set_drvdata(dev, NULL);
+</I>&gt;<i> +
+</I>&gt;<i> +	priv = netdev_priv(netdev);
+</I>&gt;<i> +	pld_base = netdev-&gt;base_addr;
+</I>&gt;<i> +	sja1000_base = (int)priv-&gt;reg_base;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Release SJA1000 I/O space */
+</I>
+obvious comment?
+
+&gt;<i> +	outb(0, pld_base + TSCAN1_MODE);
+</I>&gt;<i> +	release_region(sja1000_base, TSCAN1_SJA1000_SIZE);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Release PLD I/O space */
+</I>
+ditto
+
+&gt;<i> +	release_region(pld_base, TSCAN1_PLD_SIZE);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Free net device */
+</I>
+ditto
+
+&gt;<i> +	free_sja1000dev(netdev);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static struct isa_driver tscan1_isa_driver = {
+</I>&gt;<i> +	.match = tscan1_match,
+</I>&gt;<i> +	.remove = __devexit_p(tscan1_remove),
+</I>&gt;<i> +	.driver = {
+</I>&gt;<i> +		.name = &quot;tscan1&quot;,
+</I>&gt;<i> +	},
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static int __init tscan1_init(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return isa_register_driver(&amp;tscan1_isa_driver, TSCAN1_MAXDEV);
+</I>&gt;<i> +}
+</I>&gt;<i> +module_init(tscan1_init);
+</I>&gt;<i> +
+</I>&gt;<i> +static void __exit tscan1_exit(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	isa_unregister_driver(&amp;tscan1_isa_driver);
+</I>&gt;<i> +}
+</I>&gt;<i> +module_exit(tscan1_exit);
+</I>&gt;<i> -- 
+</I>&gt;<i> 1.6.5
+</I>&gt;<i> 
+</I>&gt;<i> -- 
+</I>&gt;<i> Andre B. Oliveira
+</I>&gt;<i> <A HREF="http://clientes.netvisao.pt/anbadeol/">http://clientes.netvisao.pt/anbadeol/</A>
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> Socketcan-core mailing list
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>
+I also think you can send the next version to netdev.
+
+Regards,
+
+   Wolfram
+
+-- 
+Pengutronix e.K.                           | Wolfram Sang                |
+Industrial Linux Solutions                 | <A HREF="http://www.pengutronix.de/">http://www.pengutronix.de/</A>  |
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 198 bytes
+Desc: Digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101011/a4976e0d/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101011/a4976e0d/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004708.html">ts-can1
+</A></li>
+	<LI>Next message: <A HREF="004698.html">ts-can1
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4709">[ date ]</a>
+              <a href="thread.html#4709">[ thread ]</a>
+              <a href="subject.html#4709">[ subject ]</a>
+              <a href="author.html#4709">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

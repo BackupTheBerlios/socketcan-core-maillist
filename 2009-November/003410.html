@@ -1,0 +1,227 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> How to provide product information
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20How%20to%20provide%20product%20information&In-Reply-To=%3C20091106145523.GG323%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003409.html">
+   <LINK REL="Next"  HREF="003411.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>How to provide product information</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20How%20to%20provide%20product%20information&In-Reply-To=%3C20091106145523.GG323%40e-circ.dyndns.org%3E"
+       TITLE="How to provide product information">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Fri Nov  6 15:55:23 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003409.html">How to provide product information
+</A></li>
+        <LI>Next message: <A HREF="003411.html">How to provide product information
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3410">[ date ]</a>
+              <a href="thread.html#3410">[ thread ]</a>
+              <a href="subject.html#3410">[ subject ]</a>
+              <a href="author.html#3410">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Fri, Nov 06, 2009 at 02:01:57PM +0100, Oliver Hartkopp wrote:
+&gt;<i> Kurt Van Dijck wrote:
+</I>&gt;<i> &gt; On Fri, Nov 06, 2009 at 11:30:52AM +0100, Oliver Hartkopp wrote:
+</I>&gt;<i> &gt;&gt; Kurt Van Dijck wrote:
+</I>&gt;<i> &gt; [...]
+</I>&gt;<i> &gt;&gt; WARNING: &quot;__udivdi3&quot;
+</I>&gt;<i> &gt;&gt; [/home/hartko/socketcan/trunk/kernel/2.6/drivers/net/can/softing/softing.ko]
+</I>&gt;<i> &gt;&gt; undefined!
+</I>&gt;<i> &gt;&gt; WARNING: &quot;__umoddi3&quot;
+</I>&gt;<i> &gt;&gt; [/home/hartko/socketcan/trunk/kernel/2.6/drivers/net/can/softing/softing.ko]
+</I>&gt;<i> &gt;&gt; undefined!
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; The warning is not the real problem - but the driver refuses to load due to
+</I>&gt;<i> &gt;&gt; the missing &quot;__udivdi3&quot; and &quot;__umoddi3&quot; symbols.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; I assume both to be caused by 64bit assumptions that do not show up on your
+</I>&gt;<i> &gt;&gt; 64bit Linux box.
+</I>&gt;<i> &gt;&gt;
+</I>[...]
+&gt;<i> removing ktime_t softing_raw2ktime(struct softing *card, u32 raw)
+</I>&gt;<i> in softing_fw.c (by making it a noop only returning a ktime_t value) fixed the
+</I>&gt;<i> problem of the missing symbol.
+</I>
+Oliver, I think I have a good patch
+
+This patch tries to stick to existing 64bit division operations.
+At the same time, the code is better readable, and maybe more efficient
+(I think :-) )
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+---
+ kernel/2.6/drivers/net/can/softing/softing.h    |    4 -
+ kernel/2.6/drivers/net/can/softing/softing_fw.c |   78 ++++++++++--------------
+ 2 files changed, 37 insertions(+), 45 deletions(-)
+
+Index: trunk/kernel/2.6/drivers/net/can/softing/softing.h
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/softing/softing.h	2009-11-06 14:48:03.000000000 +0100
++++ trunk/kernel/2.6/drivers/net/can/softing/softing.h	2009-11-06 15:03:26.000000000 +0100
+@@ -66,8 +66,8 @@
+ 	struct softing_priv *bus[2];
+ 	struct can_transceiver *cantr[2];
+ 	spinlock_t	 spin; /* protect this structure &amp; DPRAM access */
+-	ktime_t boot_time;
+-	u32 sample_at_boot_time;
++	ktime_t ts_ref;
++	ktime_t ts_overflow; /* timestamp overflow value, in ktime */
+ 
+ 	struct {
+ 		/* indication of firmware status */
+Index: trunk/kernel/2.6/drivers/net/can/softing/softing_fw.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/softing/softing_fw.c	2009-11-06 13:32:55.000000000 +0100
++++ trunk/kernel/2.6/drivers/net/can/softing/softing_fw.c	2009-11-06 15:51:26.000000000 +0100
+@@ -24,8 +24,10 @@
+ #include &lt;linux/device.h&gt;
+ #include &lt;linux/firmware.h&gt;
+ #include &lt;linux/interrupt.h&gt;
++#include &lt;linux/sched.h&gt;
+ #include &lt;linux/mutex.h&gt;
+ #include &lt;linux/io.h&gt;
++#include &lt;asm/div64.h&gt;
+ 
+ #include &quot;softing.h&quot;
+ 
+@@ -492,6 +494,8 @@
+ 	return -EIO;
+ }
+ 
++static void softing_initialize_timestamp(struct softing *card);
++
+ int softing_cycle(struct softing *card, struct softing_priv *bus, int up)
+ {
+ 	int ret;
+@@ -660,7 +664,7 @@
+ 		wmb();
+ 	}
+ 
+-	card-&gt;boot_time = ktime_get_real();
++	softing_initialize_timestamp(card);
+ 
+ 	/*run once */
+ 	/*the bottom halve will start flushing the tx-queue too */
+@@ -730,52 +734,40 @@
+ 	}
+ }
+ 
+-ktime_t softing_raw2ktime(struct softing *card, u32 raw)
++static void softing_initialize_timestamp(struct softing *card)
+ {
+ 	uint64_t ovf;
++
++	card-&gt;ts_ref = ktime_get();
++
++	/* 16MHz is the reference */
++	ovf = 0x100000000ULL * 16;
++	do_div(ovf, card-&gt;desc-&gt;freq ?: 16);
++
++	card-&gt;ts_overflow = ktime_add_us(ktime_set(0, 0), ovf);
++}
++
++ktime_t softing_raw2ktime(struct softing *card, u32 raw)
++{
+ 	uint64_t rawl;
+-	uint64_t expected;
+-	ktime_t now;
++	ktime_t now, real_offset;
+ 	ktime_t target;
+-	ovf = 0x100000000ULL;
+-	rawl = raw;
+-	/*TODO : don't loose higher order bits in computation */
+-	switch (card-&gt;desc-&gt;freq) {
+-	case 20:
+-		ovf = ovf * 4 / 5;
+-		rawl = rawl * 4 / 5;
+-		break;
+-	case 24:
+-		ovf = ovf * 2 / 3;
+-		rawl = rawl * 2 / 3;
+-		break;
+-	case 25:
+-		ovf = ovf * 16 / 25;
+-		rawl = rawl * 16 / 25;
+-		break;
+-	case 0:
+-	case 16:
+-		break;
+-	default:
+-		/* return empty time */
+-		return ktime_set(0, 0);
++	ktime_t tmp;
++
++	now = ktime_get();
++	real_offset = ktime_sub(ktime_get_real(), now);
++
++	/* find nsec from card */
++	rawl = raw * 16;
++	do_div(rawl, card-&gt;desc-&gt;freq ?: 16);
++	target = ktime_add_us(card-&gt;ts_ref, rawl);
++	/* test for overflows */
++	tmp = ktime_add(target, card-&gt;ts_overflow);
++	while (unlikely(ktime_to_ns(tmp) &gt; ktime_to_ns(now))) {
++		card-&gt;ts_ref = ktime_add(card-&gt;ts_ref, card-&gt;ts_overflow);
++		target = tmp;
++		tmp = ktime_add(target, card-&gt;ts_overflow);
+ 	}
+-	now = ktime_get_real();
+-	expected = (ktime_us_delta(now, card-&gt;boot_time)) % ovf;
+-	/*
+-	 * strange seuence for equation, but mind the 'unsigned-ness'
+-	 * the idea was to:
+-	 * if (expected &lt; (rawl - (ovf / 2)))
+-	 * meaning: on wrap-around (occurs at 'ovf'), expected (actual time)
+-	 * may wrap around, altough rawl (receive time)
+-	 * is just before wrap-around. In that case, offset 'expected'
+-	 * note that expected can also be slightly earlier, as the card's
+-	 * timer starts a little (but unknown to me) after I mark 'boot_time'
+-	 */
+-	if (rawl &lt; (expected + (ovf / 2)))
+-		/* now (expected) is always later than card stamp */
+-		expected += ovf;
+-	target = ktime_sub_us(now, (expected - rawl));
+-	return target;
++	return ktime_add(target, real_offset);
+ }
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003409.html">How to provide product information
+</A></li>
+	<LI>Next message: <A HREF="003411.html">How to provide product information
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3410">[ date ]</a>
+              <a href="thread.html#3410">[ thread ]</a>
+              <a href="subject.html#3410">[ subject ]</a>
+              <a href="author.html#3410">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

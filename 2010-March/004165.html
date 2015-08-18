@@ -1,0 +1,274 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> struct sockaddr_can for j1939
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-March/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20100308140054.GB300%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004164.html">
+   <LINK REL="Next"  HREF="004166.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>struct sockaddr_can for j1939</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20100308140054.GB300%40e-circ.dyndns.org%3E"
+       TITLE="struct sockaddr_can for j1939">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Mon Mar  8 15:00:55 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004164.html">[PATCH] MAINTAINER: Correct CAN Maintainer responsibilities	and paths
+</A></li>
+        <LI>Next message: <A HREF="004166.html">[PATCH] can: fix bfin_can build error after alloc_candev() change
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4165">[ date ]</a>
+              <a href="thread.html#4165">[ thread ]</a>
+              <a href="subject.html#4165">[ subject ]</a>
+              <a href="author.html#4165">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Sat, Mar 06, 2010 at 12:08:31PM +0000, Oliver Hartkopp wrote:
+&gt;<i> Kurt Van Dijck wrote:
+</I>&gt;<i> 
+</I>&gt;<i> &gt; IMHO, your proposal violates these 2 major points you mentioned earlier
+</I>&gt;<i> &gt; with API design (with special regard to dynamic addressing, since static
+</I>&gt;<i> &gt; addressing will does not suffer this):
+</I>&gt;<i> &gt; * Easy to learn
+</I>&gt;<i> &gt; * Easy to use, even without documentation.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I think I would prefer documenting that 'name == 0 means static
+</I>&gt;<i> &gt; addressing used'.
+</I>&gt;<i> 
+</I>&gt;<i> Hi Kurt,
+</I>&gt;<i> 
+</I>&gt;<i> this night i had a much better idea :-)
+</I>&gt;<i> 
+</I>&gt;<i> The problem is that the PGN is encoded inside the CAN-ID and therefore it was
+</I>&gt;<i> seen as an address element so far. This leads to a wrong abstraction and wrong
+</I>&gt;<i> thoughts about addressing in sockaddr_can.
+</I>&gt;<i> 
+</I>&gt;<i> Indeed the PGN is no address information but a data description identifier.
+</I>I regard the PGN similar to the port in sockaddr_in. In the inet case,
+   it is addressing info.
+&gt;<i> 
+</I>&gt;<i> Comparing this to the commonly used ISO15765-2 the PGN has to be treated
+</I>&gt;<i> analogue to the UDS SI (service identifier) of the data content that's
+</I>&gt;<i> following in the same (UDS) ISOTP PDU.
+</I>I'm not that familiar with isotp.
+Is looks indeed indentification of the 'Protocol Data Unit' or PDU. But
+j1939 defines it nowhere within the data. the PGN is used in a 1-to-1
+mapping towards CAN identifiers.
+May I assume that ISO15765-2 needs a (userspace) lookup table to know
+which PDU to send with which can_id? Such approach makes sense, but
+j1939 is not built that way. It has a direct mapping from PDU to can_id.
+&gt;<i> 
+</I>&gt;<i> Therefore the __u16 PGN should be the first data in the PDU that's written
+</I>detail: PGN is combined PS (group extension), PF, DP &amp; RES bit, with a
+total of 18 bits.
+J1939 itself does not make use of a DP=1, but nmea2000  (built on j1939)
+does make use of it. My first use of nmea2000 GPS receivers added this
+problem that I had to start evaluating the DP too.
+I'll read the following with __u32 PGN :-) (since __u18 is no data type).
+&gt;<i> into the socket - as we do with the SI in ISO15765-2. We also have the CAN-ID
+</I>&gt;<i> in the CAN_RAW socket in the skb-&gt;data and the first element in the PDU we get
+</I>&gt;<i> from the socket. The fact that the PGN is encoded inside the CAN-ID is a J1939
+</I>&gt;<i> specific fact that is independent(!) from dynamic/static addressing in J1939.
+</I>I see your point. indeed, the PGN is independant of the addressing used.
+&gt;<i> 
+</I>&gt;<i> This leads to the following suggestions:
+</I>&gt;<i> 
+</I>&gt;<i> - the PGN is always the first __u16 in the PDU that's read/written from/to the
+</I>&gt;<i> socket.
+</I>in iso11783-6 (aka ISOBUS), an extended version of the transport
+protocol is defined, allowing packets or sessions up to ((2^24)-1)*7
+bytes. the API would be hell if the fist __u32 PGN must be prepended
+with write, since eache seperate write( or send) generates a seperate
+packet. A CAN packet is limited to 16 bytes _ever_. a j1939 packet can
+grow big. _requiring_ an PGN prepended results in _requiring_ the
+packet be built in RAM. And that I don't want to require.
+This (j1939) does not imply anything on the choices made for
+CAN raw.
+&gt;<i> 
+</I>&gt;<i> - We introduce two types of CAN protocols (supported by _one_ can-j1939.ko)
+</I>&gt;<i>     - CAN_J1939 for static addressing
+</I>&gt;<i>     - CAN_J1939DA for dynamic addressing
+</I>&gt;<i> 
+</I>&gt;<i> - CAN_J1939 and CAN_J1939DA have different address structures (of course)
+</I>This idea crossed my mind earlier. It would indeed be less
+error-sensitive. But, both CAN_J1939 &amp; CAN_J1939DA do operate on the
+same protocol level, and they can mix.
+In fact, I believe that due to network complexity, CAN_J1939DA would be
+used most frequently, and due to footprint, CAN_J1939 would be needed to
+communicate with low-end devices (remote sensors etc). The problem that
+one would get mixing static &amp; dynamic addressing is rather
+theoretical, since on a real bus, the possible static addresses on
+the bus are known to the application (but not the kernel stack).
+A real situation is a Display device, needing dynamic addressing,
+starting with eg. 0x27. Would a second display be connected, it would
+take some other address. But only 0x27 is able to communicate with
+a certain low-end ECU on the bus. As such, the second display can
+not talk to the low-end ECU. It can only listen to the
+(broadcasted messages from such ECU).
+
+My current implemenation does allow with 1 socket to participate in
+dynamic addressing, but sending/listening to a remote ECU with a static
+address. When static &amp; dynamic gets seperate sockets, we would loose
+such capability, unless an extra field was added to the sockaddr_can,
+but that would make things really difficult.
+&gt;<i> 
+</I>&gt;<i> - when sending PDUs the PGN is given inside the PDU
+</I>&gt;<i> - when receiving PDUs the PGN is given inside the PDU
+</I>&gt;<i> 
+</I>&gt;<i> - on the receiver side the PGNs can be filtered analogue to the CAN-ID filters
+</I>&gt;<i> configured by sockopts - if needed.
+</I>I had something similar implemented (not speed optimised yet). Very soon
+in j1939, the sk_buff is reworked so it only contains data, and the
+addressing info is put int skb-&gt;cb.
+This approach is needed to filter on SA or NAME anyway.
+I don't think the PGN must reside in the skb-&gt;data.
+&gt;<i> 
+</I>&gt;<i> This approach clearly separates the different J1939 addressing from the
+</I>&gt;<i> content that's defined by the PGNs.
+</I>see first comment wrt. inet.
+I see no problem in combining address with PGN. I see more problems in
+combining PGN with data.
+&gt;<i> 
+</I>&gt;<i> The CAN header definitions could change like this then:
+</I>&gt;<i> 
+</I>&gt;<i> --- include/socketcan/Vjcan.h	(Revision 1160)
+</I>&gt;<i> +++ include/socketcan/can.h	(Arbeitskopie)
+</I>&gt;<i> @@ -70,7 +70,9 @@
+</I>&gt;<i>  #define CAN_TP20	4 /* VAG Transport Protocol v2.0 */
+</I>&gt;<i>  #define CAN_MCNET	5 /* Bosch MCNet */
+</I>&gt;<i>  #define CAN_ISOTP	6 /* ISO 15765-2 Transport Protocol */
+</I>&gt;<i> -#define CAN_NPROTO	7
+</I>&gt;<i> +#define CAN_J1939	7 /* J1939 protocol w/o dynamic adressing */
+</I>&gt;<i> +#define CAN_J1939DA	8 /* J1939 protocol with dynamic adressing */
+</I>&gt;<i> +#define CAN_NPROTO	9
+</I>&gt;<i> 
+</I>&gt;<i>  #define SOL_CAN_BASE 100
+</I>&gt;<i> 
+</I>&gt;<i> @@ -86,6 +88,21 @@
+</I>&gt;<i>  	union {
+</I>&gt;<i>  		/* transport protocol class address information (e.g. ISOTP) */
+</I>&gt;<i>  		struct { canid_t rx_id, tx_id; } tp;
+</I>&gt;<i> +		struct {
+</I>&gt;<i> +			__u8 addr;
+</I>&gt;<i> +		} j1939;
+</I>&gt;<i> +		struct {
+</I>&gt;<i> +			__u32 identity:21,
+</I>&gt;<i> +			      mfcode:11;
+</I>&gt;<i> +			__u8 ecu_instance:3,
+</I>&gt;<i> +			     func_instance:5;
+</I>&gt;<i> +			__u8 function;
+</I>&gt;<i> +			__u8 reserved:1,
+</I>&gt;<i> +			     vsystem:7;
+</I>&gt;<i> +			__u8 vsystem_instance:4,
+</I>&gt;<i> +			     industry_group:3,
+</I>&gt;<i> +			     arb_addr:1;
+</I>&gt;<i> +		} j1939da;
+</I>&gt;<i> 
+</I>&gt;<i>  		/* reserved for future CAN protocols address information */
+</I>&gt;<i>  	} can_addr;
+</I>&gt;<i> 
+</I>&gt;<i> Alternatively 'j1939da' could be named 'j1939name' or something like that.
+</I>detail: I think the seperation into different fields really belongs to
+userspace (libj1939.a or something). There are zillion thing to do with
+that. In-kernel code sticks to uin64_t (__u64).
+&gt;<i> 
+</I>&gt;<i> What do you think about that approach?
+</I>&gt;<i> 
+</I>&gt;<i> For me it's the first definition that makes clear what needs to be done by the
+</I>&gt;<i> application to send PGNs to specific ECUs at first sight.
+</I>Like I mentioned earlier, I compare J1939 addressing &amp; PGN more like
+UDP. During our investigation on how to approach this, we found a DHCP
+server very similar (ip address, port number, recvfrom() &amp; sendto(),
+      ....) in how we want to use j1939.
+I think the comparison with UDP is closer than with isotp, although
+isotp may be better in its use of can_id's.
+
+I think your idea is creative, but I don't think it improves the API,
+  given the use of j1939 I encountered.
+But your argument is probably a valid one, in the way that the regular
+BSD socket API is seldom consulted in CAN environments.
+I think on addressing that in Documentation/networking/j1939.txt.
+for example:
+
+  BSD sockets define a local &amp; remote address. Since both include the PGN, and
+  j1939 needs 1 PGN to send a packet, the local address' PGN is used for outgoing
+  packets, ie. the PGN of sockaddr_can used in bind(2).
+  The PGN in the call to connect(2) is never used for outgoing packets.
+  When using sendto(2), the new PGN takes precedence
+  over the PGN defined during bind(2), without overwriting it for subsequent
+  calls to send(2) or write(2), which still will use the PGN from bind(2).
+
+I still believe that
+
+  struct {
+     __u64 name;
+     __u8 addr;
+     __u32 pgn;
+  } j1939;
+
+is the most essential, easy-to-document structure. It matches the BSD
+socket API _very_ close. Any change would imply added complexity in
+other regions. It is much cleaner than the first proposal I made.
+Therefore I'm glad to have had the discussion.
+&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>
+Thanks,
+Kurt
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> &gt; We coud so reduce the application choice between static &amp;
+</I>&gt;<i> &gt; dynamic addressing to just choosing between j1939.name &amp; j1939.addr, rather
+</I>&gt;<i> &gt; than choosing between API calls.
+</I>&gt;<i> &gt; Yes, this choice can be made wrong. When j1939.name is set, but not
+</I>&gt;<i> &gt; used, users might experience problems. I bet this will occur much
+</I>&gt;<i> &gt; sooner if they would need to get the name elsewhere (via cmsg()).
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; The biggest challenge with documenting this j1939 approach IMO is learn
+</I>&gt;<i> &gt; typical CAN/J1939 users to think in terms of local &amp; remote addresses in
+</I>&gt;<i> &gt; a BSD socket compliant way, rather than combining local &amp; remote address
+</I>&gt;<i> &gt; in 1 can_id (as I also did when I started 10 years ago, I'm not blaming
+</I>&gt;<i> &gt; anyone here).
+</I>&gt;<i> &gt; The dynamic thing is minor challenge in documenting the api, given that
+</I>&gt;<i> &gt; using it is not too difficult.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Regards,
+</I>&gt;<i> &gt; Kurt
+</I>&gt;<i> 
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004164.html">[PATCH] MAINTAINER: Correct CAN Maintainer responsibilities	and paths
+</A></li>
+	<LI>Next message: <A HREF="004166.html">[PATCH] can: fix bfin_can build error after alloc_candev() change
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4165">[ date ]</a>
+              <a href="thread.html#4165">[ thread ]</a>
+              <a href="subject.html#4165">[ subject ]</a>
+              <a href="author.html#4165">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

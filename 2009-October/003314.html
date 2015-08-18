@@ -1,0 +1,130 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Query regarding C_CAN driver for Hynix
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Query%20regarding%20C_CAN%20driver%20for%20Hynix&In-Reply-To=%3C4AE48A08.4020606%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003313.html">
+   <LINK REL="Next"  HREF="003315.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Query regarding C_CAN driver for Hynix</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Query%20regarding%20C_CAN%20driver%20for%20Hynix&In-Reply-To=%3C4AE48A08.4020606%40grandegger.com%3E"
+       TITLE="Query regarding C_CAN driver for Hynix">wg at grandegger.com
+       </A><BR>
+    <I>Sun Oct 25 18:25:28 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003313.html">Query regarding C_CAN driver for Hynix
+</A></li>
+        <LI>Next message: <A HREF="003315.html">Query regarding C_CAN driver for Hynix
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3314">[ date ]</a>
+              <a href="thread.html#3314">[ thread ]</a>
+              <a href="subject.html#3314">[ subject ]</a>
+              <a href="author.html#3314">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Bhupesh,
+
+bhupesh.sharma wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> I don't know if someone is still maintaining the Hynix CCAN driver in
+</I>&gt;<i> SocketCAN SVN, but I will appreciate if any one of the developers here, can
+</I>&gt;<i> help me out.
+</I>&gt;<i> 
+</I>&gt;<i> For the past 1 week, I have worked on developing a CCAN driver for my client
+</I>&gt;<i> on linux 2.6.27, which takes most of the clues from the Hynix CCAN driver in
+</I>&gt;<i> SocketCAN trunk. I have since made changes to align my driver with the new
+</I>&gt;<i> `sja1000` like implementation.
+</I>
+There is CCAN support by the old Socket-CAN drivers tree, which does not
+use the CAN device drivers interface. Nice to hear that you are trying
+to port the CCAN driver.
+
+&gt;<i> Similar to Hynix, my SOC has 2 CAN IPs and I intend to use the same driver
+</I>&gt;<i> to handle both the IPs.
+</I>
+Could you be more precise? What SOC are you speaking about?
+
+&gt;<i> 
+</I>&gt;<i> Gud news is that when I use CAN-IP1 as a Tx (and send frames using
+</I>&gt;<i> `cansend`) and CAN-IP2 as a Rx (and receive frames using `candump`), if I
+</I>&gt;<i> transmit only a single CAN Frame, I am successfully able to see proper Rx at
+</I>&gt;<i> CAN-IP2.
+</I>&gt;<i> 
+</I>&gt;<i> Now, the only issue remains that when send multiple CAN frames using the
+</I>&gt;<i> `cansend` utility (a older version picked up from
+</I>&gt;<i> `<A HREF="http://www.pengutronix.de/software/socket-can/download/canutils/v3.0/`">http://www.pengutronix.de/software/socket-can/download/canutils/v3.0/`</A>), my
+</I>&gt;<i> `candump` complaints that it has received a REMOTE REQUEST, whereas I do
+</I>&gt;<i> have not used `-r` option with cansend to send remote frames.
+</I>&gt;<i> 
+</I>&gt;<i> When I look at Hynix driver in SVN, I see the following check:
+</I>&gt;<i> 
+</I>&gt;<i> *drivers/can/ccan.c*
+</I>&gt;<i> 
+</I>&gt;<i> static int ccan_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
+</I>&gt;<i> {
+</I>&gt;<i>         struct ccan_priv *priv = netdev_priv(dev);
+</I>&gt;<i>         struct can_frame *frame = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i> 
+</I>&gt;<i>         spin_lock_irq(&amp;priv-&gt;can.irq_lock);
+</I>&gt;<i> 
+</I>&gt;<i>         ccan_write_object(dev, 0, frame, priv-&gt;tx_object);
+</I>&gt;<i> #ifdef CCAN_DEBUG
+</I>&gt;<i>         priv-&gt;bufstat[priv-&gt;tx_object]++;
+</I>&gt;<i> #endif
+</I>&gt;<i>         priv-&gt;tx_object++;
+</I>&gt;<i>         if (priv-&gt;tx_object &gt; 5)
+</I>&gt;<i>                 netif_stop_queue(dev);
+</I>&gt;<i> 
+</I>&gt;<i> ..
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> Now, what is the significance of stopping the `netif_queue` when the
+</I>&gt;<i> priv-&gt;tx_object becomes 5.
+</I>&gt;<i> This must be a limitation seen by the developer of this driver in the CCAN
+</I>&gt;<i> IP in Hynix.
+</I>
+The netif_stop_queue() tells the network layer to stop sending packets
+via the hard_start_xmit() function. It's usually called when no more
+hardware objects/buffers are available/free for transmission. See:
+
+<A HREF="http://lxr.linux.no/#linux+v2.6.31/include/linux/netdevice.h#L1305">http://lxr.linux.no/#linux+v2.6.31/include/linux/netdevice.h#L1305</A>
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003313.html">Query regarding C_CAN driver for Hynix
+</A></li>
+	<LI>Next message: <A HREF="003315.html">Query regarding C_CAN driver for Hynix
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3314">[ date ]</a>
+              <a href="thread.html#3314">[ thread ]</a>
+              <a href="subject.html#3314">[ subject ]</a>
+              <a href="author.html#3314">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

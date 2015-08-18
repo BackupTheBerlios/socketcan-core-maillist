@@ -1,0 +1,149 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC] iproute2: netlink support for bus-error reporting and counters
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20iproute2%3A%20netlink%20support%20for%20bus-error%20reporting%20and%20counters&In-Reply-To=%3C4B731A9B.9060004%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004020.html">
+   <LINK REL="Next"  HREF="004019.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC] iproute2: netlink support for bus-error reporting and counters</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20iproute2%3A%20netlink%20support%20for%20bus-error%20reporting%20and%20counters&In-Reply-To=%3C4B731A9B.9060004%40grandegger.com%3E"
+       TITLE="[RFC] iproute2: netlink support for bus-error reporting and counters">wg at grandegger.com
+       </A><BR>
+    <I>Wed Feb 10 21:44:11 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004020.html">[RFC] can: netlink support for bus-error reporting and counters
+</A></li>
+        <LI>Next message: <A HREF="004019.html">[RFC] iproute2: netlink support for bus-error reporting and 	counters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4013">[ date ]</a>
+              <a href="thread.html#4013">[ thread ]</a>
+              <a href="subject.html#4013">[ subject ]</a>
+              <a href="author.html#4013">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>---
+diff --git a/include/linux/can/netlink.h b/include/linux/can/netlink.h
+index 9ecbb78..3250de9 100644
+--- a/include/linux/can/netlink.h
++++ b/include/linux/can/netlink.h
+@@ -70,6 +70,14 @@ enum can_state {
+ };
+ 
+ /*
++ * CAN bus error counters
++ */
++struct can_berr_counter {
++	__u16 txerr;
++	__u16 rxerr;
++};
++
++/*
+  * CAN controller mode
+  */
+ struct can_ctrlmode {
+@@ -77,9 +85,11 @@ struct can_ctrlmode {
+ 	__u32 flags;
+ };
+ 
+-#define CAN_CTRLMODE_LOOPBACK	0x1	/* Loopback mode */
+-#define CAN_CTRLMODE_LISTENONLY	0x2 	/* Listen-only mode */
+-#define CAN_CTRLMODE_3_SAMPLES	0x4	/* Triple sampling mode */
++#define CAN_CTRLMODE_LOOPBACK		0x01	/* Loopback mode */
++#define CAN_CTRLMODE_LISTENONLY		0x02 	/* Listen-only mode */
++#define CAN_CTRLMODE_3_SAMPLES		0x04	/* Triple sampling mode */
++#define CAN_CTRLMODE_ONE_SHOT		0x08	/* One-Shot mode */
++#define CAN_CTRLMODE_BERR_REPORTING	0x10	/* Bus-error reporting */
+ 
+ /*
+  * CAN device statistics
+@@ -105,6 +115,7 @@ enum {
+ 	IFLA_CAN_CTRLMODE,
+ 	IFLA_CAN_RESTART_MS,
+ 	IFLA_CAN_RESTART,
++	IFLA_CAN_BERR_COUNTER,
+ 	__IFLA_CAN_MAX
+ };
+ 
+diff --git a/ip/iplink_can.c b/ip/iplink_can.c
+index 50221e1..e22faa0 100644
+--- a/ip/iplink_can.c
++++ b/ip/iplink_can.c
+@@ -30,6 +30,7 @@ static void usage(void)
+ 	        &quot;\t[ loopback { on | off } ]\n&quot;
+ 	        &quot;\t[ listen-only { on | off } ]\n&quot;
+ 	        &quot;\t[ triple-sampling { on | off } ]\n&quot;
++	        &quot;\t[ berr-reporting { on | off } ]\n&quot;
+ 		&quot;\n&quot;
+ 	        &quot;\t[ restart-ms TIME-MS ]\n&quot;
+ 	        &quot;\t[ restart ]\n&quot;
+@@ -84,6 +85,7 @@ static void print_ctrlmode(FILE *f, __u32 cm)
+ 	_PF(CAN_CTRLMODE_LOOPBACK, &quot;LOOPBACK&quot;);
+ 	_PF(CAN_CTRLMODE_LISTENONLY, &quot;LISTEN-ONLY&quot;);
+ 	_PF(CAN_CTRLMODE_3_SAMPLES, &quot;TRIPLE-SAMPLING&quot;);
++	_PF(CAN_CTRLMODE_BERR_REPORTING, &quot;BERR-REPORTING&quot;);
+ #undef _PF
+ 	if (cm)
+ 		fprintf(f, &quot;%x&quot;, cm);
+@@ -142,6 +144,10 @@ static int can_parse_opt(struct link_util *lu, int argc, char **argv,
+ 			NEXT_ARG();
+ 			set_ctrlmode(&quot;triple-sampling&quot;, *argv, &amp;cm,
+ 				     CAN_CTRLMODE_3_SAMPLES);
++		} else if (matches(*argv, &quot;berr-reporting&quot;) == 0) {
++			NEXT_ARG();
++			set_ctrlmode(&quot;berr-reporting&quot;, *argv, &amp;cm,
++				     CAN_CTRLMODE_BERR_REPORTING);
+ 		} else if (matches(*argv, &quot;restart&quot;) == 0) {
+ 			__u32 val = 1;
+ 
+@@ -200,6 +206,13 @@ static void can_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])
+ 			can_state_names[*state] : &quot;UNKNOWN&quot;);
+ 	}
+ 
++	if (tb[IFLA_CAN_BERR_COUNTER]) {
++		struct can_berr_counter *bc =
++			RTA_DATA(tb[IFLA_CAN_BERR_COUNTER]);
++
++		fprintf(f, &quot;(berr-counter tx %d rx %d) &quot;, bc-&gt;txerr, bc-&gt;rxerr);
++	}
++
+ 	if (tb[IFLA_CAN_RESTART_MS]) {
+ 		__u32 *restart_ms = RTA_DATA(tb[IFLA_CAN_RESTART_MS]);
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004020.html">[RFC] can: netlink support for bus-error reporting and counters
+</A></li>
+	<LI>Next message: <A HREF="004019.html">[RFC] iproute2: netlink support for bus-error reporting and 	counters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4013">[ date ]</a>
+              <a href="thread.html#4013">[ thread ]</a>
+              <a href="subject.html#4013">[ subject ]</a>
+              <a href="author.html#4013">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

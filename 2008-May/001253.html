@@ -1,0 +1,163 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: Hardware independent bit timing
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20Hardware%20independent%20bit%20timing&In-Reply-To=%3C483E6A8E.7070803%40ems-wuensche.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001248.html">
+   <LINK REL="Next"  HREF="001254.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: Hardware independent bit timing</H1>
+    <B>Sebastian Haas</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20Hardware%20independent%20bit%20timing&In-Reply-To=%3C483E6A8E.7070803%40ems-wuensche.com%3E"
+       TITLE="RFC: Hardware independent bit timing">haas at ems-wuensche.com
+       </A><BR>
+    <I>Thu May 29 10:34:22 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001248.html">RFC: Hardware independent bit timing
+</A></li>
+        <LI>Next message: <A HREF="001254.html">RFC: Hardware independent bit timing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1253">[ date ]</a>
+              <a href="thread.html#1253">[ thread ]</a>
+              <a href="subject.html#1253">[ subject ]</a>
+              <a href="author.html#1253">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+Wolfgang Grandegger wrote:
+&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> I also thought about &quot;- can_custom_bitrate (with tseg &amp; friends)
+</I>&gt;&gt;&gt;&gt;<i> [requires clock]&quot; but i don't think, that these (mostly) specific
+</I>&gt;&gt;&gt;&gt;<i> calculation functions need to be part of the *kernel* at all. This has
+</I>&gt;&gt;&gt;&gt;<i> been confirmed by Uwe and is also my experience. If anyone has the
+</I>&gt;&gt;&gt;&gt;<i> request for defined settings this should be calculated by a userspace
+</I>&gt;&gt;&gt;&gt;<i> tool which can provide specific btr register values. And these 2,3 or 4
+</I>&gt;&gt;&gt;&gt;<i> bytes could be easily pushed into /sys/.../can_custom_btregs .
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I agree with you, that there should not be sophisticated functions to
+</I>&gt;&gt;&gt;<i> calculate bit timing parameters in the driver. Ony a simple calculation
+</I>&gt;&gt;&gt;<i> would is acceptable. But do we really want to drop the idea of providing
+</I>&gt;&gt;&gt;<i> a hardware *independent* way of setting custom bit timing parameters.
+</I>&gt;&gt;&gt;<i> It's seems to be difficult, at least, as the MSCAN hardware shows.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;<i> I would not have any objections to provide this hardware independent
+</I>&gt;&gt;<i> calculation in the form of a userspace application. This would also help
+</I>&gt;&gt;<i> to keep the discussions about the magic of bitrate calculation away from
+</I>&gt;&gt;<i> netdev ML ;-)
+</I>&gt;<i>
+</I>&gt;<i> Thinking more about it, it would also simplify the API and the kernel
+</I>&gt;<i> code. A tool for calculating bit timing parameters could be added to
+</I>&gt;<i> can-utils. What is needed from the driver is the CAN system clock and
+</I>&gt;<i> the CAN controller type. In the SYSFS we have already &quot;can_sys_clock&quot;,
+</I>&gt;<i> but &quot;can_type&quot; is missing.
+</I>I have several objections on it. :-)
+
+I don't want a tool in the userspace which must be aware of any controller
+and controller type and the way the bitrate is calculated.
+
+The specific controller driver (e.g. SJA1000) already knows the hardware
+(incl. controller clock from the specific device driver), it knows how the
+bittiming register is build up out of the bitrate parameters (sample
+point, ...). Why don't we let the controller do it?
+
+The SYSFS module provides a predefined table of common bitrates and the
+parameters (_not_ the btregs).
+
+cat can_bitrates
+# bitrate bittime ...
+1000000 1&#181;s 8 125ns 75,0%
+800000  1,25&#181;s 10 125ns 80,0%
+
+This way the bitrates configuration is in the application' point of view
+identical for _all_ controllers e.g. SJA1000, MSCAN, CC770.
+
+To configure a bitrate the following happens.
+echo &quot;800000&quot; &gt; can_bitrate
+
+SYSFS drivers passes the parameters to the controller specific function
+(e.g. sja1000_set_bitrate_parameters(struct bitrate_params *params), it
+then calculate the btregs based on the passed parameters and the CAN
+system clock provided by the specific device driver.
+
+If someone needs more exotic bitrates we may provide a can_custom_bitrate
+like:
+echo &quot;800000 1,25&#181;s 10 125ns 80,0%&quot; &gt; can_custom_bitrate.
+
+This is also same handling for an application no matter which controller
+type is used.
+
+With this solution the normal user and the sophisticated user are satisfied.
+
+This also solve the kernel maintenance problem, the table is only defined
+once and additional bitrates are supported from the userspace.
+
+And this works for all controller, since they must support things like
+sample point, quantas (via CAN system clock?), ...
+
+- --
+Mit freundlichen Gruessen/Best Regards,
+
+Sebastian Haas
+Software Entwicklung/Software Development
+
+Phone: +49-9451-9432-22
+Fax  : +49-9451-9432-12
+Email: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">haas at ems-wuensche.com</A>
+Web  : www.ems-wuensche.com
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.6 (GNU/Linux)
+Comment: Using GnuPG with Mozilla - <A HREF="http://enigmail.mozdev.org">http://enigmail.mozdev.org</A>
+
+iD8DBQFIPmqMpqRB8PJG7XwRAgYtAKCW82mvN7I811VZXnvcVWhhnEd7XQCfR3Se
+pt8ydhHmgF8CiNfCdwLhbcc=
+=QTvo
+-----END PGP SIGNATURE-----
+-- 
+EMS Dr. Thomas Wuensche e.K.
+Sonnenhang 3
+85304 Ilmmuenster
+HRA Neuburg a.d. Donau, HR-Nr. 70.106
+Phone: +49-8441-490260
+Fax  : +49-8441-81860
+<A HREF="http://www.ems-wuensche.com">http://www.ems-wuensche.com</A>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001248.html">RFC: Hardware independent bit timing
+</A></li>
+	<LI>Next message: <A HREF="001254.html">RFC: Hardware independent bit timing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1253">[ date ]</a>
+              <a href="thread.html#1253">[ thread ]</a>
+              <a href="subject.html#1253">[ subject ]</a>
+              <a href="author.html#1253">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

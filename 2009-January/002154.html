@@ -1,0 +1,152 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: can_dev_lib_magic
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20can_dev_lib_magic&In-Reply-To=%3C49736E15.1040702%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002150.html">
+   <LINK REL="Next"  HREF="002156.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: can_dev_lib_magic</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20can_dev_lib_magic&In-Reply-To=%3C49736E15.1040702%40hartkopp.net%3E"
+       TITLE="RFC: can_dev_lib_magic">socketcan at hartkopp.net
+       </A><BR>
+    <I>Sun Jan 18 18:59:49 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002150.html">[PATCH 3/3] MSCAN-MPC52XX: re-write as proper OF driver (/arch/ppc	is gone)
+</A></li>
+        <LI>Next message: <A HREF="002156.html">RFC: can_dev_lib_magic
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2154">[ date ]</a>
+              <a href="thread.html#2154">[ thread ]</a>
+              <a href="subject.html#2154">[ subject ]</a>
+              <a href="author.html#2154">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello Wolfgang et. all,
+
+AFAIK there are currently 3 CAN drivers that do not use the CAN netdev 
+library:
+
+- vcan (virtual CAN driver)
+- slcan (for the CAN232 LAWICEL protocol)
+- pcan
+
+Currently only the vcan driver is recognized and for the other drivers 
+the CAN sysfs entries are created by the can_netdev_notifier - also for 
+slcan - and then a can_priv structure is assumed to be at the position 
+of netdev_priv(dev).
+
+I was looking if i could use this:
+
+    /* omit CAN software network devices like vcan and slcan */
+    if (!&amp;dev-&gt;dev || !dev-&gt;dev.parent)
+        return 0;
+
+to detect CAN software network devices - but this does not prevent us 
+from correctly implemented CAN drivers that do not use the CAN netdev 
+lib for any reason.
+
+So my latest (successfully tested) idea was to put a magic value at the 
+first position in netdev_priv(dev) (see below).
+
+What do you think about this approach?
+
+Regards,
+Oliver
+
+Index: trunk/kernel/2.6/include/linux/can/dev.h
+===================================================================
+--- trunk/kernel/2.6/include/linux/can/dev.h    (Revision 904)
++++ trunk/kernel/2.6/include/linux/can/dev.h    (Arbeitskopie)
+@@ -88,8 +88,10 @@
+  * CAN common private data
+  */
+ #define CAN_ECHO_SKB_MAX  4
++#define CAN_DEV_LIB_MAGIC 0xCACA0123
+ 
+ struct can_priv {
++    u32 can_dev_lib_magic;
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+     struct net_device_stats net_stats;
+ #endif
+Index: trunk/kernel/2.6/drivers/net/can/dev.c
+===================================================================
+--- trunk/kernel/2.6/drivers/net/can/dev.c    (Revision 904)
++++ trunk/kernel/2.6/drivers/net/can/dev.c    (Arbeitskopie)
+@@ -273,6 +273,7 @@
+ 
+     priv = netdev_priv(dev);
+ 
++    priv-&gt;can_dev_lib_magic = CAN_DEV_LIB_MAGIC;
+     priv-&gt;state = CAN_STATE_STOPPED;
+     spin_lock_init(&amp;priv-&gt;irq_lock);
+ 
+@@ -476,22 +477,13 @@
+                     void *ndev)
+ {
+     struct net_device *dev = ndev;
++    struct can_priv *priv  = netdev_priv(dev);
+ 
+     if (dev-&gt;type != ARPHRD_CAN)
+         return 0;
+ 
+-#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,24)
+-    /* omit virtual CAN software network devices */
+-    if (dev-&gt;rtnl_link_ops) {
+-        const struct rtnl_link_ops *ops = dev-&gt;rtnl_link_ops;
+-        if (!strcmp(ops-&gt;kind, &quot;vcan&quot;))
+-            return 0;
+-    }
+-#else
+-    /* software CAN devices like 'vcan' do not have private data */
+-    if (!dev-&gt;priv)
++    if (priv-&gt;can_dev_lib_magic != CAN_DEV_LIB_MAGIC)
+         return 0;
+-#endif
+ 
+     switch (state) {
+     case NETDEV_REGISTER:
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: rfc_can_dev_magic.patch
+Type: text/x-patch
+Size: 1514 bytes
+Desc: not available
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20090118/d84cc690/attachment.bin">https://lists.berlios.de/pipermail/socketcan-core/attachments/20090118/d84cc690/attachment.bin</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002150.html">[PATCH 3/3] MSCAN-MPC52XX: re-write as proper OF driver (/arch/ppc	is gone)
+</A></li>
+	<LI>Next message: <A HREF="002156.html">RFC: can_dev_lib_magic
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2154">[ date ]</a>
+              <a href="thread.html#2154">[ thread ]</a>
+              <a href="subject.html#2154">[ subject ]</a>
+              <a href="author.html#2154">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

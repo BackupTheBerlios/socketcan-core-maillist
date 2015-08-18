@@ -1,0 +1,325 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Kernel inclusion status
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Kernel%20inclusion%20status&In-Reply-To=%3C4A263699.1090802%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002567.html">
+   <LINK REL="Next"  HREF="002569.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Kernel inclusion status</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Kernel%20inclusion%20status&In-Reply-To=%3C4A263699.1090802%40grandegger.com%3E"
+       TITLE="Kernel inclusion status">wg at grandegger.com
+       </A><BR>
+    <I>Wed Jun  3 10:38:49 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002567.html">Kernel inclusion status
+</A></li>
+        <LI>Next message: <A HREF="002569.html">Kernel inclusion status
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2568">[ date ]</a>
+              <a href="thread.html#2568">[ thread ]</a>
+              <a href="subject.html#2568">[ subject ]</a>
+              <a href="author.html#2568">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger wrote:
+&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> The next step would be to get the SVN branch &quot;branches/netlink&quot; in sync
+</I>&gt;&gt;&gt;<i> with &quot;net-next-2.6&quot; and sooner than later move it to trunk. Oliver,
+</I>&gt;&gt;&gt;<i> could you please re-introduce ND2D() first, also to get the MSCAN and
+</I>&gt;&gt;&gt;<i> AT91 driver compiled. Then I would apply the recent &quot;net-next-2.6&quot; changes.
+</I>&gt;&gt;<i> Hi Wolfgang,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> i reintroduced the ND2D() macro and also fixed the line where ND2D() was
+</I>&gt;&gt;<i> missing (in branches/netlink).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> With having ND2D() in the SVN's dev.h the problems emerged again, that you are
+</I>&gt;&gt;<i> not able to compile the SVN tree with the latest net-next-2.6 as the can/dev.h
+</I>&gt;&gt;<i> in the kernel tree is always preferred.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> My suggestion to solve this:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> As the (backward compatible) code in the SVN is not 1:1 to the mainline code
+</I>&gt;&gt;<i> anymore (due to ND2D()) we should move the SVN can/dev.h to can/dev_compat.h
+</I>&gt;&gt;<i> with ND2D() and the other compatibility stuff like the different struct
+</I>&gt;&gt;<i> can_priv ...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The drivers in the SVN would then be changed like this:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Index: branches/netlink/kernel/2.6/drivers/net/can/at91_can.c
+</I>&gt;&gt;<i> ===================================================================
+</I>&gt;&gt;<i> --- branches/netlink/kernel/2.6/drivers/net/can/at91_can.c	(revision 987)
+</I>&gt;&gt;<i> +++ branches/netlink/kernel/2.6/drivers/net/can/at91_can.c	(working copy)
+</I>&gt;&gt;<i> @@ -34,7 +34,7 @@
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>  #include &lt;linux/can.h&gt;
+</I>&gt;&gt;<i>  #include &lt;linux/can/error.h&gt;
+</I>&gt;&gt;<i> -#include &lt;linux/can/dev.h&gt;
+</I>&gt;&gt;<i> +#include &lt;linux/can/dev_compat.h&gt; /* backward compatible can/dev.h */
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>  #include &lt;mach/board.h&gt;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> And they would compile with net-next-2.6 again as the dev_compat.h is
+</I>&gt;&gt;<i> definitely pulled by the compiler correctly.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> What do you think about this approach?
+</I>&gt;<i> 
+</I>&gt;<i> Hm, what about using the gcc argument &quot;-include&quot; to point to the
+</I>&gt;<i> compatibility header file as shown in the attached patch. The Makefiles
+</I>&gt;<i> are different anyhow. Then the &quot;#include &lt;linux/version&gt;&quot; could also be
+</I>&gt;<i> removed from the drivers source files. Anyhow, I still have (other)
+</I>&gt;<i> problems compiling with net-next-2.6.
+</I>
+The problems are with missing netdev ops.
+
+With the attached patch below, I can build with net-next-2.6. I think
+it's OK to apply both patches!?
+
+Wolfgang.
+
+---
+ kernel/2.6/drivers/net/can/at91_can.c             |   36 +++++++++++++++-------
+ kernel/2.6/drivers/net/can/mcp251x.c              |   14 ++++++++
+ kernel/2.6/drivers/net/can/slcan.c                |   21 +++++++++++-
+ kernel/2.6/drivers/net/can/softing/softing_main.c |   12 +++++++
+ 4 files changed, 70 insertions(+), 13 deletions(-)
+
+Index: netlink/kernel/2.6/drivers/net/can/mcp251x.c
+===================================================================
+--- netlink.orig/kernel/2.6/drivers/net/can/mcp251x.c
++++ netlink/kernel/2.6/drivers/net/can/mcp251x.c
+@@ -3,6 +3,7 @@
+  * FIXME: increment can_stats in case of state changes
+  * FIXME: state changes by interrupt
+  * FIXME: do_set_mode not implemented (required for restart)
++ * FIXME: remove tx timeout callback
+  * FIXME: to be tested
+  *
+  * CAN bus driver for Microchip 251x CAN Controller with SPI Interface
+@@ -993,6 +994,15 @@ static void mcp251x_tx_timeout(struct ne
+ 	queue_work(priv-&gt;wq, &amp;priv-&gt;irq_work);
+ }
+ 
++#if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
++static const struct net_device_ops mcp251x_netdev_ops = {
++	.ndo_open	= mcp251x_open,
++	.ndo_stop	= mcp251x_stop,
++	.ndo_start_xmit	= mcp251x_hard_start_xmit,
++	.ndo_tx_timeout	= mcp251x_tx_timeout,
++};
++#endif
++
+ static struct net_device *alloc_mcp251x_netdev(int sizeof_priv)
+ {
+ 	struct net_device *net;
+@@ -1004,10 +1014,14 @@ static struct net_device *alloc_mcp251x_
+ 
+ 	priv = netdev_priv(net);
+ 
++#if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
++	net-&gt;netdev_ops		= &amp;mcp251x_netdev_ops;
++#else
+ 	net-&gt;open		= mcp251x_open;
+ 	net-&gt;stop		= mcp251x_stop;
+ 	net-&gt;hard_start_xmit	= mcp251x_hard_start_xmit;
+ 	net-&gt;tx_timeout		= mcp251x_tx_timeout;
++#endif
+ 	net-&gt;watchdog_timeo	= HZ;
+ 
+ 	priv-&gt;can.bittiming_const = &amp;mcp251x_bittiming_const;
+Index: netlink/kernel/2.6/drivers/net/can/softing/softing_main.c
+===================================================================
+--- netlink.orig/kernel/2.6/drivers/net/can/softing/softing_main.c
++++ netlink/kernel/2.6/drivers/net/can/softing/softing_main.c
+@@ -882,6 +882,14 @@ static void rm_netdev_sysfs(struct softi
+ 	sysfs_remove_group(&amp;priv-&gt;netdev-&gt;dev.kobj, &amp;netdev_sysfs);
+ }
+ 
++#if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
++static const struct net_device_ops softing_netdev_ops = {
++	.ndo_open 	= netdev_open,
++	.ndo_stop	= netdev_stop,
++	.ndo_start_xmit	= netdev_start_xmit,
++};
++#endif
++
+ static struct softing_priv *mk_netdev(struct softing *card, u16 chip_id)
+ {
+ 	struct net_device *ndev;
+@@ -905,9 +913,13 @@ static struct softing_priv *mk_netdev(st
+ 	SET_NETDEV_DEV(ndev, card-&gt;dev);
+ 
+ 	ndev-&gt;flags |= IFF_ECHO;
++#if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
++	ndev-&gt;netdev_ops	= &amp;softing_netdev_ops;
++#else
+ 	ndev-&gt;open		= netdev_open;
+ 	ndev-&gt;stop		= netdev_stop;
+ 	ndev-&gt;hard_start_xmit	= netdev_start_xmit;
++#endif
+ 	priv-&gt;can.do_get_state	= candev_get_state;
+ 	priv-&gt;can.do_set_mode	= candev_set_mode;
+ 
+Index: netlink/kernel/2.6/drivers/net/can/slcan.c
+===================================================================
+--- netlink.orig/kernel/2.6/drivers/net/can/slcan.c
++++ netlink/kernel/2.6/drivers/net/can/slcan.c
+@@ -528,16 +528,31 @@ static int slc_open(struct net_device *d
+ 	return 0;
+ }
+ 
++#if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
++static const struct net_device_ops slc_netdev_ops = {
++	.ndo_open               = slc_open,
++	.ndo_stop               = slc_close,
++	.ndo_start_xmit         = slc_xmit,
++#ifdef SLC_CHECK_TRANSMIT
++	.ndo_tx_timeout		= slc_tx_timeout,
++#endif
++};
++#endif
++
+ /* Netdevice register callback */
+ static void slc_setup(struct net_device *dev)
+ {
++#if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
++	dev-&gt;netdev_ops = &amp;slc_netdev_ops;
++#else
+ 	dev-&gt;open		= slc_open;
+-	dev-&gt;destructor		= free_netdev;
+ 	dev-&gt;stop		= slc_close;
++	dev-&gt;hard_start_xmit	= slc_xmit;
++#endif
++	dev-&gt;destructor		= free_netdev;
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+ 	dev-&gt;get_stats		= slc_get_stats;
+ #endif
+-	dev-&gt;hard_start_xmit	= slc_xmit;
+ 
+ 	dev-&gt;hard_header_len	= 0;
+ 	dev-&gt;addr_len		= 0;
+@@ -546,7 +561,9 @@ static void slc_setup(struct net_device 
+ 	dev-&gt;mtu		= sizeof(struct can_frame);
+ 	dev-&gt;type		= ARPHRD_CAN;
+ #ifdef SLC_CHECK_TRANSMIT
++#if LINUX_VERSION_CODE &lt;= KERNEL_VERSION(2,6,28)
+ 	dev-&gt;tx_timeout		= slc_tx_timeout;
++#endif
+ 	dev-&gt;watchdog_timeo	= 20*HZ;
+ #endif
+ 
+Index: netlink/kernel/2.6/drivers/net/can/at91_can.c
+===================================================================
+--- netlink.orig/kernel/2.6/drivers/net/can/at91_can.c
++++ netlink/kernel/2.6/drivers/net/can/at91_can.c
+@@ -3,6 +3,7 @@
+  * FIXME: bus-off handling
+  * FIXME: review non-standard error counting and statistics
+  * FIXME: remove tx timeout callback
++ * FIXME: don't use netdev-&gt;base_addr
+  * FIXME: to be tested
+  *
+  * at91_can.c -  CAN network driver for AT91 SoC CAN controller
+@@ -162,6 +163,18 @@ struct at91_priv {
+ };
+ 
+ 
++static struct can_bittiming_const at91_bittiming_const = {
++	.tseg1_min = 4,
++	.tseg1_max = 16,
++	.tseg2_min = 2,
++	.tseg2_max = 8,
++	.sjw_max = 4,
++	.brp_min = 2,
++	.brp_max = 128,
++	.brp_inc = 1,
++};
++
++
+ static inline int get_tx_next_mb(struct at91_priv *priv)
+ {
+ 	return (priv-&gt;tx_next &amp; AT91_NEXT_MB_MASK) + AT91_MB_TX_FIRST;
+@@ -1013,17 +1026,14 @@ static int at91_set_mode(struct net_devi
+ }
+ 
+ 
+-static struct can_bittiming_const at91_bittiming_const = {
+-	.tseg1_min = 4,
+-	.tseg1_max = 16,
+-	.tseg2_min = 2,
+-	.tseg2_max = 8,
+-	.sjw_max = 4,
+-	.brp_min = 2,
+-	.brp_max = 128,
+-	.brp_inc = 1,
++#if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
++static const struct net_device_ops at91_netdev_ops = {
++	.ndo_open	= at91_open,
++	.ndo_stop	= at91_close,
++	.ndo_start_xmit	= at91_start_xmit,
++	.ndo_tx_timeout	= at91_tx_timeout,
+ };
+-
++#endif
+ 
+ static int __init at91_can_probe(struct platform_device *pdev)
+ {
+@@ -1067,10 +1077,14 @@ static int __init at91_can_probe(struct 
+ 		goto exit_iounmap;
+ 	}
+ 
++#if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
++	dev-&gt;netdev_ops		= &amp;at91_netdev_ops;
++#else
+ 	dev-&gt;open		= at91_open;
+ 	dev-&gt;stop		= at91_close;
+ 	dev-&gt;hard_start_xmit	= at91_start_xmit;
+-	dev-&gt;tx_timeout	= at91_tx_timeout;
++	dev-&gt;tx_timeout		= at91_tx_timeout;
++#endif
+ 	dev-&gt;get_stats		= at91_get_stats;
+ 	dev-&gt;irq		= irq;
+ 	dev-&gt;base_addr		= (unsigned long)addr;
+
+
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002567.html">Kernel inclusion status
+</A></li>
+	<LI>Next message: <A HREF="002569.html">Kernel inclusion status
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2568">[ date ]</a>
+              <a href="thread.html#2568">[ thread ]</a>
+              <a href="subject.html#2568">[ subject ]</a>
+              <a href="author.html#2568">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

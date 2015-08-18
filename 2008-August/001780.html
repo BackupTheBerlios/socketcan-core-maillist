@@ -1,0 +1,377 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: generic sja1000 platform driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20generic%20sja1000%20platform%20driver&In-Reply-To=%3C4897655F.6010802%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001783.html">
+   <LINK REL="Next"  HREF="001782.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: generic sja1000 platform driver</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20generic%20sja1000%20platform%20driver&In-Reply-To=%3C4897655F.6010802%40pengutronix.de%3E"
+       TITLE="RFC: generic sja1000 platform driver">mkl at pengutronix.de
+       </A><BR>
+    <I>Mon Aug  4 22:23:59 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001783.html">RFC Naming of dev.c / sja1000.c / ems_pci.c
+</A></li>
+        <LI>Next message: <A HREF="001782.html">RFC: generic sja1000 platform driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1780">[ date ]</a>
+              <a href="thread.html#1780">[ thread ]</a>
+              <a href="subject.html#1780">[ subject ]</a>
+              <a href="author.html#1780">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+there is more than one (ARM) board that has a sja1000 attached to the
+local processor bus. Phytec has at least three. So I propose to convert
+the existing pcm027 sja1000 driver into a generic sja1000 platform bus
+driver.
+
+This new driver is almost a 1:1 copy of the original pcm027 driver (just
+&quot;s/pcm027/sp/&quot;, sp is short for sja1000_platform), The definition of the
+&quot;ocr&quot; and &quot;odr&quot;, aswell as the &quot;can_sys_clock&quot; has been moved into the
+platform_data. This driver also supports setting the irq trigger type
+via the flags of the corresponding IORESOURCE_IRQ.
+
+In order to specify the ocr and odr register values in the platform data
+of the sja device in the &lt;board&gt;.c file, (i.e. outside of the
+drivers/net/can/sja1000 directory) I moved the definitions into a
+seperate file into include/linux/can/sja1000_platform.h. The original
+sja10000.h include this file.
+
+The driver has been tested on the Phyec's pcm038/pcm970 (i.MX27),
+Linux-2.6.26 plus latest socketcan svn (r813), but w/o Wolfgangs patches.
+
+regards, Marc
+
+
+Signed-off-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+
+---
+ drivers/net/can/sja1000/sja1000.h          |   23 ---
+ drivers/net/can/sja1000/sja1000_platform.c |  185
++++++++++++++++++++++++++++++
+ include/linux/can/sja1000_platform.h       |   32 +++++
+ 3 files changed, 218 insertions(+), 22 deletions(-)
+
+Index: 2.6/drivers/net/can/sja1000/sja1000.h
+===================================================================
+--- 2.6.orig/drivers/net/can/sja1000/sja1000.h
++++ 2.6/drivers/net/can/sja1000/sja1000.h
+@@ -50,6 +50,7 @@
+ #define SJA1000DEV_H
+
+ #include &lt;linux/can/dev.h&gt;
++#include &lt;linux/can/sja1000_platform.h&gt;
+
+ #define TX_TIMEOUT      (50*HZ/1000)	/* 50ms */
+ #define RESTART_MS      100	/* restart chip on persistent errors in
+100ms */
+@@ -144,28 +145,6 @@
+ #define ECC_STUFF	0x80
+ #define ECC_MASK	0xc0
+
+-/* clock divider register */
+-#define CDR_CLKOUT_MASK 0x07
+-#define CDR_CLK_OFF	0x08 /* Clock off (CLKOUT pin) */
+-#define CDR_RXINPEN	0x20 /* TX1 output is RX irq output */
+-#define CDR_CBP		0x40 /* CAN input comparator bypass */
+-#define CDR_PELICAN	0x80 /* PeliCAN mode */
+-
+-/* output control register */
+-#define OCR_MODE_BIPHASE  0x00
+-#define OCR_MODE_TEST     0x01
+-#define OCR_MODE_NORMAL   0x02
+-#define OCR_MODE_CLOCK    0x03
+-#define OCR_TX0_INVERT    0x04
+-#define OCR_TX0_PULLDOWN  0x08
+-#define OCR_TX0_PULLUP    0x10
+-#define OCR_TX0_PUSHPULL  0x18
+-#define OCR_TX1_INVERT    0x20
+-#define OCR_TX1_PULLDOWN  0x40
+-#define OCR_TX1_PULLUP    0x80
+-#define OCR_TX1_PUSHPULL  0xc0
+-
+-
+ /*
+  * Flags for sja1000priv.flags
+  */
+Index: 2.6/drivers/net/can/sja1000/sja1000_platform.c
+===================================================================
+--- /dev/null
++++ 2.6/drivers/net/can/sja1000/sja1000_platform.c
+@@ -0,0 +1,185 @@
++/*
++ * Copyright (C) 2005 Sascha Hauer, Pengutronix
++ * Copyright (C) 2007 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307
+ USA
++ */
++
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/delay.h&gt;
++#include &lt;linux/pci.h&gt;
++#include &lt;linux/platform_device.h&gt;
++#include &lt;linux/irq.h&gt;
++#include &lt;linux/can.h&gt;
++#include &lt;linux/can/dev.h&gt;
++#include &lt;linux/can/sja1000_platform.h&gt;
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,16)
++#include &lt;linux/io.h&gt;
++#else
++#include &lt;asm/io.h&gt;
++#endif
++
++#include &quot;sja1000.h&quot;
++
++#define DRV_NAME &quot;sja1000&quot;
++
++MODULE_AUTHOR(&quot;Sascha Hauer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;&quot;);
++MODULE_DESCRIPTION(&quot;Socket-CAN driver for SJA1000 on the platform bus&quot;);
++MODULE_LICENSE(&quot;GPL v2&quot;);
++
++static u8 sp_read_reg(struct net_device *dev, int reg)
++{
++	return ioread8((void __iomem *)(dev-&gt;base_addr + reg));
++}
++
++static void sp_write_reg(struct net_device *dev, int reg, u8 val)
++{
++	iowrite8(val, (void __iomem *)(dev-&gt;base_addr + reg));
++}
++
++static int sp_probe(struct platform_device *pdev)
++{
++	int err, irq;
++	void __iomem *addr;
++	struct net_device *dev;
++	struct sja1000_priv *priv;
++	struct resource *res_mem, *res_irq;
++	struct sja1000_platform_data *pdata;
++
++	err = -ENODEV;
++	pdata = pdev-&gt;dev.platform_data;
++	if (!pdata) {
++		dev_err(&amp;pdev-&gt;dev, &quot;No platform data provided!\n&quot;);
++		goto exit;
++	}
++
++	err = -ENODEV;
++	res_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	res_irq = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
++	if (!res_mem || !res_irq)
++		goto exit;
++
++	err = -EBUSY;
++	if (!request_mem_region(res_mem-&gt;start,
++				res_mem-&gt;end - res_mem-&gt;start + 1,
++				DRV_NAME))
++		goto exit;
++
++	err = -ENOMEM;
++	addr = ioremap_nocache(res_mem-&gt;start,
++			       res_mem-&gt;end - res_mem-&gt;start + 1);
++	if (!addr)
++		goto exit_release;
++
++	irq = res_irq-&gt;start;
++	if (res_irq-&gt;flags &amp; IRQF_TRIGGER_MASK)
++		set_irq_type(irq, res_irq-&gt;flags &amp; IRQF_TRIGGER_MASK);
++
++	dev = alloc_sja1000dev(0);
++	if (!dev)
++		goto exit_iounmap;
++
++	priv = netdev_priv(dev);
++
++	priv-&gt;read_reg = sp_read_reg;
++	priv-&gt;write_reg = sp_write_reg;
++	priv-&gt;can.can_sys_clock = pdata-&gt;can_sys_clock;
++	priv-&gt;ocr = pdata-&gt;ocr;
++	priv-&gt;cdr = pdata-&gt;cdr;
++
++	dev-&gt;irq = irq;
++	dev-&gt;base_addr = (unsigned long)addr;
++
++	dev_set_drvdata(&amp;pdev-&gt;dev, dev);
++
++	err = register_sja1000dev(dev);
++	if (err) {
++		dev_err(&amp;pdev-&gt;dev, &quot;registering %s failed (err=%d)\n&quot;,
++			DRV_NAME, err);
++		goto exit_free;
++	}
++
++	dev_info(&amp;pdev-&gt;dev, &quot;%s device registered (base_addr=%#lx, irq=%d)\n&quot;,
++		 DRV_NAME, dev-&gt;base_addr, dev-&gt;irq);
++	return 0;
++
++ exit_free:
++	free_sja1000dev(dev);
++ exit_iounmap:
++	iounmap(addr);
++ exit_release:
++	release_mem_region(res_mem-&gt;start,
++			   res_mem-&gt;end - res_mem-&gt;start + 1);
++ exit:
++	return err;
++}
++
++static int sp_remove(struct platform_device *pdev)
++{
++	struct net_device *dev = dev_get_drvdata(&amp;pdev-&gt;dev);
++	struct resource *res;
++
++	unregister_sja1000dev(dev);
++	dev_set_drvdata(&amp;pdev-&gt;dev, NULL);
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	release_mem_region(res-&gt;start, res-&gt;end - res-&gt;start + 1);
++
++	if (dev-&gt;base_addr)
++		iounmap((void __iomem *)dev-&gt;base_addr);
++
++	free_sja1000dev(dev);
++
++	return 0;
++}
++
++static int sp_suspend(struct platform_device *pdev,
++		      pm_message_t state)
++{
++	dev_err(&amp;pdev-&gt;dev, &quot;suspend not implented\n&quot;);
++	return 0;
++}
++
++
++static int sp_resume(struct platform_device *pdev)
++{
++	dev_err(&amp;pdev-&gt;dev, &quot;resume not implemented\n&quot;);
++	return 0;
++}
++
++static struct platform_driver sp_driver = {
++	.probe = sp_probe,
++	.remove = sp_remove,
++	.suspend = sp_suspend,
++	.resume = sp_resume,
++	.driver = {
++		.name = DRV_NAME,
++		.owner = THIS_MODULE,
++	},
++};
++
++static int __init sp_init(void)
++{
++	return platform_driver_register(&amp;sp_driver);
++}
++
++static void __exit sp_exit(void)
++{
++	platform_driver_unregister(&amp;sp_driver);
++}
++
++module_init(sp_init);
++module_exit(sp_exit);
+Index: 2.6/include/linux/can/sja1000_platform.h
+===================================================================
+--- /dev/null
++++ 2.6/include/linux/can/sja1000_platform.h
+@@ -0,0 +1,32 @@
++#ifndef _CAN_SJA1000_PLATFORM_H_
++#define _CAN_SJA1000_PLATFORM_H_
++
++/* output control register */
++#define OCR_MODE_BIPHASE	0x00
++#define OCR_MODE_TEST		0x01
++#define OCR_MODE_NORMAL		0x02
++#define OCR_MODE_CLOCK		0x03
++#define OCR_TX0_INVERT		0x04
++#define OCR_TX0_PULLDOWN	0x08
++#define OCR_TX0_PULLUP		0x10
++#define OCR_TX0_PUSHPULL	0x18
++#define OCR_TX1_INVERT		0x20
++#define OCR_TX1_PULLDOWN	0x40
++#define OCR_TX1_PULLUP		0x80
++#define OCR_TX1_PUSHPULL	0xc0
++
++/* clock divider register */
++#define CDR_CLKOUT_MASK		0x07
++#define CDR_CLK_OFF		0x08	/* Clock off (CLKOUT pin) */
++#define CDR_RXINPEN		0x20	/* TX1 output is RX irq output */
++#define CDR_CBP			0x40	/* CAN input comparator bypass */
++#define CDR_PELICAN		0x80	/* PeliCAN mode */
++
++struct sja1000_platform_data {
++	u32 can_sys_clock;	/* CAN bus oscillator frequency in Hz */
++
++	u8 ocr;
++	u8 cdr;
++};
++
++#endif	/* !_CAN_SJA1000_PLATFORM_H_ */
+
+-- 
+ Marc Kleine-Budde              Phone: +49-231-2826-924
+ Pengutronix - Linux Solutions for Science and Industry
+ Vertretung West/Dortmund     <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 252 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20080804/8b38338d/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20080804/8b38338d/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001783.html">RFC Naming of dev.c / sja1000.c / ems_pci.c
+</A></li>
+	<LI>Next message: <A HREF="001782.html">RFC: generic sja1000 platform driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1780">[ date ]</a>
+              <a href="thread.html#1780">[ thread ]</a>
+              <a href="subject.html#1780">[ subject ]</a>
+              <a href="author.html#1780">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

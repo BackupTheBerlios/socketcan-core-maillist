@@ -1,0 +1,111 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> protocol 000c is buggy
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20protocol%20000c%20is%20buggy&In-Reply-To=%3C470E6283.1040106%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000760.html">
+   <LINK REL="Next"  HREF="000751.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>protocol 000c is buggy</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20protocol%20000c%20is%20buggy&In-Reply-To=%3C470E6283.1040106%40hartkopp.net%3E"
+       TITLE="protocol 000c is buggy">socketcan at hartkopp.net
+       </A><BR>
+    <I>Thu Oct 11 19:50:59 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000760.html">protocol 000c is buggy
+</A></li>
+        <LI>Next message: <A HREF="000751.html">[RFC] &quot;write: No buffer space available&quot; problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#763">[ date ]</a>
+              <a href="thread.html#763">[ thread ]</a>
+              <a href="subject.html#763">[ subject ]</a>
+              <a href="author.html#763">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Marc Kleine-Budde wrote:
+&gt;<i> Hi!
+</I>&gt;<i>
+</I>&gt;<i> Yesterday I've startet tcpdump against a socketcan interface.
+</I>&gt;<i> (&quot;tcpdump -i can1&quot;).
+</I>&gt;<i>
+</I>&gt;<i> The kernel complains &quot;protocol 000c is buggy, dev can1&quot;.
+</I>&gt;<i> A grep over the kernel shows that this check[1] in dev_queue_xmit_nit() 
+</I>&gt;<i> fails:
+</I>&gt;<i>
+</I>&gt;<i> 	if (skb_network_header(skb2) &lt; skb2-&gt;data ||
+</I>&gt;<i> 		skb2-&gt;network_header &gt; skb2-&gt;tail) {
+</I>&gt;<i> 	}
+</I>&gt;<i>
+</I>&gt;<i> The Kernel is 2.6.23-rc9-rt2 plus socketcan revision 466, the hardware 
+</I>&gt;<i> is a MPC5200 can0 was connected to can1.
+</I>&gt;<i>
+</I>&gt;<i> Marc
+</I>&gt;<i>
+</I>&gt;<i> [1] <A HREF="http://lxr.linux.no/source/net/core/dev.c?a=arm#L1143">http://lxr.linux.no/source/net/core/dev.c?a=arm#L1143</A>
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>
+Hi Marc,
+
+this patch definitely solves the issue in can_send():
+
+Index: af_can.c
+===================================================================
+--- af_can.c (revision 524)
++++ af_can.c (working copy)
+@@ -309,6 +309,9 @@
+}
+
+skb-&gt;protocol = htons(ETH_P_CAN);
++ skb_reset_transport_header(skb);
++ skb_reset_network_header(skb);
++ skb_reset_mac_header(skb);
+
+if (loop) {
+/* local loopback of sent CAN frames */
+
+
+While skb_reset_network_header() fixes the problem you mentioned it 
+still has to be investigated if skb_reset_{transport|mac}_header() also 
+should be added in PF_CAN.
+
+Thanks &amp; best regards,
+Oliver
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000760.html">protocol 000c is buggy
+</A></li>
+	<LI>Next message: <A HREF="000751.html">[RFC] &quot;write: No buffer space available&quot; problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#763">[ date ]</a>
+              <a href="thread.html#763">[ thread ]</a>
+              <a href="subject.html#763">[ subject ]</a>
+              <a href="author.html#763">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

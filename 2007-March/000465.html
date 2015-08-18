@@ -1,0 +1,161 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RT-Socket-CAN bus error rate and latencies
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-March/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RT-Socket-CAN%20bus%20error%20rate%20and%20latencies&In-Reply-To=%3C46036D32.7000603%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000466.html">
+   <LINK REL="Next"  HREF="000456.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RT-Socket-CAN bus error rate and latencies</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RT-Socket-CAN%20bus%20error%20rate%20and%20latencies&In-Reply-To=%3C46036D32.7000603%40hartkopp.net%3E"
+       TITLE="RT-Socket-CAN bus error rate and latencies">socketcan at hartkopp.net
+       </A><BR>
+    <I>Fri Mar 23 07:01:22 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000466.html">RT-Socket-CAN bus error rate and latencies
+</A></li>
+        <LI>Next message: <A HREF="000456.html">RT-Socket-CAN bus error rate and latencies
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#465">[ date ]</a>
+              <a href="thread.html#465">[ thread ]</a>
+              <a href="subject.html#465">[ subject ]</a>
+              <a href="author.html#465">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger wrote:
+&gt;<i> Jan Kiszka wrote:
+</I>&gt;&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> I would tend to reduce the notifications to the user by creating a 
+</I>&gt;&gt;&gt;&gt;<i> timer at the first bus error interrupt. The first BE irq would lead 
+</I>&gt;&gt;&gt;&gt;<i> to a CAN_ERR_BUSERROR and after a (configurable) time (e.g.250ms) 
+</I>&gt;&gt;&gt;&gt;<i> the next information about bus errors is allowed to be passed to 
+</I>&gt;&gt;&gt;&gt;<i> the user. After this time period is over a new CAN_ERR_BUSERROR may 
+</I>&gt;&gt;&gt;&gt;<i> be passed to the user containing the count of occurred bus errors 
+</I>&gt;&gt;&gt;&gt;<i> somewhere in the data[]-section of the Error Frame. When a normal 
+</I>&gt;&gt;&gt;&gt;<i> RX/TX-interrupt indicates a 'working' CAN again, the timer would be 
+</I>&gt;&gt;&gt;&gt;<i> terminated.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> Instead of a fix configurable time we could also think about a 
+</I>&gt;&gt;&gt;&gt;<i> dynamic behaviour (e.g. with increasing periods).
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> What do you think about this?
+</I>&gt;&gt;&gt;<i> The question is if one bus-error does provide enough information on 
+</I>&gt;&gt;&gt;<i> the cause of the electrical problem or if a sequence is better. 
+</I>&gt;&gt;&gt;<i> Furthermore, I personally regard the use of timers as to heavy. But 
+</I>&gt;&gt;&gt;<i> the solution is feasible, of course. Any other opinions?
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I think Oliver's suggestions points in the right direction. But instead
+</I>&gt;&gt;<i> of only coding a timer into the stack, I still vote for closing the loop
+</I>&gt;&gt;<i> over the application:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> After the first error in a potential series, the related error frame is
+</I>&gt;&gt;<i> queued, listeners are woken up, and BEI is disabled for now. Once some
+</I>&gt;&gt;<i> listener read the error frame *and* decided to call into the stack for
+</I>&gt;&gt;<i> further bus errors, BEI is enabled again.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> That way the application decides about the error-related IRQ rate and
+</I>&gt;&gt;<i> can easily throttle it by delaying the next receive call. Moreover,
+</I>&gt;&gt;<i> threads of higher priority will be delayed at worst by one error IRQ.
+</I>&gt;&gt;<i> This mechanism just needs some words in the documentation (&quot;Be warned:
+</I>&gt;&gt;<i> error frames may overwhelm you. Throttle your reception!&quot;), but no
+</I>&gt;&gt;<i> further user-visible config options.
+</I>&gt;<i>
+</I>&gt;<i> I understand, BEI interrupts get (re-)enabled in recvmsg() if the 
+</I>&gt;<i> socket wants to receive bus errors. There can me multiple readers, but 
+</I>&gt;<i> that's not a problem. Just some overhead in this function. This would 
+</I>&gt;<i> also simplify the implementation as my previous one with &quot;on-demand&quot; 
+</I>&gt;<i> bus error would be obsolete. I start to like this solution.
+</I>
+Hm - to reenable the BEI on user interaction would be a nice thing BUT i
+can see several problems:
+
+1. In socketcan you have receive queues into the userspace with a length &gt;1
+
+2. How can we handle multiple subscribers (A reads three error frames
+and reenables therefore the BEI, B reads nothing in this time). Please
+remember: To have multiple applications it a vital idea from socketcan.
+
+3. The count of occured BEIs gets lost (maybe this is unimportant)
+
+----
+
+Regarding (2) the solution could be not to reenable the BEI for a device
+until every subscriber has read his error frame. But this collides with
+a raw-socket that's bound to 'any' device (ifindex = 0).
+
+Regarding (3) we could count the BEIs (which would not reduce the
+interrupt load) or we just stop the BEI after the first occurance which
+might possibly not enough for some people to implement the CAN
+academical correct.
+
+As you may see here a tight coupling of the problems on the CAN bus with
+the application(s!) is very tricky or even impossible in socketcan.
+Regarding other network devices (like ethernet devices) the notification
+about Layer 1/2 problems is unusual. The concept of creating error
+frames was a good compromise for this reason.
+
+As i also would like to avoid to create a timer for &quot;bus error
+throttling&quot;, i got a new idea:
+
+- on the first BEI: create an error frame, set a counter to zero and
+save the current timestamp
+- on the next BEI:
+  - increment the counter
+  - check if the time is up for the next error frame (e.g. after 200ms -
+configurable?)
+  - if so: Send the next error frame (including the number of occured
+error frames in this 200ms)
+
+BEI means ONLY to have a BEI (and no other error).
+
+Of course this does NOT reduce the interrupt load but all this
+throttling is performed inside the interrupt context. This should not be
+that problem, or is it? And we do not need a timer ...
+
+Any comments to this idea?
+
+Regards,
+Oliver
+
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000466.html">RT-Socket-CAN bus error rate and latencies
+</A></li>
+	<LI>Next message: <A HREF="000456.html">RT-Socket-CAN bus error rate and latencies
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#465">[ date ]</a>
+              <a href="thread.html#465">[ thread ]</a>
+              <a href="subject.html#465">[ subject ]</a>
+              <a href="author.html#465">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

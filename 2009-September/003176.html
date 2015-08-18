@@ -1,0 +1,428 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH V3] net-next:can: add TI CAN (HECC) driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V3%5D%20net-next%3Acan%3A%20add%20TI%20CAN%20%28HECC%29%20driver&In-Reply-To=%3C4ABB2BA2.2080206%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003177.html">
+   <LINK REL="Next"  HREF="003179.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH V3] net-next:can: add TI CAN (HECC) driver</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V3%5D%20net-next%3Acan%3A%20add%20TI%20CAN%20%28HECC%29%20driver&In-Reply-To=%3C4ABB2BA2.2080206%40grandegger.com%3E"
+       TITLE="[PATCH V3] net-next:can: add TI CAN (HECC) driver">wg at grandegger.com
+       </A><BR>
+    <I>Thu Sep 24 10:19:46 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003177.html">[PATCH V3] net-next:can: add TI CAN (HECC) driver
+</A></li>
+        <LI>Next message: <A HREF="003179.html">[PATCH V3] net-next:can: add TI CAN (HECC) driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3176">[ date ]</a>
+              <a href="thread.html#3176">[ thread ]</a>
+              <a href="subject.html#3176">[ subject ]</a>
+              <a href="author.html#3176">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Anant,
+
+I have a few more comments after a closer look...
+
+I suggest using BIT(n) for all (1 &lt;&lt; n), not only the macro definitions.
+ Also, often you use (1 &lt;&lt; mbxno) in a sequence of expressions. I think
+using
+
+	mbx_mask = BIT(mbxno);
+
+would be more efficient. A few more comments inline...
+
+Anant Gole wrote:
+&gt;<i> TI HECC (High End CAN Controller) module is found on many TI devices. It
+</I>&gt;<i> has 32 hardware mailboxes with full implemtation of CAN protocol 2.0B
+</I>&gt;<i> with bus speeds up to 1Mbps. Specifications of the module are available
+</I>&gt;<i> at TI web &lt;<A HREF="http://www.ti.com">http://www.ti.com</A>&gt;
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Anant Gole &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">anantgole at ti.com</A>&gt;
+</I>&gt;<i> diff --git a/drivers/net/can/ti_hecc.c b/drivers/net/can/ti_hecc.c
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..0d3cbe1
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/ti_hecc.c
+</I>[snip]
+&gt;<i> +
+</I>&gt;<i> +/* TX / RX Mailbox Configuration */
+</I>&gt;<i> +#define HECC_MAX_MAILBOXES	32	/* hardware mboxes - do not change */
+</I>&gt;<i> +#define MAX_TX_PRIO		0x3F	/* hardware value - do not change */
+</I>&gt;<i> +
+</I>&gt;<i> +#define HECC_MAX_TX_MBOX	4
+</I>&gt;<i> +#define HECC_MAX_RX_MBOX	(HECC_MAX_MAILBOXES - HECC_MAX_TX_MBOX)
+</I>&gt;<i> +
+</I>&gt;<i> +#if (HECC_MAX_TX_MBOX &gt; CAN_ECHO_SKB_MAX)
+</I>&gt;<i> +#error &quot;HECC: MAX TX mailboxes should be equal or less than CAN_ECHO_SKB_MAX&quot;
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +/* Important Note: TX mailbox configuration
+</I>&gt;<i> + * TX mailboxes should be restricted to the number of SKB buffers to avoid
+</I>&gt;<i> + * maintaining SKB buffers separately. TX mailboxes should be a power of 2
+</I>&gt;<i> + * for the mailbox logic to work.  Top mailbox numbers are reserved for RX
+</I>&gt;<i> + * and lower mailboxes for TX.
+</I>&gt;<i> + *
+</I>&gt;<i> + * HECC_MAX_TX_MBOX	HECC_MB_TX_SHIFT
+</I>&gt;<i> + * 4 (default)		2
+</I>&gt;<i> + * 8			3
+</I>&gt;<i> + * 16			4
+</I>&gt;<i> + */
+</I>&gt;<i> +#define HECC_MB_TX_SHIFT	2 /* as per table above */
+</I>
+I think you could get rid of this dependency if you define
+HECC_MB_TX_SHIFT first (above).
+
+#define HECC_MB_TX_SHIFT	2
+#define HECC_MAX_TX_MBOX	BIT(HECC_MB_TX_SHIFT)
+
+&gt;<i> +#define HECC_TX_PRIO_SHIFT	(HECC_MB_TX_SHIFT)
+</I>&gt;<i> +#define HECC_TX_PRIO_MASK	(0x3f &lt;&lt; HECC_MB_TX_SHIFT)
+</I>&gt;<i> +#define HECC_TX_MB_MASK		(HECC_MAX_TX_MBOX - 1)
+</I>&gt;<i> +#define HECC_TX_MASK ((HECC_MAX_TX_MBOX - 1) | HECC_TX_PRIO_MASK)
+</I>&gt;<i> +#define HECC_TX_MBOX_MASK	(~((1 &lt;&lt; HECC_MAX_TX_MBOX) - 1))
+</I>&gt;<i> +#define HECC_DEF_NAPI_WEIGHT	HECC_MAX_RX_MBOX
+</I>&gt;<i> +
+</I>&gt;<i> +/* Important Note: RX mailboxes are further logically split into two - main
+</I>&gt;<i> + * and buffer mailboxes. The goal is to get all packets into main mailboxes
+</I>&gt;<i> + * as driven by mailbox number and receive priority (higher to lower) and
+</I>&gt;<i> + * buffer mailboxes are used to receive pkts while main mailboxes are being
+</I>&gt;<i> + * processed. This ensures in-order packet reception.
+</I>&gt;<i> + *
+</I>&gt;<i> + * Here are the recommended values for buffer mailbox. Note that RX mailboxes
+</I>&gt;<i> + * start after TX mailboxes:
+</I>&gt;<i> + *
+</I>&gt;<i> + * HECC_MAX_RX_MBOX		HECC_RX_BUFFER_MBOX	No of buffer mailboxes
+</I>&gt;<i> + * 28				12			8
+</I>&gt;<i> + * 16				20			4
+</I>&gt;<i> + */
+</I>&gt;<i> +#define HECC_RX_BUFFER_MBOX	12 /* as per table above */
+</I>
+Note sure if this value could be calculated as well.
+
+[snip]
+&gt;<i> +static inline int get_tx_head_prio(struct ti_hecc_priv *priv)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return (priv-&gt;tx_head &gt;&gt; HECC_TX_PRIO_SHIFT) &amp; 0x3F;
+</I>&gt;<i> +}
+</I>
+Please use an appropriate define for &quot;0x3F&quot;.
+
+[snip]
+&gt;<i> +static void ti_hecc_start(struct net_device *ndev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct ti_hecc_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> +	int cnt, mbxno;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* put HECC in initialization mode and set btc */
+</I>&gt;<i> +	ti_hecc_reset(ndev);
+</I>&gt;<i> +
+</I>&gt;<i> +	priv-&gt;tx_head = priv-&gt;tx_tail = HECC_TX_MASK;
+</I>&gt;<i> +	priv-&gt;rx_next = HECC_RX_FIRST_MBOX;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Enable local and global acceptance mask registers */
+</I>&gt;<i> +	hecc_write(priv, HECC_CANGAM, HECC_SET_REG);
+</I>&gt;<i> +	hecc_write(priv, HECC_CANLAM0, HECC_SET_REG);
+</I>&gt;<i> +	hecc_write(priv, HECC_CANLAM3, HECC_SET_REG);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Prepare configured mailboxes to receive messages */
+</I>&gt;<i> +	for (cnt = 0; cnt &lt; HECC_MAX_RX_MBOX; cnt++) {
+</I>&gt;<i> +		mbxno = (HECC_MAX_MAILBOXES - 1 - cnt);
+</I>&gt;<i> +		hecc_clear_bit(priv, HECC_CANME, (1 &lt;&lt; mbxno));
+</I>&gt;<i> +		hecc_write(priv, HECC_CANMID(mbxno), HECC_CANMID_AME);
+</I>&gt;<i> +		hecc_write(priv, HECC_CANLAM(mbxno), HECC_SET_REG);
+</I>&gt;<i> +		hecc_set_bit(priv, HECC_CANMD, (1 &lt;&lt; mbxno));
+</I>&gt;<i> +		hecc_set_bit(priv, HECC_CANME, (1 &lt;&lt; mbxno));
+</I>&gt;<i> +		hecc_set_bit(priv, HECC_CANMIM, (1 &lt;&lt; mbxno));
+</I>
+mbx_mask? See general comment above.
+
+[snip]
+&gt;<i> +/**
+</I>&gt;<i> + * ti_hecc_xmit: HECC Transmit
+</I>&gt;<i> + *
+</I>&gt;<i> + * The transmit mailboxes start from 0 to HECC_MAX_TX_MBOX. In HECC the
+</I>&gt;<i> + * priority of the mailbox for tranmission is dependent upon priority setting
+</I>&gt;<i> + * field in mailbox registers. The mailbox with highest value in priority field
+</I>&gt;<i> + * is transmitted first. Only when two mailboxes have the same value in
+</I>&gt;<i> + * priority field the highest numbered mailbox is transmitted first.
+</I>&gt;<i> + *
+</I>&gt;<i> + * To utilize the HECC priority feature as described above we start with the
+</I>&gt;<i> + * highest numbered mailbox with highest priority level and move on to the next
+</I>&gt;<i> + * mailbox with the same priority level and so on. Once we loop through all the
+</I>&gt;<i> + * transmit mailboxes we choose the next priority level (lower) and so on
+</I>&gt;<i> + * until we reach the lowest priority level on the lowest numbered mailbox
+</I>&gt;<i> + * when we stop transmission until all mailboxes are transmitted and then
+</I>&gt;<i> + * restart at highest numbered mailbox with highest priority.
+</I>&gt;<i> + *
+</I>&gt;<i> + * Two counters (head and tail) are used to track the next mailbox to transmit
+</I>&gt;<i> + * and to track the echo buffer for already transmitted mailbox. The queue
+</I>&gt;<i> + * is stopped when all the mailboxes are busy or when there is a priority
+</I>&gt;<i> + * value roll-over happens.
+</I>&gt;<i> + */
+</I>&gt;<i> +static netdev_tx_t ti_hecc_xmit(struct sk_buff *skb, struct net_device *ndev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct ti_hecc_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> +	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i> +	u32 mbxno = 0;
+</I>
+Do you need to pre-set mbxno?
+
+&gt;<i> +	u32 data;
+</I>&gt;<i> +	unsigned long flags;
+</I>&gt;<i> +
+</I>&gt;<i> +	mbxno = get_tx_head_mb(priv);
+</I>&gt;<i> +	spin_lock_irqsave(&amp;priv-&gt;mbox_lock, flags);
+</I>&gt;<i> +	if (unlikely(hecc_read(priv, HECC_CANME) &amp; (1 &lt;&lt; mbxno))) {
+</I>&gt;<i> +		spin_unlock_irqrestore(&amp;priv-&gt;mbox_lock, flags);
+</I>&gt;<i> +		netif_stop_queue(ndev);
+</I>&gt;<i> +		dev_err(priv-&gt;ndev-&gt;dev.parent,
+</I>&gt;<i> +			&quot;BUG: TX mbox not ready tx_head=%08X, tx_tail=%08X\n&quot;,
+</I>&gt;<i> +			priv-&gt;tx_head, priv-&gt;tx_tail);
+</I>&gt;<i> +		return NETDEV_TX_BUSY;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	spin_unlock_irqrestore(&amp;priv-&gt;mbox_lock, flags);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Prepare mailbox for transmission */
+</I>&gt;<i> +	data = cf-&gt;can_dlc &amp; 0xF;
+</I>
+Please use min(cf-&gt;can_dlc, 8) instead.
+
+&gt;<i> +	if (cf-&gt;can_id &amp; CAN_RTR_FLAG) /* Remote transmission request */
+</I>&gt;<i> +		data |= HECC_CANMCF_RTR;
+</I>&gt;<i> +	data |= (get_tx_head_prio(priv) &lt;&lt; 8);
+</I>
+You don't need the outer brackets.
+
+&gt;<i> +	hecc_write(priv, HECC_CANMCF(mbxno), data);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (cf-&gt;can_id &amp; CAN_EFF_FLAG) /* Extended frame format */
+</I>&gt;<i> +		data = ((cf-&gt;can_id &amp; CAN_EFF_MASK) | HECC_CANMID_IDE);
+</I>
+Ditto.
+
+&gt;<i> +	else /* Standard frame format */
+</I>&gt;<i> +		data = ((cf-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 18);
+</I>
+Ditto.
+
+&gt;<i> +	hecc_write(priv, HECC_CANMID(mbxno), data);
+</I>&gt;<i> +	hecc_write(priv, HECC_CANMDL(mbxno),
+</I>&gt;<i> +		be32_to_cpu(*(u32 *)(cf-&gt;data + 0)));
+</I>&gt;<i> +	if (cf-&gt;can_dlc &gt; 4) {
+</I>&gt;<i> +		hecc_write(priv, HECC_CANMDH(mbxno),
+</I>&gt;<i> +			be32_to_cpu(*(u32 *)(cf-&gt;data + 4)));
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		*(u32 *)(cf-&gt;data + 4) = 0;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	can_put_echo_skb(skb, ndev, mbxno);
+</I>&gt;<i> +
+</I>&gt;<i> +	spin_lock_irqsave(&amp;priv-&gt;mbox_lock, flags);
+</I>&gt;<i> +	--priv-&gt;tx_head;
+</I>&gt;<i> +	if ((hecc_read(priv, HECC_CANME) &amp; (1 &lt;&lt; get_tx_head_mb(priv))) ||
+</I>&gt;<i> +		(priv-&gt;tx_head &amp; HECC_TX_MASK) == HECC_TX_MASK) {
+</I>&gt;<i> +		netif_stop_queue(ndev);
+</I>&gt;<i> +	}
+</I>&gt;<i> +	hecc_set_bit(priv, HECC_CANME, (1 &lt;&lt; mbxno));
+</I>&gt;<i> +	spin_unlock_irqrestore(&amp;priv-&gt;mbox_lock, flags);
+</I>&gt;<i> +
+</I>&gt;<i> +	hecc_clear_bit(priv, HECC_CANMD, (1 &lt;&lt; mbxno));
+</I>&gt;<i> +	hecc_set_bit(priv, HECC_CANMIM, (1 &lt;&lt; mbxno));
+</I>&gt;<i> +	hecc_write(priv, HECC_CANTRS, (1 &lt;&lt; mbxno));
+</I>
+mbx_mask?
+
+&gt;<i> +
+</I>&gt;<i> +	return NETDEV_TX_OK;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int ti_hecc_rx_pkt(struct ti_hecc_priv *priv, int mbxno)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device_stats *stats = &amp;priv-&gt;ndev-&gt;stats;
+</I>&gt;<i> +	struct can_frame *cf;
+</I>&gt;<i> +	struct sk_buff *skb;
+</I>&gt;<i> +	u32 data;
+</I>&gt;<i> +	unsigned long flags;
+</I>&gt;<i> +
+</I>&gt;<i> +	skb = dev_alloc_skb(sizeof(struct can_frame));
+</I>&gt;<i> +	if (!skb) {
+</I>&gt;<i> +		if (printk_ratelimit())
+</I>&gt;<i> +			dev_err(priv-&gt;ndev-&gt;dev.parent,
+</I>&gt;<i> +				&quot;dev_alloc_skb() failed\n&quot;);
+</I>&gt;<i> +		return -ENOMEM;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	skb-&gt;dev = priv-&gt;ndev;
+</I>&gt;<i> +	skb-&gt;protocol = htons(ETH_P_CAN);
+</I>&gt;<i> +	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+</I>&gt;<i> +
+</I>&gt;<i> +	cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+</I>&gt;<i> +	data = hecc_read(priv, HECC_CANMID(mbxno));
+</I>&gt;<i> +	if (data &amp; HECC_CANMID_IDE)
+</I>&gt;<i> +		cf-&gt;can_id = (data &amp; CAN_EFF_MASK) | CAN_EFF_FLAG;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		cf-&gt;can_id = ((data &gt;&gt; 18) &amp; CAN_SFF_MASK);
+</I>
+You don't need the outer brackets.
+
+&gt;<i> +	data = hecc_read(priv, HECC_CANMCF(mbxno));
+</I>&gt;<i> +	if (data &amp; HECC_CANMCF_RTR)
+</I>&gt;<i> +		cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;<i> +	cf-&gt;can_dlc = data &amp; 0xF;
+</I>&gt;<i> +	data = hecc_read(priv, HECC_CANMDL(mbxno));
+</I>&gt;<i> +	*(u32 *)(cf-&gt;data + 0) = cpu_to_be32(data);
+</I>&gt;<i> +	if (cf-&gt;can_dlc &gt; 4) {
+</I>&gt;<i> +		data = hecc_read(priv, HECC_CANMDH(mbxno));
+</I>&gt;<i> +		*(u32 *)(cf-&gt;data + 4) = cpu_to_be32(data);
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		*(u32 *)(cf-&gt;data + 4) = 0;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	spin_lock_irqsave(&amp;priv-&gt;mbox_lock, flags);
+</I>&gt;<i> +	hecc_clear_bit(priv, HECC_CANME, (1 &lt;&lt; mbxno));
+</I>&gt;<i> +	hecc_write(priv, HECC_CANRMP, (1 &lt;&lt; mbxno));
+</I>&gt;<i> +	/* enable mailbox only if it is part of rx buffer mailboxes */
+</I>&gt;<i> +	if (priv-&gt;rx_next &lt; HECC_RX_BUFFER_MBOX)
+</I>&gt;<i> +		hecc_set_bit(priv, HECC_CANME, (1 &lt;&lt; mbxno));
+</I>&gt;<i> +	spin_unlock_irqrestore(&amp;priv-&gt;mbox_lock, flags);
+</I>
+mbx_mask?
+
+&gt;<i> +	stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;<i> +	netif_receive_skb(skb);
+</I>&gt;<i> +	stats-&gt;rx_packets++;
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/**
+</I>&gt;<i> + * ti_hecc_rx_poll - HECC receive pkts
+</I>&gt;<i> + *
+</I>&gt;<i> + * The receive mailboxes start from highest numbered mailbox till last xmit
+</I>&gt;<i> + * mailbox. On CAN frame reception the hardware places the data into highest
+</I>&gt;<i> + * numbered mailbox that matches the CAN ID filter. Since all receive mailboxes
+</I>&gt;<i> + * have same filtering (ALL CAN frames) packets will arrive in the highest
+</I>&gt;<i> + * available RX mailbox and we need to ensure in-order packet reception.
+</I>&gt;<i> + *
+</I>&gt;<i> + * To ensure the packets are received in the right order we logically divide
+</I>&gt;<i> + * the RX mailboxes into main and buffer mailboxes. Packets are received as per
+</I>&gt;<i> + * mailbox priotity (higher to lower) in the main bank and once it is full we
+</I>&gt;<i> + * disable further reception into main mailboxes. While the main mailboxes are
+</I>&gt;<i> + * processed in NAPI, further packets are received in buffer mailboxes.
+</I>&gt;<i> + *
+</I>&gt;<i> + * We maintain a RX next mailbox counter to process packets and once all main
+</I>&gt;<i> + * mailboxe packets are passed to the upper stack we enable all of them but
+</I>&gt;<i> + * continue to process packets received in buffer mailboxes. With each packet
+</I>&gt;<i> + * received from buffer mailbox we enable it immediately so as to handle the
+</I>&gt;<i> + * overflow from higher mailboxes.
+</I>&gt;<i> + */
+</I>&gt;<i> +static int ti_hecc_rx_poll(struct napi_struct *napi, int quota)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *ndev = napi-&gt;dev;
+</I>&gt;<i> +	struct ti_hecc_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> +	u32 num_pkts = 0;
+</I>&gt;<i> +	u32 mbxno, mbx_mask;
+</I>&gt;<i> +	unsigned long pending_pkts, flags;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!netif_running(ndev))
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	while ((pending_pkts = hecc_read(priv, HECC_CANRMP)) &amp;&amp;
+</I>&gt;<i> +		(num_pkts &lt; quota)) {
+</I>&gt;<i> +		mbx_mask = BIT(priv-&gt;rx_next); /* next rx mailbox to process */
+</I>&gt;<i> +		if (mbx_mask &amp; pending_pkts) {
+</I>&gt;<i> +			if (ti_hecc_rx_pkt(priv, priv-&gt;rx_next) &lt; 0)
+</I>&gt;<i> +				return num_pkts;
+</I>&gt;<i> +			++num_pkts;
+</I>&gt;<i> +		} else if (priv-&gt;rx_next &gt; HECC_RX_BUFFER_MBOX) {
+</I>&gt;<i> +				break; /* pkt not received yet */
+</I>&gt;<i> +		}
+</I>&gt;<i> +		--priv-&gt;rx_next;
+</I>&gt;<i> +		if (priv-&gt;rx_next == HECC_RX_BUFFER_MBOX) {
+</I>&gt;<i> +			/* enable high bank mailboxes */
+</I>&gt;<i> +			spin_lock_irqsave(&amp;priv-&gt;mbox_lock, flags);
+</I>&gt;<i> +			mbx_mask = hecc_read(priv, HECC_CANME);
+</I>&gt;<i> +			mbx_mask |= HECC_RX_HIGH_MBOX_MASK;
+</I>&gt;<i> +			hecc_write(priv, HECC_CANME, mbx_mask);
+</I>&gt;<i> +			spin_unlock_irqrestore(&amp;priv-&gt;mbox_lock, flags);
+</I>&gt;<i> +		} else if (priv-&gt;rx_next == (HECC_MAX_TX_MBOX - 1)) {
+</I>&gt;<i> +				priv-&gt;rx_next = HECC_RX_FIRST_MBOX;
+</I>&gt;<i> +				break;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Enable packet interrupt if all pkts are handled */
+</I>&gt;<i> +	if (0 == hecc_read(priv, HECC_CANRMP)) {
+</I>&gt;<i> +		napi_complete(napi);
+</I>&gt;<i> +		/* Re-enable RX mailbox interrupts */
+</I>&gt;<i> +		mbxno = hecc_read(priv, HECC_CANMIM);
+</I>&gt;<i> +		mbxno |= HECC_TX_MBOX_MASK;
+</I>
+Wouldn't the name &quot;mbx_mask&quot; be more appropriate?
+
+&gt;<i> +		hecc_write(priv, HECC_CANMIM, mbxno);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return num_pkts;
+</I>&gt;<i> +}
+</I>[snip]
+&gt;<i> +static int ti_hecc_open(struct net_device *ndev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct ti_hecc_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> +	int err;
+</I>&gt;<i> +
+</I>&gt;<i> +	err = request_irq(ndev-&gt;irq, ti_hecc_interrupt, IRQF_DISABLED,
+</I>
+Do you really need IRQF_DISABLED?
+
+&gt;<i> +				ndev-&gt;name, ndev);
+</I>&gt;<i> +	if (err) {
+</I>&gt;<i> +		dev_err(ndev-&gt;dev.parent, &quot;error requesting interrupt\n&quot;);
+</I>&gt;<i> +		return err;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Open common can device */
+</I>&gt;<i> +	err = open_candev(ndev);
+</I>&gt;<i> +	if (err) {
+</I>&gt;<i> +		dev_err(ndev-&gt;dev.parent, &quot;open_candev() failed %08X\n&quot;, err);
+</I>
+&quot;failed with %d&quot; seems to be more appropriate for the error code.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003177.html">[PATCH V3] net-next:can: add TI CAN (HECC) driver
+</A></li>
+	<LI>Next message: <A HREF="003179.html">[PATCH V3] net-next:can: add TI CAN (HECC) driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3176">[ date ]</a>
+              <a href="thread.html#3176">[ thread ]</a>
+              <a href="subject.html#3176">[ subject ]</a>
+              <a href="author.html#3176">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

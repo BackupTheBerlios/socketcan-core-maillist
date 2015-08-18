@@ -1,0 +1,126 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: locking and kmalloc
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20locking%20and%20kmalloc&In-Reply-To=%3C4504486D.1060308%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000344.html">
+   <LINK REL="Next"  HREF="000345.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: locking and kmalloc</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20locking%20and%20kmalloc&In-Reply-To=%3C4504486D.1060308%40hartkopp.net%3E"
+       TITLE="RFC: locking and kmalloc">socketcan at hartkopp.net
+       </A><BR>
+    <I>Sun Sep 10 19:16:29 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000344.html">RFC: locking and kmalloc
+</A></li>
+        <LI>Next message: <A HREF="000345.html">Socketcan-users post from lists-socketcan at m.goebl.net requires	approval
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#352">[ date ]</a>
+              <a href="thread.html#352">[ thread ]</a>
+              <a href="subject.html#352">[ subject ]</a>
+              <a href="author.html#352">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Urs Thuermann wrote:
+&gt;<i> In af_can.c we have a list of structs containing list heads for each
+</I>&gt;<i> can device on which a socket has registered using can_rx_register().
+</I>&gt;<i> When registering with a device we scan the list for the appropriate
+</I>&gt;<i> entry in the list and insert it if it's not present.  Since we modify
+</I>&gt;<i> the list we hold a spinlock for this operation.  OTOH, if we need to
+</I>&gt;<i> insert a new entry we need to call kmalloc() which is disallowed while
+</I>&gt;<i> holding a lock.  We currently have something like
+</I>&gt;<i>
+</I>&gt;<i>         spin_lock(&amp;lock);
+</I>&gt;<i>         list_for_each(d, &amp;list_head, ...) {
+</I>&gt;<i>                 if (d-&gt;dev == dev)
+</I>&gt;<i>                         break;
+</I>&gt;<i>         if (!d) {
+</I>&gt;<i>                 d = kmalloc(sizeof(*d), GFP_KERNEL);
+</I>&gt;<i>                 list_add(d, &amp;list_head)
+</I>&gt;<i>         }
+</I>&gt;<i>         /* do some thing with d */
+</I>&gt;<i>         ;
+</I>&gt;<i>         spin_unlock(&amp;lock);
+</I>&gt;<i>
+</I>&gt;<i> which is buggy because of the kmalloc() while holding the lock.  I
+</I>&gt;<i> haven't found any alternative that completely satisfies me.  I have
+</I>&gt;<i> thought abount the following:
+</I>&gt;<i>
+</I>&gt;<i> (..)
+</I>&gt;<i>
+</I>&gt;<i> 4. Abandon the list completely and put the struct dev_rcv_lists into
+</I>&gt;<i>    struct can_device, thus eliminating the need for dynamically
+</I>&gt;<i>    allocated memory for this struct and for scanning the list to find
+</I>&gt;<i>    the required device.
+</I>This sounds very good, but indeed ...
+&gt;<i>   But that means that all CAN interface
+</I>&gt;<i>    implementations *have* to use the struct can_device in the priv
+</I>&gt;<i>    pointer and that bind(2) on a PF_CAN socket has to ensure that the
+</I>&gt;<i>    specified device is indeed a CAN device which has a associated
+</I>&gt;<i>    struct can_device.  This could probably best be done by checking it
+</I>&gt;<i>    has ARPHDR_CAN of the device.  The bad smell of this solution is
+</I>&gt;<i>    that the priv data of a netdevice become not so private anymore
+</I>&gt;<i>   
+</I>Yep! This is my major concern as the CAN-netdevice would hold data that 
+references to socket-callback functions that are used in the 
+network-layer. And this is quite far away from private netdevice data ...
+&gt;<i>    (which we already have anyway since we use the priv pointer to
+</I>&gt;<i>    point to struct can_device to hold common data for CAN interfaces).
+</I>&gt;<i>   
+</I>Hm, but the information currently hold by the struct can_device is 
+definitely associated to CAN netdevices (baudrates, statistics, etc) and 
+does not have data that's needed by anyone else. The interface to the 
+network-layer is defined by ETH_P_CAN and ARPHRD_CAN - and i don't know, 
+if the suggested mixing would be 'kernel political' correct. But i would 
+have some new performance increasing ideas in mind, if the receive-lists 
+would go into the CAN netdevices ... so i might be vulnerable to your 
+idea ;-]
+
+Maybe we should discuss this face to face next week. Thinking about your 
+suggestion, i realized a new question what should be done with 
+receive-list-entries, if an interface is going down / the kernel-module 
+is being unloaded ...
+
+Best regards,
+
+Oliver
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000344.html">RFC: locking and kmalloc
+</A></li>
+	<LI>Next message: <A HREF="000345.html">Socketcan-users post from lists-socketcan at m.goebl.net requires	approval
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#352">[ date ]</a>
+              <a href="thread.html#352">[ thread ]</a>
+              <a href="subject.html#352">[ subject ]</a>
+              <a href="author.html#352">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

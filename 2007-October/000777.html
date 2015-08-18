@@ -1,0 +1,223 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC UPDATE: can_frame.[priv|origin] ?
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%20UPDATE%3A%20can_frame.%5Bpriv%7Corigin%5D%20%3F&In-Reply-To=%3C471BA657.1030301%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000779.html">
+   <LINK REL="Next"  HREF="000780.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC UPDATE: can_frame.[priv|origin] ?</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%20UPDATE%3A%20can_frame.%5Bpriv%7Corigin%5D%20%3F&In-Reply-To=%3C471BA657.1030301%40hartkopp.net%3E"
+       TITLE="RFC UPDATE: can_frame.[priv|origin] ?">socketcan at hartkopp.net
+       </A><BR>
+    <I>Sun Oct 21 21:19:51 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000779.html">Review comments to AT91 CAN driver
+</A></li>
+        <LI>Next message: <A HREF="000780.html">RFC UPDATE: can_frame.[priv|origin] ?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#777">[ date ]</a>
+              <a href="thread.html#777">[ thread ]</a>
+              <a href="subject.html#777">[ subject ]</a>
+              <a href="author.html#777">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all,
+
+after trying to describe the can_frame.priv element in
+
+<A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-October/000769.html">https://lists.berlios.de/pipermail/socketcan-core/2007-October/000769.html</A>
+
+i also remembered the request from several people about a feedback 
+wether a CAN frame has been successfully sent on the CAN bus or not.
+
+When breaking with the current Application Binary Interface (ABI) anyway 
+it might be the right time to add a structure element that gives a 
+detailed origin information about each CAN frame:
+
+/*
+ * CAN frame origin information
+ *
+ * Remark on CAN_ORIGIN_TX_NACK:
+ * CAN Frames that had not been sent on the bus are not looped back.
+ * In the case that the TX_ACK/TX_NACK is a needed feedback for each frame
+ * the CAN driver has explicitly to be configured to loop back frames that
+ * had not been sent successfully on the bus.
+ */
+enum {
+       CAN_ORIGIN_RX = 1,      /* received from CAN bus */
+       CAN_ORIGIN_TX_LOOP,     /* looped back from CAN core */
+       CAN_ORIGIN_TX_ACK,      /* frame successfully sent on CAN bus */
+       CAN_ORIGIN_TX_NACK      /* sending this frame on the CAN bus 
+failed */
+};
+
+So we would not only extend the current struct can_frame by 
+can_frame.priv but also by can_frame.origin:
+
+ /**
+  * struct can_frame - basic CAN frame structure
+  * @can_id:  the CAN ID of the frame and CAN_*_FLAG flags, see above.
+  * @can_dlc: the data length field of the CAN frame
++ * @origin:  decribes the frame origin (from the bus, looped frame, etc.)
++ * @priv:    use-case specific additional frame information
+  * @data:    the CAN frame payload.
+  */
+ struct can_frame {
+        canid_t can_id;  /* 32 bit CAN_ID + EFF/RTR/ERR flags */
+        __u8    can_dlc; /* data length code: 0 .. 8 */
++       __u8    origin;  /* frame origin information */
++       __u16   priv;    /* use-case specific frame information */
+        __u8    data[8] __attribute__((aligned(8)));
+ };
+
+Summarizing these two enhancements of the struct can_frame:
+
++ current userspace software does not need to be changed (just recompiled)
++ brings an increased transparency to the frame origin
++ allows per-frame feedback about successful or failed transmissions
++ adds per-frame private space for use-case and hardware specific stuff
++ does not break with current API design (like error frames for 
+controller problems)
++ does not increase the size of struct can_frame (just fills it)
+
+- may change the ABI on some archs (fix by recompile)
+- the CAN drivers have to set can_frame.origin (easy)
+
+When there are no concerns, i would like to apply the attached patch 
+before the next (and maybe final) posting of the socketcan stuff on 
+netdev mailing list.
+
+Thanks for review &amp; comments,
+Oliver
+
+Index: include/linux/can.h
+===================================================================
+--- include/linux/can.h (revision 531)
++++ include/linux/can.h (working copy)
+@@ -51,15 +51,35 @@
+  */
+ typedef __u32 can_err_mask_t;
+ 
++/*
++ * CAN frame origin information
++ *
++ * Remark on CAN_ORIGIN_TX_NACK:
++ * CAN Frames that had not been sent on the bus are not looped back.
++ * In the case that the TX_ACK/TX_NACK is a needed feedback for each frame
++ * the CAN driver has explicitly to be configured to loop back frames that
++ * had not been sent successfully on the bus.
++ */
++enum {
++       CAN_ORIGIN_RX = 1,      /* received from CAN bus */
++       CAN_ORIGIN_TX_LOOP,     /* looped back from CAN core */
++       CAN_ORIGIN_TX_ACK,      /* frame successfully sent on CAN bus */
++       CAN_ORIGIN_TX_NACK      /* sending this frame on the CAN bus 
+failed */
++};
++
+ /**
+  * struct can_frame - basic CAN frame structure
+  * @can_id:  the CAN ID of the frame and CAN_*_FLAG flags, see above.
+  * @can_dlc: the data length field of the CAN frame
++ * @origin:  decribes the frame origin (from the bus, looped frame, etc.)
++ * @priv:    use-case specific additional frame information
+  * @data:    the CAN frame payload.
+  */
+ struct can_frame {
+        canid_t can_id;  /* 32 bit CAN_ID + EFF/RTR/ERR flags */
+        __u8    can_dlc; /* data length code: 0 .. 8 */
++       __u8    origin;  /* frame origin information */
++       __u16   priv;    /* use-case specific frame information */
+        __u8    data[8] __attribute__((aligned(8)));
+ };
+ 
+Index: net/can/af_can.c
+===================================================================
+--- net/can/af_can.c    (revision 531)
++++ net/can/af_can.c    (working copy)
+@@ -340,6 +340,7 @@
+                         * itself, we do it here.
+                         */
+                        struct sk_buff *newskb = skb_clone(skb, GFP_ATOMIC);
++                       struct can_frame *cf;
+ 
+                        if (!newskb) {
+                                kfree_skb(skb);
+@@ -349,6 +350,8 @@
+                        newskb-&gt;sk = skb-&gt;sk;
+                        newskb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+                        newskb-&gt;pkt_type = PACKET_BROADCAST;
++                       cf = (struct can_frame *) newskb-&gt;data;
++                       cf-&gt;origin = CAN_ORIGIN_TX_LOOP;
+                        netif_rx(newskb);
+                }
+        } else {
+Index: drivers/net/can/vcan.c
+===================================================================
+--- drivers/net/can/vcan.c      (revision 531)
++++ drivers/net/can/vcan.c      (working copy)
+@@ -137,6 +137,7 @@
+ #else
+        struct net_device_stats *stats = netdev_priv(dev);
+ #endif
++       struct can_frame *cf = (struct can_frame *) skb-&gt;data;
+ 
+        stats-&gt;rx_packets++;
+        stats-&gt;rx_bytes += skb-&gt;len;
+@@ -146,6 +147,9 @@
+        skb-&gt;dev       = dev;
+        skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+ 
++       /* successful loopback on driver level */
++       cf-&gt;origin = CAN_ORIGIN_TX_ACK;
++
+        DBG(&quot;received skbuff on interface %d\n&quot;, dev-&gt;ifindex);
+ 
+        netif_rx(skb);
+
+
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: can_frame-elements.patch
+Type: text/x-diff
+Size: 2702 bytes
+Desc: not available
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20071021/5c17ec16/attachment.patch">https://lists.berlios.de/pipermail/socketcan-core/attachments/20071021/5c17ec16/attachment.patch</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000779.html">Review comments to AT91 CAN driver
+</A></li>
+	<LI>Next message: <A HREF="000780.html">RFC UPDATE: can_frame.[priv|origin] ?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#777">[ date ]</a>
+              <a href="thread.html#777">[ thread ]</a>
+              <a href="subject.html#777">[ subject ]</a>
+              <a href="author.html#777">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

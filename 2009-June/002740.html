@@ -1,0 +1,119 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Bus-off handling revisited
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Bus-off%20handling%20revisited&In-Reply-To=%3C4A3B6286.8000100%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002739.html">
+   <LINK REL="Next"  HREF="002742.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Bus-off handling revisited</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Bus-off%20handling%20revisited&In-Reply-To=%3C4A3B6286.8000100%40grandegger.com%3E"
+       TITLE="Bus-off handling revisited">wg at grandegger.com
+       </A><BR>
+    <I>Fri Jun 19 12:03:50 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002739.html">Bus-off handling revisited
+</A></li>
+        <LI>Next message: <A HREF="002742.html">[PATCH] strip-src: add support for the netlink branch
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2740">[ date ]</a>
+              <a href="thread.html#2740">[ thread ]</a>
+              <a href="subject.html#2740">[ subject ]</a>
+              <a href="author.html#2740">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver Hartkopp wrote:
+&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;<i> 
+</I>&gt;&gt;<i> our current bus-off handling needs some refinement to deal properly with
+</I>&gt;&gt;<i> controllers like the MCP2510, AT91 or the MSCAN. To highlight the
+</I>&gt;&gt;<i> problem, here is an abstract from the MCP2510 data sheet:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   ... It goes to bus-off if the transmit error counter
+</I>&gt;&gt;<i>   equals or exceeds the bus-off limit of 256. The device
+</I>&gt;&gt;<i>   remains in this state, until the bus-off recovery
+</I>&gt;&gt;<i>   sequence is received. The bus-off recovery sequence
+</I>&gt;&gt;<i>   consists of 128 occurrences of 11 consecutive reces-
+</I>&gt;&gt;<i>   sive bits (see Figure 6-1). Note that the MCP2510, after
+</I>&gt;&gt;<i>   going bus-off, will *recover* back to *error-active*, without
+</I>&gt;&gt;<i>   any intervention by the MCU, if the bus remains idle for
+</I>&gt;&gt;<i>   128 X 11 bit times. If this is *not* desired, the error
+</I>&gt;&gt;<i>   interrupt service routine should address this.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Our current bus-off handling assumes and requires, that the controller
+</I>&gt;&gt;<i> is quiet, meaning it does not send and receive any messages after
+</I>&gt;&gt;<i> bus-off occurred. This is true for the SJA1000, i82527, etc. They
+</I>&gt;&gt;<i> require a bus-off recovery procedure initiated by the CPU. In contrast,
+</I>&gt;&gt;<i> controllers like the MCP2510, but also the AT91 and MSCAN, recover
+</I>&gt;&gt;<i> automatically. If this is *not* desired, we need to stop the device when
+</I>&gt;&gt;<i> bus-off occurs (that's how I interpret the last sentence from the above
+</I>&gt;&gt;<i> abstract). That would allow use to keep our current bus-off handling
+</I>&gt;&gt;<i> procedure. Alternatively, we could support the automatic recovery not
+</I>&gt;&gt;<i> using the existing can_bus_off() interface. The driver should call
+</I>&gt;&gt;<i> netif_carrier_off() and send a CAN_ERR_BUSOFF error message when bus-off
+</I>&gt;&gt;<i> occurred *and* a CAN_ERR_RESTARTED error message and call
+</I>&gt;&gt;<i> netif_carrier_on() when it recovered.
+</I>&gt;<i> 
+</I>&gt;<i> I would stick this to the restart-ms value
+</I>&gt;<i> 
+</I>&gt;<i> restart-ms == 0 :
+</I>&gt;<i> Stop the interface on BUS_OFF (all CAN controllers)
+</I>&gt;<i> 
+</I>&gt;<i> restart-ms &gt; 0 :
+</I>&gt;<i> 
+</I>&gt;<i> SJA1000 &amp; friends: Restart the controller after the given time.
+</I>&gt;<i> MCP2510 &amp; friends: Do nothing &amp; wait for the controller self-restart.
+</I>
+Puh, you added another option making the implementation even more
+tricky. But it does make sense from the users point of view.
+
+&gt;&gt;<i> Unfortunately, there is a third class of intelligent controllers , which
+</I>&gt;&gt;<i> report bus-off occurrence, but not when it recovered, like the ESD PCI331.
+</I>&gt;<i> 
+</I>&gt;<i> This is bad, when you are the only *sender* on the bus.
+</I>&gt;<i> If there is some other traffic on the bus, we could make the state change when
+</I>&gt;<i> receiving the first valid CAN frame after BUS_OFF.
+</I>
+OK.
+
+&gt;<i> Btw. when the PCI331 *is* the only sender the state change would never happen
+</I>&gt;<i> as you need real bus traffic to leave a BUS_OFF condition. Then you loose anyway.
+</I>
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002739.html">Bus-off handling revisited
+</A></li>
+	<LI>Next message: <A HREF="002742.html">[PATCH] strip-src: add support for the netlink branch
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2740">[ date ]</a>
+              <a href="thread.html#2740">[ thread ]</a>
+              <a href="subject.html#2740">[ subject ]</a>
+              <a href="author.html#2740">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

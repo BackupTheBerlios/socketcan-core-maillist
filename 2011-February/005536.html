@@ -1,0 +1,414 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] candump: add option -e to dump error messages in human	readable format
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20candump%3A%20add%20option%20-e%20to%20dump%20error%20messages%20in%20human%0A%09readable%20format&In-Reply-To=%3C4D58EB0E.6030009%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005535.html">
+   <LINK REL="Next"  HREF="005549.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] candump: add option -e to dump error messages in human	readable format</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20candump%3A%20add%20option%20-e%20to%20dump%20error%20messages%20in%20human%0A%09readable%20format&In-Reply-To=%3C4D58EB0E.6030009%40pengutronix.de%3E"
+       TITLE="[PATCH] candump: add option -e to dump error messages in human	readable format">mkl at pengutronix.de
+       </A><BR>
+    <I>Mon Feb 14 09:42:54 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005535.html">[PATCH] candump: add option -e to dump error messages in human	readable format
+</A></li>
+        <LI>Next message: <A HREF="005549.html">[PATCH] candump: add option -e to dump error messages in human	readable format
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5536">[ date ]</a>
+              <a href="thread.html#5536">[ thread ]</a>
+              <a href="subject.html#5536">[ subject ]</a>
+              <a href="author.html#5536">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 02/13/2011 04:01 PM, Wolfgang Grandegger wrote:
+&gt;<i> If &quot;candump&quot; is called with the option &quot;-e&quot;, the error messages are
+</I>&gt;<i> dumped in human readable format:
+</I>
+\o/ - I wanted to have something like this a looong time ago..
+
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> # candump -e any,0:0,#FFFFFFFF
+</I>&gt;<i>   ...
+</I>&gt;<i>   can0  20000088  [8] 00 00 80 19 00 00 00 00   ERRORFRAME
+</I>&gt;<i>         protocol-violation{{error-on-tx}{acknowledge-slot}}
+</I>&gt;<i>         bus-error
+</I>&gt;<i>         error-counter{tx{128}rx{97}}
+</I>&gt;<i>   ...
+</I>&gt;<i>   can0  2000008C  [8] 00 08 80 19 00 00 00 00   ERRORFRAME
+</I>&gt;<i>         controller-problem{tx-error-warning}
+</I>&gt;<i>         protocol-violation{{error-on-tx}{acknowledge-slot}}
+</I>&gt;<i>         bus-error
+</I>&gt;<i>         error-counter{tx{128}rx{97}}
+</I>&gt;<i> 
+</I>&gt;<i> &quot;candump&quot; actually calles a library function sprintf_can_error_frame()
+</I>&gt;<i> to do the formatting. It could be used for other purposes as well.
+</I>
+From the signature it's more a s&quot;n&quot;printf function...
+
+&gt;<i> 
+</I>&gt;<i> Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+</I>&gt;<i> 
+</I>&gt;<i> ---
+</I>&gt;<i>  can-utils/candump.c |    7 +
+</I>&gt;<i>  can-utils/lib.c     |  189 +++++++++++++++++++++++++++++++++++++++++++++++++++-
+</I>&gt;<i>  can-utils/lib.h     |    7 +
+</I>&gt;<i>  3 files changed, 199 insertions(+), 4 deletions(-)
+</I>&gt;<i> 
+</I>&gt;<i> Index: trunk/can-utils/candump.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- trunk.orig/can-utils/candump.c
+</I>&gt;<i> +++ trunk/can-utils/candump.c
+</I>&gt;<i> @@ -121,6 +121,7 @@ void print_usage(char *prg)
+</I>&gt;<i>  	fprintf(stderr, &quot;         -n &lt;count&gt;  (terminate after receiption of &lt;count&gt; CAN frames)\n&quot;);
+</I>&gt;<i>  	fprintf(stderr, &quot;         -r &lt;size&gt;   (set socket receive buffer to &lt;size&gt;)\n&quot;);
+</I>&gt;<i>  	fprintf(stderr, &quot;         -d          (monitor dropped CAN frames)\n&quot;);
+</I>&gt;<i> +	fprintf(stderr, &quot;         -e          (dump CAN error frames in human-readable format)\n&quot;);
+</I>&gt;<i>  	fprintf(stderr, &quot;\n&quot;);
+</I>&gt;<i>  	fprintf(stderr, &quot;Up to %d CAN interfaces with optional filter sets can be specified\n&quot;, MAXSOCK);
+</I>&gt;<i>  	fprintf(stderr, &quot;on the commandline in the form: &lt;ifname&gt;[,filter]*\n&quot;);
+</I>&gt;<i> @@ -235,7 +236,7 @@ int main(int argc, char **argv)
+</I>&gt;<i>  	last_tv.tv_sec  = 0;
+</I>&gt;<i>  	last_tv.tv_usec = 0;
+</I>&gt;<i>  
+</I>&gt;<i> -	while ((opt = getopt(argc, argv, &quot;t:ciaSs:b:B:u:ldLn:r:h?&quot;)) != -1) {
+</I>&gt;<i> +	while ((opt = getopt(argc, argv, &quot;t:ciaSs:b:B:u:ldLn:r:he?&quot;)) != -1) {
+</I>&gt;<i>  		switch (opt) {
+</I>&gt;<i>  		case 't':
+</I>&gt;<i>  			timestamp = optarg[0];
+</I>&gt;<i> @@ -263,6 +264,10 @@ int main(int argc, char **argv)
+</I>&gt;<i>  			view |= CANLIB_VIEW_SWAP;
+</I>&gt;<i>  			break;
+</I>&gt;<i>  
+</I>&gt;<i> +		case 'e':
+</I>&gt;<i> +			view |= CANLIB_VIEW_ERROR;
+</I>&gt;<i> +			break;
+</I>&gt;<i> +
+</I>&gt;<i>  		case 's':
+</I>&gt;<i>  			silent = atoi(optarg);
+</I>&gt;<i>  			if (silent &gt; SILENT_ON) {
+</I>&gt;<i> Index: trunk/can-utils/lib.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- trunk.orig/can-utils/lib.c
+</I>&gt;<i> +++ trunk/can-utils/lib.c
+</I>&gt;<i> @@ -47,9 +47,11 @@
+</I>&gt;<i>  
+</I>&gt;<i>  #include &lt;stdio.h&gt;
+</I>&gt;<i>  #include &lt;string.h&gt;
+</I>&gt;<i> +#include &lt;stdint.h&gt;
+</I>&gt;<i>  
+</I>&gt;<i>  #include &lt;sys/socket.h&gt; /* for sa_family_t */
+</I>&gt;<i>  #include &lt;linux/can.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/error.h&gt;
+</I>&gt;<i>  
+</I>&gt;<i>  #include &quot;lib.h&quot;
+</I>&gt;<i>  
+</I>&gt;<i> @@ -57,7 +59,7 @@
+</I>&gt;<i>  #define DATA_SEPERATOR '.'
+</I>&gt;<i>  
+</I>&gt;<i>  #define MAX_CANFRAME      &quot;12345678#01.23.45.67.89.AB.CD.EF&quot;
+</I>&gt;<i> -#define MAX_LONG_CANFRAME &quot;12345678  [8] 10101010 10101010 10101010 10101010 10101010 10101010 10101010 10101010   '........'&quot;
+</I>&gt;<i> +#define MAX_LONG_CANFRAME_SIZE 256
+</I>&gt;<i>  
+</I>&gt;<i>  unsigned char asc2nibble(char c) {
+</I>&gt;<i>  
+</I>&gt;<i> @@ -208,10 +210,14 @@ void sprint_canframe(char *buf , struct 
+</I>&gt;<i>  void fprint_long_canframe(FILE *stream , struct can_frame *cf, char *eol, int view) {
+</I>&gt;<i>  	/* documentation see lib.h */
+</I>&gt;<i>  
+</I>&gt;<i> -	char buf[sizeof(MAX_LONG_CANFRAME)+1]; /* max length */
+</I>&gt;<i> +	char buf[MAX_LONG_CANFRAME_SIZE];
+</I>&gt;<i>  
+</I>&gt;<i>  	sprint_long_canframe(buf, cf, view);
+</I>&gt;<i>  	fprintf(stream, &quot;%s&quot;, buf);
+</I>&gt;<i> +	if (view &amp; CANLIB_VIEW_ERROR &amp;&amp; cf-&gt;can_id &amp; CAN_ERR_FLAG) {
+</I>&gt;<i> +		sprintf_can_error_frame(cf, buf, MAX_LONG_CANFRAME_SIZE, &quot;\n\t&quot;);
+</I>
+sizeof(buf) or ARRAY_SIZE(buf), please
+
+&gt;<i> +		fprintf(stream, &quot;\n\t%s&quot;, buf);
+</I>&gt;<i> +	}
+</I>&gt;<i>  	if (eol)
+</I>&gt;<i>  		fprintf(stream, &quot;%s&quot;, eol);
+</I>&gt;<i>  }
+</I>&gt;<i> @@ -299,6 +305,183 @@ void sprint_long_canframe(char *buf , st
+</I>&gt;<i>  
+</I>&gt;<i>  			sprintf(buf+offset, &quot;'&quot;);
+</I>&gt;<i>  		}
+</I>&gt;<i> -	} 
+</I>&gt;<i> +	}
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static const char *error_classes[] = {
+</I>&gt;<i> +	&quot;tx-timeout&quot;,
+</I>&gt;<i> +	&quot;lost-arbitration&quot;,
+</I>&gt;<i> +	&quot;controller-problem&quot;,
+</I>&gt;<i> +	&quot;protocol-violation&quot;,
+</I>&gt;<i> +	&quot;transceiver-status&quot;,
+</I>&gt;<i> +	&quot;no-ack-on-tx&quot;,
+</I>&gt;<i> +	&quot;buf-off&quot;,
+</I>&gt;<i> +	&quot;bus-error&quot;,
+</I>&gt;<i> +	&quot;recovered-from-bus-error&quot;
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static const char *controller_problems[] = {
+</I>&gt;<i> +	&quot;rx-overflow&quot;,
+</I>&gt;<i> +	&quot;tx-overflow&quot;,
+</I>&gt;<i> +	&quot;rx-error-warning&quot;,
+</I>&gt;<i> +	&quot;tx-error-warning&quot;,
+</I>&gt;<i> +	&quot;rx-error-passive&quot;,
+</I>&gt;<i> +	&quot;tx-error-passive&quot;
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static const char *protocol_violation_types[] = {
+</I>&gt;<i> +	&quot;single-bit-error&quot;,
+</I>&gt;<i> +	&quot;frame-format-error&quot;,
+</I>&gt;<i> +	&quot;bit-stuffing-error&quot;,
+</I>&gt;<i> +	&quot;tx-dominant-bit-error&quot;,
+</I>&gt;<i> +	&quot;tx-recessive-bit-error&quot;,
+</I>&gt;<i> +	&quot;bus-overoad&quot;,
+</I>&gt;<i> +	&quot;back-to-error-active&quot;,
+</I>&gt;<i> +	&quot;error-on-tx&quot;
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static const char *protocol_violation_locations[] = {
+</I>&gt;<i> +	&quot;unspecified&quot;,
+</I>&gt;<i> +	&quot;unspecified&quot;,
+</I>&gt;<i> +	&quot;id.28-to-id.28&quot;,
+</I>&gt;<i> +	&quot;start-of-frame&quot;,
+</I>&gt;<i> +	&quot;bit-srtr&quot;,
+</I>&gt;<i> +	&quot;bit-ide&quot;,
+</I>&gt;<i> +	&quot;id.20-to-id.18&quot;,
+</I>&gt;<i> +	&quot;id.17-to-id.13&quot;,
+</I>&gt;<i> +	&quot;crc-sequence&quot;,
+</I>&gt;<i> +	&quot;reserved-bit-0&quot;,
+</I>&gt;<i> +	&quot;data-field&quot;,
+</I>&gt;<i> +	&quot;data-length-code&quot;,
+</I>&gt;<i> +	&quot;bit-rtr&quot;,
+</I>&gt;<i> +	&quot;reserved-bit-1&quot;,
+</I>&gt;<i> +	&quot;id.4-to-id.0&quot;,
+</I>&gt;<i> +	&quot;id.12-to-id.5&quot;,
+</I>&gt;<i> +	&quot;unspecified&quot;,
+</I>&gt;<i> +	&quot;active-error-flag&quot;,
+</I>&gt;<i> +	&quot;intermission&quot;,
+</I>&gt;<i> +	&quot;tolerate-dominant-bits&quot;,
+</I>&gt;<i> +	&quot;unspecified&quot;,
+</I>&gt;<i> +	&quot;unspecified&quot;,
+</I>&gt;<i> +	&quot;passive-error-flag&quot;,
+</I>&gt;<i> +	&quot;error-delimiter&quot;,
+</I>&gt;<i> +	&quot;crc-delimiter&quot;,
+</I>&gt;<i> +	&quot;acknowledge-slot&quot;,
+</I>&gt;<i> +	&quot;end-of-frame&quot;,
+</I>&gt;<i> +	&quot;acknowledge-delimiter&quot;,
+</I>&gt;<i> +	&quot;overload-flag&quot;,
+</I>&gt;<i> +	&quot;unspecified&quot;,
+</I>&gt;<i> +	&quot;unspecified&quot;,
+</I>&gt;<i> +	&quot;unspecified&quot;
+</I>&gt;<i> +};
+</I>
+Please add a &quot;,&quot; to the last element.
+
+&gt;<i> +
+</I>&gt;<i> +#ifndef ARRAY_SIZE
+</I>&gt;<i> +#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +static int sprintf_error_data(uint8_t err, const char **arr,
+</I>&gt;<i> +			      int arr_len, char *buf, int len)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int i, n = 0, count = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!err || len &lt;= 0)
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	for (i = 0; i &lt; arr_len; i++) {
+</I>&gt;<i> +		if (err &amp; (1 &lt;&lt; i)) {
+</I>&gt;<i> +			if (count)
+</I>&gt;<i> +				n += snprintf(buf + n, len - n, &quot;+&quot;);
+</I>&gt;<i> +			n += snprintf(buf + n, len - n, &quot;%s&quot;, arr[i]);
+</I>&gt;<i> +			count++;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return n;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int sprintf_error_lostarb(struct can_frame *cf, char *buf, int len)
+</I>&gt;<i> +{
+</I>&gt;<i> +	if (len &lt;= 0)
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +	return snprintf(buf, len, &quot;{at bit %d}&quot;, cf-&gt;data[0]);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int sprintf_error_ctrl(struct can_frame *cf, char *buf, int len)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int n = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (len &lt;= 0)
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	n += snprintf(buf + n, len - n, &quot;{&quot;);
+</I>&gt;<i> +	n += sprintf_error_data(cf-&gt;data[1], controller_problems,
+</I>&gt;<i> +				ARRAY_SIZE(controller_problems),
+</I>&gt;<i> +				buf + n, len - n);
+</I>&gt;<i> +	n += snprintf(buf + n, len - n, &quot;}&quot;);
+</I>&gt;<i> +
+</I>&gt;<i> +	return n;
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> +static int sprintf_error_prot(struct can_frame *cf, char *buf, int len)
+</I>
+looking at the signature of snprintf:
+int snprintf(char *str, size_t size, const char *format, ...);
+
+Then len is not an int, but a size_t. Maybe make the can frame the last
+parameter not the first.
+
+&gt;<i> +{
+</I>&gt;<i> +	int n = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (len &lt;= 0)
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	n += snprintf(buf + n, len - n, &quot;{{&quot;);
+</I>&gt;<i> +	n += sprintf_error_data(cf-&gt;data[2],
+</I>&gt;<i> +				protocol_violation_types,
+</I>&gt;<i> +				ARRAY_SIZE(protocol_violation_types),
+</I>&gt;<i> +				buf + n, len - n);
+</I>&gt;<i> +	n += snprintf(buf + n, len - n, &quot;}{&quot;);
+</I>&gt;<i> +	if (cf-&gt;data[3] &gt; 0 &amp;&amp;
+</I>&gt;<i> +	    cf-&gt;data[3] &lt; ARRAY_SIZE(protocol_violation_locations))
+</I>&gt;<i> +		n += snprintf(buf + n, len - n, &quot;%s&quot;,
+</I>&gt;<i> +			      protocol_violation_locations[cf-&gt;data[3]]);
+</I>&gt;<i> +	n += snprintf(buf + n, len - n, &quot;}}&quot;);
+</I>&gt;<i> +
+</I>&gt;<i> +	return n;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +void sprintf_can_error_frame(struct can_frame *cf, char *buf, int len, char* sep)
+</I>
+The same comment applied here, too
+
+&gt;<i> +{
+</I>&gt;<i> +	uint32_t class, mask;
+</I>
+We have the &quot;canid&quot; typedef.
+
+&gt;<i> +	int i, n = 0, classes = 0;
+</I>&gt;<i> +	char *defsep = &quot;+&quot;;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!(cf-&gt;can_id &amp; CAN_ERR_FLAG))
+</I>&gt;<i> +		return;
+</I>&gt;<i> +
+</I>&gt;<i> +	class = cf-&gt;can_id &amp; CAN_EFF_MASK;
+</I>&gt;<i> +	if (class &gt; (1 &lt;&lt; ARRAY_SIZE(error_classes))) {
+</I>&gt;<i> +		fprintf(stderr, &quot;Error class %#x is invalid\n&quot;, class);
+</I>&gt;<i> +		return;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!sep)
+</I>&gt;<i> +		sep = defsep;
+</I>&gt;<i> +
+</I>&gt;<i> +	for (i = 0; i &lt; ARRAY_SIZE(error_classes); i++) {
+</I>&gt;<i> +		mask = 1 &lt;&lt; i;
+</I>&gt;<i> +		if (class &amp; mask) {
+</I>&gt;<i> +			if (classes)
+</I>&gt;<i> +				n += snprintf(buf + n, len - n, &quot;%s&quot;, sep);
+</I>&gt;<i> + 			n += snprintf(buf + n, len - n, &quot;%s&quot;, error_classes[i]);
+</I>&gt;<i> +			if (mask == CAN_ERR_LOSTARB)
+</I>&gt;<i> +				n += sprintf_error_lostarb(cf, buf + n,
+</I>&gt;<i> +							   len - n);
+</I>&gt;<i> +			if (mask == CAN_ERR_CRTL)
+</I>&gt;<i> +				n += sprintf_error_ctrl(cf, buf + n, len - n);
+</I>&gt;<i> +			if (mask == CAN_ERR_PROT)
+</I>&gt;<i> +				n += sprintf_error_prot(cf, buf + n, len - n);
+</I>&gt;<i> +			classes++;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (cf-&gt;data[6] || cf-&gt;data[7]) {
+</I>&gt;<i> +		n += snprintf(buf + n, len - n, &quot;%s&quot;, sep);
+</I>&gt;<i> +		n += snprintf(buf + n, len - n, &quot;error-counter{tx{%d}rx{%d}}&quot;,
+</I>&gt;<i> +			      cf-&gt;data[6], cf-&gt;data[7]);
+</I>&gt;<i> +	}
+</I>&gt;<i> +}
+</I>&gt;<i> Index: trunk/can-utils/lib.h
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- trunk.orig/can-utils/lib.h
+</I>&gt;<i> +++ trunk/can-utils/lib.h
+</I>&gt;<i> @@ -127,6 +127,7 @@ void sprint_canframe(char *buf , struct 
+</I>&gt;<i>  #define CANLIB_VIEW_ASCII	0x1
+</I>&gt;<i>  #define CANLIB_VIEW_BINARY	0x2
+</I>&gt;<i>  #define CANLIB_VIEW_SWAP	0x4
+</I>&gt;<i> +#define CANLIB_VIEW_ERROR	0x8
+</I>&gt;<i>  
+</I>&gt;<i>  #define SWAP_DELIMITER '`'
+</I>&gt;<i>  
+</I>&gt;<i> @@ -146,3 +147,9 @@ void sprint_long_canframe(char *buf , st
+</I>&gt;<i>   * fprint_long_canframe(stderr, &amp;frame, NULL, 0); // no eol to STDERR
+</I>&gt;<i>   *
+</I>&gt;<i>   */
+</I>&gt;<i> +
+</I>&gt;<i> +void sprintf_can_error_frame(struct can_frame *cf, char *buf, int len,
+</I>&gt;<i> +			     char *sep);
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Creates a CAN error frame output in user readable format.
+</I>&gt;<i> + */
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> Socketcan-core mailing list
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>
+regards, Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20110214/e057c064/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20110214/e057c064/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005535.html">[PATCH] candump: add option -e to dump error messages in human	readable format
+</A></li>
+	<LI>Next message: <A HREF="005549.html">[PATCH] candump: add option -e to dump error messages in human	readable format
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5536">[ date ]</a>
+              <a href="thread.html#5536">[ thread ]</a>
+              <a href="subject.html#5536">[ subject ]</a>
+              <a href="author.html#5536">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

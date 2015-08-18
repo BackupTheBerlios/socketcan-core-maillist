@@ -1,0 +1,158 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: cleaning up CAN_ERR_ACK issue
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20cleaning%20up%20CAN_ERR_ACK%20issue&In-Reply-To=%3C4D5AAF4F.8000208%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005553.html">
+   <LINK REL="Next"  HREF="005555.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: cleaning up CAN_ERR_ACK issue</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20cleaning%20up%20CAN_ERR_ACK%20issue&In-Reply-To=%3C4D5AAF4F.8000208%40hartkopp.net%3E"
+       TITLE="RFC: cleaning up CAN_ERR_ACK issue">socketcan at hartkopp.net
+       </A><BR>
+    <I>Tue Feb 15 17:52:31 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005553.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+        <LI>Next message: <A HREF="005555.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5554">[ date ]</a>
+              <a href="thread.html#5554">[ thread ]</a>
+              <a href="subject.html#5554">[ subject ]</a>
+              <a href="author.html#5554">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 15.02.2011 10:34, Wolfgang Grandegger wrote:
+
+&gt;<i> I now want to fix the CAN_ERR_ACK issue. As you might have realized, the
+</I>&gt;<i> so called &quot;no-ack-on-tx&quot; or &quot;ack slot&quot; bus error is not handled
+</I>&gt;<i> consistently. That's the error we get when no cable is connected.
+</I>&gt;<i> The inconstancy is that some drivers just set:
+</I>&gt;<i> 
+</I>&gt;<i> 	cf-&gt;can_id |= CAN_ERR_ACK;
+</I>&gt;<i> 
+</I>&gt;<i> while the SJA1000 sets:
+</I>&gt;<i> 
+</I>&gt;<i> 	cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
+</I>&gt;<i> 	cf-&gt;data[3] |= CAN_ERR_PROT_LOC_ACK;
+</I>&gt;<i> 
+</I>&gt;<i> Unfortunately, CAN_ERR_ACK defines it's own error class like
+</I>&gt;<i> CAN_ERR_BUSERROR even if it's just another bus error. Therefore
+</I>&gt;<i> it belongs to the protocol violation types in data[2]:
+</I>&gt;<i> 
+</I>&gt;<i>   /* error in CAN protocol (type) / data[2] */
+</I>&gt;<i>   #define CAN_ERR_PROT_UNSPEC      0x00 /* unspecified */
+</I>&gt;<i>   #define CAN_ERR_PROT_BIT         0x01 /* single bit error */
+</I>&gt;<i>   #define CAN_ERR_PROT_FORM        0x02 /* frame format error */
+</I>&gt;<i>   #define CAN_ERR_PROT_STUFF       0x04 /* bit stuffing error */
+</I>&gt;<i>   #define CAN_ERR_PROT_BIT0        0x08 /* unable to send dominant bit */
+</I>&gt;<i>   #define CAN_ERR_PROT_BIT1        0x10 /* unable to send recessive bit */
+</I>&gt;<i>   #define CAN_ERR_PROT_OVERLOAD    0x20 /* bus overload */
+</I>&gt;<i>   #define CAN_ERR_PROT_ACTIVE      0x40 /* active error announcement */
+</I>&gt;<i>   #define CAN_ERR_PROT_TX          0x80 /* error occured on transmission */
+</I>&gt;<i> 
+</I>&gt;<i> All bits are already used, but CAN_ERR_PROT_ACTIVE is misplaced
+</I>&gt;<i> here as well :-(. It belongs to the controller problems in data[1].
+</I>&gt;<i> So, for a correct solution I would add here:
+</I>&gt;<i> 
+</I>&gt;<i>   #define CAN_ERR_PROT_ACK         0x40 /* received no ACK on transmission */
+</I>
+ack.
+
+This is definitely a protocol problem that can happen on TX.
+
+&gt;<i> 
+</I>&gt;<i> and move CAN_ERR_PROT_ACTIVE to
+</I>&gt;<i>  
+</I>&gt;<i>   /* error status of CAN-controller / data[1] */
+</I>&gt;<i>   #define CAN_ERR_CRTL_ACTIVE      0x40 /* back to error active */
+</I>&gt;<i> 
+</I>
+Hm. So far only 'problems' have been encoded into this byte. We could define
+'zero' as having 'no problems' ... but adding a new 'good situation flag'
+doesn't fit to me.
+
+IMHO i would leave this data[1] as-is and better add a new flag into the CAN-ID:
+
+#define CAN_ERR_BUSOFF       0x00000040U /* bus off */
+#define CAN_ERR_BUSERROR     0x00000080U /* bus error (may flood!) */
+#define CAN_ERR_RESTARTED    0x00000100U /* controller restarted */
+#define CAN_ERR_ACTIVE       0x00000200U /* controller (self) recovered */
+
+Analogue to the bus-off flags you can filter for a self recovering controller
+then.
+
+&gt;<i> Then the error message for the &quot;no-ack-on-tx&quot; error would be
+</I>&gt;<i> composed the following way:
+</I>&gt;<i> 
+</I>&gt;<i> 	cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
+</I>
+Better
+ 	cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_ACK;
+???
+
+To me CAN_ERR_PROT just point's to *additional* information, if wanted.
+CAN_ERR_ACK itself would be enough here also.
+
+&gt;<i> 	cf-&gt;data[2] = CAN_ERR_PROT_ACK;
+</I>&gt;<i> 
+</I>&gt;<i> And CAN controllers providing more information like the SJA1000
+</I>&gt;<i> would additionally set:
+</I>&gt;<i> 
+</I>&gt;<i> 	cf-&gt;data[3] |= CAN_ERR_PROT_LOC_ACK;
+</I>&gt;<i> 
+</I>
+ack. This looks good.
+
+&gt;<i> Unfortunately, the *correct* solution could rise some portability
+</I>&gt;<i> issues as some users might already use CAN_ERR_PROT_ACK and especially
+</I>&gt;<i> CAN_ERR_PROT_ACTIVE. What that be acceptible? What do you think?
+</I>
+IMO the cleanup is important. The earlier we do this, the better.
+
+I assume the people going into these details are reading this mailing-list.
+
+And as the support from the CAN controller drivers is currently very
+inconsistent, i won't think anyone is really relying on these bits in a
+non-development environment. But this is just a guess ...
+
+Thanks for your RFC!
+
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005553.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+	<LI>Next message: <A HREF="005555.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5554">[ date ]</a>
+              <a href="thread.html#5554">[ thread ]</a>
+              <a href="subject.html#5554">[ subject ]</a>
+              <a href="author.html#5554">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

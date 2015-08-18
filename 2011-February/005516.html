@@ -1,0 +1,244 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 09/13] can: pruss CAN driver.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%2009/13%5D%20can%3A%20pruss%20CAN%20driver.&In-Reply-To=%3C20110211152026.GC373%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005539.html">
+   <LINK REL="Next"  HREF="005572.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 09/13] can: pruss CAN driver.</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%2009/13%5D%20can%3A%20pruss%20CAN%20driver.&In-Reply-To=%3C20110211152026.GC373%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH v2 09/13] can: pruss CAN driver.">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Fri Feb 11 16:20:26 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005539.html">[PATCH v2 09/13] can: pruss CAN driver.
+</A></li>
+        <LI>Next message: <A HREF="005572.html">[PATCH v2 09/13] can: pruss CAN driver.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5516">[ date ]</a>
+              <a href="thread.html#5516">[ thread ]</a>
+              <a href="subject.html#5516">[ subject ]</a>
+              <a href="author.html#5516">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I looked a bit at the TX path:
+
+On Fri, Feb 11, 2011 at 08:21:28PM +0530, Subhasish Ghosh wrote:
+&gt;<i> +static int omapl_pru_can_set_bittiming(struct net_device *ndev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> +	struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
+</I>&gt;<i> +	long bit_error = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES) {
+</I>&gt;<i> +		dev_warn(priv-&gt;dev, &quot;WARN: Triple&quot;
+</I>&gt;<i> +			 &quot;sampling not set due to h/w limitations&quot;);
+</I>You should not have enabled CAN_CTRLMODE_3_SAMPLES in the first place?
+&gt;<i> +	}
+</I>&gt;<i> +	if (pru_can_calc_timing(priv-&gt;dev, priv-&gt;can.clock.freq,
+</I>&gt;<i> +				bt-&gt;bitrate) != 0)
+</I>&gt;<i> +		return -EINVAL;
+</I>&gt;<i> +	bit_error =
+</I>&gt;<i> +	    (((priv-&gt;timer_freq / (priv-&gt;timer_freq / bt-&gt;bitrate)) -
+</I>&gt;<i> +	      bt-&gt;bitrate) * 1000) / bt-&gt;bitrate;
+</I>&gt;<i> +	if (bit_error) {
+</I>&gt;<i> +		bit_error =
+</I>&gt;<i> +		    (((priv-&gt;timer_freq / (priv-&gt;timer_freq / bt-&gt;bitrate)) -
+</I>&gt;<i> +		      bt-&gt;bitrate) * 1000000) / bt-&gt;bitrate;
+</I>&gt;<i> +		printk(KERN_INFO &quot;\nBitrate error %ld.%ld%%\n&quot;,
+</I>&gt;<i> +			bit_error / 10000, bit_error % 1000);
+</I>&gt;<i> +	} else
+</I>&gt;<i> +		printk(KERN_INFO &quot;\nBitrate error 0.0%%\n&quot;);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>I wonder how much of this code is duplicated from drivers/net/can/dev.c ?
+
+&gt;<i> +static netdev_tx_t omapl_pru_can_start_xmit(struct sk_buff *skb,
+</I>&gt;<i> +					    struct net_device *ndev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> +	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i> +	int count;
+</I>&gt;<i> +	u8 *data = cf-&gt;data;
+</I>&gt;<i> +	u8 dlc = cf-&gt;can_dlc;
+</I>&gt;<i> +	u8 *ptr8data = NULL;
+</I>&gt;<i> +
+</I>most drivers start with:
+	if (can_dropped_invalid_skb(dev, skb))
+		return NETDEV_TX_OK;
+
+&gt;<i> +	netif_stop_queue(ndev);
+</I>why would you stop when you just resumed the queue?
+&gt;<i> +	if (cf-&gt;can_id &amp; CAN_EFF_FLAG)	/* Extended frame format */
+</I>&gt;<i> +		*((u32 *) &amp;priv-&gt;can_tx_hndl.strcanmailbox) =
+</I>&gt;<i> +		    (cf-&gt;can_id &amp; CAN_EFF_MASK) | PRU_CANMID_IDE;
+</I>&gt;<i> +	else			/* Standard frame format */
+</I>&gt;<i> +		*((u32 *) &amp;priv-&gt;can_tx_hndl.strcanmailbox) =
+</I>&gt;<i> +		    (cf-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 18;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (cf-&gt;can_id &amp; CAN_RTR_FLAG)	/* Remote transmission request */
+</I>&gt;<i> +		*((u32 *) &amp;priv-&gt;can_tx_hndl.strcanmailbox) |= CAN_RTR_FLAG;
+</I>&gt;<i> +
+</I>&gt;<i> +	ptr8data = &amp;priv-&gt;can_tx_hndl.strcanmailbox.u8data7 + (dlc - 1);
+</I>&gt;<i> +	for (count = 0; count &lt; (u8) dlc; count++) {
+</I>&gt;<i> +		*ptr8data-- = *data++;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	*((u32 *) &amp;priv-&gt;can_tx_hndl.strcanmailbox.u16datalength) = (u32) dlc;
+</I>&gt;<i> +/*
+</I>&gt;<i> + * search for the next available mbx
+</I>&gt;<i> + * if the next mbx is busy, then try the next + 1
+</I>&gt;<i> + * do this until the head is reached.
+</I>&gt;<i> + * if still unable to tx, stop accepting any packets
+</I>&gt;<i> + * if able to tx and the head is reached, then reset next to tail, i.e mbx0
+</I>&gt;<i> + * if head is not reached, then just point to the next mbx
+</I>&gt;<i> + */
+</I>&gt;<i> +	for (; priv-&gt;tx_next &lt;= priv-&gt;tx_head; priv-&gt;tx_next++) {
+</I>&gt;<i> +		priv-&gt;can_tx_hndl.ecanmailboxnumber =
+</I>&gt;<i> +		    (can_mailbox_number) priv-&gt;tx_next;
+</I>&gt;<i> +		if (-1 == pru_can_write_data_to_mailbox(priv-&gt;dev,
+</I>&gt;<i> +					&amp;priv-&gt;can_tx_hndl)) {
+</I>&gt;<i> +			if (priv-&gt;tx_next == priv-&gt;tx_head) {
+</I>&gt;<i> +				priv-&gt;tx_next = priv-&gt;tx_tail;
+</I>&gt;<i> +				if (!netif_queue_stopped(ndev))
+</I>If you get here, the queue is not stopped. This test is therefore useless.
+&gt;<i> +					netif_stop_queue(ndev);	/* IF stalled */
+</I>&gt;<i> +				dev_err(priv-&gt;dev,
+</I>&gt;<i> +					&quot;%s: no tx mbx available&quot;, __func__);
+</I>&gt;<i> +				return NETDEV_TX_BUSY;
+</I>&gt;<i> +			} else
+</I>&gt;<i> +				continue;
+</I>&gt;<i> +		} else {
+</I>&gt;<i> +			/* set transmit request */
+</I>&gt;<i> +			pru_can_tx(priv-&gt;dev, priv-&gt;tx_next, CAN_TX_PRU_1);
+</I>&gt;<i> +			pru_can_tx_mode_set(priv-&gt;dev, false, ecanreceive);
+</I>&gt;<i> +			pru_can_tx_mode_set(priv-&gt;dev, true, ecantransmit);
+</I>&gt;<i> +			pru_can_start_abort_tx(priv-&gt;dev, PRU_CAN_START);
+</I>&gt;<i> +			priv-&gt;tx_next++;
+</I>&gt;<i> +			can_put_echo_skb(skb, ndev, 0);
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (priv-&gt;tx_next &gt; priv-&gt;tx_head) {
+</I>&gt;<i> +		priv-&gt;tx_next = priv-&gt;tx_tail;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	return NETDEV_TX_OK;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +
+</I>
+&gt;<i> +irqreturn_t omapl_tx_can_intr(int irq, void *dev_id)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *ndev = dev_id;
+</I>&gt;<i> +	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> +	struct net_device_stats *stats = &amp;ndev-&gt;stats;
+</I>&gt;<i> +	u32 bit_set, mbxno;
+</I>&gt;<i> +
+</I>&gt;<i> +	pru_can_get_intr_status(priv-&gt;dev, &amp;priv-&gt;can_tx_hndl);
+</I>&gt;<i> +	if ((PRU_CAN_ISR_BIT_CCI &amp; priv-&gt;can_tx_hndl.u32interruptstatus)
+</I>&gt;<i> +	    || (PRU_CAN_ISR_BIT_SRDI &amp; priv-&gt;can_tx_hndl.u32interruptstatus)) {
+</I>&gt;<i> +		__can_debug(&quot;tx_int_status = 0x%X\n&quot;,
+</I>&gt;<i> +			    priv-&gt;can_tx_hndl.u32interruptstatus);
+</I>&gt;<i> +		can_free_echo_skb(ndev, 0);
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		for (bit_set = 0; ((priv-&gt;can_tx_hndl.u32interruptstatus &amp; 0xFF)
+</I>&gt;<i> +						&gt;&gt; bit_set != 0); bit_set++)
+</I>&gt;<i> +		;
+</I>&gt;<i> +		if (0 == bit_set) {
+</I>&gt;<i> +			__can_err(&quot;%s: invalid mailbox number\n&quot;, __func__);
+</I>&gt;<i> +			can_free_echo_skb(ndev, 0);
+</I>&gt;<i> +		} else {
+</I>&gt;<i> +			mbxno = bit_set - 1;	/* mail box numbering starts from 0 */
+</I>&gt;<i> +			if (PRU_CAN_ISR_BIT_ESI &amp; priv-&gt;can_tx_hndl.
+</I>&gt;<i> +			    u32interruptstatus) {
+</I>&gt;<i> +				/* read gsr and ack pru */
+</I>&gt;<i> +				pru_can_get_global_status(priv-&gt;dev, &amp;priv-&gt;can_tx_hndl);
+</I>&gt;<i> +				omapl_pru_can_err(ndev,
+</I>&gt;<i> +						  priv-&gt;can_tx_hndl.
+</I>&gt;<i> +						  u32interruptstatus,
+</I>&gt;<i> +						  priv-&gt;can_tx_hndl.
+</I>&gt;<i> +						  u32globalstatus);
+</I>&gt;<i> +			} else {
+</I>&gt;<i> +				stats-&gt;tx_packets++;
+</I>&gt;<i> +				/* stats-&gt;tx_bytes += dlc; */
+</I>&gt;<i> +				/*can_get_echo_skb(ndev, 0);*/
+</I>&gt;<i> +			}
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +	if (netif_queue_stopped(ndev))
+</I>you can call netif_wake_queue(ndev) multiple times, so there is no need
+for netif_queue_stopped()
+&gt;<i> +		netif_wake_queue(ndev);
+</I>&gt;<i> +
+</I>&gt;<i> +	can_get_echo_skb(ndev, 0);
+</I>&gt;<i> +	pru_can_tx_mode_set(priv-&gt;dev, true, ecanreceive);
+</I>&gt;<i> +	return IRQ_HANDLED;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int omapl_pru_can_open(struct net_device *ndev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> +	int err;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* register interrupt handler */
+</I>&gt;<i> +	err = request_irq(priv-&gt;trx_irq, &amp;omapl_rx_can_intr, IRQF_SHARED,
+</I>&gt;<i> +			  &quot;pru_can_irq&quot;, ndev);
+</I>you're doing a lot of work _in_ the irq handler. Maybe threaded irq?
+
+&gt;<i> +static int omapl_pru_can_close(struct net_device *ndev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!netif_queue_stopped(ndev))
+</I>check is not needed.
+&gt;<i> +		netif_stop_queue(ndev);
+</I>&gt;<i> +
+</I>&gt;<i> +	close_candev(ndev);
+</I>&gt;<i> +
+</I>&gt;<i> +	free_irq(priv-&gt;trx_irq, ndev);
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>
+Regards,
+Kurt
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005539.html">[PATCH v2 09/13] can: pruss CAN driver.
+</A></li>
+	<LI>Next message: <A HREF="005572.html">[PATCH v2 09/13] can: pruss CAN driver.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5516">[ date ]</a>
+              <a href="thread.html#5516">[ thread ]</a>
+              <a href="subject.html#5516">[ subject ]</a>
+              <a href="author.html#5516">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

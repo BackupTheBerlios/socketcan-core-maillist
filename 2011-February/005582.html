@@ -1,0 +1,146 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: cleaning up CAN_ERR_ACK issue
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20cleaning%20up%20CAN_ERR_ACK%20issue&In-Reply-To=%3C4D5E9D0A.6030503%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005581.html">
+   <LINK REL="Next"  HREF="005584.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: cleaning up CAN_ERR_ACK issue</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20cleaning%20up%20CAN_ERR_ACK%20issue&In-Reply-To=%3C4D5E9D0A.6030503%40grandegger.com%3E"
+       TITLE="RFC: cleaning up CAN_ERR_ACK issue">wg at grandegger.com
+       </A><BR>
+    <I>Fri Feb 18 17:23:38 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005581.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+        <LI>Next message: <A HREF="005584.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5582">[ date ]</a>
+              <a href="thread.html#5582">[ thread ]</a>
+              <a href="subject.html#5582">[ subject ]</a>
+              <a href="author.html#5582">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 02/18/2011 05:03 PM, Oliver Hartkopp wrote:
+&gt;<i> On 18.02.2011 11:03, Wolfgang Grandegger wrote:
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;&gt;&gt;&gt;&gt;<i> 	cf-&gt;data[5] = CAN_ERR_VERSION;
+</I>&gt;&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;&gt;<i> Also candump could use it to avoid displaying rubbish with old kernels.
+</I>&gt;&gt;&gt;&gt;&gt;<i> IMO it's not so good put the version in a 'hot path'.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> What do you mean with hot path.
+</I>&gt;&gt;&gt;<i> 'hot path' == every CAN error frame will carry the version info.
+</I>&gt;&gt;&gt;<i> Opposed to uname() where the version is transferred once.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Or, in other words, the version isn't going to change, but is transferred
+</I>&gt;&gt;&gt;<i> every time...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> We always send all 8 bytes and CAN_ERR_VERSION would not change that.
+</I>&gt;<i> 
+</I>&gt;<i> Whatever people might place there in specific setups - or if we need some more
+</I>&gt;<i> space in the future ...
+</I>&gt;<i> 
+</I>&gt;<i> This version info transferred in the hotpath for some less relevant backward
+</I>&gt;<i> compatibility stuff is not a very good idea.
+</I>&gt;<i> 
+</I>&gt;<i> I think calling 'int uname(struct utsname *buf);' once at startup is the only
+</I>&gt;<i> thing we should do to support a kernel version &lt; 2.6.39 - which is unsafe due
+</I>&gt;<i> to the current inconsistencies of the drivers anyway.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;&gt;&gt;&gt;&gt;<i> I tend to drop touching the network stats completely. What do you and
+</I>&gt;&gt;&gt;&gt;&gt;&gt;&gt;<i> others think.
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> Using the common network stats would have the advantage, that you can easily
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> see problems with standard tools like 'ifconfig' or 'cat /proc/net/dev'
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> After dropping network stats, some other stats mechanism will appear with
+</I>&gt;&gt;&gt;&gt;&gt;<i> even less defined semantics, since some kind of stats are usefull (we even
+</I>&gt;&gt;&gt;&gt;&gt;<i> have some extra stats for CAN errors!).
+</I>&gt;&gt;&gt;&gt;&gt;<i> It is a bit messy now, I agree.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> I thin mantaining and incementing too similar stats is overkill.
+</I>&gt;&gt;&gt;&gt;<i> Also, we have difficulties to map the CAN errors to the netdev errors:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> <A HREF="http://lxr.linux.no/#linux+v2.6.37/include/linux/netdevice.h#L173">http://lxr.linux.no/#linux+v2.6.37/include/linux/netdevice.h#L173</A>
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Do you question the stats like 'bus_error', or do you question
+</I>&gt;&gt;&gt;<i> having them seperate?
+</I>&gt;&gt;&gt;<i> I see value in keeping such stats ...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I want to drop incrementing the netdev stats errors. The CAN stats
+</I>&gt;&gt;<i> should be kept, of course. Currently, we increment both stats for bus
+</I>&gt;&gt;<i> errors, e.g.:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   can_stats-&gt;bus_errors++;
+</I>&gt;&gt;<i>   stats-&gt;rx_errors++;
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Indeed updating two variables is not a good idea.
+</I>&gt;<i> 
+</I>&gt;<i> Regarding the given example ... what about incrementing only
+</I>&gt;<i> 
+</I>&gt;<i>     stats-&gt;rx_errors++; /* counting bus errors with netdev stats */
+</I>&gt;<i> 
+</I>&gt;<i> And in the case the CAN specific statistics are requested, we do some
+</I>&gt;<i> 
+</I>&gt;<i>     can_stats-&gt;bus_errors = stats-&gt;rx_errors;
+</I>&gt;<i> 
+</I>&gt;<i> before passing the statistics to the user?
+</I>
+First, not all bus errors are associated with rx:
+
+  ACK errors may happen on TX
+  CRC errors may happen on RX
+  BIT errors may happen on RX *and* TX
+  FORM errors may happen on RX *and* TX
+
+Mapping bus CAN errors to netdev errors is not always possible.
+Second, currently we increment stats-&gt;rx_errors for non-bus-errors as
+well, e.g.:
+
+   stats-&gt;rx_over_errors++;
+   stats-&gt;rx_errors++;
+
+Any better idea?
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005581.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+	<LI>Next message: <A HREF="005584.html">RFC: cleaning up CAN_ERR_ACK issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5582">[ date ]</a>
+              <a href="thread.html#5582">[ thread ]</a>
+              <a href="subject.html#5582">[ subject ]</a>
+              <a href="author.html#5582">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

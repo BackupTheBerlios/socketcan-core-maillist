@@ -1,0 +1,367 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2] at91_can
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20at91_can&In-Reply-To=%3C4AABAD2F.5020100%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003059.html">
+   <LINK REL="Next"  HREF="003061.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2] at91_can</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20at91_can&In-Reply-To=%3C4AABAD2F.5020100%40grandegger.com%3E"
+       TITLE="[PATCH v2] at91_can">wg at grandegger.com
+       </A><BR>
+    <I>Sat Sep 12 16:16:15 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003059.html">[PATCH v2] at91_can
+</A></li>
+        <LI>Next message: <A HREF="003061.html">[PATCH v2] at91_can
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3060">[ date ]</a>
+              <a href="thread.html#3060">[ thread ]</a>
+              <a href="subject.html#3060">[ subject ]</a>
+              <a href="author.html#3060">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Marc Kleine-Budde wrote:
+&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;<i> here &quot;./strip-src -m -i -v 2.6.31&quot; version of the at91 driver,
+</I>&gt;&gt;&gt;<i> featuring:
+</I>&gt;&gt;&gt;<i> - reworked RX-path
+</I>&gt;&gt;&gt;<i> - NAPI for RX and CAN frame errors
+</I>&gt;&gt;&gt;<i>   TX and CAN state is still managed from irq handler
+</I>&gt;&gt;&gt;<i> - CAN chip is turned off after a bus off
+</I>&gt;&gt;&gt;<i>   the NAPI is stopped via a work_queue, because
+</I>&gt;&gt;&gt;<i>   NAPI cannot be disabled from IRQ context
+</I>&gt;&gt;&gt;<i>   (where the bus off is detected).
+</I>&gt;&gt;<i> Very nice. Do you really need to stop the NAPI in case of bus-off? You
+</I>&gt;&gt;<i> stopped the device and no more message will come in anyhow.
+</I>&gt;<i> 
+</I>&gt;<i> hmmm...I'll try
+</I>
+It would be nice if we could get rid of the work queue. For the MSCAN on
+the MPC5200, NAPI is also not disabled on bus-off and the controller
+behaves similar (doing automatic bus-off recovery).
+
+&gt;&gt;&gt;<i> I have to figure out if disabling NAPI is possbile from NAPI conext, so
+</I>&gt;&gt;&gt;<i> CAN state transition might be moved to NAPI, too.
+</I>&gt;<i> 
+</I>&gt;<i> for the record:
+</I>&gt;<i> no, we would get a deadlock then..(waiting in NAPI for NAPI to end)
+</I>
+OK, I see.
+
+&gt;&gt;&gt;<i> Bus off and manual restart via the &quot;ip&quot; utility is working. However the
+</I>&gt;&gt;&gt;<i> last remaining bits of the auto recover handling must be removed,
+</I>&gt;&gt;&gt;<i> though.
+</I>&gt;&gt;<i> Did you follow our recent discussion on how to handle auto recovery? The
+</I>&gt;&gt;<i>  preferred solution is to *stop* the device if priv-&gt;can.restart_ms ==
+</I>&gt;&gt;<i> 0. If it's &gt; 0, the hardware should do the recovery and when the state
+</I>&gt;&gt;<i> changes to error-active, an RESTARTED error message should be generated.
+</I>&gt;<i> 
+</I>&gt;<i> okay, will change.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> The driver with NAPI receiving messages with a length of 1 on a 1 Mbit
+</I>&gt;&gt;&gt;<i> link without swapping the messages (tested with pengutronix cansequence).
+</I>&gt;&gt;<i> Please use Vladislavs' canecho_gen/duts at 125kB/sec, which is more
+</I>&gt;&gt;<i> sensitive. Don't forget to fix the unhanded errno ENOBUFS of the write
+</I>&gt;&gt;<i> functions.
+</I>&gt;<i> 
+</I>&gt;<i> using select/poll would be better than calling sched_yield
+</I>
+Well, yes, could this easily be achieved? Oliver?
+
+&gt;&gt;&gt;<i> However if I add some &quot;ping -f&quot; load the driver keeps working (tested
+</I>&gt;&gt;&gt;<i> with looking at the data bytes in the driver), but the userspace doesn't
+</I>&gt;&gt;&gt;<i> get enough cpu cycles so AFAICS the pacakges must be dropped in the
+</I>&gt;&gt;&gt;<i> network layer.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Even on the 1 Mbit link the total number IRQs isn't reduced by NAPI
+</I>&gt;&gt;&gt;<i> (less than 1%). But with NAPI I can enable the Acknowledgement Error
+</I>&gt;&gt;&gt;<i> even on 1 Mbit, and the system doesn't lock up. It generated ~15K Int/s.
+</I>&gt;&gt;<i> With NAPI, message processing is moved from the interrupt to the process
+</I>&gt;&gt;<i> context, which efficiently avoids lockups. As longs as CPU resources are
+</I>&gt;&gt;<i> available, no messages will be dropped.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> Adding again &quot;ping -f&quot; load, the CAN interrupts drop to ~11K Int/s,
+</I>&gt;&gt;&gt;<i> the Ethernet causes only ~7K Int/s.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Maybe we can think of some really &quot;slow&quot; polling for such interrupts.
+</I>&gt;&gt;&gt;<i> IIRC the SJA1000 has the same problem.
+</I>&gt;&gt;<i> I remember some discussion on this topic a long time ago and there it
+</I>&gt;&gt;<i> was regarded important to get and inspect all bus errors. Throttling was
+</I>&gt;&gt;<i> not accepted.
+</I>&gt;<i> 
+</I>&gt;<i> As we see with the above numbers, we lose about 4000 errors per second
+</I>&gt;<i> if ethernet traffic hits the box. I was just thinking about polling this
+</I>&gt;<i> particular error if it hits the chip.
+</I>
+This is a general issue and I think we should re-discuss it sooner than
+later.
+
+&gt;&gt;&gt;<i> Here's the driver, comments welcome. There are some functions, that
+</I>&gt;&gt;&gt;<i> might be moved out of the driver into can/dev.c (alloc_can*frame).
+</I>&gt;&gt;<i> There are various general coding style issues:
+</I>[snip]
+&gt;&gt;&gt;<i> +/* Common registers */
+</I>&gt;&gt;&gt;<i> +enum at91_reg {
+</I>&gt;&gt;&gt;<i> +	AT91_MR		= 0x000,
+</I>&gt;&gt;&gt;<i> +	AT91_IER	= 0x004,
+</I>&gt;&gt;&gt;<i> +	AT91_IDR	= 0x008,
+</I>&gt;&gt;&gt;<i> +	AT91_IMR	= 0x00C,
+</I>&gt;&gt;&gt;<i> +	AT91_SR		= 0x010,
+</I>&gt;&gt;&gt;<i> +	AT91_BR		= 0x014,
+</I>&gt;&gt;&gt;<i> +	AT91_TIM	= 0x018,
+</I>&gt;&gt;&gt;<i> +	AT91_TIMESTP	= 0x01C,
+</I>&gt;&gt;&gt;<i> +	AT91_ECR	= 0x020,
+</I>&gt;&gt;&gt;<i> +	AT91_TCR	= 0x024,
+</I>&gt;&gt;&gt;<i> +	AT91_ACR	= 0x028,
+</I>&gt;&gt;&gt;<i> +};
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +/* Mailbox registers (0 &lt;= i &lt;= 15) */
+</I>&gt;&gt;&gt;<i> +#define AT91_MMR(i)		(enum at91_reg)(0x200 + ((i) * 0x20))
+</I>&gt;&gt;&gt;<i> +#define AT91_MAM(i)		(enum at91_reg)(0x204 + ((i) * 0x20))
+</I>&gt;&gt;&gt;<i> +#define AT91_MID(i)		(enum at91_reg)(0x208 + ((i) * 0x20))
+</I>&gt;&gt;&gt;<i> +#define AT91_MFID(i)		(enum at91_reg)(0x20C + ((i) * 0x20))
+</I>&gt;&gt;&gt;<i> +#define AT91_MSR(i)		(enum at91_reg)(0x210 + ((i) * 0x20))
+</I>&gt;&gt;&gt;<i> +#define AT91_MDL(i)		(enum at91_reg)(0x214 + ((i) * 0x20))
+</I>&gt;&gt;&gt;<i> +#define AT91_MDH(i)		(enum at91_reg)(0x218 + ((i) * 0x20))
+</I>&gt;&gt;&gt;<i> +#define AT91_MCR(i)		(enum at91_reg)(0x21C + ((i) * 0x20))
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +/* Register bits */
+</I>&gt;&gt;&gt;<i> +#define AT91_MR_AT91EN		BIT(0)
+</I>&gt;&gt;&gt;<i> +#define AT91_MR_LPM		BIT(1)
+</I>&gt;&gt;&gt;<i> +#define AT91_MR_ABM		BIT(2)
+</I>&gt;&gt;&gt;<i> +#define AT91_MR_OVL		BIT(3)
+</I>&gt;&gt;&gt;<i> +#define AT91_MR_TEOF		BIT(4)
+</I>&gt;&gt;&gt;<i> +#define AT91_MR_TTM		BIT(5)
+</I>&gt;&gt;&gt;<i> +#define AT91_MR_TIMFRZ		BIT(6)
+</I>&gt;&gt;&gt;<i> +#define AT91_MR_DRPT		BIT(7)
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +#define AT91_SR_RBSY		BIT(29)
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +#define AT91_MMR_PRIO_SHIFT	(16)
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +#define AT91_MID_MIDE		BIT(29)
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +#define AT91_MSR_MRTR		BIT(20)
+</I>&gt;&gt;&gt;<i> +#define AT91_MSR_MABT		BIT(22)
+</I>&gt;&gt;&gt;<i> +#define AT91_MSR_MRDY		BIT(23)
+</I>&gt;&gt;&gt;<i> +#define AT91_MSR_MMI		BIT(24)
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +#define AT91_MCR_MRTR		BIT(20)
+</I>&gt;&gt;&gt;<i> +#define AT91_MCR_MTCR		BIT(23)
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +/* Mailbox Modes */
+</I>&gt;&gt;&gt;<i> +enum at91_mb_mode {
+</I>&gt;&gt;&gt;<i> +	AT91_MB_MODE_DISABLED	= 0,
+</I>&gt;&gt;&gt;<i> +	AT91_MB_MODE_RX		= 1,
+</I>&gt;&gt;&gt;<i> +	AT91_MB_MODE_RX_OVRWR	= 2,
+</I>&gt;&gt;&gt;<i> +	AT91_MB_MODE_TX		= 3,
+</I>&gt;&gt;&gt;<i> +	AT91_MB_MODE_CONSUMER	= 4,
+</I>&gt;&gt;&gt;<i> +	AT91_MB_MODE_PRODUCER	= 5,
+</I>&gt;&gt;&gt;<i> +};
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +/* Interrupt mask bits */
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_MB_RX		((1 &lt;&lt; (AT91_MB_RX_LAST + 1)) \
+</I>&gt;&gt;&gt;<i> +				 - (1 &lt;&lt; AT91_MB_RX_FIRST))
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_MB_TX		((1 &lt;&lt; (AT91_MB_TX_LAST + 1)) \
+</I>&gt;&gt;&gt;<i> +				 - (1 &lt;&lt; AT91_MB_TX_FIRST))
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_MB_AL		(AT91_IRQ_MB_RX | AT91_IRQ_MB_TX)
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_ERRA		(1 &lt;&lt; 16)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_WARN		(1 &lt;&lt; 17)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_ERRP		(1 &lt;&lt; 18)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_BOFF		(1 &lt;&lt; 19)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_SLEEP		(1 &lt;&lt; 20)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_WAKEUP		(1 &lt;&lt; 21)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_TOVF		(1 &lt;&lt; 22)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_TSTP		(1 &lt;&lt; 23)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_CERR		(1 &lt;&lt; 24)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_SERR		(1 &lt;&lt; 25)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_AERR		(1 &lt;&lt; 26)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_FERR		(1 &lt;&lt; 27)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_BERR		(1 &lt;&lt; 28)
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_ERR_ALL	(0x1fff0000)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_ERR_FRAME	(AT91_IRQ_CERR | AT91_IRQ_SERR | \
+</I>&gt;&gt;&gt;<i> +				 AT91_IRQ_AERR | AT91_IRQ_FERR | AT91_IRQ_BERR)
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_ERR_LINE	(AT91_IRQ_ERRA | AT91_IRQ_WARN | \
+</I>&gt;&gt;&gt;<i> +				 AT91_IRQ_ERRP | AT91_IRQ_BOFF)
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +#define AT91_IRQ_ALL		(0x1fffffff)
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +struct at91_priv {
+</I>&gt;&gt;&gt;<i> +	struct can_priv		can;	   /* must be the first member! */
+</I>&gt;&gt;&gt;<i> +	struct net_device	*dev;
+</I>&gt;&gt;&gt;<i> +	struct napi_struct	napi;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	void __iomem		*reg_base;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	u32			reg_sr;
+</I>&gt;&gt;&gt;<i> +	unsigned int		tx_next;
+</I>&gt;&gt;&gt;<i> +	unsigned int		tx_echo;
+</I>&gt;&gt;&gt;<i> +	unsigned int		rx_next;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	struct work_struct	bus_off_task;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	struct clk		*clk;
+</I>&gt;&gt;&gt;<i> +	struct at91_can_data	*pdata;
+</I>&gt;&gt;&gt;<i> +};
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static struct can_bittiming_const at91_bittiming_const = {
+</I>&gt;&gt;&gt;<i> +	.tseg1_min = 4,
+</I>&gt;&gt;&gt;<i> +	.tseg1_max = 16,
+</I>&gt;&gt;&gt;<i> +	.tseg2_min = 2,
+</I>&gt;&gt;&gt;<i> +	.tseg2_max = 8,
+</I>&gt;&gt;&gt;<i> +	.sjw_max = 4,
+</I>&gt;&gt;&gt;<i> +	.brp_min = 2,
+</I>&gt;&gt;&gt;<i> +	.brp_max = 128,
+</I>&gt;&gt;&gt;<i> +	.brp_inc = 1,
+</I>&gt;&gt;&gt;<i> +};
+</I>&gt;&gt;<i> Why do you don't use tab here fore aligment of the numbers?
+</I>&gt;<i> 
+</I>&gt;<i> As Wolfram pointed out:
+</I>&gt;<i> 
+</I>&gt;&gt;<i> There are a few of those. Such kind of indentation is ususally
+</I>&gt;&gt;<i> rejected upstream, too. If one of the member names ever changes, &quot;=&quot;
+</I>&gt;&gt;<i> will get misaligned again (or you'd need to alter lines just for
+</I>&gt;&gt;<i> beautification which would make git blame less useful). So, one space
+</I>&gt;&gt;<i> after the names should do.
+</I>
+I know, but then you probably also want to fix the enums above. In the
+file header, I'm more relaxed, especially because defines are usually
+aligned as well.
+
+&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static inline int get_tx_next_mb(struct at91_priv *priv)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	return (priv-&gt;tx_next &amp; AT91_NEXT_MB_MASK) + AT91_MB_TX_FIRST;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static inline int get_tx_next_prio(struct at91_priv *priv)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	return (priv-&gt;tx_next &gt;&gt; AT91_NEXT_PRIO_SHIFT) &amp; 0xf;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static inline int get_tx_echo_mb(struct at91_priv *priv)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	return (priv-&gt;tx_echo &amp; AT91_NEXT_MB_MASK) + AT91_MB_TX_FIRST;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static inline u32 at91_read(struct net_device *dev, enum at91_reg reg)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;&gt;<i> +	return readl(priv-&gt;reg_base + reg);
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static inline void
+</I>&gt;&gt;&gt;<i> +at91_write(struct net_device *dev, enum at91_reg reg, u32 value)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;&gt;<i> +	writel(value, priv-&gt;reg_base + reg);
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static inline void
+</I>&gt;&gt;&gt;<i> +set_mb_mode_prio(struct net_device *dev, unsigned int mb,
+</I>&gt;&gt;&gt;<i> +		 enum at91_mb_mode mode, int prio)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	at91_write(dev, AT91_MMR(mb),
+</I>&gt;&gt;&gt;<i> +		   (mode &lt;&lt; 24) | (prio &lt;&lt; 16));
+</I>&gt;&gt;<i> Fits on one line?
+</I>&gt;<i> 
+</I>&gt;<i> it does, fixed
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static inline void
+</I>&gt;&gt;&gt;<i> +set_mb_mode(struct net_device *dev, unsigned int mb, enum at91_mb_mode mode)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	set_mb_mode_prio(dev, mb, mode, 0);
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static struct sk_buff *
+</I>&gt;&gt;&gt;<i> +alloc_can_frame(struct net_device *dev, struct can_frame **cf)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct sk_buff *skb;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	skb = netdev_alloc_skb(dev, sizeof(struct can_frame));
+</I>&gt;&gt;&gt;<i> +	if (unlikely(!skb))
+</I>
+A (rate limited) dev_err would be nice here as well.
+
+&gt;&gt;&gt;<i> +		return NULL;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	skb-&gt;protocol = htons(ETH_P_CAN);
+</I>&gt;&gt;&gt;<i> +	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+</I>&gt;&gt;&gt;<i> +	*cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	return skb;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static struct sk_buff *
+</I>&gt;&gt;&gt;<i> +alloc_can_err_frame(struct net_device *dev, struct can_frame **cf)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct sk_buff *skb;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	skb = alloc_can_frame(dev, cf);
+</I>&gt;&gt;&gt;<i> +	if (unlikely(!skb))
+</I>&gt;&gt;&gt;<i> +		return NULL;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	memset(*cf, 0, sizeof(struct can_frame));
+</I>&gt;&gt;&gt;<i> +	(*cf)-&gt;can_id = CAN_ERR_FLAG;
+</I>&gt;&gt;&gt;<i> +	(*cf)-&gt;can_dlc = CAN_ERR_DLC;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	return skb;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;<i> Yes, we should put similar functions into dev.[ch]. But I would use the
+</I>&gt;&gt;<i> suffix &quot;skb&quot; instead of &quot;frame&quot; because the return value is of type
+</I>&gt;&gt;<i> &quot;static struct sk_buff *&quot;. Patches are welcome.
+</I>&gt;<i> 
+</I>&gt;<i> fixed. patches against which tree?
+</I>
+First again SVN trunk.
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003059.html">[PATCH v2] at91_can
+</A></li>
+	<LI>Next message: <A HREF="003061.html">[PATCH v2] at91_can
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3060">[ date ]</a>
+              <a href="thread.html#3060">[ thread ]</a>
+              <a href="subject.html#3060">[ subject ]</a>
+              <a href="author.html#3060">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

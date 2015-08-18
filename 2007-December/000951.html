@@ -1,0 +1,184 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: CAN state management
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20CAN%20state%20management&In-Reply-To=%3C1197305040.12251.22.camel%40pc-mob-grv-deb%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000950.html">
+   <LINK REL="Next"  HREF="000952.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: CAN state management</H1>
+    <B>Vladislav Gribov</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20CAN%20state%20management&In-Reply-To=%3C1197305040.12251.22.camel%40pc-mob-grv-deb%3E"
+       TITLE="RFC: CAN state management">gribov at ixxat.de
+       </A><BR>
+    <I>Mon Dec 10 17:43:58 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000950.html">RFC: CAN state management
+</A></li>
+        <LI>Next message: <A HREF="000952.html">RFC: CAN state management
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#951">[ date ]</a>
+              <a href="thread.html#951">[ thread ]</a>
+              <a href="subject.html#951">[ subject ]</a>
+              <a href="author.html#951">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Mon, 2007-12-10 at 16:18 +0100, Wolfgang Grandegger wrote:
+&gt;<i> Vladislav Gribov wrote: 
+</I>&gt;<i> &gt; On Sat, 2007-12-08 at 11:08 +0100, Wolfgang Grandegger wrote: 
+</I>&gt;<i> &gt;&gt; Oliver Hartkopp wrote: 
+</I>&gt;<i> &gt;&gt;&gt; Wolfgang Grandegger wrote: 
+</I>&gt;<i> &gt;&gt;&gt;&gt; Hartkopp, Oliver (K-GEFE/E) wrote: 
+</I>&gt;<i> &gt;&gt;&gt;&gt;    
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; Wolfgang Grandegger schrieb: 
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;      
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;&gt; Hartkopp, Oliver (K-GEFE/E) wrote: 
+</I>&gt;<i> [...deletions...] 
+</I>&gt;<i> &gt;&gt;&gt; Ok - so we would have the RFC2683 operational states for all the
+</I>&gt;<i> typical 
+</I>&gt;<i> &gt;&gt;&gt; netdriver conditions we map to our CAN netdriver and *additional*
+</I>&gt;<i> this 
+</I>&gt;<i> &gt;&gt;&gt; suggested  CAN state describing the controllers view on the bus,
+</I>&gt;<i> right? 
+</I>&gt;<i> &gt;&gt; Yes.  When the CAN controller cannot (bus off) or is not allowed to
+</I>&gt;<i> send 
+</I>&gt;<i> &gt;&gt; data (error passive?), or too much bus errors (?), or whatever, we
+</I>&gt;<i> call 
+</I>&gt;<i> &gt;&gt; netdev_carrier_off(). After automatic or manual recovery we call 
+</I>&gt;<i> &gt;&gt; netdev_carrier_on(). priv-&gt;can.state holds the bus error state when
+</I>&gt;<i> it's 
+</I>&gt;<i> &gt;&gt; active or CAN_STATE_STOPPED otherwise. The latter state is set when
+</I>&gt;<i> it's 
+</I>&gt;<i> &gt;&gt; in the initialization or reset state. 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; carrier_off means that no communication is possible at all. In case
+</I>&gt;<i> of 
+</I>&gt;<i> &gt; error passive we still receive CAN messages and error messages. If
+</I>&gt;<i> there 
+</I>&gt;<i> &gt; are to much error frames on CAN bus we go to error passive and than
+</I>&gt;<i> to 
+</I>&gt;<i> &gt; bus-off.
+</I>&gt;<i> 
+</I>&gt;<i> &quot;We&quot; means Software or Hardware? We need to discuss in what cases 
+</I>&gt;<i> carrier_off() should be called.
+</I>
+Sorry, &quot;w&quot;e mean &quot;HW&quot; in this context.
+
+The most CAN controllers (HW) have nice node transition diagram for Rx
+(REC) and Tx (TEC) error counters.
+
+digraph CAN_error {
+ranksep=.75;
+nodesep=1;
+ratio = .75;
+{
+	node [shape=plaintext];
+	&quot;HW reset&quot;;
+}
+	
+&quot;Error active&quot;; &quot;Warning&quot;; &quot;Error passive&quot;; &quot;Bus off&quot;;
+	
+{rank=same; &quot;Error passive&quot;; &quot;Bus off&quot;;}
+	
+&quot;HW reset&quot; -&gt; &quot;Error active&quot; ;
+	
+&quot;Error active&quot; -&gt; &quot;Warning&quot; [label=&quot;REC&gt;=96 \nor\n TEC&gt;=96&quot;] ;
+	
+&quot;Warning&quot; -&gt; &quot;Error active&quot; [label=&quot;REC&lt;96 \nand\n TEC&lt;96&quot;] ;
+&quot;Warning&quot; -&gt; &quot;Error passive&quot; [label=&quot;REC&gt;=128 \nor\n TEC&gt;=128&quot;] ;
+	
+&quot;Error passive&quot; -&gt; &quot;Warning&quot; [label=&quot;REC&lt;128 \nand\n TEC&lt;128&quot;] ;
+&quot;Error passive&quot; -&gt; &quot;Bus off&quot; [label=&quot;TEC&gt;=256&quot;] ;
+	
+&quot;Bus off&quot; -&gt; &quot;Error active&quot; [label=&quot;Restart\nCAN controller&quot;];
+}
+
+
+So the HW distinguishes between 4 error states:
+- Error active
+- Warning
+- Error passive
+- Busoff
+
+There is however no difference between &quot;Error active&quot; and &quot;Warning&quot;
+concerning the ability to transmit and receive CAN messages.
+My opinion is, the CAN driver (SW) shall still produce error messages
+(events) for all 4 states, but for CAN state (priv-&gt;can.state ?) &quot;Error
+active&quot;, &quot;Error passive&quot; and &quot;Bus off&quot; are enough.
+The carrier_off() is called only on bus off.
+
+&gt;<i> 
+</I>&gt;<i> &gt; For me  netdev_carrier_* seems to be perfect to signal bus-off, but
+</I>&gt;<i> what 
+</I>&gt;<i> &gt; is about side-effect with ioctl pointed by Marc in his mail from 
+</I>&gt;<i> &gt; 6.12.2007 
+</I>&gt;<i> &gt;
+</I>&gt;<i> (<A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-December/000937.html">https://lists.berlios.de/pipermail/socketcan-core/2007-December/000937.html</A>) ?
+</I>&gt;<i> 
+</I>&gt;<i> We will already agreed to abandon IOCTL requests.
+</I>
+Ok, important is only that application is able to recover bus off
+&quot;manually&quot; if no automatic bus off recovery is used (by writing some
+sysfs entry I guess).
+
+&gt;<i> 
+</I>&gt;<i> Wolfgang.
+</I>&gt;<i> 
+</I>-- 
+Mit freundlichen Gr&#252;&#223;en / Kind regards,
+Dipl.-Ing. Vladislav Gribov MSc
+Development
+--------------------------------------------
+IXXAT Automation GmbH
+Leibnizstr. 15, 88250 Weingarten, Germany
+Phone  +49-751-56146-0
+Direct +49-751-56146-162
+Fax    +49-751-56146-29
+mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A>
+<A HREF="http://www.ixxat.de">http://www.ixxat.de</A>
+--------------------------------------------
+PRIVILEGED AND CONFIDENTIAL.
+Any unauthorized use or disclosure
+is strictly prohibited.
+--------------------------------------------
+Sitz der Gesellschaft: Weingarten
+Handelsregister Ulm HRB 551905
+Gesch&#228;ftsf&#252;hrer:
+Christian Schlegel, Sieglinde Etschberger
+--------------------------------------------
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000950.html">RFC: CAN state management
+</A></li>
+	<LI>Next message: <A HREF="000952.html">RFC: CAN state management
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#951">[ date ]</a>
+              <a href="thread.html#951">[ thread ]</a>
+              <a href="subject.html#951">[ subject ]</a>
+              <a href="author.html#951">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

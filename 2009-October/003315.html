@@ -1,0 +1,148 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Query regarding C_CAN driver for Hynix
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Query%20regarding%20C_CAN%20driver%20for%20Hynix&In-Reply-To=%3C26054802.post%40talk.nabble.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003314.html">
+   <LINK REL="Next"  HREF="003317.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Query regarding C_CAN driver for Hynix</H1>
+    <B>bhupesh.sharma</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Query%20regarding%20C_CAN%20driver%20for%20Hynix&In-Reply-To=%3C26054802.post%40talk.nabble.com%3E"
+       TITLE="Query regarding C_CAN driver for Hynix">bhupesh.sharma at st.com
+       </A><BR>
+    <I>Mon Oct 26 06:36:37 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003314.html">Query regarding C_CAN driver for Hynix
+</A></li>
+        <LI>Next message: <A HREF="003317.html">Query regarding C_CAN driver for Hynix
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3315">[ date ]</a>
+              <a href="thread.html#3315">[ thread ]</a>
+              <a href="subject.html#3315">[ subject ]</a>
+              <a href="author.html#3315">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+
+
+&gt;<i>There is CCAN support by the old Socket-CAN drivers tree, which does not
+</I>&gt;<i>use the CAN device drivers interface. Nice to hear that you are trying
+</I>&gt;<i>to port the CCAN driver.
+</I>Yes. I am using the same as reference ;)
+
+&gt;&gt;<i> Similar to Hynix, my SOC has 2 CAN IPs and I intend to use the same
+</I>&gt;&gt;<i> driver
+</I>&gt;&gt;<i> to handle both the IPs.
+</I>&gt;<i> Could you be more precise? What SOC are you speaking about?
+</I>This is a SOC being developed by my company. It is still not officially
+launced. I hope that most of the linux device drivers we are developing for
+this SOC, become available as open-source code ones.
+
+&gt;&gt;<i> Now, what is the significance of stopping the `netif_queue` when the
+</I>&gt;&gt;<i> priv-&gt;tx_object becomes 5.
+</I>&gt;&gt;<i> This must be a limitation seen by the developer of this driver in the
+</I>&gt;&gt;<i> CCAN
+</I>&gt;&gt;<i> IP in Hynix.
+</I>
+&gt;<i>The netif_stop_queue() tells the network layer to stop sending packets
+</I>&gt;<i>via the hard_start_xmit() function. It's usually called when no more
+</I>&gt;<i>hardware objects/buffers are available/free for transmission. See:
+</I>
+&gt;<i><A HREF="http://lxr.linux.no/#linux+v2.6.31/include/linux/netdevice.h#L1305">http://lxr.linux.no/#linux+v2.6.31/include/linux/netdevice.h#L1305</A>
+</I>Many thanks for the reference. Actually I know the usage of
+`netif_stop_queue`, as I last developed a ethernet driver for RealTek
+switch. Actually, I am wondering if there is a limitation at the C_CAN IP
+level that one can program *at most* 5 Tx objects at a time through
+hard_start_xmit() function.
+
+Infact, when I see the reference C_CAN device driver (char based) from Bosch
+site(<A HREF="http://www.semiconductors.bosch.de/en/20/can/products/ccan.asp">http://www.semiconductors.bosch.de/en/20/can/products/ccan.asp</A>)  &quot;Linux
+CAN Driver for HMS30C7202 (C_CAN)&quot;, I see the following interesting points:
+
+Driver
+======
+ssize_t can_write( struct file *filp,
+                   const char *buffer,
+                   size_t length,
+                   loff_t *offset )
+{
+        /* Max 8 messages at the time is allowed */
+        if (length &gt; 8 * sizeof( struct canmsg_t )) {
+                CANMSG(&quot;Trying to write more than is supported.&quot;);
+                return -1;
+        }
+        ..
+}
+
+Application
+============
+/*
+ * Sends one or more messages through given device.
+ */
+int send_messages ( struct can_device_t * can_device )
+{
+        ..
+        printf(&quot;   Length : &quot;); fflush( NULL);
+        scanf(&quot;%d&quot;, &amp;length);
+        if (length &lt; 0) 
+            length = 0;
+        if (length &gt; 8) 
+            length = 8;
+        canmsg.length = length;
+        ..
+}
+
+It also implements a bounday of 8 transmit messages that can be written to.
+This seems similar to C_CAN in SocketCAN SVN:
+
+if (priv-&gt;tx_object &gt; 5) 
+    netif_stop_queue(dev); 
+
+Since the Bosch user manual for C_CAN does not speak of any such limitation,
+I am wondering why all drivers are setting such boundaries on no. of Tx
+objects that can be xmitted. This may explain why I get issue when I use
+`cansend` for multiple frames.
+
+Regards,
+Bhupesh
+-- 
+View this message in context: <A HREF="http://www.nabble.com/Query-regarding-C_CAN-driver-for-Hynix-tp26030520p26054802.html">http://www.nabble.com/Query-regarding-C_CAN-driver-for-Hynix-tp26030520p26054802.html</A>
+Sent from the Socket-CAN Core mailing list archive at Nabble.com.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003314.html">Query regarding C_CAN driver for Hynix
+</A></li>
+	<LI>Next message: <A HREF="003317.html">Query regarding C_CAN driver for Hynix
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3315">[ date ]</a>
+              <a href="thread.html#3315">[ thread ]</a>
+              <a href="subject.html#3315">[ subject ]</a>
+              <a href="author.html#3315">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

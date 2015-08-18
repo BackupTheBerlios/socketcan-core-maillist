@@ -1,0 +1,117 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] can_calc_bittiming: exit with error if bitrate error is too	high
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20can_calc_bittiming%3A%20exit%20with%20error%20if%20bitrate%20error%20is%20too%0A%09high&In-Reply-To=%3C490170DA.7000108%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002065.html">
+   <LINK REL="Next"  HREF="002067.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] can_calc_bittiming: exit with error if bitrate error is too	high</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20can_calc_bittiming%3A%20exit%20with%20error%20if%20bitrate%20error%20is%20too%0A%09high&In-Reply-To=%3C490170DA.7000108%40grandegger.com%3E"
+       TITLE="[PATCH] can_calc_bittiming: exit with error if bitrate error is too	high">wg at grandegger.com
+       </A><BR>
+    <I>Fri Oct 24 08:53:14 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002065.html">mcp251x: name space pollution
+</A></li>
+        <LI>Next message: <A HREF="002067.html">[PATCH] can_calc_bittiming: exit with error if bitrate error	is too	high
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2056">[ date ]</a>
+              <a href="thread.html#2056">[ thread ]</a>
+              <a href="subject.html#2056">[ subject ]</a>
+              <a href="author.html#2056">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch ensures that can_calc_bittiming() returns an error (-EDOM) if
+the bit-rate error is greater than 5%. In that case, it's very unlikely
+that the determined bit-timing works properly anyhow.
+
+Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+ drivers/net/can/dev.c |   22 +++++++++++++++-------
+ 1 file changed, 15 insertions(+), 7 deletions(-)
+
+Index: 2.6/drivers/net/can/dev.c
+===================================================================
+--- 2.6.orig/drivers/net/can/dev.c
++++ 2.6/drivers/net/can/dev.c
+@@ -36,6 +36,8 @@ MODULE_DESCRIPTION(MOD_DESC);
+ MODULE_LICENSE(&quot;GPL v2&quot;);
+ MODULE_AUTHOR(&quot;Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;&quot;);
+ 
++#define CAN_CALC_MAX_ERROR 50 /* in one-tenth of a percent */
++
+ /*
+  * Bit-timing calculation derived from:
+  *
+@@ -122,6 +124,19 @@ static int can_calc_bittiming(struct net
+ 			break;
+ 	}
+ 
++	if (best_error) {
++		/* Error in one-tenth of a percent */
++		error = (best_error * 1000) / bt-&gt;bitrate;
++		if (error &gt; CAN_CALC_MAX_ERROR) {
++			dev_err(ND2D(dev), &quot;bitrate error %ld.%ld%% too high\n&quot;,
++				error / 10, error % 10);
++			return -EDOM;
++		} else {
++			dev_warn(ND2D(dev), &quot;bitrate error %ld.%ld%%\n&quot;,
++				 error / 10, error % 10);
++		}
++	}
++
+ 	spt = can_update_spt(btc, sampl_pt, best_tseg, &amp;tseg1, &amp;tseg2);
+ 
+ 	v64 = (u64)best_brp * 1000000000UL;
+@@ -133,13 +148,6 @@ static int can_calc_bittiming(struct net
+ 	bt-&gt;sjw = 1;
+ 	bt-&gt;brp = best_brp;
+ 
+-	if (best_error) {
+-		error = best_error * 1000;
+-		error /= bt-&gt;bitrate;
+-		dev_warn(ND2D(dev), &quot;bitrate error %ld.%ld%%\n&quot;,
+-			 error / 10, error % 10);
+-	}
+-
+ 	return 0;
+ }
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002065.html">mcp251x: name space pollution
+</A></li>
+	<LI>Next message: <A HREF="002067.html">[PATCH] can_calc_bittiming: exit with error if bitrate error	is too	high
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2056">[ date ]</a>
+              <a href="thread.html#2056">[ thread ]</a>
+              <a href="subject.html#2056">[ subject ]</a>
+              <a href="author.html#2056">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

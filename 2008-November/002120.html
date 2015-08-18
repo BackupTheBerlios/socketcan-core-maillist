@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> SFF &amp; EFF filtering
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SFF%20%26%20EFF%20filtering&In-Reply-To=%3C49308185.4020906%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002119.html">
+   <LINK REL="Next"  HREF="002121.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>SFF &amp; EFF filtering</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SFF%20%26%20EFF%20filtering&In-Reply-To=%3C49308185.4020906%40hartkopp.net%3E"
+       TITLE="SFF &amp; EFF filtering">socketcan at hartkopp.net
+       </A><BR>
+    <I>Sat Nov 29 00:40:53 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002119.html">SFF &amp; EFF filtering
+</A></li>
+        <LI>Next message: <A HREF="002121.html">SFF &amp; EFF filtering
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2120">[ date ]</a>
+              <a href="thread.html#2120">[ thread ]</a>
+              <a href="subject.html#2120">[ subject ]</a>
+              <a href="author.html#2120">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Kurt,
+
+
+Kurt Van Dijck wrote:
+&gt;<i> During filtering of CAN msgs, I noticed that if I apply a SFF filter
+</I>&gt;<i> (11bit id), EFF (29 bit id) msgs that match in the lowest 11bits come
+</I>&gt;<i> through the filter too.
+</I>&gt;<i>
+</I>&gt;<i> I noticed this with using candump.
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>
+Confirmed.
+
+&gt;<i> I do not think this behaviour is wanted. If EFF msgs were subject to SFF
+</I>&gt;<i> filters, it should at least apply on the highest 11bits anyway.
+</I>&gt;<i>
+</I>&gt;<i> Now that I have a spare moment, I went in the code. The following patch
+</I>&gt;<i> is what I came up with. I have not tested this well yet, but I think it
+</I>&gt;<i> should do the trick. But, my views on socketcan filters are quite
+</I>&gt;<i> limited yet. Does anyone see how this would affect other functionality
+</I>&gt;<i> badly?
+</I>&gt;<i>   
+</I>
+Yeah, good placebo trick - see below :-)
+
+&gt;<i> The idea behind this is that the EFF flag is, just as the RTR flag, a
+</I>&gt;<i> part of the can id. when the mask will be applied on a received can_id,
+</I>&gt;<i> both RTR flag, EFF flag must match, in _all_ cases, also the SFF msgs.
+</I>&gt;<i> Applying the EFF-flag in the mask of a SFF message does not really hurt,
+</I>&gt;<i> consumes no cpu cycles at all, and guarantees that a EFF msg will not
+</I>&gt;<i> come through a SFF filter (which has EFF cleared in the can_id, but EFF
+</I>&gt;<i>       set in mask)
+</I>&gt;<i>   
+</I>
+I think your intended patch needs to look like this:
+
+Index: af_can.c
+===================================================================
+--- af_can.c (Revision 870)
++++ af_can.c (working copy)
+@@ -403,10 +403,10 @@
+}
+
+/* ensure valid values in can_mask */
+- if (*mask &amp; CAN_EFF_FLAG)
++ if (*can_id &amp; CAN_EFF_FLAG)
+*mask &amp;= (CAN_EFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG);
+else
+- *mask &amp;= (CAN_SFF_MASK | CAN_RTR_FLAG);
++ *mask &amp;= (CAN_SFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG);
+
+/* reduce condition testing at receive time */
+*can_id &amp;= *mask;
+
+
+
+Right?
+
+Digging into this problem, i can see that the filter API had a deeper issue:
+
+Having can_id and mask set to zero =&gt; this is the ALL filter configuration.
+
+The former approach sanitized the mask on the basis of the masks 
+CAN_EFF_FLAG itself.
+
+But this means, that the CAN_EFF_FLAG never get's active in the mask for 
+filtering exactly for SFF frames which means:
+- CAN_EFF_FLAG set in the mask
+- CAN_EFF_FLAG cleared in the can_id
+
+I made a test with the above patch with candump and a logfile i pushed 
+into vcan0 with 'canplayer &lt; filtertest.log':
+
+#1 - This is and remains the ALL filter config: can_id = mask = 0
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hartko at vwagwolkf320</A>:~$ candump -ta vcan0,000:000
+(1227912644.123034) vcan0 0 [0]
+(1227912644.130748) vcan0 1 [0]
+(1227912644.141237) vcan0 0 [0]
+(1227912644.150969) vcan0 1 [0]
+
+receive list 'rx_all':
+device can_id can_mask function userdata matches ident
+vcan0 000 00000000 f8ab7102 d037e600 4 raw
+
+
+#2 - candump recognizes this to be EFF filter stuff via number length
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hartko at vwagwolkf320</A>:~$ candump -ta vcan0,00000000:00000000
+(1227912670.709888) vcan0 0 [0]
+(1227912670.720859) vcan0 1 [0]
+
+receive list 'rx_fil':
+device can_id can_mask function userdata matches ident
+vcan0 80000000 80000000 f8ab7102 d03d9600 2 raw
+
+
+#3 - dito
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hartko at vwagwolkf320</A>:~$ candump -ta vcan0,00000000:80000000
+(1227912696.169200) vcan0 0 [0]
+(1227912696.179247) vcan0 1 [0]
+
+receive list 'rx_fil':
+device can_id can_mask function userdata matches ident
+vcan0 80000000 80000000 f8ab7102 d03d8000 2 raw
+
+
+#4 - this is new and allows SFF can_id with EFF-flag in the filter
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hartko at vwagwolkf320</A>:~$ candump -ta vcan0,000:80000000
+(1227912707.087683) vcan0 0 [0]
+(1227912707.096834) vcan0 1 [0]
+
+receive list 'rx_fil':
+device can_id can_mask function userdata matches ident
+vcan0 000 80000000 f8ab7102 d0314600 2 raw
+
+
+I think this was your addressed issue, right?
+
+I would like to investigate if this patch has some unwanted side effects 
+which i currently do not see. As you dug that deep into my code, maybe 
+you can see one ;-)
+
+Thanks very much for that feedback, Kurt!
+
+Best regards,
+Oliver
+
+ps. I also fixed a problem in the can-utils/lib.c that can occur when 
+mixed EFF and SFF frames are replayed with canplayer :-]
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: sff_filter.patch
+Type: text/x-patch
+Size: 527 bytes
+Desc: not available
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20081129/86422dfb/attachment.bin">https://lists.berlios.de/pipermail/socketcan-core/attachments/20081129/86422dfb/attachment.bin</A>&gt;
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: filtertest.log
+Type: text/x-log
+Size: 134 bytes
+Desc: not available
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20081129/86422dfb/attachment-0001.bin">https://lists.berlios.de/pipermail/socketcan-core/attachments/20081129/86422dfb/attachment-0001.bin</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002119.html">SFF &amp; EFF filtering
+</A></li>
+	<LI>Next message: <A HREF="002121.html">SFF &amp; EFF filtering
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2120">[ date ]</a>
+              <a href="thread.html#2120">[ thread ]</a>
+              <a href="subject.html#2120">[ subject ]</a>
+              <a href="author.html#2120">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

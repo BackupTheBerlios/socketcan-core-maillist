@@ -1,0 +1,872 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 3/3] CAN: add SAE J1939 protocol
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/3%5D%20CAN%3A%20add%20SAE%20J1939%20protocol&In-Reply-To=%3C20110201163319.GE331%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005469.html">
+   <LINK REL="Next"  HREF="005454.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 3/3] CAN: add SAE J1939 protocol</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/3%5D%20CAN%3A%20add%20SAE%20J1939%20protocol&In-Reply-To=%3C20110201163319.GE331%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH 3/3] CAN: add SAE J1939 protocol">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Tue Feb  1 17:33:19 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005469.html">[PATCH 2/3] CAN: add SAE J1939 protocol
+</A></li>
+        <LI>Next message: <A HREF="005454.html">[PATCH 3/3] CAN: add SAE J1939 protocol
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5449">[ date ]</a>
+              <a href="thread.html#5449">[ thread ]</a>
+              <a href="subject.html#5449">[ subject ]</a>
+              <a href="author.html#5449">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Add CAN-J1939 support
+
+Signed-of-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+---
+ Makefile                  |    5 +-
+ include/linux/can.h       |  129 ++++++++++++++++++++++++++++++++++++++
+ include/linux/can/j1939.h |   93 +++++++++++++++++++++++++++
+ include/utils.h           |   19 +++++-
+ ip/ip.c                   |    4 +-
+ ip/ipaddress.c            |   93 +++++++++++++++++++++++-----
+ ip/iplink.c               |    8 +++
+ lib/j1939.c               |  151 +++++++++++++++++++++++++++++++++++++++++++++
+ lib/utils.c               |    9 +++-
+ man/man8/ip.8             |   24 ++++++-
+ 10 files changed, 513 insertions(+), 22 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index c03d74c..6f521f9 100644
+--- a/Makefile
++++ b/Makefile
+@@ -27,9 +27,12 @@ ADDLIB+=dnet_ntop.o dnet_pton.o
+ #options for ipx
+ ADDLIB+=ipx_ntop.o ipx_pton.o
+ 
++#options for j1939
++ADDLIB+=j1939.o
++
+ CC = gcc
+ HOSTCC = gcc
+-CCOPTS = -D_GNU_SOURCE -O2 -Wstrict-prototypes -Wall
++CCOPTS = -O0 -ggdb -D_GNU_SOURCE -Wstrict-prototypes -Wall
+ CFLAGS = $(CCOPTS) -I../include $(DEFINES)
+ YACCFLAGS = -d -t -v
+ 
+diff --git a/include/linux/can.h b/include/linux/can.h
+new file mode 100644
+index 0000000..9c2523c
+--- /dev/null
++++ b/include/linux/can.h
+@@ -0,0 +1,129 @@
++/*
++ * linux/can.h
++ *
++ * Definitions for CAN network layer (socket addr / CAN frame / CAN filter)
++ *
++ * Authors: Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">oliver.hartkopp at volkswagen.de</A>&gt;
++ *          Urs Thuermann   &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">urs.thuermann at volkswagen.de</A>&gt;
++ * Copyright (c) 2002-2007 Volkswagen Group Electronic Research
++ * All rights reserved.
++ *
++ * Send feedback to &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-users at lists.berlios.de</A>&gt;
++ *
++ */
++
++#ifndef CAN_H
++#define CAN_H
++
++#include &lt;linux/types.h&gt;
++#include &lt;linux/socket.h&gt;
++
++/* controller area network (CAN) kernel definitions */
++
++/* special address description flags for the CAN_ID */
++#define CAN_EFF_FLAG 0x80000000U /* EFF/SFF is set in the MSB */
++#define CAN_RTR_FLAG 0x40000000U /* remote transmission request */
++#define CAN_ERR_FLAG 0x20000000U /* error frame */
++
++/* valid bits in CAN ID for frame formats */
++#define CAN_SFF_MASK 0x000007FFU /* standard frame format (SFF) */
++#define CAN_EFF_MASK 0x1FFFFFFFU /* extended frame format (EFF) */
++#define CAN_ERR_MASK 0x1FFFFFFFU /* omit EFF, RTR, ERR flags */
++
++/*
++ * Controller Area Network Identifier structure
++ *
++ * bit 0-28	: CAN identifier (11/29 bit)
++ * bit 29	: error frame flag (0 = data frame, 1 = error frame)
++ * bit 30	: remote transmission request flag (1 = rtr frame)
++ * bit 31	: frame format flag (0 = standard 11 bit, 1 = extended 29 bit)
++ */
++typedef __u32 canid_t;
++
++/*
++ * Controller Area Network Error Frame Mask structure
++ *
++ * bit 0-28	: error class mask (see include/linux/can/error.h)
++ * bit 29-31	: set to zero
++ */
++typedef __u32 can_err_mask_t;
++
++/**
++ * struct can_frame - basic CAN frame structure
++ * @can_id:  the CAN ID of the frame and CAN_*_FLAG flags, see above.
++ * @can_dlc: the data length field of the CAN frame
++ * @data:    the CAN frame payload.
++ */
++struct can_frame {
++	canid_t can_id;  /* 32 bit CAN_ID + EFF/RTR/ERR flags */
++	__u8    can_dlc; /* data length code: 0 .. 8 */
++	__u8    data[8] __attribute__((aligned(8)));
++};
++
++/* particular protocols of the protocol family PF_CAN */
++#define CAN_RAW		1 /* RAW sockets */
++#define CAN_BCM		2 /* Broadcast Manager */
++#define CAN_TP16	3 /* VAG Transport Protocol v1.6 */
++#define CAN_TP20	4 /* VAG Transport Protocol v2.0 */
++#define CAN_MCNET	5 /* Bosch MCNet */
++#define CAN_ISOTP	6 /* ISO 15765-2 Transport Protocol */
++#define CAN_J1939	7 /* SAE J1939 */
++#define CAN_NPROTO	8
++
++#define SOL_CAN_BASE 100
++
++/**
++ * struct sockaddr_can - the sockaddr structure for CAN sockets
++ * @can_family:  address family number AF_CAN.
++ * @can_ifindex: CAN network interface index.
++ * @can_addr:    protocol specific address information
++ */
++struct sockaddr_can {
++	sa_family_t can_family;
++	int         can_ifindex;
++	union {
++		/* transport protocol class address information (e.g. ISOTP) */
++		struct { canid_t rx_id, tx_id; } tp;
++
++		/* J1939 address information */
++		struct {
++			/* 8 byte name when using dynamic addressing */
++			__u64 name;
++			/*
++			 * pgn:
++			 * 8bit: PS in PDU2 case, else 0
++			 * 8bit: PF
++			 * 1bit: DP
++			 * 1bit: reserved
++			 */
++			__u32 pgn;
++
++			/* 1byte address */
++			__u8 addr;
++		} j1939;
++
++		/* reserved for future CAN protocols address information */
++	} can_addr;
++};
++
++/**
++ * struct can_filter - CAN ID based filter in can_register().
++ * @can_id:   relevant bits of CAN ID which are not masked out.
++ * @can_mask: CAN mask (see description)
++ *
++ * Description:
++ * A filter matches, when
++ *
++ *          &lt;received_can_id&gt; &amp; mask == can_id &amp; mask
++ *
++ * The filter can be inverted (CAN_INV_FILTER bit set in can_id) or it can
++ * filter for error frames (CAN_ERR_FLAG bit set in mask).
++ */
++struct can_filter {
++	canid_t can_id;
++	canid_t can_mask;
++};
++
++#define CAN_INV_FILTER 0x20000000U /* to be set in can_filter.can_id */
++
++#endif /* CAN_H */
+diff --git a/include/linux/can/j1939.h b/include/linux/can/j1939.h
+new file mode 100644
+index 0000000..fa62562
+--- /dev/null
++++ b/include/linux/can/j1939.h
+@@ -0,0 +1,93 @@
++/*
++ * j1939.h
++ *
++ */
++
++#ifndef _J1939_H_
++#define _J1939_H_
++
++#include &lt;linux/types.h&gt;
++#include &lt;linux/socket.h&gt;
++#include &lt;linux/can.h&gt;
++
++#define J1939_NO_ADDR	0xff
++#define J1939_NO_NAME	0
++#define J1939_NO_PGN	0x7ffff
++/*
++ * J1939 Parameter Group Number
++ *
++ * bit 0-7	: PDU Specific (PS)
++ * bit 8-15	: PDU Format (PF)
++ * bit 16	: Data Page (DP)
++ * bit 17	: Reserved (R)
++ * bit 19-31	: set to zero
++ */
++typedef __u32 pgn_t;
++
++/*
++ * J1939 Priority
++ *
++ * bit 0-2	: Priority (P)
++ * bit 3-7	: set to zero
++ */
++typedef __u8 priority_t;
++
++/*
++ * J1939 NAME
++ *
++ * bit 0-20	: Identity Number
++ * bit 21-31	: Manufacturer Code
++ * bit 32-34	: ECU Instance
++ * bit 35-39	: Function Instance
++ * bit 40-47	: Function
++ * bit 48	: Reserved
++ * bit 49-55	: Vehicle System
++ * bit 56-59	: Vehicle System Instance
++ * bit 60-62	: Industry Group
++ * bit 63	: Arbitrary Address Capable
++ */
++typedef __u64 name_t;
++
++/*
++ * J1939 socket options
++ */
++#define SOL_CAN_J1939 (SOL_CAN_BASE + CAN_J1939)
++enum {
++	SO_J1939_FILTER = 1,	/* set filters */
++	SO_J1939_PROMISC = 2,	/* set/clr promiscuous mode */
++	SO_J1939_RECV_OWN = 3,
++	SO_J1939_RECV_DEST = 4, /* set/clr attach dest control message */
++	SO_J1939_RECV_PRIO = 5,
++	SO_J1939_SEND_PRIO = 6,
++	SO_J1939_DEST_MASK = 7, /* mask names in connect() &amp; sendto() */
++};
++
++#define SCM_J1939_DEST SO_J1939_RECV_DEST
++#define SCM_J1939_PRIO SO_J1939_RECV_PRIO
++
++struct j1939_filter {
++	name_t name;
++	name_t name_mask;
++	__u8 addr;
++	__u8 addr_mask;
++	pgn_t pgn;
++	pgn_t pgn_mask;
++};
++
++/*
++ * RTNETLINK
++ */
++enum {
++	IFLA_J1939_UNSPEC,
++	IFLA_J1939_ENABLE,
++	IFLA_J1939_MAX,
++};
++
++enum {
++	IFA_J1939_UNSPEC,
++	IFA_J1939_ADDR,
++	IFA_J1939_NAME,
++	IFA_J1939_MAX,
++};
++
++#endif /* _J1939_H_ */
+diff --git a/include/utils.h b/include/utils.h
+index 3da6998..b6344d5 100644
+--- a/include/utils.h
++++ b/include/utils.h
+@@ -95,8 +95,15 @@ extern __u8* hexstring_a2n(const char *str, __u8 *buf, int blen);
+ 
+ extern const char *format_host(int af, int len, const void *addr,
+ 			       char *buf, int buflen);
+-extern const char *rt_addr_n2a(int af, int len, const void *addr,
++/* 'address with protocol' n2a */
++extern const char *rt_addrpr_n2a(int af, int protocol, int len, const void *addr,
+ 			       char *buf, int buflen);
++static inline const char *rt_addr_n2a(int af, int len, const void *addr,
++			       char *buf, int buflen)
++{
++	return rt_addrpr_n2a(af, 0, len, addr, buf, buflen);
++
++}
+ 
+ void missarg(const char *) __attribute__((noreturn));
+ void invarg(const char *, const char *) __attribute__((noreturn));
+@@ -111,6 +118,16 @@ int dnet_pton(int af, const char *src, void *addr);
+ const char *ipx_ntop(int af, const void *addr, char *str, size_t len);
+ int ipx_pton(int af, const char *src, void *addr);
+ 
++/* j1939 */
++extern const char *j1939_ntop(int af, const void *addr, size_t vlen,
++		char *str, size_t len);
++extern const char *j1939_link_attrtop(struct rtattr *nla);
++
++extern int j1939_addr_args(int argc, char *argv[],
++		struct nlmsghdr *msg, int msg_size);
++extern int j1939_link_args(int argc, char *argv[],
++		struct nlmsghdr *msg, int msg_size);
++
+ extern int __iproute2_hz_internal;
+ extern int __get_hz(void);
+ 
+diff --git a/ip/ip.c b/ip/ip.c
+index b127d57..50fcb1c 100644
+--- a/ip/ip.c
++++ b/ip/ip.c
+@@ -46,7 +46,7 @@ static void usage(void)
+ &quot;where  OBJECT := { link | addr | addrlabel | route | rule | neigh | ntable |\n&quot;
+ &quot;                   tunnel | tuntap | maddr | mroute | mrule | monitor | xfrm }\n&quot;
+ &quot;       OPTIONS := { -V[ersion] | -s[tatistics] | -d[etails] | -r[esolve] |\n&quot;
+-&quot;                    -f[amily] { inet | inet6 | ipx | dnet | link } |\n&quot;
++&quot;                    -f[amily] { inet | inet6 | ipx | dnet | link  | can} |\n&quot;
+ &quot;                    -l[oops] { maximum-addr-flush-attempts } |\n&quot;
+ &quot;                    -o[neline] | -t[imestamp] | -b[atch] [filename] |\n&quot;
+ &quot;                    -rc[vbuf] [size]}\n&quot;);
+@@ -181,6 +181,8 @@ int main(int argc, char **argv)
+ 				preferred_family = AF_PACKET;
+ 			else if (strcmp(argv[1], &quot;ipx&quot;) == 0)
+ 				preferred_family = AF_IPX;
++			else if (strcmp(argv[1], &quot;can&quot;) == 0)
++				preferred_family = AF_CAN;
+ 			else if (strcmp(argv[1], &quot;help&quot;) == 0)
+ 				usage();
+ 			else
+diff --git a/ip/ipaddress.c b/ip/ipaddress.c
+index a775ecd..09db9fd 100644
+--- a/ip/ipaddress.c
++++ b/ip/ipaddress.c
+@@ -27,6 +27,7 @@
+ #include &lt;linux/netdevice.h&gt;
+ #include &lt;linux/if_arp.h&gt;
+ #include &lt;linux/sockios.h&gt;
++#include &lt;linux/can.h&gt;
+ 
+ #include &quot;rt_names.h&quot;
+ #include &quot;utils.h&quot;
+@@ -68,6 +69,8 @@ static void usage(void)
+ 	fprintf(stderr, &quot;IFADDR := PREFIX | ADDR peer PREFIX\n&quot;);
+ 	fprintf(stderr, &quot;          [ broadcast ADDR ] [ anycast ADDR ]\n&quot;);
+ 	fprintf(stderr, &quot;          [ label STRING ] [ scope SCOPE-ID ]\n&quot;);
++	fprintf(stderr, &quot;          | j1939 J1939IFADDR\n&quot;);
++	fprintf(stderr, &quot;          \n&quot;);
+ 	fprintf(stderr, &quot;SCOPE-ID := [ host | link | global | NUMBER ]\n&quot;);
+ 	fprintf(stderr, &quot;FLAG-LIST := [ FLAG-LIST ] FLAG\n&quot;);
+ 	fprintf(stderr, &quot;FLAG  := [ permanent | dynamic | secondary | primary |\n&quot;);
+@@ -77,6 +80,10 @@ static void usage(void)
+ 	fprintf(stderr, &quot;CONFFLAG  := [ home | nodad ]\n&quot;);
+ 	fprintf(stderr, &quot;LIFETIME := [ valid_lft LFT ] [ preferred_lft LFT ]\n&quot;);
+ 	fprintf(stderr, &quot;LFT := forever | SECONDS\n&quot;);
++	fprintf(stderr, &quot;          \n&quot;);
++	fprintf(stderr, &quot;J1939IFADDR := [SA] [ name NODENAME ]\n&quot;);
++	fprintf(stderr, &quot;SA := U8\n&quot;);
++	fprintf(stderr, &quot;NODENAME := U64\n&quot;);
+ 
+ 	exit(-1);
+ }
+@@ -421,6 +428,19 @@ int print_linkinfo(const struct sockaddr_nl *who,
+ 	}
+ 
+ 	fprintf(fp, &quot;\n&quot;);
++
++	if (do_link &amp;&amp; tb[IFLA_AF_SPEC]) {
++		struct rtattr *af[AF_MAX];
++
++		parse_rtattr_nested(af, AF_MAX, tb[IFLA_AF_SPEC]);
++		if (af[AF_CAN]) {
++			struct rtattr *prot[CAN_NPROTO];
++
++			parse_rtattr_nested(prot, CAN_NPROTO, af[AF_CAN]);
++			if (prot[CAN_J1939])
++				fprintf(fp, &quot;    %s\n&quot;, j1939_link_attrtop(prot[CAN_J1939]));
++		}
++	}
+ 	fflush(fp);
+ 	return 0;
+ }
+@@ -445,6 +465,13 @@ static int set_lifetime(unsigned int *lifetime, char *argv)
+ 	return 0;
+ }
+ 
++static const int af_use_prefix[AF_MAX] = {
++	[AF_INET] = 1,
++	[AF_INET6] = 1,
++	[AF_DECnet] = 1,
++	[AF_IPX] = 1,
++};
++
+ int print_addrinfo(const struct sockaddr_nl *who, struct nlmsghdr *n,
+ 		   void *arg)
+ {
+@@ -452,6 +479,7 @@ int print_addrinfo(const struct sockaddr_nl *who, struct nlmsghdr *n,
+ 	struct ifaddrmsg *ifa = NLMSG_DATA(n);
+ 	int len = n-&gt;nlmsg_len;
+ 	int deprecated = 0;
++	int protocol = 0;
+ 	/* Use local copy of ifa_flags to not interfere with filtering code */
+ 	unsigned int ifa_flags;
+ 	struct rtattr * rta_tb[IFA_MAX+1];
+@@ -471,10 +499,12 @@ int print_addrinfo(const struct sockaddr_nl *who, struct nlmsghdr *n,
+ 
+ 	parse_rtattr(rta_tb, IFA_MAX, IFA_RTA(ifa), n-&gt;nlmsg_len - NLMSG_LENGTH(sizeof(*ifa)));
+ 
+-	if (!rta_tb[IFA_LOCAL])
+-		rta_tb[IFA_LOCAL] = rta_tb[IFA_ADDRESS];
+-	if (!rta_tb[IFA_ADDRESS])
+-		rta_tb[IFA_ADDRESS] = rta_tb[IFA_LOCAL];
++	if (af_use_prefix[ifa-&gt;ifa_family]) {
++		if (!rta_tb[IFA_LOCAL])
++			rta_tb[IFA_LOCAL] = rta_tb[IFA_ADDRESS];
++		if (!rta_tb[IFA_ADDRESS])
++			rta_tb[IFA_ADDRESS] = rta_tb[IFA_LOCAL];
++	}
+ 
+ 	if (filter.ifindex &amp;&amp; filter.ifindex != ifa-&gt;ifa_index)
+ 		return 0;
+@@ -536,38 +566,64 @@ int print_addrinfo(const struct sockaddr_nl *who, struct nlmsghdr *n,
+ 		fprintf(fp, &quot;    dnet &quot;);
+ 	else if (ifa-&gt;ifa_family == AF_IPX)
+ 		fprintf(fp, &quot;     ipx &quot;);
++	else if (ifa-&gt;ifa_family == AF_CAN) {
++		/* ifa-&gt;ifa_prefixlen is abused for protocol number */
++		const char *sprotocol;
++		char num[16];
++
++		/* 1st: set protocol, as this is rather tricky */
++		protocol = ifa-&gt;ifa_prefixlen;
++
++		/* 2nd: set label */
++		switch (protocol) {
++		case CAN_J1939:
++			sprotocol = &quot;j1939&quot;;
++			break;
++		default:
++			sprintf(num, &quot;%i&quot;, ifa-&gt;ifa_prefixlen);
++			sprotocol = num;
++			break;
++		}
++		fprintf(fp, &quot;    can-%s &quot;, sprotocol);
++	}
+ 	else
+ 		fprintf(fp, &quot;    family %d &quot;, ifa-&gt;ifa_family);
+ 
+ 	if (rta_tb[IFA_LOCAL]) {
+-		fprintf(fp, &quot;%s&quot;, rt_addr_n2a(ifa-&gt;ifa_family,
++		fprintf(fp, &quot;%s&quot;, rt_addrpr_n2a(ifa-&gt;ifa_family, protocol,
+ 					      RTA_PAYLOAD(rta_tb[IFA_LOCAL]),
+ 					      RTA_DATA(rta_tb[IFA_LOCAL]),
+ 					      abuf, sizeof(abuf)));
+ 
+ 		if (rta_tb[IFA_ADDRESS] == NULL ||
+ 		    memcmp(RTA_DATA(rta_tb[IFA_ADDRESS]), RTA_DATA(rta_tb[IFA_LOCAL]), 4) == 0) {
+-			fprintf(fp, &quot;/%d &quot;, ifa-&gt;ifa_prefixlen);
+ 		} else {
+-			fprintf(fp, &quot; peer %s/%d &quot;,
+-				rt_addr_n2a(ifa-&gt;ifa_family,
++			fprintf(fp, &quot; peer %s&quot;,
++				rt_addrpr_n2a(ifa-&gt;ifa_family, protocol,
+ 					    RTA_PAYLOAD(rta_tb[IFA_ADDRESS]),
+ 					    RTA_DATA(rta_tb[IFA_ADDRESS]),
+-					    abuf, sizeof(abuf)),
+-				ifa-&gt;ifa_prefixlen);
++					    abuf, sizeof(abuf)));
+ 		}
++		if (af_use_prefix[ifa-&gt;ifa_family])
++			fprintf(fp, &quot;/%d&quot;, ifa-&gt;ifa_prefixlen);
++		fprintf(fp, &quot; &quot;);
++	} else if (rta_tb[IFA_ADDRESS]) {
++		fprintf(fp, &quot;peer %s &quot;, rt_addrpr_n2a(ifa-&gt;ifa_family, protocol,
++					RTA_PAYLOAD(rta_tb[IFA_ADDRESS]),
++					RTA_DATA(rta_tb[IFA_ADDRESS]),
++					abuf, sizeof(abuf)));
+ 	}
+ 
+ 	if (rta_tb[IFA_BROADCAST]) {
+ 		fprintf(fp, &quot;brd %s &quot;,
+-			rt_addr_n2a(ifa-&gt;ifa_family,
++			rt_addrpr_n2a(ifa-&gt;ifa_family, protocol,
+ 				    RTA_PAYLOAD(rta_tb[IFA_BROADCAST]),
+ 				    RTA_DATA(rta_tb[IFA_BROADCAST]),
+ 				    abuf, sizeof(abuf)));
+ 	}
+ 	if (rta_tb[IFA_ANYCAST]) {
+ 		fprintf(fp, &quot;any %s &quot;,
+-			rt_addr_n2a(ifa-&gt;ifa_family,
++			rt_addrpr_n2a(ifa-&gt;ifa_family, protocol,
+ 				    RTA_PAYLOAD(rta_tb[IFA_ANYCAST]),
+ 				    RTA_DATA(rta_tb[IFA_ANYCAST]),
+ 				    abuf, sizeof(abuf)));
+@@ -1091,12 +1147,18 @@ static int ipaddr_modify(int cmd, int flags, int argc, char **argv)
+ 			req.ifa.ifa_flags |= IFA_F_HOMEADDRESS;
+ 		} else if (strcmp(*argv, &quot;nodad&quot;) == 0) {
+ 			req.ifa.ifa_flags |= IFA_F_NODAD;
++		} else if (matches(*argv, &quot;j1939&quot;) == 0) {
++			int ret;
++
++			ret = j1939_addr_args(argc, argv, &amp;req.n, sizeof(req));
++			if (ret &lt; 0)
++				return ret;
++			argc -= ret;
++			argv += ret;
+ 		} else {
+ 			if (strcmp(*argv, &quot;local&quot;) == 0) {
+ 				NEXT_ARG();
+ 			}
+-			if (matches(*argv, &quot;help&quot;) == 0)
+-				usage();
+ 			if (local_len)
+ 				duparg2(&quot;local&quot;, *argv);
+ 			lcl_arg = *argv;
+@@ -1202,8 +1264,9 @@ int do_ipaddr(int argc, char **argv)
+ 		return ipaddr_list_or_flush(argc-1, argv+1, 0);
+ 	if (matches(*argv, &quot;flush&quot;) == 0)
+ 		return ipaddr_list_or_flush(argc-1, argv+1, 1);
+-	if (matches(*argv, &quot;help&quot;) == 0)
++	if (matches(*argv, &quot;help&quot;) == 0) {
+ 		usage();
++	}
+ 	fprintf(stderr, &quot;Command \&quot;%s\&quot; is unknown, try \&quot;ip addr help\&quot;.\n&quot;, *argv);
+ 	exit(-1);
+ }
+diff --git a/ip/iplink.c b/ip/iplink.c
+index cb2c4f5..06fc34c 100644
+--- a/ip/iplink.c
++++ b/ip/iplink.c
+@@ -27,6 +27,7 @@
+ #include &lt;string.h&gt;
+ #include &lt;sys/ioctl.h&gt;
+ #include &lt;linux/sockios.h&gt;
++#include &lt;linux/can.h&gt;
+ 
+ #include &quot;rt_names.h&quot;
+ #include &quot;utils.h&quot;
+@@ -71,6 +72,7 @@ void iplink_usage(void)
+ 	fprintf(stderr, &quot;	                  [ vf NUM [ mac LLADDR ]\n&quot;);
+ 	fprintf(stderr, &quot;				   [ vlan VLANID [ qos VLAN-QOS ] ]\n&quot;);
+ 	fprintf(stderr, &quot;				   [ rate TXRATE ] ] \n&quot;);
++	fprintf(stderr, &quot;			  [ j1939 { on | off } ]\n&quot;);
+ 	fprintf(stderr, &quot;       ip link show [ DEVICE ]\n&quot;);
+ 
+ 	if (iplink_have_newlink()) {
+@@ -383,6 +385,12 @@ int iplink_parse(int argc, char **argv, struct iplink_req *req,
+ 				  *argv, strlen(*argv));
+ 			argc--; argv++;
+ 			break;
++		} else if (matches(*argv, &quot;j1939&quot;) == 0) {
++			ret = j1939_link_args(argc, argv, &amp;req-&gt;n, sizeof(*req));
++			if (ret &lt; 0)
++				return ret;
++			argc -= ret;
++			argv += ret;
+ 		} else {
+ 			if (strcmp(*argv, &quot;dev&quot;) == 0) {
+ 				NEXT_ARG();
+diff --git a/lib/j1939.c b/lib/j1939.c
+new file mode 100644
+index 0000000..3c23655
+--- /dev/null
++++ b/lib/j1939.c
+@@ -0,0 +1,151 @@
++#include &lt;string.h&gt;
++#include &lt;errno.h&gt;
++#include &lt;sys/types.h&gt;
++#include &lt;netinet/in.h&gt;
++#include &lt;endian.h&gt;
++#include &lt;linux/can/j1939.h&gt;
++
++#include &quot;utils.h&quot;
++
++#ifndef htobe64
++# if __BYTE_ORDER == __LITTLE_ENDIAN
++#  define htobe64(x) __bswap_64 (x)
++#  define htole64(x) (x)
++#  define be64toh(x) __bswap_64 (x)
++#  define le64toh(x) (x)
++# else
++#  define htobe64(x) (x)
++#  define htole64(x) __bswap_64 (x)
++#  define be64toh(x) (x)
++#  define le64toh(x) __bswap_64 (x)
++# endif
++#endif
++/*
++ * print J1939 name
++ * for use from rt_addr_n2a
++ */
++const char *j1939_ntop(int af, const void *vaddr, size_t vlen,
++		char *str, size_t len)
++{
++	struct rtattr *tb[IFA_J1939_MAX];
++	int strdone = 0;
++
++	/* cast vaddr to non-const pointer */
++	parse_rtattr(tb, IFA_J1939_MAX-1, (void *)vaddr, vlen);
++	if (tb[IFA_J1939_ADDR]) {
++		strdone += sprintf(&amp;str[strdone], &quot;0x%02x&quot;,
++				*(uint8_t *)RTA_DATA(tb[IFA_J1939_ADDR]));
++		if (tb[IFA_J1939_NAME])
++			str[strdone++] = ' ';
++	}
++	if (tb[IFA_J1939_NAME])
++		strdone += sprintf(&amp;str[strdone], &quot;name %016llx&quot;,
++				(unsigned long long)*(uint64_t *)RTA_DATA(tb[IFA_J1939_NAME]));
++	errno = 0;
++	return str;
++}
++
++/*
++ * fill an ifaddr message from program arguments
++ */
++int j1939_addr_args(int argc, char *argv[], struct nlmsghdr *msg, int msg_size)
++{
++	int saved_argc = argc;
++	struct ifaddrmsg *ifa = (void *)&amp;msg[1];
++	struct rtattr *local;
++
++	if (ifa-&gt;ifa_family == AF_UNSPEC)
++		ifa-&gt;ifa_family = AF_CAN;
++	else {
++		fprintf(stderr, &quot;j1939 only allowed for AF_CAN\n&quot;);
++		return -1;
++	}
++	if (!ifa-&gt;ifa_prefixlen)
++		ifa-&gt;ifa_prefixlen = CAN_J1939;
++	else {
++		fprintf(stderr, &quot;CAN protocol %i already specified&quot;,
++				ifa-&gt;ifa_prefixlen);
++		return -1;
++	}
++	NEXT_ARG();
++	/* j1939 SA &amp; NAME never need to be specified together */
++	if (matches(*argv, &quot;name&quot;) == 0) {
++		uint64_t name;
++
++		NEXT_ARG();
++		name = htobe64(strtoull(*argv, 0, 16));
++		if (!name) {
++			fprintf(stderr, &quot;0 name is not valid\n&quot;);
++			return -1;
++		}
++		local = addattr_nest(msg, msg_size, IFA_LOCAL);
++		addattr_l(msg, msg_size, IFA_J1939_NAME, &amp;name, sizeof(name));
++		addattr_nest_end(msg, local);
++	} else {
++		unsigned int laddr;
++		uint8_t addr;
++
++		addr = laddr = strtoul(*argv, 0, 0);
++		if (laddr &gt;= 0xfe) {
++			fprintf(stderr, &quot;address '%s' not valid\n&quot;, *argv);
++			return -1;
++		}
++		local = addattr_nest(msg, msg_size, IFA_LOCAL);
++		addattr_l(msg, msg_size, IFA_J1939_ADDR, &amp;addr, sizeof(addr));
++		addattr_nest_end(msg, local);
++	}
++
++	return saved_argc - argc;
++}
++
++/*
++ * fill an link_af message from program arguments
++ */
++int j1939_link_args(int argc, char *argv[], struct nlmsghdr *msg, int msg_size)
++{
++	int saved_argc = argc;
++	struct rtattr *afspec, *can, *j1939;
++	uint8_t enable;
++
++	NEXT_ARG();
++	if (strcmp(*argv, &quot;on&quot;) == 0) {
++		enable = 1;
++	} else if (strcmp(*argv, &quot;off&quot;) == 0) {
++		enable = 0;
++	} else {
++		enable = 1;
++		/* revert arguments */
++		++argc;
++		--argv;
++	}
++
++	afspec = addattr_nest(msg, msg_size, IFLA_AF_SPEC);
++	can = addattr_nest(msg, msg_size, AF_CAN);
++	j1939 = addattr_nest(msg, msg_size, CAN_J1939);
++	addattr_l(msg, msg_size, IFLA_J1939_ENABLE, &amp;enable, sizeof(enable));
++	addattr_nest_end(msg, j1939);
++	addattr_nest_end(msg, can);
++	addattr_nest_end(msg, afspec);
++
++	return saved_argc - argc;
++}
++
++/*
++ * process the returned IFLA_AF_SPEC/AF_CAN/CAN_J1939 attribute
++ */
++const char *j1939_link_attrtop(struct rtattr *nla)
++{
++	static char str[32];
++	int pos;
++	struct rtattr *tb[IFLA_J1939_MAX];
++	uint8_t *u8ptr;
++
++	pos = 0;
++	str[0] = 0;
++	parse_rtattr_nested(tb, IFLA_J1939_MAX-1, nla);
++	u8ptr = tb[IFLA_J1939_ENABLE];
++	if (u8ptr)
++		pos += sprintf(&amp;str[pos], &quot;j1939 %s&quot;, *u8ptr ? &quot;on&quot; : &quot;off&quot;);
++	return str;
++}
++
+diff --git a/lib/utils.c b/lib/utils.c
+index a60d884..02dda80 100644
+--- a/lib/utils.c
++++ b/lib/utils.c
+@@ -25,6 +25,7 @@
+ #include &lt;linux/pkt_sched.h&gt;
+ #include &lt;time.h&gt;
+ #include &lt;sys/time.h&gt;
++#include &lt;linux/can.h&gt;
+ 
+ 
+ #include &quot;utils.h&quot;
+@@ -513,7 +514,8 @@ int __get_user_hz(void)
+ 	return sysconf(_SC_CLK_TCK);
+ }
+ 
+-const char *rt_addr_n2a(int af, int len, const void *addr, char *buf, int buflen)
++const char *rt_addrpr_n2a(int af, int protocol, int len, const void *addr,
++		char *buf, int buflen)
+ {
+ 	switch (af) {
+ 	case AF_INET:
+@@ -527,6 +529,11 @@ const char *rt_addr_n2a(int af, int len, const void *addr, char *buf, int buflen
+ 		memcpy(dna.a_addr, addr, 2);
+ 		return dnet_ntop(af, &amp;dna, buf, buflen);
+ 	}
++	case AF_CAN:
++		switch (protocol) {
++		case CAN_J1939:
++			return j1939_ntop(af, addr, len, buf, buflen);
++		}
+ 	default:
+ 		return &quot;???&quot;;
+ 	}
+diff --git a/man/man8/ip.8 b/man/man8/ip.8
+index 8d55fa9..d17e06a 100644
+--- a/man/man8/ip.8
++++ b/man/man8/ip.8
+@@ -23,7 +23,7 @@ ip \- show / manipulate routing, devices, policy routing and tunnels
+ \fB\-s\fR[\fItatistics\fR] |
+ \fB\-r\fR[\fIesolve\fR] |
+ \fB\-f\fR[\fIamily\fR] {
+-.BR inet &quot; | &quot; inet6 &quot; | &quot; ipx &quot; | &quot; dnet &quot; | &quot; link &quot; } | &quot;
++.BR inet &quot; | &quot; inet6 &quot; | &quot; ipx &quot; | &quot; dnet &quot; | &quot; link &quot; | &quot; can &quot; } | &quot;
+ \fB\-o\fR[\fIneline\fR] }
+ 
+ .ti -8
+@@ -95,7 +95,9 @@ ip \- show / manipulate routing, devices, policy routing and tunnels
+ .B qos
+ .IR VLAN-QOS &quot; ] ] [&quot;
+ .B rate
+-.IR TXRATE &quot; ]&quot;
++.IR TXRATE &quot; ] |&quot;
++.br
++.BR j1939 &quot; { &quot; on &quot; | &quot; off &quot; }&quot;
+ 
+ .ti -8
+ .B ip link show
+@@ -126,7 +128,9 @@ ip \- show / manipulate routing, devices, policy routing and tunnels
+ .B  label
+ .IR STRING &quot; ] [ &quot;
+ .B  scope
+-.IR SCOPE-ID &quot; ]&quot;
++.IR SCOPE-ID &quot; ] | &quot;
++.B  j1939
++.IR IFADDRJ1939 &quot; ] &quot;
+ 
+ .ti -8
+ .IR SCOPE-ID &quot; := &quot;
+@@ -142,6 +146,15 @@ ip \- show / manipulate routing, devices, policy routing and tunnels
+ tentative &quot; | &quot; deprecated &quot; | &quot; dadfailed &quot; | &quot; temporary &quot; ]&quot;
+ 
+ .ti -8
++.IR J1939IFADDR &quot; := [ &quot; SA &quot; ] [ &quot;
++.B  name
++.IR &quot; NODENAME &quot; ]
++.br
++.IR SA &quot; := &quot; U8
++.br
++.IR NODENAME &quot; := &quot; U64
++
++.ti -8
+ .BR &quot;ip addrlabel&quot; &quot; { &quot; add &quot; | &quot; del &quot; } &quot; prefix
+ .BR PREFIX &quot; [ &quot;
+ .B dev
+@@ -1038,6 +1051,11 @@ Setting this parameter to 0 disables rate limiting. The
+ parameter must be specified.
+ .in -8
+ 
++.TP
++.BR &quot;j1939 on &quot; or &quot;j1939 off&quot;
++Enable or disable SAE J1939 on the device. This will only
++work when the device is a CAN device.
++
+ .PP
+ .B Warning:
+ If multiple parameter changes are requested,
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005469.html">[PATCH 2/3] CAN: add SAE J1939 protocol
+</A></li>
+	<LI>Next message: <A HREF="005454.html">[PATCH 3/3] CAN: add SAE J1939 protocol
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5449">[ date ]</a>
+              <a href="thread.html#5449">[ thread ]</a>
+              <a href="subject.html#5449">[ subject ]</a>
+              <a href="author.html#5449">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

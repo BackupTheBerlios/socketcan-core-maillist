@@ -1,0 +1,680 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 11/11] net/can/mscan: improve build
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%2011/11%5D%20net/can/mscan%3A%20improve%20build&In-Reply-To=%3C1258412274-14686-12-git-send-email-w.sang%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003512.html">
+   <LINK REL="Next"  HREF="003531.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 11/11] net/can/mscan: improve build</H1>
+    <B>Wolfram Sang</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%2011/11%5D%20net/can/mscan%3A%20improve%20build&In-Reply-To=%3C1258412274-14686-12-git-send-email-w.sang%40pengutronix.de%3E"
+       TITLE="[PATCH 11/11] net/can/mscan: improve build">w.sang at pengutronix.de
+       </A><BR>
+    <I>Mon Nov 16 23:57:54 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003512.html">[PATCH 10/11] net/can/mscan: add error path to mscan_open()
+</A></li>
+        <LI>Next message: <A HREF="003531.html">[PATCH 11/11] net/can/mscan: improve build
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3513">[ date ]</a>
+              <a href="thread.html#3513">[ thread ]</a>
+              <a href="subject.html#3513">[ subject ]</a>
+              <a href="author.html#3513">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>- move Kconfig entries to the subdirectory
+- do remaining renames of mpc52xx to mpc5xxx
+
+Signed-off-by: Wolfram Sang &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">w.sang at pengutronix.de</A>&gt;
+---
+ drivers/net/can/Kconfig             |   19 +---
+ drivers/net/can/mscan/Kconfig       |   23 +++
+ drivers/net/can/mscan/Makefile      |    4 +-
+ drivers/net/can/mscan/mpc52xx_can.c |  259 -----------------------------------
+ drivers/net/can/mscan/mpc5xxx_can.c |  259 +++++++++++++++++++++++++++++++++++
+ 5 files changed, 285 insertions(+), 279 deletions(-)
+ create mode 100644 drivers/net/can/mscan/Kconfig
+ delete mode 100644 drivers/net/can/mscan/mpc52xx_can.c
+ create mode 100644 drivers/net/can/mscan/mpc5xxx_can.c
+
+diff --git a/drivers/net/can/Kconfig b/drivers/net/can/Kconfig
+index c16e6ff..c1cfe2e 100644
+--- a/drivers/net/can/Kconfig
++++ b/drivers/net/can/Kconfig
+@@ -108,24 +108,7 @@ config CAN_MCP251X
+ 	---help---
+ 	  Driver for the Microchip MCP251x SPI CAN controllers.
+ 
+-config CAN_MSCAN
+-	depends on CAN_DEV &amp;&amp; (PPC || M68K || M68KNOMMU)
+-	tristate &quot;Support for Freescale MSCAN based chips&quot;
+-	---help---
+-	  The Motorola Scalable Controller Area Network (MSCAN) definition
+-	  is based on the MSCAN12 definition which is the specific
+-	  implementation of the Motorola Scalable CAN concept targeted for
+-	  the Motorola MC68HC12 Microcontroller Family.
+-
+-config CAN_MPC52XX
+-	tristate &quot;Freescale MPC5xxx onboard CAN controller&quot;
+-	depends on CAN_MSCAN &amp;&amp; PPC_MPC52xx
+-	---help---
+-	  If you say yes here you get support for Freescale's MPC52xx
+-	  onboard dualCAN controller.
+-
+-	  This driver can also be built as a module.  If so, the module
+-	  will be called mpc5xxx_can.
++source &quot;drivers/net/can/mscan/Kconfig&quot;
+ 
+ config CAN_DEBUG_DEVICES
+ 	bool &quot;CAN devices debugging messages&quot;
+diff --git a/drivers/net/can/mscan/Kconfig b/drivers/net/can/mscan/Kconfig
+new file mode 100644
+index 0000000..cd0f2d6
+--- /dev/null
++++ b/drivers/net/can/mscan/Kconfig
+@@ -0,0 +1,23 @@
++config CAN_MSCAN
++	depends on CAN_DEV &amp;&amp; (PPC || M68K || M68KNOMMU)
++	tristate &quot;Support for Freescale MSCAN based chips&quot;
++	---help---
++	  The Motorola Scalable Controller Area Network (MSCAN) definition
++	  is based on the MSCAN12 definition which is the specific
++	  implementation of the Motorola Scalable CAN concept targeted for
++	  the Motorola MC68HC12 Microcontroller Family.
++
++if CAN_MSCAN
++
++config CAN_MPC5XXX
++	tristate &quot;Freescale MPC5xxx onboard CAN controller&quot;
++	depends on PPC_MPC52xx
++	---help---
++	  If you say yes here you get support for Freescale's MPC5xxx
++	  onboard CAN controller.
++
++	  This driver can also be built as a module.  If so, the module
++	  will be called mscan-mpc5xxx.ko.
++
++endif
++
+diff --git a/drivers/net/can/mscan/Makefile b/drivers/net/can/mscan/Makefile
+index 2bd9f04..c9fab17 100644
+--- a/drivers/net/can/mscan/Makefile
++++ b/drivers/net/can/mscan/Makefile
+@@ -1,5 +1,5 @@
+ 
+-obj-$(CONFIG_CAN_MPC52XX)	+= mscan-mpc52xx.o
+-mscan-mpc52xx-objs		:= mscan.o mpc52xx_can.o
++obj-$(CONFIG_CAN_MPC5XXX)	+= mscan-mpc5xxx.o
++mscan-mpc5xxx-objs		:= mscan.o mpc5xxx_can.o
+ 
+ ccflags-$(CONFIG_CAN_DEBUG_DEVICES) := -DDEBUG
+diff --git a/drivers/net/can/mscan/mpc52xx_can.c b/drivers/net/can/mscan/mpc52xx_can.c
+deleted file mode 100644
+index 1de6f63..0000000
+--- a/drivers/net/can/mscan/mpc52xx_can.c
++++ /dev/null
+@@ -1,259 +0,0 @@
+-/*
+- * CAN bus driver for the Freescale MPC5xxx embedded CPU.
+- *
+- * Copyright (C) 2004-2005 Andrey Volkov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">avolkov at varma-el.com</A>&gt;,
+- *                         Varma Electronics Oy
+- * Copyright (C) 2008-2009 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+- * Copyright (C) 2009 Wolfram Sang, Pengutronix &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">w.sang at pengutronix.de</A>&gt;
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the version 2 of the GNU General Public License
+- * as published by the Free Software Foundation
+- *
+- * This program is distributed in the hope that it will be useful, but
+- * WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- */
+-
+-#include &lt;linux/kernel.h&gt;
+-#include &lt;linux/module.h&gt;
+-#include &lt;linux/interrupt.h&gt;
+-#include &lt;linux/platform_device.h&gt;
+-#include &lt;linux/netdevice.h&gt;
+-#include &lt;linux/can.h&gt;
+-#include &lt;linux/can/dev.h&gt;
+-#include &lt;linux/of_platform.h&gt;
+-#include &lt;sysdev/fsl_soc.h&gt;
+-#include &lt;linux/io.h&gt;
+-#include &lt;asm/mpc52xx.h&gt;
+-
+-#include &quot;mscan.h&quot;
+-
+-#define DRV_NAME &quot;mpc5xxx_can&quot;
+-
+-static struct of_device_id mpc52xx_cdm_ids[] __devinitdata = {
+-	{ .compatible = &quot;fsl,mpc5200-cdm&quot;, },
+-	{}
+-};
+-
+-/*
+- * Get frequency of the MSCAN clock source
+- *
+- * Either the oscillator clock (SYS_XTAL_IN) or the IP bus clock (IP_CLK)
+- * can be selected. According to the MPC5200 user's manual, the oscillator
+- * clock is the better choice as it has less jitter but due to a hardware
+- * bug, it can not be selected for the old MPC5200 Rev. A chips.
+- */
+-
+-static unsigned int  __devinit mpc52xx_can_clock_freq(struct of_device *of,
+-						      int clock_src)
+-{
+-	unsigned int pvr;
+-	struct mpc52xx_cdm  __iomem *cdm;
+-	struct device_node *np_cdm;
+-	unsigned int freq;
+-	u32 val;
+-
+-	pvr = mfspr(SPRN_PVR);
+-
+-	freq = mpc5xxx_get_bus_frequency(of-&gt;node);
+-	if (!freq)
+-		return 0;
+-
+-	if (clock_src == MSCAN_CLKSRC_BUS || pvr == 0x80822011)
+-		return freq;
+-
+-	/* Determine SYS_XTAL_IN frequency from the clock domain settings */
+-	np_cdm = of_find_matching_node(NULL, mpc52xx_cdm_ids);
+-	if (!np_cdm) {
+-		dev_err(&amp;of-&gt;dev, &quot;can't get clock node!\n&quot;);
+-		return 0;
+-	}
+-	cdm = of_iomap(np_cdm, 0);
+-	of_node_put(np_cdm);
+-
+-	if (in_8(&amp;cdm-&gt;ipb_clk_sel) &amp; 0x1)
+-		freq *= 2;
+-	val = in_be32(&amp;cdm-&gt;rstcfg);
+-
+-	freq *= (val &amp; (1 &lt;&lt; 5)) ? 8 : 4;
+-	freq /= (val &amp; (1 &lt;&lt; 6)) ? 12 : 16;
+-
+-	iounmap(cdm);
+-
+-	return freq;
+-}
+-
+-static int __devinit mpc5xxx_can_probe(struct of_device *ofdev,
+-				       const struct of_device_id *id)
+-{
+-	struct device_node *np = ofdev-&gt;node;
+-	struct net_device *dev;
+-	struct mscan_priv *priv;
+-	void __iomem *base;
+-	const char *clk_src;
+-	int err, irq, clock_src;
+-
+-	base = of_iomap(ofdev-&gt;node, 0);
+-	if (!base) {
+-		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't ioremap\n&quot;);
+-		err = -ENOMEM;
+-		goto exit_release_mem;
+-	}
+-
+-	irq = irq_of_parse_and_map(np, 0);
+-	if (!irq) {
+-		dev_err(&amp;ofdev-&gt;dev, &quot;no irq found\n&quot;);
+-		err = -ENODEV;
+-		goto exit_unmap_mem;
+-	}
+-
+-	dev = alloc_mscandev();
+-	if (!dev) {
+-		err = -ENOMEM;
+-		goto exit_dispose_irq;
+-	}
+-
+-	priv = netdev_priv(dev);
+-	priv-&gt;reg_base = base;
+-	dev-&gt;irq = irq;
+-
+-	/*
+-	 * Either the oscillator clock (SYS_XTAL_IN) or the IP bus clock
+-	 * (IP_CLK) can be selected as MSCAN clock source. According to
+-	 * the MPC5200 user's manual, the oscillator clock is the better
+-	 * choice as it has less jitter. For this reason, it is selected
+-	 * by default.
+-	 */
+-	clk_src = of_get_property(np, &quot;fsl,mscan-clock-source&quot;, NULL);
+-	if (clk_src &amp;&amp; strcmp(clk_src, &quot;ip&quot;) == 0)
+-		clock_src = MSCAN_CLKSRC_BUS;
+-	else
+-		clock_src = MSCAN_CLKSRC_XTAL;
+-	priv-&gt;can.clock.freq = mpc52xx_can_clock_freq(ofdev, clock_src);
+-	if (!priv-&gt;can.clock.freq) {
+-		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't get MSCAN clock frequency\n&quot;);
+-		err = -ENODEV;
+-		goto exit_free_mscan;
+-	}
+-
+-	SET_NETDEV_DEV(dev, &amp;ofdev-&gt;dev);
+-
+-	err = register_mscandev(dev, clock_src);
+-	if (err) {
+-		dev_err(&amp;ofdev-&gt;dev, &quot;registering %s failed (err=%d)\n&quot;,
+-			DRV_NAME, err);
+-		goto exit_free_mscan;
+-	}
+-
+-	dev_set_drvdata(&amp;ofdev-&gt;dev, dev);
+-
+-	dev_info(&amp;ofdev-&gt;dev, &quot;MSCAN at 0x%p, irq %d, clock %d Hz\n&quot;,
+-		 priv-&gt;reg_base, dev-&gt;irq, priv-&gt;can.clock.freq);
+-
+-	return 0;
+-
+-exit_free_mscan:
+-	free_candev(dev);
+-exit_dispose_irq:
+-	irq_dispose_mapping(irq);
+-exit_unmap_mem:
+-	iounmap(base);
+-exit_release_mem:
+-	return err;
+-}
+-
+-static int __devexit mpc5xxx_can_remove(struct of_device *ofdev)
+-{
+-	struct net_device *dev = dev_get_drvdata(&amp;ofdev-&gt;dev);
+-	struct mscan_priv *priv = netdev_priv(dev);
+-
+-	dev_set_drvdata(&amp;ofdev-&gt;dev, NULL);
+-
+-	unregister_mscandev(dev);
+-	iounmap(priv-&gt;reg_base);
+-	irq_dispose_mapping(dev-&gt;irq);
+-	free_candev(dev);
+-
+-	return 0;
+-}
+-
+-#ifdef CONFIG_PM
+-static struct mscan_regs saved_regs;
+-static int mpc5xxx_can_suspend(struct of_device *ofdev, pm_message_t state)
+-{
+-	struct net_device *dev = dev_get_drvdata(&amp;ofdev-&gt;dev);
+-	struct mscan_priv *priv = netdev_priv(dev);
+-	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+-
+-	_memcpy_fromio(&amp;saved_regs, regs, sizeof(*regs));
+-
+-	return 0;
+-}
+-
+-static int mpc5xxx_can_resume(struct of_device *ofdev)
+-{
+-	struct net_device *dev = dev_get_drvdata(&amp;ofdev-&gt;dev);
+-	struct mscan_priv *priv = netdev_priv(dev);
+-	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+-
+-	regs-&gt;canctl0 |= MSCAN_INITRQ;
+-	while (!(regs-&gt;canctl1 &amp; MSCAN_INITAK))
+-		udelay(10);
+-
+-	regs-&gt;canctl1 = saved_regs.canctl1;
+-	regs-&gt;canbtr0 = saved_regs.canbtr0;
+-	regs-&gt;canbtr1 = saved_regs.canbtr1;
+-	regs-&gt;canidac = saved_regs.canidac;
+-
+-	/* restore masks, buffers etc. */
+-	_memcpy_toio(&amp;regs-&gt;canidar1_0, (void *)&amp;saved_regs.canidar1_0,
+-		     sizeof(*regs) - offsetof(struct mscan_regs, canidar1_0));
+-
+-	regs-&gt;canctl0 &amp;= ~MSCAN_INITRQ;
+-	regs-&gt;cantbsel = saved_regs.cantbsel;
+-	regs-&gt;canrier = saved_regs.canrier;
+-	regs-&gt;cantier = saved_regs.cantier;
+-	regs-&gt;canctl0 = saved_regs.canctl0;
+-
+-	return 0;
+-}
+-#endif
+-
+-static struct of_device_id __devinitdata mpc5xxx_can_table[] = {
+-	{.compatible = &quot;fsl,mpc5200-mscan&quot;},
+-	{},
+-};
+-
+-static struct of_platform_driver mpc5xxx_can_driver = {
+-	.owner = THIS_MODULE,
+-	.name = &quot;mpc5xxx_can&quot;,
+-	.probe = mpc5xxx_can_probe,
+-	.remove = __devexit_p(mpc5xxx_can_remove),
+-#ifdef CONFIG_PM
+-	.suspend = mpc5xxx_can_suspend,
+-	.resume = mpc5xxx_can_resume,
+-#endif
+-	.match_table = mpc5xxx_can_table,
+-};
+-
+-static int __init mpc5xxx_can_init(void)
+-{
+-	return of_register_platform_driver(&amp;mpc5xxx_can_driver);
+-}
+-module_init(mpc5xxx_can_init);
+-
+-static void __exit mpc5xxx_can_exit(void)
+-{
+-	return of_unregister_platform_driver(&amp;mpc5xxx_can_driver);
+-};
+-module_exit(mpc5xxx_can_exit);
+-
+-MODULE_AUTHOR(&quot;Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;&quot;);
+-MODULE_DESCRIPTION(&quot;Freescale MPC5200 CAN driver&quot;);
+-MODULE_LICENSE(&quot;GPL v2&quot;);
+diff --git a/drivers/net/can/mscan/mpc5xxx_can.c b/drivers/net/can/mscan/mpc5xxx_can.c
+new file mode 100644
+index 0000000..1de6f63
+--- /dev/null
++++ b/drivers/net/can/mscan/mpc5xxx_can.c
+@@ -0,0 +1,259 @@
++/*
++ * CAN bus driver for the Freescale MPC5xxx embedded CPU.
++ *
++ * Copyright (C) 2004-2005 Andrey Volkov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">avolkov at varma-el.com</A>&gt;,
++ *                         Varma Electronics Oy
++ * Copyright (C) 2008-2009 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
++ * Copyright (C) 2009 Wolfram Sang, Pengutronix &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">w.sang at pengutronix.de</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/platform_device.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/can.h&gt;
++#include &lt;linux/can/dev.h&gt;
++#include &lt;linux/of_platform.h&gt;
++#include &lt;sysdev/fsl_soc.h&gt;
++#include &lt;linux/io.h&gt;
++#include &lt;asm/mpc52xx.h&gt;
++
++#include &quot;mscan.h&quot;
++
++#define DRV_NAME &quot;mpc5xxx_can&quot;
++
++static struct of_device_id mpc52xx_cdm_ids[] __devinitdata = {
++	{ .compatible = &quot;fsl,mpc5200-cdm&quot;, },
++	{}
++};
++
++/*
++ * Get frequency of the MSCAN clock source
++ *
++ * Either the oscillator clock (SYS_XTAL_IN) or the IP bus clock (IP_CLK)
++ * can be selected. According to the MPC5200 user's manual, the oscillator
++ * clock is the better choice as it has less jitter but due to a hardware
++ * bug, it can not be selected for the old MPC5200 Rev. A chips.
++ */
++
++static unsigned int  __devinit mpc52xx_can_clock_freq(struct of_device *of,
++						      int clock_src)
++{
++	unsigned int pvr;
++	struct mpc52xx_cdm  __iomem *cdm;
++	struct device_node *np_cdm;
++	unsigned int freq;
++	u32 val;
++
++	pvr = mfspr(SPRN_PVR);
++
++	freq = mpc5xxx_get_bus_frequency(of-&gt;node);
++	if (!freq)
++		return 0;
++
++	if (clock_src == MSCAN_CLKSRC_BUS || pvr == 0x80822011)
++		return freq;
++
++	/* Determine SYS_XTAL_IN frequency from the clock domain settings */
++	np_cdm = of_find_matching_node(NULL, mpc52xx_cdm_ids);
++	if (!np_cdm) {
++		dev_err(&amp;of-&gt;dev, &quot;can't get clock node!\n&quot;);
++		return 0;
++	}
++	cdm = of_iomap(np_cdm, 0);
++	of_node_put(np_cdm);
++
++	if (in_8(&amp;cdm-&gt;ipb_clk_sel) &amp; 0x1)
++		freq *= 2;
++	val = in_be32(&amp;cdm-&gt;rstcfg);
++
++	freq *= (val &amp; (1 &lt;&lt; 5)) ? 8 : 4;
++	freq /= (val &amp; (1 &lt;&lt; 6)) ? 12 : 16;
++
++	iounmap(cdm);
++
++	return freq;
++}
++
++static int __devinit mpc5xxx_can_probe(struct of_device *ofdev,
++				       const struct of_device_id *id)
++{
++	struct device_node *np = ofdev-&gt;node;
++	struct net_device *dev;
++	struct mscan_priv *priv;
++	void __iomem *base;
++	const char *clk_src;
++	int err, irq, clock_src;
++
++	base = of_iomap(ofdev-&gt;node, 0);
++	if (!base) {
++		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't ioremap\n&quot;);
++		err = -ENOMEM;
++		goto exit_release_mem;
++	}
++
++	irq = irq_of_parse_and_map(np, 0);
++	if (!irq) {
++		dev_err(&amp;ofdev-&gt;dev, &quot;no irq found\n&quot;);
++		err = -ENODEV;
++		goto exit_unmap_mem;
++	}
++
++	dev = alloc_mscandev();
++	if (!dev) {
++		err = -ENOMEM;
++		goto exit_dispose_irq;
++	}
++
++	priv = netdev_priv(dev);
++	priv-&gt;reg_base = base;
++	dev-&gt;irq = irq;
++
++	/*
++	 * Either the oscillator clock (SYS_XTAL_IN) or the IP bus clock
++	 * (IP_CLK) can be selected as MSCAN clock source. According to
++	 * the MPC5200 user's manual, the oscillator clock is the better
++	 * choice as it has less jitter. For this reason, it is selected
++	 * by default.
++	 */
++	clk_src = of_get_property(np, &quot;fsl,mscan-clock-source&quot;, NULL);
++	if (clk_src &amp;&amp; strcmp(clk_src, &quot;ip&quot;) == 0)
++		clock_src = MSCAN_CLKSRC_BUS;
++	else
++		clock_src = MSCAN_CLKSRC_XTAL;
++	priv-&gt;can.clock.freq = mpc52xx_can_clock_freq(ofdev, clock_src);
++	if (!priv-&gt;can.clock.freq) {
++		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't get MSCAN clock frequency\n&quot;);
++		err = -ENODEV;
++		goto exit_free_mscan;
++	}
++
++	SET_NETDEV_DEV(dev, &amp;ofdev-&gt;dev);
++
++	err = register_mscandev(dev, clock_src);
++	if (err) {
++		dev_err(&amp;ofdev-&gt;dev, &quot;registering %s failed (err=%d)\n&quot;,
++			DRV_NAME, err);
++		goto exit_free_mscan;
++	}
++
++	dev_set_drvdata(&amp;ofdev-&gt;dev, dev);
++
++	dev_info(&amp;ofdev-&gt;dev, &quot;MSCAN at 0x%p, irq %d, clock %d Hz\n&quot;,
++		 priv-&gt;reg_base, dev-&gt;irq, priv-&gt;can.clock.freq);
++
++	return 0;
++
++exit_free_mscan:
++	free_candev(dev);
++exit_dispose_irq:
++	irq_dispose_mapping(irq);
++exit_unmap_mem:
++	iounmap(base);
++exit_release_mem:
++	return err;
++}
++
++static int __devexit mpc5xxx_can_remove(struct of_device *ofdev)
++{
++	struct net_device *dev = dev_get_drvdata(&amp;ofdev-&gt;dev);
++	struct mscan_priv *priv = netdev_priv(dev);
++
++	dev_set_drvdata(&amp;ofdev-&gt;dev, NULL);
++
++	unregister_mscandev(dev);
++	iounmap(priv-&gt;reg_base);
++	irq_dispose_mapping(dev-&gt;irq);
++	free_candev(dev);
++
++	return 0;
++}
++
++#ifdef CONFIG_PM
++static struct mscan_regs saved_regs;
++static int mpc5xxx_can_suspend(struct of_device *ofdev, pm_message_t state)
++{
++	struct net_device *dev = dev_get_drvdata(&amp;ofdev-&gt;dev);
++	struct mscan_priv *priv = netdev_priv(dev);
++	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
++
++	_memcpy_fromio(&amp;saved_regs, regs, sizeof(*regs));
++
++	return 0;
++}
++
++static int mpc5xxx_can_resume(struct of_device *ofdev)
++{
++	struct net_device *dev = dev_get_drvdata(&amp;ofdev-&gt;dev);
++	struct mscan_priv *priv = netdev_priv(dev);
++	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
++
++	regs-&gt;canctl0 |= MSCAN_INITRQ;
++	while (!(regs-&gt;canctl1 &amp; MSCAN_INITAK))
++		udelay(10);
++
++	regs-&gt;canctl1 = saved_regs.canctl1;
++	regs-&gt;canbtr0 = saved_regs.canbtr0;
++	regs-&gt;canbtr1 = saved_regs.canbtr1;
++	regs-&gt;canidac = saved_regs.canidac;
++
++	/* restore masks, buffers etc. */
++	_memcpy_toio(&amp;regs-&gt;canidar1_0, (void *)&amp;saved_regs.canidar1_0,
++		     sizeof(*regs) - offsetof(struct mscan_regs, canidar1_0));
++
++	regs-&gt;canctl0 &amp;= ~MSCAN_INITRQ;
++	regs-&gt;cantbsel = saved_regs.cantbsel;
++	regs-&gt;canrier = saved_regs.canrier;
++	regs-&gt;cantier = saved_regs.cantier;
++	regs-&gt;canctl0 = saved_regs.canctl0;
++
++	return 0;
++}
++#endif
++
++static struct of_device_id __devinitdata mpc5xxx_can_table[] = {
++	{.compatible = &quot;fsl,mpc5200-mscan&quot;},
++	{},
++};
++
++static struct of_platform_driver mpc5xxx_can_driver = {
++	.owner = THIS_MODULE,
++	.name = &quot;mpc5xxx_can&quot;,
++	.probe = mpc5xxx_can_probe,
++	.remove = __devexit_p(mpc5xxx_can_remove),
++#ifdef CONFIG_PM
++	.suspend = mpc5xxx_can_suspend,
++	.resume = mpc5xxx_can_resume,
++#endif
++	.match_table = mpc5xxx_can_table,
++};
++
++static int __init mpc5xxx_can_init(void)
++{
++	return of_register_platform_driver(&amp;mpc5xxx_can_driver);
++}
++module_init(mpc5xxx_can_init);
++
++static void __exit mpc5xxx_can_exit(void)
++{
++	return of_unregister_platform_driver(&amp;mpc5xxx_can_driver);
++};
++module_exit(mpc5xxx_can_exit);
++
++MODULE_AUTHOR(&quot;Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;&quot;);
++MODULE_DESCRIPTION(&quot;Freescale MPC5200 CAN driver&quot;);
++MODULE_LICENSE(&quot;GPL v2&quot;);
+-- 
+1.6.3.3
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003512.html">[PATCH 10/11] net/can/mscan: add error path to mscan_open()
+</A></li>
+	<LI>Next message: <A HREF="003531.html">[PATCH 11/11] net/can/mscan: improve build
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3513">[ date ]</a>
+              <a href="thread.html#3513">[ thread ]</a>
+              <a href="subject.html#3513">[ subject ]</a>
+              <a href="author.html#3513">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

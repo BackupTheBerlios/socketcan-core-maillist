@@ -1,0 +1,133 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> More on bit time setting and calculation...
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20More%20on%20bit%20time%20setting%20and%20calculation...&In-Reply-To=%3C20080609073303.GH10115%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001326.html">
+   <LINK REL="Next"  HREF="001335.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>More on bit time setting and calculation...</H1>
+    <B>Robert Schwebel</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20More%20on%20bit%20time%20setting%20and%20calculation...&In-Reply-To=%3C20080609073303.GH10115%40pengutronix.de%3E"
+       TITLE="More on bit time setting and calculation...">r.schwebel at pengutronix.de
+       </A><BR>
+    <I>Mon Jun  9 09:33:03 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001326.html">More on bit time setting and calculation...
+</A></li>
+        <LI>Next message: <A HREF="001335.html">More on bit time setting and calculation...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1327">[ date ]</a>
+              <a href="thread.html#1327">[ thread ]</a>
+              <a href="subject.html#1327">[ subject ]</a>
+              <a href="author.html#1327">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Mon, Jun 09, 2008 at 08:56:34AM +0200, Wolfgang Grandegger wrote:
+&gt;<i> &gt; &gt; 1. It turned out to be a very complex topic for different
+</I>&gt;<i> &gt; &gt; controllers with specific originalities and specific (broken) clock
+</I>&gt;<i> &gt; &gt; sources.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; True.
+</I>&gt;<i>
+</I>&gt;<i> And so far we failed to provide an algorithm for calculating &quot;good&quot;
+</I>&gt;<i> btregs. Be aware that most of us are not CAN hardware experts.
+</I>
+I suppose there will be no good heuristics - you would need an equation
+solver with minimum search, so nothing for the kernel :-)
+
+CAN timing values are in no way different from for example memory
+controller timing values: the BSP developer *has* to be an expert and
+has to provide reasonable numbers for his hardware constellation (clocks
+etc). And it needs to be changable according to some field needs, like
+networks which require to change the values to &quot;measured&quot; ones.
+
+&gt;<i> Yes and the user can still set default btregs (CIA recommended if
+</I>&gt;<i> possible) by just selecting the bitrate. The driver must provide an
+</I>&gt;<i> appropriate table of btregs for the common bitrates. For most CAN
+</I>&gt;<i> controllers, this is easy to do.
+</I>
+What's the advantage of SJA-specific btregs vs. standard provided
+parameters?
+
+&gt;<i> But with that hardware independent way,we may fail calculating &quot;good&quot;
+</I>&gt;<i> values for all CAN controller and clock frequencies.
+</I>
+If the heuristics fails, we can use pre-calculated values. In our
+current implementation, /etc/network/interfaces looks like this:
+
+	# onboard CAN0
+	iface can0 inet manual
+		pre-up /etc/network/can-pre-up
+		up /sbin/ifconfig $IFACE up
+
+and /etc/network/can-pre-up:
+
+	#!/bin/sh
+	#
+	#
+	CAN_CONFIG_PROG=/sbin/canconfig
+	IFCONFIG_PROG=/sbin/ifconfig
+	# bitrate to be used when running the interface
+	BITRATE=250
+
+	# setup specific bit rate settings
+	$CAN_CONFIG_PROG $IFACE setentry bitrate 125000 tq 421 err 3000 prop_seg 7 phase_seg1 8 phase_seg2 3 sjw 2 sam 0
+	$CAN_CONFIG_PROG $IFACE setentry bitrate 250000 tq 211 err 3000 prop_seg 7 phase_seg1 8 phase_seg2 3 sjw 2 sam 0
+	$CAN_CONFIG_PROG $IFACE setentry bitrate 500000 tq 105 err 3000 prop_seg 7 phase_seg1 8 phase_seg2 3 sjw 2 sam 0
+	$CAN_CONFIG_PROG $IFACE setentry bitrate 1000000 tq 53 err 13000 prop_seg 6 phase_seg1 7 phase_seg2 5 sjw 2 sam 0
+
+	# $IFACE from &quot;ifup&quot; command
+	$CAN_CONFIG_PROG $IFACE bitrate $BITRATE
+
+	# HACK-ALERT! (just like in the old canframework)
+	$IFCONFIG_PROG $IFACE txqueuelen 10000
+
+After that, you can simply change the bitrate with for example
+
+	canconfig can0 bitrate 125000
+
+Robert
+-- 
+ Dipl.-Ing. Robert Schwebel | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>
+ Pengutronix - Linux Solutions for Science and Industry
+   Handelsregister:  Amtsgericht Hildesheim, HRA 2686
+     Hannoversche Str. 2, 31134 Hildesheim, Germany
+   Phone: +49-5121-206917-0 |  Fax: +49-5121-206917-9
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001326.html">More on bit time setting and calculation...
+</A></li>
+	<LI>Next message: <A HREF="001335.html">More on bit time setting and calculation...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1327">[ date ]</a>
+              <a href="thread.html#1327">[ thread ]</a>
+              <a href="subject.html#1327">[ subject ]</a>
+              <a href="author.html#1327">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

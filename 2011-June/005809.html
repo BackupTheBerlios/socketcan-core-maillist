@@ -1,0 +1,340 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 2/2] can: bfin_can: auto-calculate accessor sizes
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/2%5D%20can%3A%20bfin_can%3A%20auto-calculate%20accessor%20sizes&In-Reply-To=%3C1308861380-27485-2-git-send-email-vapier%40gentoo.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005808.html">
+   <LINK REL="Next"  HREF="005810.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 2/2] can: bfin_can: auto-calculate accessor sizes</H1>
+    <B>Mike Frysinger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/2%5D%20can%3A%20bfin_can%3A%20auto-calculate%20accessor%20sizes&In-Reply-To=%3C1308861380-27485-2-git-send-email-vapier%40gentoo.org%3E"
+       TITLE="[PATCH 2/2] can: bfin_can: auto-calculate accessor sizes">vapier at gentoo.org
+       </A><BR>
+    <I>Thu Jun 23 22:36:20 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005808.html">[PATCH 1/2] can: bfin_can: simplify xmit id1 setup
+</A></li>
+        <LI>Next message: <A HREF="005810.html">linux-next: Tree for June 23 (net/can &amp; i/o)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5809">[ date ]</a>
+              <a href="thread.html#5809">[ thread ]</a>
+              <a href="subject.html#5809">[ subject ]</a>
+              <a href="author.html#5809">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Since we have a struct that defines the sizes of the registers, we don't
+need to explicitly use the 16bit read/write helpers.  Let the code figure
+out which size access to make based on the size of the C type.
+
+There should be no functional changes here.
+
+Signed-off-by: Mike Frysinger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">vapier at gentoo.org</A>&gt;
+---
+ drivers/net/can/bfin_can.c |  118 ++++++++++++++++++++++----------------------
+ 1 files changed, 59 insertions(+), 59 deletions(-)
+
+diff --git a/drivers/net/can/bfin_can.c b/drivers/net/can/bfin_can.c
+index dc6ef4a..a1c5abc 100644
+--- a/drivers/net/can/bfin_can.c
++++ b/drivers/net/can/bfin_can.c
+@@ -79,8 +79,8 @@ static int bfin_can_set_bittiming(struct net_device *dev)
+ 	if (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES)
+ 		timing |= SAM;
+ 
+-	bfin_write16(&amp;reg-&gt;clock, clk);
+-	bfin_write16(&amp;reg-&gt;timing, timing);
++	bfin_write(&amp;reg-&gt;clock, clk);
++	bfin_write(&amp;reg-&gt;timing, timing);
+ 
+ 	dev_info(dev-&gt;dev.parent, &quot;setting CLOCK=0x%04x TIMING=0x%04x\n&quot;,
+ 			clk, timing);
+@@ -96,16 +96,16 @@ static void bfin_can_set_reset_mode(struct net_device *dev)
+ 	int i;
+ 
+ 	/* disable interrupts */
+-	bfin_write16(&amp;reg-&gt;mbim1, 0);
+-	bfin_write16(&amp;reg-&gt;mbim2, 0);
+-	bfin_write16(&amp;reg-&gt;gim, 0);
++	bfin_write(&amp;reg-&gt;mbim1, 0);
++	bfin_write(&amp;reg-&gt;mbim2, 0);
++	bfin_write(&amp;reg-&gt;gim, 0);
+ 
+ 	/* reset can and enter configuration mode */
+-	bfin_write16(&amp;reg-&gt;control, SRS | CCR);
++	bfin_write(&amp;reg-&gt;control, SRS | CCR);
+ 	SSYNC();
+-	bfin_write16(&amp;reg-&gt;control, CCR);
++	bfin_write(&amp;reg-&gt;control, CCR);
+ 	SSYNC();
+-	while (!(bfin_read16(&amp;reg-&gt;control) &amp; CCA)) {
++	while (!(bfin_read(&amp;reg-&gt;control) &amp; CCA)) {
+ 		udelay(10);
+ 		if (--timeout == 0) {
+ 			dev_err(dev-&gt;dev.parent,
+@@ -119,33 +119,33 @@ static void bfin_can_set_reset_mode(struct net_device *dev)
+ 	 * by writing to CAN Mailbox Configuration Registers 1 and 2
+ 	 * For all bits: 0 - Mailbox disabled, 1 - Mailbox enabled
+ 	 */
+-	bfin_write16(&amp;reg-&gt;mc1, 0);
+-	bfin_write16(&amp;reg-&gt;mc2, 0);
++	bfin_write(&amp;reg-&gt;mc1, 0);
++	bfin_write(&amp;reg-&gt;mc2, 0);
+ 
+ 	/* Set Mailbox Direction */
+-	bfin_write16(&amp;reg-&gt;md1, 0xFFFF);   /* mailbox 1-16 are RX */
+-	bfin_write16(&amp;reg-&gt;md2, 0);   /* mailbox 17-32 are TX */
++	bfin_write(&amp;reg-&gt;md1, 0xFFFF);   /* mailbox 1-16 are RX */
++	bfin_write(&amp;reg-&gt;md2, 0);   /* mailbox 17-32 are TX */
+ 
+ 	/* RECEIVE_STD_CHL */
+ 	for (i = 0; i &lt; 2; i++) {
+-		bfin_write16(&amp;reg-&gt;chl[RECEIVE_STD_CHL + i].id0, 0);
+-		bfin_write16(&amp;reg-&gt;chl[RECEIVE_STD_CHL + i].id1, AME);
+-		bfin_write16(&amp;reg-&gt;chl[RECEIVE_STD_CHL + i].dlc, 0);
+-		bfin_write16(&amp;reg-&gt;msk[RECEIVE_STD_CHL + i].amh, 0x1FFF);
+-		bfin_write16(&amp;reg-&gt;msk[RECEIVE_STD_CHL + i].aml, 0xFFFF);
++		bfin_write(&amp;reg-&gt;chl[RECEIVE_STD_CHL + i].id0, 0);
++		bfin_write(&amp;reg-&gt;chl[RECEIVE_STD_CHL + i].id1, AME);
++		bfin_write(&amp;reg-&gt;chl[RECEIVE_STD_CHL + i].dlc, 0);
++		bfin_write(&amp;reg-&gt;msk[RECEIVE_STD_CHL + i].amh, 0x1FFF);
++		bfin_write(&amp;reg-&gt;msk[RECEIVE_STD_CHL + i].aml, 0xFFFF);
+ 	}
+ 
+ 	/* RECEIVE_EXT_CHL */
+ 	for (i = 0; i &lt; 2; i++) {
+-		bfin_write16(&amp;reg-&gt;chl[RECEIVE_EXT_CHL + i].id0, 0);
+-		bfin_write16(&amp;reg-&gt;chl[RECEIVE_EXT_CHL + i].id1, AME | IDE);
+-		bfin_write16(&amp;reg-&gt;chl[RECEIVE_EXT_CHL + i].dlc, 0);
+-		bfin_write16(&amp;reg-&gt;msk[RECEIVE_EXT_CHL + i].amh, 0x1FFF);
+-		bfin_write16(&amp;reg-&gt;msk[RECEIVE_EXT_CHL + i].aml, 0xFFFF);
++		bfin_write(&amp;reg-&gt;chl[RECEIVE_EXT_CHL + i].id0, 0);
++		bfin_write(&amp;reg-&gt;chl[RECEIVE_EXT_CHL + i].id1, AME | IDE);
++		bfin_write(&amp;reg-&gt;chl[RECEIVE_EXT_CHL + i].dlc, 0);
++		bfin_write(&amp;reg-&gt;msk[RECEIVE_EXT_CHL + i].amh, 0x1FFF);
++		bfin_write(&amp;reg-&gt;msk[RECEIVE_EXT_CHL + i].aml, 0xFFFF);
+ 	}
+ 
+-	bfin_write16(&amp;reg-&gt;mc2, BIT(TRANSMIT_CHL - 16));
+-	bfin_write16(&amp;reg-&gt;mc1, BIT(RECEIVE_STD_CHL) + BIT(RECEIVE_EXT_CHL));
++	bfin_write(&amp;reg-&gt;mc2, BIT(TRANSMIT_CHL - 16));
++	bfin_write(&amp;reg-&gt;mc1, BIT(RECEIVE_STD_CHL) + BIT(RECEIVE_EXT_CHL));
+ 	SSYNC();
+ 
+ 	priv-&gt;can.state = CAN_STATE_STOPPED;
+@@ -160,9 +160,9 @@ static void bfin_can_set_normal_mode(struct net_device *dev)
+ 	/*
+ 	 * leave configuration mode
+ 	 */
+-	bfin_write16(&amp;reg-&gt;control, bfin_read16(&amp;reg-&gt;control) &amp; ~CCR);
++	bfin_write(&amp;reg-&gt;control, bfin_read(&amp;reg-&gt;control) &amp; ~CCR);
+ 
+-	while (bfin_read16(&amp;reg-&gt;status) &amp; CCA) {
++	while (bfin_read(&amp;reg-&gt;status) &amp; CCA) {
+ 		udelay(10);
+ 		if (--timeout == 0) {
+ 			dev_err(dev-&gt;dev.parent,
+@@ -174,25 +174,25 @@ static void bfin_can_set_normal_mode(struct net_device *dev)
+ 	/*
+ 	 * clear _All_  tx and rx interrupts
+ 	 */
+-	bfin_write16(&amp;reg-&gt;mbtif1, 0xFFFF);
+-	bfin_write16(&amp;reg-&gt;mbtif2, 0xFFFF);
+-	bfin_write16(&amp;reg-&gt;mbrif1, 0xFFFF);
+-	bfin_write16(&amp;reg-&gt;mbrif2, 0xFFFF);
++	bfin_write(&amp;reg-&gt;mbtif1, 0xFFFF);
++	bfin_write(&amp;reg-&gt;mbtif2, 0xFFFF);
++	bfin_write(&amp;reg-&gt;mbrif1, 0xFFFF);
++	bfin_write(&amp;reg-&gt;mbrif2, 0xFFFF);
+ 
+ 	/*
+ 	 * clear global interrupt status register
+ 	 */
+-	bfin_write16(&amp;reg-&gt;gis, 0x7FF); /* overwrites with '1' */
++	bfin_write(&amp;reg-&gt;gis, 0x7FF); /* overwrites with '1' */
+ 
+ 	/*
+ 	 * Initialize Interrupts
+ 	 * - set bits in the mailbox interrupt mask register
+ 	 * - global interrupt mask
+ 	 */
+-	bfin_write16(&amp;reg-&gt;mbim1, BIT(RECEIVE_STD_CHL) + BIT(RECEIVE_EXT_CHL));
+-	bfin_write16(&amp;reg-&gt;mbim2, BIT(TRANSMIT_CHL - 16));
++	bfin_write(&amp;reg-&gt;mbim1, BIT(RECEIVE_STD_CHL) + BIT(RECEIVE_EXT_CHL));
++	bfin_write(&amp;reg-&gt;mbim2, BIT(TRANSMIT_CHL - 16));
+ 
+-	bfin_write16(&amp;reg-&gt;gim, EPIM | BOIM | RMLIM);
++	bfin_write(&amp;reg-&gt;gim, EPIM | BOIM | RMLIM);
+ 	SSYNC();
+ }
+ 
+@@ -242,28 +242,28 @@ static int bfin_can_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 
+ 	/* fill id */
+ 	if (id &amp; CAN_EFF_FLAG) {
+-		bfin_write16(&amp;reg-&gt;chl[TRANSMIT_CHL].id0, id);
++		bfin_write(&amp;reg-&gt;chl[TRANSMIT_CHL].id0, id);
+ 		val = ((id &amp; 0x1FFF0000) &gt;&gt; 16) | IDE;
+ 	} else
+ 		val = (id &lt;&lt; 2);
+ 	if (id &amp; CAN_RTR_FLAG)
+ 		val |= RTR;
+-	bfin_write16(&amp;reg-&gt;chl[TRANSMIT_CHL].id1, val | AME);
++	bfin_write(&amp;reg-&gt;chl[TRANSMIT_CHL].id1, val | AME);
+ 
+ 	/* fill payload */
+ 	for (i = 0; i &lt; 8; i += 2) {
+ 		val = ((7 - i) &lt; dlc ? (data[7 - i]) : 0) +
+ 			((6 - i) &lt; dlc ? (data[6 - i] &lt;&lt; 8) : 0);
+-		bfin_write16(&amp;reg-&gt;chl[TRANSMIT_CHL].data[i], val);
++		bfin_write(&amp;reg-&gt;chl[TRANSMIT_CHL].data[i], val);
+ 	}
+ 
+ 	/* fill data length code */
+-	bfin_write16(&amp;reg-&gt;chl[TRANSMIT_CHL].dlc, dlc);
++	bfin_write(&amp;reg-&gt;chl[TRANSMIT_CHL].dlc, dlc);
+ 
+ 	can_put_echo_skb(skb, dev, 0);
+ 
+ 	/* set transmit request */
+-	bfin_write16(&amp;reg-&gt;trs2, BIT(TRANSMIT_CHL - 16));
++	bfin_write(&amp;reg-&gt;trs2, BIT(TRANSMIT_CHL - 16));
+ 
+ 	return 0;
+ }
+@@ -286,26 +286,26 @@ static void bfin_can_rx(struct net_device *dev, u16 isrc)
+ 	/* get id */
+ 	if (isrc &amp; BIT(RECEIVE_EXT_CHL)) {
+ 		/* extended frame format (EFF) */
+-		cf-&gt;can_id = ((bfin_read16(&amp;reg-&gt;chl[RECEIVE_EXT_CHL].id1)
++		cf-&gt;can_id = ((bfin_read(&amp;reg-&gt;chl[RECEIVE_EXT_CHL].id1)
+ 			     &amp; 0x1FFF) &lt;&lt; 16)
+-			     + bfin_read16(&amp;reg-&gt;chl[RECEIVE_EXT_CHL].id0);
++			     + bfin_read(&amp;reg-&gt;chl[RECEIVE_EXT_CHL].id0);
+ 		cf-&gt;can_id |= CAN_EFF_FLAG;
+ 		obj = RECEIVE_EXT_CHL;
+ 	} else {
+ 		/* standard frame format (SFF) */
+-		cf-&gt;can_id = (bfin_read16(&amp;reg-&gt;chl[RECEIVE_STD_CHL].id1)
++		cf-&gt;can_id = (bfin_read(&amp;reg-&gt;chl[RECEIVE_STD_CHL].id1)
+ 			     &amp; 0x1ffc) &gt;&gt; 2;
+ 		obj = RECEIVE_STD_CHL;
+ 	}
+-	if (bfin_read16(&amp;reg-&gt;chl[obj].id1) &amp; RTR)
++	if (bfin_read(&amp;reg-&gt;chl[obj].id1) &amp; RTR)
+ 		cf-&gt;can_id |= CAN_RTR_FLAG;
+ 
+ 	/* get data length code */
+-	cf-&gt;can_dlc = get_can_dlc(bfin_read16(&amp;reg-&gt;chl[obj].dlc) &amp; 0xF);
++	cf-&gt;can_dlc = get_can_dlc(bfin_read(&amp;reg-&gt;chl[obj].dlc) &amp; 0xF);
+ 
+ 	/* get payload */
+ 	for (i = 0; i &lt; 8; i += 2) {
+-		val = bfin_read16(&amp;reg-&gt;chl[obj].data[i]);
++		val = bfin_read(&amp;reg-&gt;chl[obj].data[i]);
+ 		cf-&gt;data[7 - i] = (7 - i) &lt; cf-&gt;can_dlc ? val : 0;
+ 		cf-&gt;data[6 - i] = (6 - i) &lt; cf-&gt;can_dlc ? (val &gt;&gt; 8) : 0;
+ 	}
+@@ -359,7 +359,7 @@ static int bfin_can_err(struct net_device *dev, u16 isrc, u16 status)
+ 
+ 	if (state != priv-&gt;can.state &amp;&amp; (state == CAN_STATE_ERROR_WARNING ||
+ 				state == CAN_STATE_ERROR_PASSIVE)) {
+-		u16 cec = bfin_read16(&amp;reg-&gt;cec);
++		u16 cec = bfin_read(&amp;reg-&gt;cec);
+ 		u8 rxerr = cec;
+ 		u8 txerr = cec &gt;&gt; 8;
+ 
+@@ -410,23 +410,23 @@ irqreturn_t bfin_can_interrupt(int irq, void *dev_id)
+ 	struct net_device_stats *stats = &amp;dev-&gt;stats;
+ 	u16 status, isrc;
+ 
+-	if ((irq == priv-&gt;tx_irq) &amp;&amp; bfin_read16(&amp;reg-&gt;mbtif2)) {
++	if ((irq == priv-&gt;tx_irq) &amp;&amp; bfin_read(&amp;reg-&gt;mbtif2)) {
+ 		/* transmission complete interrupt */
+-		bfin_write16(&amp;reg-&gt;mbtif2, 0xFFFF);
++		bfin_write(&amp;reg-&gt;mbtif2, 0xFFFF);
+ 		stats-&gt;tx_packets++;
+-		stats-&gt;tx_bytes += bfin_read16(&amp;reg-&gt;chl[TRANSMIT_CHL].dlc);
++		stats-&gt;tx_bytes += bfin_read(&amp;reg-&gt;chl[TRANSMIT_CHL].dlc);
+ 		can_get_echo_skb(dev, 0);
+ 		netif_wake_queue(dev);
+-	} else if ((irq == priv-&gt;rx_irq) &amp;&amp; bfin_read16(&amp;reg-&gt;mbrif1)) {
++	} else if ((irq == priv-&gt;rx_irq) &amp;&amp; bfin_read(&amp;reg-&gt;mbrif1)) {
+ 		/* receive interrupt */
+-		isrc = bfin_read16(&amp;reg-&gt;mbrif1);
+-		bfin_write16(&amp;reg-&gt;mbrif1, 0xFFFF);
++		isrc = bfin_read(&amp;reg-&gt;mbrif1);
++		bfin_write(&amp;reg-&gt;mbrif1, 0xFFFF);
+ 		bfin_can_rx(dev, isrc);
+-	} else if ((irq == priv-&gt;err_irq) &amp;&amp; bfin_read16(&amp;reg-&gt;gis)) {
++	} else if ((irq == priv-&gt;err_irq) &amp;&amp; bfin_read(&amp;reg-&gt;gis)) {
+ 		/* error interrupt */
+-		isrc = bfin_read16(&amp;reg-&gt;gis);
+-		status = bfin_read16(&amp;reg-&gt;esr);
+-		bfin_write16(&amp;reg-&gt;gis, 0x7FF);
++		isrc = bfin_read(&amp;reg-&gt;gis);
++		status = bfin_read(&amp;reg-&gt;esr);
++		bfin_write(&amp;reg-&gt;gis, 0x7FF);
+ 		bfin_can_err(dev, isrc, status);
+ 	} else {
+ 		return IRQ_NONE;
+@@ -631,9 +631,9 @@ static int bfin_can_suspend(struct platform_device *pdev, pm_message_t mesg)
+ 
+ 	if (netif_running(dev)) {
+ 		/* enter sleep mode */
+-		bfin_write16(&amp;reg-&gt;control, bfin_read16(&amp;reg-&gt;control) | SMR);
++		bfin_write(&amp;reg-&gt;control, bfin_read(&amp;reg-&gt;control) | SMR);
+ 		SSYNC();
+-		while (!(bfin_read16(&amp;reg-&gt;intr) &amp; SMACK)) {
++		while (!(bfin_read(&amp;reg-&gt;intr) &amp; SMACK)) {
+ 			udelay(10);
+ 			if (--timeout == 0) {
+ 				dev_err(dev-&gt;dev.parent,
+@@ -654,7 +654,7 @@ static int bfin_can_resume(struct platform_device *pdev)
+ 
+ 	if (netif_running(dev)) {
+ 		/* leave sleep mode */
+-		bfin_write16(&amp;reg-&gt;intr, 0);
++		bfin_write(&amp;reg-&gt;intr, 0);
+ 		SSYNC();
+ 	}
+ 
+-- 
+1.7.5.3
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005808.html">[PATCH 1/2] can: bfin_can: simplify xmit id1 setup
+</A></li>
+	<LI>Next message: <A HREF="005810.html">linux-next: Tree for June 23 (net/can &amp; i/o)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5809">[ date ]</a>
+              <a href="thread.html#5809">[ thread ]</a>
+              <a href="subject.html#5809">[ subject ]</a>
+              <a href="author.html#5809">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

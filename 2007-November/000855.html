@@ -1,0 +1,146 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 0/10] SJA1000DEV using device interface and further	fixes	and improvements
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/10%5D%20SJA1000DEV%20using%20device%20interface%20and%20further%09fixes%0A%09and%20improvements&In-Reply-To=%3C47459441.80102%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000872.html">
+   <LINK REL="Next"  HREF="000831.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 0/10] SJA1000DEV using device interface and further	fixes	and improvements</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/10%5D%20SJA1000DEV%20using%20device%20interface%20and%20further%09fixes%0A%09and%20improvements&In-Reply-To=%3C47459441.80102%40grandegger.com%3E"
+       TITLE="[PATCH 0/10] SJA1000DEV using device interface and further	fixes	and improvements">wg at grandegger.com
+       </A><BR>
+    <I>Thu Nov 22 15:37:53 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000872.html">[PATCH 0/10] SJA1000DEV using device interface and	further	fixes	and improvements
+</A></li>
+        <LI>Next message: <A HREF="000831.html">[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#855">[ date ]</a>
+              <a href="thread.html#855">[ thread ]</a>
+              <a href="subject.html#855">[ subject ]</a>
+              <a href="author.html#855">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Vladislav Gribov wrote:
+&gt;<i> On Thu, 2007-11-22 at 12:05 +0100, Wolfgang Grandegger wrote:
+</I>&gt;<i> 
+</I>&gt;<i> &lt;skipped&gt;
+</I>&gt;<i> 
+</I>&gt;&gt;<i> How do you recover from bus-off. I think restart is a generic feature.
+</I>&gt;&gt;<i> Automatic restart may be optional though. And all of the above
+</I>&gt;&gt;<i> parameters could be handled in common CAN device interface code like the
+</I>&gt;&gt;<i> IOCTL requests. The callback functions are already there. The individual
+</I>&gt;&gt;<i> driver can define access methods like do_get_state(), do _set_bittime().
+</I>&gt;&gt;<i> We may need more, though.
+</I>&gt;<i> 
+</I>&gt;<i> 1)
+</I>&gt;<i> The bus-off and Tx timeout handling are issues which I will appreciate
+</I>&gt;<i> to discuss.
+</I>&gt;<i> 
+</I>&gt;<i> The automatic bus-off recovery done by CAN driver (like done by actual
+</I>&gt;<i> mscan or SJA1000) is not necessary what an application expect. In case
+</I>&gt;<i> of bus-off the driver shall stop the CAN and inform the user space. The
+</I>&gt;<i> application may decide if to restart the CAN (over ioctl). There shall
+</I>&gt;<i> be also a possibility to purge Tx queue before restarting the CAN.
+</I>&gt;<i> 
+</I>&gt;<i> The Tx timeouts are normal if CAN controller do not get ACK (eg alone on
+</I>&gt;<i> the bus). The CAN controller is Tx pending and is is not necessary to
+</I>&gt;<i> retransmit the same message on each tx timeout - it will be send as soon
+</I>&gt;<i> as CAN cable is connected.
+</I>
+If you look carefully, the MSCAN driver does not do automatic restarts.
+In case of netdev TX timeout, it aborts the transfer and sends an error
+frame, which is nice, I think:
+
+  frame-&gt;can_id = CAN_ERR_FLAG | CAN_ERR_TX_TIMEOUT;
+
+Also it does not stop the device in case of bus-off but calls
+netif_carrier_off(dev). In contrast, the SJA1000 stops and automatically
+restarts the device for other reasons as well: too much bus errors,
+TXERR &gt; 128 and on entering the error passive state.
+
+&gt;<i> I think the idea to make a reference CAN driver implementation is nice.
+</I>&gt;<i> The SJA1000 is a proper candidate for this aim.
+</I>&gt;<i> 
+</I>&gt;<i> Such a reference implementation may be used as template for further
+</I>&gt;<i> drivers. We shall intend to provide for all driver the same properties
+</I>&gt;<i> and behavior in standard situations:
+</I>&gt;<i> 
+</I>&gt;<i> - bus-off
+</I>&gt;<i> - CAN overrun
+</I>
+Can you be more precise?
+
+&gt;<i> - Tx timeout
+</I>&gt;<i> - setting bitrate
+</I>&gt;<i> - automatic bitrate detection / Rx probing
+</I>&gt;<i> - CAN statistics
+</I>&gt;<i> - ...
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 2)
+</I>&gt;<i> Another issue are module parameters. I think it is nice to provide some
+</I>&gt;<i> common parameter set for all drivers to control:
+</I>&gt;<i> 
+</I>&gt;<i> - NAPI
+</I>
+Can you be more precise?
+
+&gt;<i> - bus-off behavior (to still have a possibility to choose automatic
+</I>&gt;<i> bus-off recovery)
+</I>&gt;<i> - Full CAN / Basic CAN mode?
+</I>
+I don't understand your point.
+
+&gt;<i> - ...
+</I>&gt;<i> 
+</I>&gt;<i> 3)
+</I>&gt;<i> There are CAN interface boards which allows to switch CAN transceiver
+</I>&gt;<i> between low-speed / high-speed . Shall be selection done over IOCTL or
+</I>&gt;<i> other module parameter?
+</I>&gt;<i> Are there any boards with termination resistance which may be switched
+</I>&gt;<i> on/off? If yes, the same question: ioctl or module parameters?
+</I>
+The issue has be raised in the past but we need to define the API for it
+first. I added it to the end of my to-do list.
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000872.html">[PATCH 0/10] SJA1000DEV using device interface and	further	fixes	and improvements
+</A></li>
+	<LI>Next message: <A HREF="000831.html">[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#855">[ date ]</a>
+              <a href="thread.html#855">[ thread ]</a>
+              <a href="subject.html#855">[ subject ]</a>
+              <a href="author.html#855">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

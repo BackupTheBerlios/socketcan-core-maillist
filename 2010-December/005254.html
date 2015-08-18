@@ -1,0 +1,188 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 1/2] can: add driver for Softing card
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%201/2%5D%20can%3A%20add%20driver%20for%20Softing%20card&In-Reply-To=%3C20101224091428.GA375%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005253.html">
+   <LINK REL="Next"  HREF="005255.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 1/2] can: add driver for Softing card</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%201/2%5D%20can%3A%20add%20driver%20for%20Softing%20card&In-Reply-To=%3C20101224091428.GA375%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH net-next-2.6 1/2] can: add driver for Softing card">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Fri Dec 24 10:14:31 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005253.html">[PATCH net-next-2.6 1/2] can: add driver for Softing card
+</A></li>
+        <LI>Next message: <A HREF="005255.html">[PATCH net-next-2.6 1/2] can: add driver for Softing card
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5254">[ date ]</a>
+              <a href="thread.html#5254">[ thread ]</a>
+              <a href="subject.html#5254">[ subject ]</a>
+              <a href="author.html#5254">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Marc,
+
+A lot of your remarks do make sense, without further comment.
+Some however, I'm not completely sure ...
+
+
+On Thu, Dec 23, 2010 at 03:25:07PM +0100, Marc Kleine-Budde wrote:
+&gt;<i> &gt;  
+</I>&gt;<i> &gt;  obj-y				+= usb/
+</I>&gt;<i> &gt; +obj-y				+= softing/
+</I>&gt;<i> 
+</I>&gt;<i> I think it will (at least marginally) speed up the Kernel build process
+</I>&gt;<i> only to dive into the softing subdir if Softing is enabled in Kconfig.
+</I>
+Due to the independant driver design, I should
+(CONFIG_CAN_SOFTING || CONFIG_CAN_SOFTINGCS)
+&gt;<i> 
+</I>&gt;<i> &gt; +	ktime_t ts_ref;
+</I>&gt;<i> &gt; +	ktime_t ts_overflow; /* timestamp overflow value, in ktime */
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	struct {
+</I>&gt;<i> &gt; +		/* indication of firmware status */
+</I>&gt;<i> &gt; +		int up;
+</I>&gt;<i> &gt; +		/* protection of the 'up' variable */
+</I>&gt;<i> &gt; +		struct mutex lock;
+</I>&gt;<i> &gt; +	} fw;
+</I>&gt;<i> 
+</I>&gt;<i> what about using an atomic_t for the firmware status?
+</I>for 'up', yes, but the lock stays. It protects the startup/shutdown
+sequence too, ie. only 1 process enters the shutdown sequence.
+&gt;<i> 
+</I>&gt;<i> &gt; +/* SOFTING DPRAM mappings */
+</I>&gt;<i> &gt; +struct softing_rx {
+</I>&gt;<i> &gt; +	u8  fifo[16][32];
+</I>&gt;<i> &gt; +	u8  dummy1;
+</I>&gt;<i> 
+</I>&gt;<i> Just curious, why did they put a padding byte here, that makes the rest
+</I>&gt;<i> unaligned?
+</I>I did not design the DPRAM layout. It's just the way it is ...
+I did prefer to use structs in virtual memory, and this is the consequence.
+&gt;<i> 
+</I>&gt;<i> &gt; +	u32 time;
+</I>&gt;<i> &gt; +	u32 time_wrap;
+</I>&gt;<i> &gt; +	u8  wr_start;
+</I>&gt;<i> &gt; +	u8  wr_end;
+</I>&gt;<i> &gt; +	u8  dummy10;
+</I>&gt;<i> &gt; +	u16 dummy12;
+</I>&gt;<i> &gt; +	u16 dummy12x;
+</I>&gt;<i> &gt; +	u16 dummy13;
+</I>&gt;<i> &gt; +	u16 reset_rcv_fifo;
+</I>&gt;<i> &gt; +	u8  dummy14;
+</I>&gt;<i> &gt; +	u8  reset_xmt_fifo;
+</I>&gt;<i> &gt; +	u8  read_fifo_levels;
+</I>&gt;<i> &gt; +	u16 rcv_fifo_level;
+</I>&gt;<i> &gt; +	u16 xmt_fifo_level;
+</I>&gt;<i> &gt; +} __attribute__((packed));
+</I>&gt;<i> 
+</I>&gt;<i> Can you renumber the dummy variables (there are some &quot;x&quot; in there), or
+</I>&gt;<i> does it correspond to some datasheet?
+</I>no, there's no datasheet. I started from code released by Softing.
+&gt;<i> 
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; diff --git a/drivers/net/can/softing/softing_fw.c b/drivers/net/can/softing/softing_fw.c
+</I>&gt;<i> &gt; +
+</I>[...]
+&gt;<i> &gt; +int softing_fct_cmd(struct softing *card, int cmd, int vector, const char *msg)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	int ret;
+</I>&gt;<i> &gt; +	unsigned long stamp;
+</I>&gt;<i> &gt; +	if (vector == RES_OK)
+</I>&gt;<i> &gt; +		vector = RES_NONE;
+</I>&gt;<i> &gt; +	card-&gt;dpram.fct-&gt;param[0] = cmd;
+</I>&gt;<i> 
+</I>&gt;<i> param[] is an array of s16 and cmd is an int.
+</I>Is this a problem? Is it usefull to define the function with s16 arguments then?
+&gt;<i> 
+</I>&gt;<i> hmmm..all stuff behind dpram is __iomem, isn't it? I think it should
+</I>&gt;<i> only be accessed with via the ioread/iowrite operators. Please check
+</I>I did an ioremap_nocache. Since it is unaligned, ioread/iowrite would render
+a lot of statements.
+&gt;<i> your code with sparse (compile with &quot;make C=2&quot;).
+</I>(?) 
+&gt;<i> 
+</I>&gt;<i> &gt; +		}
+</I>&gt;<i> &gt; +		if ((jiffies - stamp) &gt;= 1 * HZ)
+</I>&gt;<i> 
+</I>&gt;<i> That's not good. I don't remember the name, but there are some
+</I>&gt;<i> functions/defines to do this kind of things properly.
+</I>I'll do a search
+&gt;<i> 
+</I>&gt;<i> &gt; +			break;
+</I>&gt;<i> &gt; +		if (in_interrupt())
+</I>&gt;<i> &gt; +			/* go as fast as possible */
+</I>&gt;<i> 
+</I>&gt;<i> In the worst case this means you lock up the system for one second. Does
+</I>&gt;<i> the card issue an interrupt if it's finished? Another option is to write
+</I>&gt;<i> a threaded interrupt handler.
+</I>Yep, threaded interrupt handler is something to look at ... later.
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	int ret;
+</I>&gt;<i> &gt; +	unsigned long stamp;
+</I>&gt;<i> &gt; +	card-&gt;dpram.receipt[0] = RES_NONE;
+</I>&gt;<i> &gt; +	card-&gt;dpram.command[0] = command;
+</I>&gt;<i> &gt; +	/* be sure to flush this to the card */
+</I>&gt;<i> &gt; +	wmb();
+</I>&gt;<i> &gt; +	stamp = jiffies;
+</I>&gt;<i> &gt; +	/*wait for card */
+</I>&gt;<i> &gt; +	do {
+</I>&gt;<i> &gt; +		ret = card-&gt;dpram.receipt[0];
+</I>&gt;<i> &gt; +		/* don't have any cached variables */
+</I>&gt;<i> &gt; +		rmb();
+</I>&gt;<i> &gt; +		if (ret == RES_OK)
+</I>&gt;<i> &gt; +			return 0;
+</I>&gt;<i> &gt; +		if ((jiffies - stamp) &gt;= (3 * HZ))
+</I>&gt;<i> &gt; +			break;
+</I>&gt;<i> &gt; +		schedule();
+</I>&gt;<i> 
+</I>&gt;<i> same applies here, too. Although this command seems not to be called
+</I>&gt;<i> from interrupt context, what about using a msleep() instead of a schedule?
+</I>Not calling schedule was really annoying.
+&gt;<i> 
+</I>
+Thanks for your review,
+
+Kurt
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005253.html">[PATCH net-next-2.6 1/2] can: add driver for Softing card
+</A></li>
+	<LI>Next message: <A HREF="005255.html">[PATCH net-next-2.6 1/2] can: add driver for Softing card
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5254">[ date ]</a>
+              <a href="thread.html#5254">[ thread ]</a>
+              <a href="subject.html#5254">[ subject ]</a>
+              <a href="author.html#5254">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

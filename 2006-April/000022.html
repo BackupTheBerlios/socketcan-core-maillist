@@ -1,0 +1,136 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> AW: [Socketcan-core] Timestamps
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20AW%3A%20%5BSocketcan-core%5D%20Timestamps&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855D26%40vwagwox00010.vw.vwg%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000021.html">
+   <LINK REL="Next"  HREF="000023.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>AW: [Socketcan-core] Timestamps</H1>
+    <B>Hartkopp, Oliver (K-GEFE/E)</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20AW%3A%20%5BSocketcan-core%5D%20Timestamps&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855D26%40vwagwox00010.vw.vwg%3E"
+       TITLE="AW: [Socketcan-core] Timestamps">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Mon Apr 24 12:29:06 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000021.html">AW: [Socketcan-core] Timestamps
+</A></li>
+        <LI>Next message: <A HREF="000023.html">[Socketcan-core] Re: Timestamps
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22">[ date ]</a>
+              <a href="thread.html#22">[ thread ]</a>
+              <a href="subject.html#22">[ subject ]</a>
+              <a href="author.html#22">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Jan,
+
+i used the weekend to think on the current remarks on timestamps and
+error-handling (which will i comment in the Error Handling thread).
+
+1. resolution / timestamp-conversion-hell / low-performance-architectures
+
+Let's start with CAN-basics: 
+If you have a 1 MBit CAN each bit lasts about 1 usec. The shortest CAN-Frame
+(11 bit ID, DLC=0) is 47 bits which is 47 usecs (+ frame intersection).
+Additionally the CAN-bus is CSMA/CA with no real-time capabilities, so it's
+really hard for me to understand, why anyone would need nano seconds?!?
+Maybe the hero-engineer from Motorola used the nanosec resolution to debug
+his chip-design but this timestamp resolution is definitely obsolete for CAN
+users.
+
+If you would like to use the timestamps from the mscan-controller, it would
+be the correct way to devide the nanosecs by 1000 and add a (on-time
+calculated) offset to the system clock and put his value directly into the
+skb. That's really fast.
+
+2. &quot;Two syscalls instead of one *pre-frame*&quot;
+
+As i wrote before there is no need to have two systemcalls, e.g. when you
+use recvmsg() to get the frames:
+
+(..)
+    on = 1;
+    setsockopt(s, SOL_SOCKET, SO_TIMESTAMP, &amp;on, sizeof(on));
+(..)
+    iov.iov_base = &frame;
+    iov.iov_len  = sizeof(struct can_frame);
+(..)
+    nbytes = recvmsg(s, &amp;msg, 0); /* error checking left out */
+    cmsg = CMSG_FIRSTHDR(&amp;msg); /* enabled only one ctrl-msg */
+    stamp = *(struct timeval*)CMSG_DATA(cmsg);
+
+    if (stamp.tv_sec)
+      printf(&quot;%d.%06d &quot;, stamp.tv_sec, stamp.tv_usec);
+    if (frame.can_id &amp; CAN_EFF_FLAG)
+      printf(&quot;%8X  &quot;, frame.can_id &amp; CAN_EFF_MASK);
+    else
+      printf(&quot;%3X  &quot;, frame.can_id &amp; CAN_SFF_MASK);
+(..)
+
+So if you only enable one control-message, it's easy like this. It does
+everything you want and has only ONE syscall receiving a can_frame.
+
+3. Conclusion
+
+&gt;<i> Yes, but we should not start sacrificing efficiency for the sake of
+</I>&gt;<i> style even before being asked for. I guess it's fairly easy to argue -
+</I>&gt;<i> also on LKML - that one syscall is better than two if you need them
+</I>&gt;<i> rather frequently. At least we should offer an alternative interface
+</I>&gt;<i> aside the standard networking way for time-critical applications.
+</I>
+As you go through the source written by me, you will see, that my focus is
+mostly on execution efficiency. But i can't see a real justification for
+your kernel technique bypass solutions you want to be regarded here. This
+solution is as fast as yours and it is like any other networking solution in
+the Linux Kernel. Even in the Userspace. And i can't see any 'even more
+time-critical applications' - do you?
+
+The motivation to create the PF_CAN was indeed to break up with all the
+useless and unstructured techniques that have been historically implemented
+in the world of the 8-bit-controller-hackers (especially in the automotive
+IT you can find really ugly implementations done by autodidactic engineers).
+
+So i really do not want to reinvent the wheel, when bringing all the
+necessary CAN-functionality to the user. Learn from the Standards is the
+winnig method! Especially when it is a fast as other solutions ...
+
+Greetings,
+
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000021.html">AW: [Socketcan-core] Timestamps
+</A></li>
+	<LI>Next message: <A HREF="000023.html">[Socketcan-core] Re: Timestamps
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22">[ date ]</a>
+              <a href="thread.html#22">[ thread ]</a>
+              <a href="subject.html#22">[ subject ]</a>
+              <a href="author.html#22">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

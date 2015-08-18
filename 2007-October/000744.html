@@ -1,0 +1,184 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC] Specific CAN bit rate settings in HW-independent way
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20Specific%20CAN%20bit%20rate%20settings%20in%20HW-independent%20way&In-Reply-To=%3C20071009082117.GX23573%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000749.html">
+   <LINK REL="Next"  HREF="000748.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC] Specific CAN bit rate settings in HW-independent way</H1>
+    <B>Robert Schwebel</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20Specific%20CAN%20bit%20rate%20settings%20in%20HW-independent%20way&In-Reply-To=%3C20071009082117.GX23573%40pengutronix.de%3E"
+       TITLE="[RFC] Specific CAN bit rate settings in HW-independent way">r.schwebel at pengutronix.de
+       </A><BR>
+    <I>Tue Oct  9 10:21:17 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000749.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+        <LI>Next message: <A HREF="000748.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#744">[ date ]</a>
+              <a href="thread.html#744">[ thread ]</a>
+              <a href="subject.html#744">[ subject ]</a>
+              <a href="author.html#744">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tue, Oct 09, 2007 at 08:59:29AM +0200, Hartkopp, Oliver (K-GEFE/E) wrote:
+&gt;<i> SIOCSCANBAUDRATE to set a baudrate (like 100000)
+</I>
+Which should be the standard case, seen from an application point of
+view. We should nevertheless add SIOCSCANBITRATE which does the same, in
+order to follow the CAN nomenclature. The old constant can stay there
+for compatiblity. Dto. for SIOCGCANBAUDRATE.
+
+&gt;<i> SIOCSCANCUSTOMBITTIME to set a BTR value like 0x4914
+</I>
+The &quot;BTR&quot; mechanics is highly hardware dependend and assumes an SJA1000
+like register set (2 registers a 8 bit).
+
+This ioctl also allows to set a standard parameter set like:
+
+struct can_bittime_std {
+        __u32 brp;        /* baud rate prescaler */
+        __u8  prop_seg;   /* from 1 to 8 */
+        __u8  phase_seg1; /* from 1 to 8 */
+        __u8  phase_seg2; /* from 1 to 8 */
+        __u8  sjw:7;      /* from 1 to 4 */
+        __u8  sam:1;      /* 1 - enable triple sampling */
+};
+
+This is almost good - but, as Vladislav correctly mentioned, BRP makes
+it dependend on the hardware clock, which is bad. So the idea here is to
+specify the &quot;Time Quantum&quot;, not the prescaler.
+
+&gt;<i> And the idea from Juergen is to add SIOCSCANDEDBITTIME where you can add
+</I>&gt;<i> several {bitrate / calucation constants} items to a list, which is
+</I>&gt;<i> preferably used.
+</I>
+Yup.
+
+&gt;<i> Looking onto these three possibilities i would just get confused, as i
+</I>&gt;<i> expect SIOCSCANBAUDRATE to be the standard (for dummies) and
+</I>&gt;<i> SIOCSCANCUSTOMBITTIME to be the direct access (for professionals testing
+</I>&gt;<i> curious things).
+</I>
+Not only. There are requirements in certain crude industrial scenarios
+which need a randomly invented parameter set to be run on a controller,
+but in a hardware independed way. You'll have to deal with the &quot;it
+worked on bare metal systems, why does it not work on Linux&quot; argument.
+
+Juergen's proposal does the following:
+
+1) From an application point of view, everything stays the same. Use
+   SIOCGCANBAUDRATE to specify the bitrate.
+
+2) The real realization is a configuration issue. It should not be hard
+   coded into the application, so we propose to let the system
+   administrator configure it.
+
+   Consider the same application to run on different hardware; in one
+   case the algorithm may be good enough and no manual tuing is necessary;
+   in another case parameters have to be fine tuned. This should not
+   make it necessary to recompile the application, just because network
+   settings have changed.
+
+&gt;<i> As Wolfgang stated correctly SIOCSCANBAUDRATE should be fixed to be a
+</I>&gt;<i> reliable configuration interface in the common case.
+</I>
+We won't change this common case.
+
+&gt;<i> From the code from Pavel i got the idea, to specify that every CAN
+</I>&gt;<i> driver _has to bring his own calculation constants_, e.g.:
+</I>&gt;<i>
+</I>&gt;<i> &gt; can_calc_const_t can_calc_const_2638 = {
+</I>&gt;<i> &gt; 	.sync = 1,
+</I>&gt;<i> &gt; 	.tseg1_min = 4,
+</I>&gt;<i> &gt; 	.tseg1_max = 16,
+</I>&gt;<i> &gt; 	.tseg2_min = 2,
+</I>&gt;<i> &gt; 	.tseg2_max = 8,
+</I>&gt;<i> &gt; 	.brp_min = 2,
+</I>&gt;<i> &gt; 	.brp_max = 128,
+</I>&gt;<i> &gt; 	.brp_inc = 2,
+</I>&gt;<i> &gt; 	.fix_div = 1
+</I>&gt;<i> &gt; };
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i>
+</I>&gt;<i> or
+</I>&gt;<i>
+</I>&gt;<i> &gt; can_calc_const_t can_calc_const_sja1000 = {
+</I>&gt;<i> &gt; 	.sync = 1,
+</I>&gt;<i> &gt; 	.tseg1_min = 1,
+</I>&gt;<i> &gt; 	.tseg1_max = 16,
+</I>&gt;<i> &gt; 	.tseg2_min = 1,
+</I>&gt;<i> &gt; 	.tseg2_max = 8,
+</I>&gt;<i> &gt; 	.brp_min = 1,
+</I>&gt;<i> &gt; 	.brp_max = 64,
+</I>&gt;<i> &gt; 	.brp_inc = 1,
+</I>&gt;<i> &gt; 	.fix_div = 2
+</I>&gt;<i> &gt; };
+</I>&gt;<i> &gt;
+</I>&gt;<i>
+</I>&gt;<i> So that when the driver has to calculate SIOCSCANBAUDRATE it invokes the
+</I>&gt;<i> calculation function like suggested by Pavel:
+</I>&gt;<i> my_new_btr = can_auto_baud(&amp;brp, &amp;tseg1, &amp;tseg2, baud_rate, sampl_pt,
+</I>&gt;<i> ref_clk, calc_const);
+</I>&gt;<i>
+</I>&gt;<i> This also does not change the the ioctl() interface and should lead to
+</I>&gt;<i> an heavily improved SIOCSCANBAUDRATE.
+</I>&gt;<i>
+</I>&gt;<i> Would this solve the general problem or did i miss anything here?
+</I>
+The idea in general is good. The best solution would be a
+guessing-algorithm which always determines the &quot;best&quot; values.
+
+Our fear is that there will always be cases where an algorithm, how good
+it ever may be, does the wrong thing. We also fear that it isn't only an
+issue of &quot;fix the algorithm until it works correctly&quot;, but there may be
+no general definition of &quot;correctly&quot;.
+
+In that case we'd like to say something like &quot;the standard algorighm is
+default, but in this case use *exactly* these values&quot;. And the
+abstraction for specifying the values is outlined above, taking the brp
+vs. tq issue into account.
+
+Robert
+-- 
+Pengutronix - Linux Solutions for Science and Industry
+Entwicklungszentrum Nord     <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000749.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+	<LI>Next message: <A HREF="000748.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#744">[ date ]</a>
+              <a href="thread.html#744">[ thread ]</a>
+              <a href="subject.html#744">[ subject ]</a>
+              <a href="author.html#744">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

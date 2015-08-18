@@ -1,0 +1,152 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 0/10] SJA1000DEV using device interface and further	fixes and improvements
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/10%5D%20SJA1000DEV%20using%20device%20interface%20and%20further%0A%09fixes%20and%20improvements&In-Reply-To=%3C20071122150658.6fc1931b%40dilbert.local%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000853.html">
+   <LINK REL="Next"  HREF="000859.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 0/10] SJA1000DEV using device interface and further	fixes and improvements</H1>
+    <B>Hans-J&#252;rgen Koch</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/10%5D%20SJA1000DEV%20using%20device%20interface%20and%20further%0A%09fixes%20and%20improvements&In-Reply-To=%3C20071122150658.6fc1931b%40dilbert.local%3E"
+       TITLE="[PATCH 0/10] SJA1000DEV using device interface and further	fixes and improvements">hjk at linutronix.de
+       </A><BR>
+    <I>Thu Nov 22 15:06:58 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000853.html">[PATCH 0/10] SJA1000DEV using device interface and further	fixes and improvements
+</A></li>
+        <LI>Next message: <A HREF="000859.html">[PATCH 0/10] SJA1000DEV using device interface and further	fixes	and improvements
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#854">[ date ]</a>
+              <a href="thread.html#854">[ thread ]</a>
+              <a href="subject.html#854">[ subject ]</a>
+              <a href="author.html#854">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Am Thu, 22 Nov 2007 13:13:32 +0100
+schrieb Vladislav Gribov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A>&gt;:
+
+&gt;<i> On Thu, 2007-11-22 at 12:05 +0100, Wolfgang Grandegger wrote:
+</I>&gt;<i> 
+</I>&gt;<i> &lt;skipped&gt;
+</I>&gt;<i> 
+</I>&gt;<i> &gt; How do you recover from bus-off. I think restart is a generic
+</I>&gt;<i> &gt; feature. Automatic restart may be optional though. And all of the
+</I>&gt;<i> &gt; above parameters could be handled in common CAN device interface
+</I>&gt;<i> &gt; code like the IOCTL requests. The callback functions are already
+</I>&gt;<i> &gt; there. The individual driver can define access methods like
+</I>&gt;<i> &gt; do_get_state(), do _set_bittime(). We may need more, though.
+</I>&gt;<i> 
+</I>&gt;<i> 1)
+</I>&gt;<i> The bus-off and Tx timeout handling are issues which I will appreciate
+</I>&gt;<i> to discuss.
+</I>&gt;<i> 
+</I>&gt;<i> The automatic bus-off recovery done by CAN driver (like done by actual
+</I>&gt;<i> mscan or SJA1000) is not necessary what an application expect. 
+</I>
+I fully agree. Drivers should not try to guess what a user might want.
+After all, there are good reasons for automatic bus-off.
+
+&gt;<i> In case
+</I>&gt;<i> of bus-off the driver shall stop the CAN and inform the user space.
+</I>
+It should behave like Ethernet when you pull the cable. You notice it
+the next time you try to access the socket.
+
+&gt;<i> The application may decide if to restart the CAN (over ioctl). There
+</I>&gt;<i> shall be also a possibility to purge Tx queue before restarting the
+</I>&gt;<i> CAN.
+</I>
+It might be cleaner to simply require the application to close and
+reopen the socket. You have no way of knowing which messages are sent
+and which are lost. The at91_can driver, for example, buffers up to 8
+messages in hardware and discards them when reinitializing.
+
+&gt;<i> 
+</I>&gt;<i> The Tx timeouts are normal if CAN controller do not get ACK (eg alone
+</I>&gt;<i> on the bus). The CAN controller is Tx pending and is is not necessary
+</I>&gt;<i> to retransmit the same message on each tx timeout - it will be send
+</I>&gt;<i> as soon as CAN cable is connected.
+</I>&gt;<i> 
+</I>&gt;<i> I think the idea to make a reference CAN driver implementation is
+</I>&gt;<i> nice. The SJA1000 is a proper candidate for this aim.
+</I>&gt;<i> 
+</I>&gt;<i> Such a reference implementation may be used as template for further
+</I>&gt;<i> drivers. We shall intend to provide for all driver the same properties
+</I>&gt;<i> and behavior in standard situations:
+</I>&gt;<i> 
+</I>&gt;<i> - bus-off
+</I>&gt;<i> - CAN overrun
+</I>&gt;<i> - Tx timeout
+</I>&gt;<i> - setting bitrate
+</I>&gt;<i> - automatic bitrate detection / Rx probing
+</I>&gt;<i> - CAN statistics
+</I>&gt;<i> - ...
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 2)
+</I>&gt;<i> Another issue are module parameters. I think it is nice to provide
+</I>&gt;<i> some common parameter set for all drivers to control:
+</I>&gt;<i> 
+</I>&gt;<i> - NAPI
+</I>&gt;<i> - bus-off behavior (to still have a possibility to choose automatic
+</I>&gt;<i> bus-off recovery)
+</I>&gt;<i> - Full CAN / Basic CAN mode?
+</I>&gt;<i> - ...
+</I>&gt;<i> 
+</I>&gt;<i> 3)
+</I>&gt;<i> There are CAN interface boards which allows to switch CAN transceiver
+</I>&gt;<i> between low-speed / high-speed . Shall be selection done over IOCTL or
+</I>&gt;<i> other module parameter?
+</I>
+I'd say, through sysfs. We shouldn't try to introduce new ioctls.
+
+&gt;<i> Are there any boards with termination resistance which may be switched
+</I>&gt;<i> on/off? If yes, the same question: ioctl or module parameters?
+</I>
+same answer: sysfs.
+
+And there are also boards that can enable/disable the transceiver. In
+at91_can, I use functions that can be provided by the board support
+code for that purpose. We might as well define similar functions for
+low-speed/high-speed and termination on/off. If some of these need to
+be accessible from userspace, it should be a sysfs attribute.
+
+Thanks,
+Hans
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000853.html">[PATCH 0/10] SJA1000DEV using device interface and further	fixes and improvements
+</A></li>
+	<LI>Next message: <A HREF="000859.html">[PATCH 0/10] SJA1000DEV using device interface and further	fixes	and improvements
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#854">[ date ]</a>
+              <a href="thread.html#854">[ thread ]</a>
+              <a href="subject.html#854">[ subject ]</a>
+              <a href="author.html#854">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

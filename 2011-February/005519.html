@@ -1,0 +1,2491 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 09/13] can: pruss CAN driver.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%2009/13%5D%20can%3A%20pruss%20CAN%20driver.&In-Reply-To=%3C1297435892-28278-10-git-send-email-subhasish%40mistralsolutions.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005530.html">
+   <LINK REL="Next"  HREF="005520.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 09/13] can: pruss CAN driver.</H1>
+    <B>Subhasish Ghosh</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%2009/13%5D%20can%3A%20pruss%20CAN%20driver.&In-Reply-To=%3C1297435892-28278-10-git-send-email-subhasish%40mistralsolutions.com%3E"
+       TITLE="[PATCH v2 09/13] can: pruss CAN driver.">subhasish at mistralsolutions.com
+       </A><BR>
+    <I>Fri Feb 11 15:51:28 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005530.html">[PATCH net-next-2.6 v7 1/1] can: c_can: Added support for	Bosch C_CAN controller
+</A></li>
+        <LI>Next message: <A HREF="005520.html">[PATCH v2 09/13] can: pruss CAN driver.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5519">[ date ]</a>
+              <a href="thread.html#5519">[ thread ]</a>
+              <a href="subject.html#5519">[ subject ]</a>
+              <a href="author.html#5519">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch adds support for the CAN device emulated on PRUSS.
+
+Signed-off-by: Subhasish Ghosh &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">subhasish at mistralsolutions.com</A>&gt;
+---
+ drivers/net/can/Kconfig                     |    1 +
+ drivers/net/can/Makefile                    |    1 +
+ drivers/net/can/da8xx_pruss/Kconfig         |   73 ++
+ drivers/net/can/da8xx_pruss/Makefile        |    7 +
+ drivers/net/can/da8xx_pruss/pruss_can.c     |  758 +++++++++++++++++
+ drivers/net/can/da8xx_pruss/pruss_can_api.c | 1227 +++++++++++++++++++++++++++
+ drivers/net/can/da8xx_pruss/pruss_can_api.h |  290 +++++++
+ 7 files changed, 2357 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/net/can/da8xx_pruss/Kconfig
+ create mode 100644 drivers/net/can/da8xx_pruss/Makefile
+ create mode 100644 drivers/net/can/da8xx_pruss/pruss_can.c
+ create mode 100644 drivers/net/can/da8xx_pruss/pruss_can_api.c
+ create mode 100644 drivers/net/can/da8xx_pruss/pruss_can_api.h
+
+diff --git a/drivers/net/can/Kconfig b/drivers/net/can/Kconfig
+index d5a9db6..ae8f0f9 100644
+--- a/drivers/net/can/Kconfig
++++ b/drivers/net/can/Kconfig
+@@ -112,6 +112,7 @@ config PCH_CAN
+ 	  This driver can access CAN bus.
+ 
+ source &quot;drivers/net/can/mscan/Kconfig&quot;
++source &quot;drivers/net/can/da8xx_pruss/Kconfig&quot;
+ 
+ source &quot;drivers/net/can/sja1000/Kconfig&quot;
+ 
+diff --git a/drivers/net/can/Makefile b/drivers/net/can/Makefile
+index 07ca159..849cdbf 100644
+--- a/drivers/net/can/Makefile
++++ b/drivers/net/can/Makefile
+@@ -14,6 +14,7 @@ obj-$(CONFIG_CAN_SJA1000)	+= sja1000/
+ obj-$(CONFIG_CAN_MSCAN)		+= mscan/
+ obj-$(CONFIG_CAN_AT91)		+= at91_can.o
+ obj-$(CONFIG_CAN_TI_HECC)	+= ti_hecc.o
++obj-$(CONFIG_CAN_TI_DA8XX_PRU)	+= da8xx_pruss/
+ obj-$(CONFIG_CAN_MCP251X)	+= mcp251x.o
+ obj-$(CONFIG_CAN_BFIN)		+= bfin_can.o
+ obj-$(CONFIG_CAN_JANZ_ICAN3)	+= janz-ican3.o
+diff --git a/drivers/net/can/da8xx_pruss/Kconfig b/drivers/net/can/da8xx_pruss/Kconfig
+new file mode 100644
+index 0000000..8b68f68
+--- /dev/null
++++ b/drivers/net/can/da8xx_pruss/Kconfig
+@@ -0,0 +1,73 @@
++#
++# CAN Lite Kernel Configuration
++#
++config CAN_TI_DA8XX_PRU
++	depends on CAN_DEV &amp;&amp; ARCH_DAVINCI &amp;&amp; ARCH_DAVINCI_DA850
++	tristate &quot;PRU based CAN emulation for DA8XX&quot;
++	---help---
++	Enable this to emulate a CAN controller on the PRU of DA8XX.
++	If not sure, mark N
++
++config DA8XX_PRU_CANID_MBX0
++	hex &quot;CANID for mailbox 0&quot;
++	depends on CAN_TI_DA8XX_PRU
++	default &quot;0x123&quot;
++	---help---
++	Enter the CANID for mailbox 0
++	Default value is set to 0x123, change this as required.
++
++config DA8XX_PRU_CANID_MBX1
++	hex &quot;CANID for mailbox 1&quot;
++	depends on CAN_TI_DA8XX_PRU
++	default &quot;0x123&quot;
++	 ---help---
++	Enter the CANID for mailbox 1
++	Default value is set to 0x123, change this as required.
++
++config DA8XX_PRU_CANID_MBX2
++	hex &quot;CANID for mailbox 2&quot;
++	depends on CAN_TI_DA8XX_PRU
++	default &quot;0x123&quot;
++	---help---
++	Enter the CANID for mailbox 2
++	Default value is set to 0x123, change this as required.
++
++config DA8XX_PRU_CANID_MBX3
++	hex &quot;CANID for mailbox 3&quot;
++	depends on CAN_TI_DA8XX_PRU
++	default &quot;0x123&quot;
++	---help---
++	Enter the CANID for mailbox 3
++	Default value is set to 0x123, change this as required.
++
++config DA8XX_PRU_CANID_MBX4
++	hex &quot;CANID for mailbox 4&quot;
++	depends on CAN_TI_DA8XX_PRU
++	default &quot;0x123&quot;
++	---help---
++	Enter the CANID for mailbox 4
++	Default value is set to 0x123, change this as required.
++
++config DA8XX_PRU_CANID_MBX5
++	hex &quot;CANID for mailbox 5&quot;
++	depends on CAN_TI_DA8XX_PRU
++	default &quot;0x123&quot;
++	---help---
++	Enter the CANID for mailbox 5
++	Default value is set to 0x123, change this as required.
++
++config DA8XX_PRU_CANID_MBX6
++	hex &quot;CANID for mailbox 6&quot;
++	depends on CAN_TI_DA8XX_PRU
++	default &quot;0x123&quot;
++	---help---
++	Enter the CANID for mailbox 6
++	Default value is set to 0x123, change this as required.
++
++config DA8XX_PRU_CANID_MBX7
++	hex &quot;CANID for mailbox 7&quot;
++	depends on CAN_TI_DA8XX_PRU
++	default &quot;0x123&quot;
++	---help---
++	Enter the CANID for mailbox 7
++	Default value is set to 0x123, change this as required.
+diff --git a/drivers/net/can/da8xx_pruss/Makefile b/drivers/net/can/da8xx_pruss/Makefile
+new file mode 100644
+index 0000000..48f3055
+--- /dev/null
++++ b/drivers/net/can/da8xx_pruss/Makefile
+@@ -0,0 +1,7 @@
++#
++# Makefile for CAN Lite emulation
++#
++can_emu-objs :=   pruss_can.o \
++                  pruss_can_api.o
++
++obj-$(CONFIG_CAN_TI_DA8XX_PRU)    += can_emu.o
+diff --git a/drivers/net/can/da8xx_pruss/pruss_can.c b/drivers/net/can/da8xx_pruss/pruss_can.c
+new file mode 100644
+index 0000000..1b3afde
+--- /dev/null
++++ b/drivers/net/can/da8xx_pruss/pruss_can.c
+@@ -0,0 +1,758 @@
++/*
++ *  TI DA8XX PRU CAN Emulation device driver
++ *  Author: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">subhasish at mistralsolutions.com</A>
++ *
++ *  This driver supports TI's PRU CAN Emulation and the
++ *  specs for the same is available at &lt;<A HREF="http://www.ti.com">http://www.ti.com</A>&gt;
++ *
++ *  Copyright (C) 2009 Texas Instruments Incorporated - <A HREF="http://www.ti.com/">http://www.ti.com/</A>
++ *
++ *  This program is free software; you can redistribute it and/or
++ *  modify it under the terms of the GNU General Public License as
++ *  published by the Free Software Foundation version 2.
++ *
++ *  This program is distributed as is WITHOUT ANY WARRANTY of any
++ *  kind, whether express or implied; without even the implied warranty
++ *  of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU General Public License for more details.
++ */
++
++#include &lt;linux/module.h&gt;
++#include &lt;linux/init.h&gt;
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/bitops.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/errno.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/skbuff.h&gt;
++#include &lt;linux/platform_device.h&gt;
++#include &lt;linux/firmware.h&gt;
++#include &lt;linux/clk.h&gt;
++#include &lt;linux/types.h&gt;
++
++#include &lt;linux/can.h&gt;
++#include &lt;linux/can/dev.h&gt;
++#include &lt;linux/can/error.h&gt;
++#include &lt;mach/da8xx.h&gt;
++#include &quot;pruss_can_api.h&quot;
++
++#define DRV_NAME &quot;da8xx_pruss_can&quot;
++#define DRV_DESC &quot;TI PRU CAN Controller Driver v0.1&quot;
++#define PRU_CAN_START		1
++#define PRU_CAN_STOP		0
++#define MB_MIN			0
++#define MB_MAX			7
++
++#define PRU_CANMID_IDE			BIT(29)	/* Extended frame format */
++
++#define PRU_CAN_ISR_BIT_CCI		BIT(15)
++#define PRU_CAN_ISR_BIT_ESI		BIT(14)
++#define PRU_CAN_ISR_BIT_SRDI		BIT(13)
++#define PRU_CAN_ISR_BIT_RRI		BIT(8)
++
++#define PRU_CAN_MBXSR_BIT_STATE		BIT(7)
++#define PRU_CAN_MBXSR_BIT_TC		BIT(6)
++#define PRU_CAN_MBXSR_BIT_ERR		BIT(5)
++#define PRU_CAN_MBXSR_BIT_OF		BIT(0)
++
++#define PRU_CAN_GSR_BIT_TXM		BIT(7)
++#define PRU_CAN_GSR_BIT_RXM		BIT(6)
++#define PRU_CAN_GSR_BIT_CM		BIT(5)
++#define PRU_CAN_GSR_BIT_EPM		BIT(4)
++#define PRU_CAN_GSR_BIT_BFM		BIT(3)
++#define RTR_MBX_NO			8
++#define MAX_INIT_RETRIES		20
++#define L138_PRU_ARM_FREQ		312000
++#define DFLT_PRU_FREQ			156000000
++#define DFLT_PRU_BITRATE		125000
++
++#define CONFIG_DA8XX_PRU_CANID_MBX0	0x123
++#define CONFIG_DA8XX_PRU_CANID_MBX1	0x123
++#define CONFIG_DA8XX_PRU_CANID_MBX2	0x123
++#define CONFIG_DA8XX_PRU_CANID_MBX3	0x123
++#define CONFIG_DA8XX_PRU_CANID_MBX4	0x123
++#define CONFIG_DA8XX_PRU_CANID_MBX5	0x123
++#define CONFIG_DA8XX_PRU_CANID_MBX6	0x123
++#define CONFIG_DA8XX_PRU_CANID_MBX7	0x123
++
++#ifdef __CAN_DEBUG
++#define __can_debug(fmt, args...) printk(KERN_DEBUG &quot;can_debug: &quot; fmt, ## args)
++#else
++#define __can_debug(fmt, args...)
++#endif
++#define __can_err(fmt, args...) printk(KERN_ERR &quot;can_err: &quot; fmt, ## args)
++
++/*
++ * omapl_pru can private data
++ */
++struct omapl_pru_can_priv {
++	struct can_priv can;
++	struct workqueue_struct *pru_can_wQ;
++	struct work_struct rx_work;
++	struct net_device *ndev;
++	struct device *dev; /* pdev-&gt;dev */
++	struct clk *clk_timer;
++	u32 timer_freq;
++	can_emu_app_hndl can_tx_hndl;
++	can_emu_app_hndl can_rx_hndl;
++	const struct firmware *fw_rx;
++	const struct firmware *fw_tx;
++	spinlock_t mbox_lock;
++	u32 trx_irq;
++	u32 tx_head;
++	u32 tx_tail;
++	u32 tx_next;
++	u32 rx_next;
++};
++
++static int omapl_pru_can_get_state(const struct net_device *ndev,
++				   enum can_state *state)
++{
++	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
++	*state = priv-&gt;can.state;
++	return 0;
++}
++
++static int omapl_pru_can_set_bittiming(struct net_device *ndev)
++{
++	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
++	struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
++	long bit_error = 0;
++
++	if (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES) {
++		dev_warn(priv-&gt;dev, &quot;WARN: Triple&quot;
++			 &quot;sampling not set due to h/w limitations&quot;);
++	}
++	if (pru_can_calc_timing(priv-&gt;dev, priv-&gt;can.clock.freq,
++				bt-&gt;bitrate) != 0)
++		return -EINVAL;
++	bit_error =
++	    (((priv-&gt;timer_freq / (priv-&gt;timer_freq / bt-&gt;bitrate)) -
++	      bt-&gt;bitrate) * 1000) / bt-&gt;bitrate;
++	if (bit_error) {
++		bit_error =
++		    (((priv-&gt;timer_freq / (priv-&gt;timer_freq / bt-&gt;bitrate)) -
++		      bt-&gt;bitrate) * 1000000) / bt-&gt;bitrate;
++		printk(KERN_INFO &quot;\nBitrate error %ld.%ld%%\n&quot;,
++			bit_error / 10000, bit_error % 1000);
++	} else
++		printk(KERN_INFO &quot;\nBitrate error 0.0%%\n&quot;);
++
++	return 0;
++}
++
++static void omapl_pru_can_stop(struct net_device *ndev)
++{
++	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
++	u16 int_mask = 0;
++
++	pru_can_mask_ints(priv-&gt;dev, int_mask);	/* mask all ints */
++	pru_can_start_abort_tx(priv-&gt;dev, PRU_CAN_STOP);
++	priv-&gt;can.state = CAN_STATE_STOPPED;
++}
++
++/*
++ * This is to just set the can state to ERROR_ACTIVE
++ *	ip link set canX up type can bitrate 125000
++ */
++static void omapl_pru_can_start(struct net_device *ndev)
++{
++	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
++	u16 int_mask = 0xFFFF;
++
++	if (priv-&gt;can.state != CAN_STATE_STOPPED)
++		omapl_pru_can_stop(ndev);
++
++	pru_can_mask_ints(priv-&gt;dev, int_mask);	/* unmask all ints */
++
++	pru_can_get_global_status(priv-&gt;dev, &amp;priv-&gt;can_tx_hndl);
++	pru_can_get_global_status(priv-&gt;dev, &amp;priv-&gt;can_rx_hndl);
++
++	if (PRU_CAN_GSR_BIT_EPM &amp; priv-&gt;can_tx_hndl.u32globalstatus)
++		priv-&gt;can.state = CAN_STATE_ERROR_PASSIVE;
++	else if (PRU_CAN_GSR_BIT_BFM &amp; priv-&gt;can_tx_hndl.u32globalstatus)
++		priv-&gt;can.state = CAN_STATE_BUS_OFF;
++	else
++		priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
++}
++
++static int omapl_pru_can_set_mode(struct net_device *ndev, enum can_mode mode)
++{
++	int ret = 0;
++
++	switch (mode) {
++	case CAN_MODE_START:
++		omapl_pru_can_start(ndev);
++		if (netif_queue_stopped(ndev))
++			netif_wake_queue(ndev);
++		break;
++	case CAN_MODE_STOP:
++		omapl_pru_can_stop(ndev);
++		if (!netif_queue_stopped(ndev))
++			netif_stop_queue(ndev);
++		break;
++	default:
++		ret = -EOPNOTSUPP;
++		break;
++	}
++	return ret;
++}
++
++static netdev_tx_t omapl_pru_can_start_xmit(struct sk_buff *skb,
++					    struct net_device *ndev)
++{
++	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
++	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
++	int count;
++	u8 *data = cf-&gt;data;
++	u8 dlc = cf-&gt;can_dlc;
++	u8 *ptr8data = NULL;
++
++	netif_stop_queue(ndev);
++	if (cf-&gt;can_id &amp; CAN_EFF_FLAG)	/* Extended frame format */
++		*((u32 *) &amp;priv-&gt;can_tx_hndl.strcanmailbox) =
++		    (cf-&gt;can_id &amp; CAN_EFF_MASK) | PRU_CANMID_IDE;
++	else			/* Standard frame format */
++		*((u32 *) &amp;priv-&gt;can_tx_hndl.strcanmailbox) =
++		    (cf-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 18;
++
++	if (cf-&gt;can_id &amp; CAN_RTR_FLAG)	/* Remote transmission request */
++		*((u32 *) &amp;priv-&gt;can_tx_hndl.strcanmailbox) |= CAN_RTR_FLAG;
++
++	ptr8data = &amp;priv-&gt;can_tx_hndl.strcanmailbox.u8data7 + (dlc - 1);
++	for (count = 0; count &lt; (u8) dlc; count++) {
++		*ptr8data-- = *data++;
++	}
++	*((u32 *) &amp;priv-&gt;can_tx_hndl.strcanmailbox.u16datalength) = (u32) dlc;
++/*
++ * search for the next available mbx
++ * if the next mbx is busy, then try the next + 1
++ * do this until the head is reached.
++ * if still unable to tx, stop accepting any packets
++ * if able to tx and the head is reached, then reset next to tail, i.e mbx0
++ * if head is not reached, then just point to the next mbx
++ */
++	for (; priv-&gt;tx_next &lt;= priv-&gt;tx_head; priv-&gt;tx_next++) {
++		priv-&gt;can_tx_hndl.ecanmailboxnumber =
++		    (can_mailbox_number) priv-&gt;tx_next;
++		if (-1 == pru_can_write_data_to_mailbox(priv-&gt;dev,
++					&amp;priv-&gt;can_tx_hndl)) {
++			if (priv-&gt;tx_next == priv-&gt;tx_head) {
++				priv-&gt;tx_next = priv-&gt;tx_tail;
++				if (!netif_queue_stopped(ndev))
++					netif_stop_queue(ndev);	/* IF stalled */
++				dev_err(priv-&gt;dev,
++					&quot;%s: no tx mbx available&quot;, __func__);
++				return NETDEV_TX_BUSY;
++			} else
++				continue;
++		} else {
++			/* set transmit request */
++			pru_can_tx(priv-&gt;dev, priv-&gt;tx_next, CAN_TX_PRU_1);
++			pru_can_tx_mode_set(priv-&gt;dev, false, ecanreceive);
++			pru_can_tx_mode_set(priv-&gt;dev, true, ecantransmit);
++			pru_can_start_abort_tx(priv-&gt;dev, PRU_CAN_START);
++			priv-&gt;tx_next++;
++			can_put_echo_skb(skb, ndev, 0);
++			break;
++		}
++	}
++	if (priv-&gt;tx_next &gt; priv-&gt;tx_head) {
++		priv-&gt;tx_next = priv-&gt;tx_tail;
++	}
++	return NETDEV_TX_OK;
++}
++
++static int omapl_pru_can_rx(struct net_device *ndev, u32 mbxno)
++{
++	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
++	struct net_device_stats *stats = &amp;ndev-&gt;stats;
++	struct can_frame *cf;
++	struct sk_buff *skb;
++	u32 pru_can_mbx_data;
++	u8 *data = NULL;
++	u8 *ptr8data = NULL;
++	int count = 0;
++
++	skb = alloc_can_skb(ndev, &amp;cf);
++	if (!skb) {
++		if (printk_ratelimit())
++			dev_err(priv-&gt;dev,
++				&quot;alloc_can_skb() failed\n&quot;);
++		return -ENOMEM;
++	}
++	data = cf-&gt;data;
++	/*      get payload */
++	priv-&gt;can_rx_hndl.ecanmailboxnumber = (can_mailbox_number) mbxno;
++	if (pru_can_get_data_from_mailbox(priv-&gt;dev, &amp;priv-&gt;can_rx_hndl)) {
++		__can_err(&quot;failed to get data from mailbox\n&quot;);
++		return -EAGAIN;
++	}
++	/* give ownweship to pru */
++	pru_can_tx(priv-&gt;dev, mbxno, CAN_RX_PRU_0);
++
++	/* get data length code */
++	cf-&gt;can_dlc =
++	    get_can_dlc(*
++			((u32 *) &amp;priv-&gt;can_rx_hndl.strcanmailbox.
++			 u16datalength) &amp; 0xF);
++	if (cf-&gt;can_dlc &lt;= 4) {
++		ptr8data =
++		    &amp;priv-&gt;can_rx_hndl.strcanmailbox.u8data3 + (4 -
++								cf-&gt;can_dlc);
++		for (count = 0; count &lt; cf-&gt;can_dlc; count++) {
++			*data++ = *ptr8data++;
++		}
++	} else {
++		ptr8data = &amp;priv-&gt;can_rx_hndl.strcanmailbox.u8data3;
++		for (count = 0; count &lt; 4; count++) {
++			*data++ = *ptr8data++;
++		}
++		ptr8data =
++		    &amp;priv-&gt;can_rx_hndl.strcanmailbox.u8data4 - (cf-&gt;can_dlc -
++								5);
++		for (count = 0; count &lt; cf-&gt;can_dlc - 4; count++) {
++			*data++ = *ptr8data++;
++		}
++	}
++
++	pru_can_mbx_data = *((u32 *) &amp;priv-&gt;can_rx_hndl.strcanmailbox);
++	/* get id extended or std */
++	if (pru_can_mbx_data &amp; PRU_CANMID_IDE)
++		cf-&gt;can_id = (pru_can_mbx_data &amp; CAN_EFF_MASK) | CAN_EFF_FLAG;
++	else
++		cf-&gt;can_id = (pru_can_mbx_data &gt;&gt; 18) &amp; CAN_SFF_MASK;
++
++	if (pru_can_mbx_data &amp; CAN_RTR_FLAG)
++		cf-&gt;can_id |= CAN_RTR_FLAG;
++
++	netif_rx_ni(skb);
++	stats-&gt;rx_packets++;
++	stats-&gt;rx_bytes += cf-&gt;can_dlc;
++	return 0;
++}
++
++static int omapl_pru_can_err(struct net_device *ndev, int int_status,
++			     int err_status)
++{
++	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
++	struct net_device_stats *stats = &amp;ndev-&gt;stats;
++	struct can_frame *cf;
++	struct sk_buff *skb;
++	int tx_err_cnt, rx_err_cnt;
++
++	/* propogate the error condition to the can stack */
++	skb = alloc_can_err_skb(ndev, &amp;cf);
++	if (!skb) {
++		if (printk_ratelimit())
++			dev_err(priv-&gt;dev,
++				&quot;alloc_can_err_skb() failed\n&quot;);
++		return -ENOMEM;
++	}
++
++	if (err_status &amp; PRU_CAN_GSR_BIT_EPM) {	/* error passive int */
++		priv-&gt;can.state = CAN_STATE_ERROR_PASSIVE;
++		++priv-&gt;can.can_stats.error_passive;
++		cf-&gt;can_id |= CAN_ERR_CRTL;
++		tx_err_cnt = pru_can_get_error_cnt(priv-&gt;dev, CAN_TX_PRU_1);
++		rx_err_cnt = pru_can_get_error_cnt(priv-&gt;dev, CAN_RX_PRU_0);
++		if (tx_err_cnt &gt; 127)
++			cf-&gt;data[1] |= CAN_ERR_CRTL_TX_PASSIVE;
++		if (rx_err_cnt &gt; 127)
++			cf-&gt;data[1] |= CAN_ERR_CRTL_RX_PASSIVE;
++
++		dev_dbg(priv-&gt;ndev-&gt;dev.parent, &quot;Error passive interrupt\n&quot;);
++	}
++
++	if (err_status &amp; PRU_CAN_GSR_BIT_BFM) {
++		priv-&gt;can.state = CAN_STATE_BUS_OFF;
++		cf-&gt;can_id |= CAN_ERR_BUSOFF;
++		/*
++		 *      Disable all interrupts in bus-off to avoid int hog
++		 *      this should be handled by the pru
++		 */
++		pru_can_mask_ints(priv-&gt;dev, 0xFFFF);
++		can_bus_off(ndev);
++		dev_dbg(priv-&gt;ndev-&gt;dev.parent, &quot;Bus off mode\n&quot;);
++	}
++
++	netif_rx(skb);
++	stats-&gt;rx_packets++;
++	stats-&gt;rx_bytes += cf-&gt;can_dlc;
++	return 0;
++}
++
++void omapl_pru_can_rx_wQ(struct work_struct *work)
++{
++	struct omapl_pru_can_priv *priv = container_of(work,
++			struct omapl_pru_can_priv, rx_work);
++	struct net_device *ndev = priv-&gt;ndev;
++	u32 bit_set, mbxno = 0;
++
++	if (-1 == pru_can_get_intr_status(priv-&gt;dev, &amp;priv-&gt;can_rx_hndl))
++		return;
++
++	if (PRU_CAN_ISR_BIT_RRI &amp; priv-&gt;can_rx_hndl.u32interruptstatus) {
++		mbxno = RTR_MBX_NO;
++		omapl_pru_can_rx(ndev, mbxno);
++	} else {
++		/* Extract the mboxno from the status */
++		for (bit_set = 0; ((priv-&gt;can_rx_hndl.u32interruptstatus &amp; 0xFF)
++						&gt;&gt; bit_set != 0); bit_set++)
++		;
++		if (0 == bit_set) {
++			dev_err(priv-&gt;dev,
++				&quot;%s: invalid mailbox number: %X\n&quot;, __func__,
++				priv-&gt;can_rx_hndl.u32interruptstatus);
++		} else {
++			mbxno = bit_set - 1;
++			if (PRU_CAN_ISR_BIT_ESI &amp; priv-&gt;can_rx_hndl.
++			    u32interruptstatus) {
++				pru_can_get_global_status(priv-&gt;dev,
++					&amp;priv-&gt;can_rx_hndl);
++				omapl_pru_can_err(ndev,
++				priv-&gt;can_rx_hndl.u32interruptstatus,
++				priv-&gt;can_rx_hndl.u32globalstatus);
++			} else {
++				omapl_pru_can_rx(ndev, mbxno);
++			}
++		}
++	}
++}
++
++irqreturn_t omapl_tx_can_intr(int irq, void *dev_id)
++{
++	struct net_device *ndev = dev_id;
++	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
++	struct net_device_stats *stats = &amp;ndev-&gt;stats;
++	u32 bit_set, mbxno;
++
++	pru_can_get_intr_status(priv-&gt;dev, &amp;priv-&gt;can_tx_hndl);
++	if ((PRU_CAN_ISR_BIT_CCI &amp; priv-&gt;can_tx_hndl.u32interruptstatus)
++	    || (PRU_CAN_ISR_BIT_SRDI &amp; priv-&gt;can_tx_hndl.u32interruptstatus)) {
++		__can_debug(&quot;tx_int_status = 0x%X\n&quot;,
++			    priv-&gt;can_tx_hndl.u32interruptstatus);
++		can_free_echo_skb(ndev, 0);
++	} else {
++		for (bit_set = 0; ((priv-&gt;can_tx_hndl.u32interruptstatus &amp; 0xFF)
++						&gt;&gt; bit_set != 0); bit_set++)
++		;
++		if (0 == bit_set) {
++			__can_err(&quot;%s: invalid mailbox number\n&quot;, __func__);
++			can_free_echo_skb(ndev, 0);
++		} else {
++			mbxno = bit_set - 1;	/* mail box numbering starts from 0 */
++			if (PRU_CAN_ISR_BIT_ESI &amp; priv-&gt;can_tx_hndl.
++			    u32interruptstatus) {
++				/* read gsr and ack pru */
++				pru_can_get_global_status(priv-&gt;dev, &amp;priv-&gt;can_tx_hndl);
++				omapl_pru_can_err(ndev,
++						  priv-&gt;can_tx_hndl.
++						  u32interruptstatus,
++						  priv-&gt;can_tx_hndl.
++						  u32globalstatus);
++			} else {
++				stats-&gt;tx_packets++;
++				/* stats-&gt;tx_bytes += dlc; */
++				/*can_get_echo_skb(ndev, 0);*/
++			}
++		}
++	}
++	if (netif_queue_stopped(ndev))
++		netif_wake_queue(ndev);
++
++	can_get_echo_skb(ndev, 0);
++	pru_can_tx_mode_set(priv-&gt;dev, true, ecanreceive);
++	return IRQ_HANDLED;
++}
++
++irqreturn_t omapl_rx_can_intr(int irq, void *dev_id)
++{
++
++	struct net_device *ndev = dev_id;
++	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
++	u32 intc_status = 0;
++
++	intc_status = pru_can_get_intc_status(priv-&gt;dev);
++	if (intc_status &amp; 4)
++		return omapl_tx_can_intr(irq, dev_id);
++	if (intc_status &amp; 2) {
++		if (!work_pending(&amp;priv-&gt;rx_work))
++			queue_work(priv-&gt;pru_can_wQ, &amp;priv-&gt;rx_work);
++	}
++
++	return IRQ_HANDLED;
++}
++
++static int omapl_pru_can_open(struct net_device *ndev)
++{
++	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
++	int err;
++
++	/* register interrupt handler */
++	err = request_irq(priv-&gt;trx_irq, &amp;omapl_rx_can_intr, IRQF_SHARED,
++			  &quot;pru_can_irq&quot;, ndev);
++	if (err) {
++		dev_err(priv-&gt;dev, &quot;error requesting rx interrupt\n&quot;);
++		goto exit_trx_irq;
++	}
++	/* common open */
++	err = open_candev(ndev);
++	if (err) {
++		dev_err(priv-&gt;dev, &quot;open_candev() failed %d\n&quot;, err);
++		goto exit_open;
++	}
++
++	pru_can_emu_init(priv-&gt;dev, priv-&gt;can.clock.freq);
++	priv-&gt;tx_tail = MB_MIN;
++	priv-&gt;tx_head = MB_MAX;
++
++	pru_can_rx_id_map(priv-&gt;dev, CONFIG_DA8XX_PRU_CANID_MBX0, 0);
++	pru_can_rx_id_map(priv-&gt;dev, CONFIG_DA8XX_PRU_CANID_MBX1, 1);
++	pru_can_rx_id_map(priv-&gt;dev, CONFIG_DA8XX_PRU_CANID_MBX2, 2);
++	pru_can_rx_id_map(priv-&gt;dev, CONFIG_DA8XX_PRU_CANID_MBX3, 3);
++	pru_can_rx_id_map(priv-&gt;dev, CONFIG_DA8XX_PRU_CANID_MBX4, 4);
++	pru_can_rx_id_map(priv-&gt;dev, CONFIG_DA8XX_PRU_CANID_MBX5, 5);
++	pru_can_rx_id_map(priv-&gt;dev, CONFIG_DA8XX_PRU_CANID_MBX6, 6);
++	pru_can_rx_id_map(priv-&gt;dev, CONFIG_DA8XX_PRU_CANID_MBX7, 7);
++
++	omapl_pru_can_start(ndev);
++	netif_start_queue(ndev);
++	return 0;
++
++exit_open:
++	free_irq(priv-&gt;trx_irq, ndev);
++exit_trx_irq:
++	return err;
++}
++
++static int omapl_pru_can_close(struct net_device *ndev)
++{
++	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
++
++	if (!netif_queue_stopped(ndev))
++		netif_stop_queue(ndev);
++
++	close_candev(ndev);
++
++	free_irq(priv-&gt;trx_irq, ndev);
++	return 0;
++}
++
++static const struct net_device_ops omapl_pru_can_netdev_ops = {
++	.ndo_open		= omapl_pru_can_open,
++	.ndo_stop		= omapl_pru_can_close,
++	.ndo_start_xmit		= omapl_pru_can_start_xmit,
++};
++
++static int __devinit omapl_pru_can_probe(struct platform_device *pdev)
++{
++	struct net_device *ndev = NULL;
++	const struct da8xx_pru_can_data *pdata;
++	struct omapl_pru_can_priv *priv = NULL;
++	struct device *dev = &amp;pdev-&gt;dev;
++	u32 err;
++
++	pdata = dev-&gt;platform_data;
++	if (!pdata) {
++		dev_err(&amp;pdev-&gt;dev, &quot;platform data not found\n&quot;);
++		return -EINVAL;
++	}
++
++	ndev = alloc_candev(sizeof(struct omapl_pru_can_priv), MB_MAX + 1);
++	if (!ndev) {
++		dev_err(&amp;pdev-&gt;dev, &quot;alloc_candev failed\n&quot;);
++		err = -ENOMEM;
++		goto probe_exit;
++	}
++	priv = netdev_priv(ndev);
++
++	priv-&gt;trx_irq = platform_get_irq(to_platform_device(dev-&gt;parent), 0);
++	if (!priv-&gt;trx_irq) {
++		dev_err(&amp;pdev-&gt;dev, &quot;unable to get pru interrupt resources!\n&quot;);
++		err = -ENODEV;
++		goto probe_exit;
++	}
++
++	priv-&gt;ndev = ndev;
++	priv-&gt;dev = dev; /* priv-&gt;dev = pdev-&gt;dev */
++
++	priv-&gt;can.bittiming_const = NULL;
++	priv-&gt;can.do_set_bittiming = omapl_pru_can_set_bittiming;
++	priv-&gt;can.do_set_mode = omapl_pru_can_set_mode;
++	priv-&gt;can.do_get_state = omapl_pru_can_get_state;
++	priv-&gt;can_tx_hndl.u8prunumber = CAN_TX_PRU_1;
++	priv-&gt;can_rx_hndl.u8prunumber = CAN_RX_PRU_0;
++
++	/* we support local echo, no arp */
++	ndev-&gt;flags |= (IFF_ECHO | IFF_NOARP);
++
++	/* pdev-&gt;dev-&gt;device_private-&gt;driver_data = ndev */
++	platform_set_drvdata(pdev, ndev);
++	SET_NETDEV_DEV(ndev, &amp;pdev-&gt;dev);
++	ndev-&gt;netdev_ops = &amp;omapl_pru_can_netdev_ops;
++
++	priv-&gt;can.clock.freq = pruss_get_clk_freq(priv-&gt;dev);
++
++	priv-&gt;clk_timer = clk_get(&amp;pdev-&gt;dev, &quot;pll1_sysclk2&quot;);
++	if (IS_ERR(priv-&gt;clk_timer)) {
++		dev_err(&amp;pdev-&gt;dev, &quot;no timer clock available\n&quot;);
++		err = PTR_ERR(priv-&gt;clk_timer);
++		priv-&gt;clk_timer = NULL;
++		goto probe_exit_candev;
++	}
++	priv-&gt;timer_freq = clk_get_rate(priv-&gt;clk_timer);
++
++	err = register_candev(ndev);
++	if (err) {
++		dev_err(&amp;pdev-&gt;dev, &quot;register_candev() failed\n&quot;);
++		err = -ENODEV;
++		goto probe_exit_clk;
++	}
++
++	err = request_firmware(&amp;priv-&gt;fw_tx, &quot;PRU_CAN_Emulation_Tx.bin&quot;,
++			&amp;pdev-&gt;dev);
++	if (err) {
++		dev_err(&amp;pdev-&gt;dev, &quot;can't load firmware\n&quot;);
++		err = -ENODEV;
++		goto probe_exit_clk;
++	}
++
++	dev_info(&amp;pdev-&gt;dev, &quot;fw_tx size %d. downloading...\n&quot;,
++		 priv-&gt;fw_tx-&gt;size);
++
++	err = request_firmware(&amp;priv-&gt;fw_rx, &quot;PRU_CAN_Emulation_Rx.bin&quot;,
++			&amp;pdev-&gt;dev);
++	if (err) {
++		dev_err(&amp;pdev-&gt;dev, &quot;can't load firmware\n&quot;);
++		err = -ENODEV;
++		goto probe_release_fw;
++	}
++	dev_info(&amp;pdev-&gt;dev, &quot;fw_rx size %d. downloading...\n&quot;,
++		 priv-&gt;fw_rx-&gt;size);
++
++	/* init the pru */
++	pru_can_emu_init(priv-&gt;dev, priv-&gt;can.clock.freq);
++	udelay(200);
++
++	pruss_enable(priv-&gt;dev, CAN_RX_PRU_0);
++	pruss_enable(priv-&gt;dev, CAN_TX_PRU_1);
++
++	/* download firmware into pru */
++	err = pruss_load(priv-&gt;dev, CAN_RX_PRU_0,
++		(u32 *)priv-&gt;fw_rx-&gt;data, (priv-&gt;fw_rx-&gt;size / 4));
++	if (err) {
++		dev_err(&amp;pdev-&gt;dev, &quot;firmware download error\n&quot;);
++		err = -ENODEV;
++		goto probe_release_fw_1;
++	}
++	err = pruss_load(priv-&gt;dev, CAN_TX_PRU_1,
++		(u32 *)priv-&gt;fw_tx-&gt;data, (priv-&gt;fw_tx-&gt;size / 4));
++	if (err) {
++		dev_err(&amp;pdev-&gt;dev, &quot;firmware download error\n&quot;);
++		err = -ENODEV;
++		goto probe_release_fw_1;
++	}
++
++	if (pru_can_calc_timing(priv-&gt;dev, DFLT_PRU_FREQ,
++				DFLT_PRU_BITRATE) != 0)
++		return -EINVAL;
++
++	pruss_run(priv-&gt;dev, CAN_RX_PRU_0);
++	pruss_run(priv-&gt;dev, CAN_TX_PRU_1);
++
++	/*Create The Work Queue */
++	priv-&gt;pru_can_wQ = create_freezeable_workqueue(&quot;omapl_pru_wQ&quot;);
++	if (priv-&gt;pru_can_wQ == NULL) {
++		dev_err(&amp;pdev-&gt;dev, &quot;failed to create work queue\n&quot;);
++		err = -ENODEV;
++		goto probe_release_fw_1;
++	}
++
++	INIT_WORK(&amp;priv-&gt;rx_work, omapl_pru_can_rx_wQ);
++	dev_info(&amp;pdev-&gt;dev,
++		 &quot;%s device registered (trx_irq = %d,  clk = %d)\n&quot;,
++		 DRV_NAME, priv-&gt;trx_irq, priv-&gt;can.clock.freq);
++
++	return 0;
++
++probe_release_fw_1:
++	release_firmware(priv-&gt;fw_rx);
++probe_release_fw:
++	release_firmware(priv-&gt;fw_tx);
++probe_exit_clk:
++	clk_put(priv-&gt;clk_timer);
++probe_exit_candev:
++	if (NULL != ndev)
++		free_candev(ndev);
++probe_exit:
++	return err;
++}
++
++static int __devexit omapl_pru_can_remove(struct platform_device *pdev)
++{
++	struct net_device *ndev = platform_get_drvdata(pdev);
++	struct omapl_pru_can_priv *priv = netdev_priv(ndev);
++
++	omapl_pru_can_stop(ndev);
++
++	pru_can_emu_exit(priv-&gt;dev);
++	release_firmware(priv-&gt;fw_tx);
++	release_firmware(priv-&gt;fw_rx);
++	clk_put(priv-&gt;clk_timer);
++	flush_workqueue(priv-&gt;pru_can_wQ);
++	destroy_workqueue(priv-&gt;pru_can_wQ);
++	unregister_candev(ndev);
++	free_candev(ndev);
++	platform_set_drvdata(pdev, NULL);
++	return 0;
++}
++
++#ifdef CONFIG_PM
++static int omapl_pru_can_suspend(struct platform_device *pdev,
++			pm_message_t mesg)
++{
++	dev_info(&amp;pdev-&gt;dev, &quot;%s not yet implemented\n&quot;, __func__);
++	return 0;
++}
++
++static int omapl_pru_can_resume(struct platform_device *pdev)
++{
++	dev_info(&amp;pdev-&gt;dev, &quot;%s not yet implemented\n&quot;, __func__);
++	return 0;
++}
++#else
++#define omapl_pru_can_suspend NULL
++#define omapl_pru_can_resume NULL
++#endif /* CONFIG_PM */
++
++static struct platform_driver omapl_pru_can_driver = {
++	.probe		= omapl_pru_can_probe,
++	.remove		= __devexit_p(omapl_pru_can_remove),
++	.suspend	= omapl_pru_can_suspend,
++	.resume		= omapl_pru_can_resume,
++	.driver		= {
++		.name	= DRV_NAME,
++		.owner	= THIS_MODULE,
++	},
++};
++
++static int __init omapl_pru_can_init(void)
++{
++	__can_debug(KERN_INFO DRV_DESC &quot;\n&quot;);
++	return platform_driver_register(&amp;omapl_pru_can_driver);
++}
++
++module_init(omapl_pru_can_init);
++
++static void __exit omapl_pru_can_exit(void)
++{
++	__can_debug(KERN_INFO DRV_DESC &quot; unloaded\n&quot;);
++	platform_driver_unregister(&amp;omapl_pru_can_driver);
++}
++
++module_exit(omapl_pru_can_exit);
++
++MODULE_AUTHOR(&quot;Subhasish Ghosh &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">subhasish at mistralsolutions.com</A>&gt;&quot;);
++MODULE_LICENSE(&quot;GPL&quot;);
++MODULE_DESCRIPTION(&quot;omapl pru CAN netdevice driver&quot;);
+diff --git a/drivers/net/can/da8xx_pruss/pruss_can_api.c b/drivers/net/can/da8xx_pruss/pruss_can_api.c
+new file mode 100644
+index 0000000..2f7438a
+--- /dev/null
++++ b/drivers/net/can/da8xx_pruss/pruss_can_api.c
+@@ -0,0 +1,1227 @@
++/*
++ * Copyright (C) 2010 Texas Instruments Incorporated
++ * Author: Wilfred Felix
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as  published by the
++ * Free Software Foundation version 2.
++ *
++ * This program is distributed &quot;as is&quot; WITHOUT ANY WARRANTY of any kind,
++ * whether express or implied; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ */
++
++#include &quot;pruss_can_api.h&quot;
++
++static can_emu_drv_inst gstr_can_inst[ecanmaxinst];
++
++/*
++ * pru_can_set_brp()	Updates the  BRP register of PRU0
++ * and PRU1 of OMAP L138. This API will be called by the
++ * Application to updtae the BRP register of PRU0 and PRU1
++ *
++ * param	u16bitrateprescaler		The can bus bitrate
++ * prescaler value be set
++ *
++ * return   SUCCESS or FAILURE
++ */
++s16 pru_can_set_brp(struct device *dev, u16 u16bitrateprescaler)
++{
++
++	u32 u32offset;
++
++	if (u16bitrateprescaler &gt; 255) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_CLOCK_BRP_REGISTER);
++	pruss_writel(dev, u32offset, (u32 *) &amp;u16bitrateprescaler, 1);
++
++	u32offset = (PRU_CAN_TX_CLOCK_BRP_REGISTER);
++	pruss_writel(dev, u32offset, (u32 *) &amp;u16bitrateprescaler, 1);
++
++	return 0;
++
++}
++
++/*
++ * pru_can_set_bit_timing()		Updates the timing register
++ * of PRU0 and PRU1 of OMAP L138. This API will be called by
++ * the Application to updtae the timing register of PRU0 and PRU1
++ *
++ * param	pstrbittiming		Pointer to structure holding
++ * the bit timing values for can bus.
++ *
++ * return   SUCCESS or FAILURE
++ */
++s16 pru_can_set_bit_timing(struct device *dev,
++		can_bit_timing_consts *pstrbittiming)
++{
++
++	u32 u32offset;
++	u32 u32serregister;
++
++	u32serregister = 0;
++
++	if (pstrbittiming == NULL) {
++		return -1;
++	}
++
++	if ((pstrbittiming-&gt;u8syncjumpwidth &gt; PRU_CAN_MAX_SJW) ||
++	    (pstrbittiming-&gt;u8phseg1 &gt; PRU_CAN_MAX_PHSEG1) ||
++	    (pstrbittiming-&gt;u8phseg2 &gt; PRU_CAN_MAX_PHSEG2)) {
++		return -1;
++	}
++
++	u32serregister = u32serregister |
++			((pstrbittiming-&gt;u8syncjumpwidth &lt;&lt; 7) |
++			(pstrbittiming-&gt;u8phseg1 &lt;&lt; 3) |
++			(pstrbittiming-&gt;u8phseg2));
++
++	u32offset = (PRU_CAN_TX_TIMING_REGISTER);
++	pruss_writel(dev, u32offset, (u32 *) &amp;u32serregister, 1);
++
++	u32offset = (PRU_CAN_RX_TIMING_REGISTER);
++	pruss_writel(dev, u32offset, (u32 *) &amp;u32serregister, 1);
++
++	return 0;
++}
++
++
++/*
++ * pru_can_calc_timing()
++ * Updates the  timing values of PRU0 and PRU1 of OMAP L138.
++ * This API will be called by the
++ * Application to updtae the timing values of PRU0 and PRU1
++ *
++ * return   SUCCESS or FAILURE
++ */
++
++s16 pru_can_calc_timing(struct device *dev, u32 pru_freq, u32 bit_rate)
++{
++	u16 u16phaseseg1;
++	u16 u16phaseseg2;
++	u32 u32offset;
++	u32 u32timing_value;
++	u32 u32setup_value;
++	u32timing_value = TIMER_CLK_FREQ / bit_rate;
++	u32offset = (PRU_CAN_TIMING_VAL_TX);
++	pruss_writel(dev, u32offset, (u32 *) &amp;u32timing_value, 4);
++	pruss_readl(dev, u32offset, (u32 *) &amp;u32timing_value, 4);
++	u32setup_value =
++	    (GPIO_SETUP_DELAY * (pru_freq / 1000000) / 1000) /
++	    DELAY_LOOP_LENGTH;
++	u32offset = (PRU_CAN_TIMING_VAL_TX_SJW);
++	pruss_writel(dev, u32offset, (u32 *) &amp;u32setup_value, 4);
++	u16phaseseg1 = (u16) (u32timing_value / 2);
++	u16phaseseg2 = u32timing_value - u16phaseseg1;
++	u16phaseseg1 -= TIMER_SETUP_DELAY;
++	u16phaseseg2 -= TIMER_SETUP_DELAY;
++	u32setup_value = (u16phaseseg1 &lt;&lt; 16) | u16phaseseg2;
++	u32offset = (PRU_CAN_TIMING_VAL_RX);
++	pruss_writel(dev, u32offset, (u32 *) &amp;u32setup_value, 4);
++	u32offset = (PRU_CAN_TIMING_VAL_RX + 4);
++	pruss_writel(dev, u32offset, (u32 *) &amp;u32timing_value, 4);
++
++	return 0;
++}
++
++/*
++ * pru_can_write_data_to_mailbox()
++ * Updates the transmit mailboxes of PRU1 of OMAP L138.
++ * This API will be called by the Application to update
++ * the transmit mailboxes of PRU1
++ *
++ * param  pu16canframedata	Can mailbox data buffer
++ *
++ * param  u8mailboxnum		Mailbox to be updated
++ *
++ * return SUCCESS or FAILURE
++ */
++s16 pru_can_write_data_to_mailbox(struct device *dev,
++			can_emu_app_hndl *pstremuapphndl)
++{
++	s16 s16subrtnretval;
++	u32 u32offset;
++
++	if (pstremuapphndl == NULL) {
++		return -1;
++	}
++
++	switch ((u8) pstremuapphndl-&gt;ecanmailboxnumber) {
++	case 0:
++		u32offset = (PRU_CAN_TX_MAILBOX0);
++		break;
++	case 1:
++		u32offset = (PRU_CAN_TX_MAILBOX1);
++		break;
++	case 2:
++		u32offset = (PRU_CAN_TX_MAILBOX2);
++		break;
++	case 3:
++		u32offset = (PRU_CAN_TX_MAILBOX3);
++		break;
++	case 4:
++		u32offset = (PRU_CAN_TX_MAILBOX4);
++		break;
++	case 5:
++		u32offset = (PRU_CAN_TX_MAILBOX5);
++		break;
++	case 6:
++		u32offset = (PRU_CAN_TX_MAILBOX6);
++		break;
++	case 7:
++		u32offset = (PRU_CAN_TX_MAILBOX7);
++		break;
++	default:
++		return -1;
++	}
++
++	s16subrtnretval = pruss_writel(dev, u32offset,
++		(u32 *) &amp;(pstremuapphndl-&gt;strcanmailbox), 4);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++	return 0;
++}
++
++/*
++ * pru_can_get_data_from_mailbox()
++ * Receive data from the receive mailboxes of PRU0  of OMAP L138.
++ * This API will be called by the Application to get data from
++ * the receive mailboxes of PRU0
++ *
++ * param  pu16canframedata	Can mailbox data buffer
++ *
++ * param  u8mailboxnum		Mailbox to be updated
++ *
++ * return SUCCESS or FAILURE
++ */
++s16 pru_can_get_data_from_mailbox(struct device *dev,
++		can_emu_app_hndl *pstremuapphndl)
++{
++	s16 s16subrtnretval;
++	u32 u32offset;
++
++	if (pstremuapphndl == NULL) {
++		return -1;
++	}
++
++	switch ((u8) pstremuapphndl-&gt;ecanmailboxnumber) {
++	case 0:
++		u32offset = (PRU_CAN_RX_MAILBOX0);
++		break;
++	case 1:
++		u32offset = (PRU_CAN_RX_MAILBOX1);
++		break;
++	case 2:
++		u32offset = (PRU_CAN_RX_MAILBOX2);
++		break;
++	case 3:
++		u32offset = (PRU_CAN_RX_MAILBOX3);
++		break;
++	case 4:
++		u32offset = (PRU_CAN_RX_MAILBOX4);
++		break;
++	case 5:
++		u32offset = (PRU_CAN_RX_MAILBOX5);
++		break;
++	case 6:
++		u32offset = (PRU_CAN_RX_MAILBOX6);
++		break;
++	case 7:
++		u32offset = (PRU_CAN_RX_MAILBOX7);
++		break;
++	case 8:
++		u32offset = (PRU_CAN_RX_MAILBOX8);
++		break;
++	default:
++		return -1;
++	}
++
++	s16subrtnretval =
++	    pruss_readl(dev, u32offset,
++		  (u32 *) &amp;(pstremuapphndl-&gt;strcanmailbox),
++				  4);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++	return 0;
++}
++
++/*
++ * pru_can_receive_id_map()
++ * Receive mailboxes ID Mapping of PRU0  of OMAP L138.
++ * This API will be called by the Application
++ * to map the IDs  to receive mailboxes of PRU0
++ *
++ * param  u32nodeid		Can node ID
++ *
++ * param  ecanmailboxno		Mailbox to be mapped
++ *
++ * return   SUCCESS or FAILURE
++ */
++s16 pru_can_rx_id_map(struct device *dev, u32 u32nodeid,
++		can_mailbox_number ecanmailboxno)
++{
++
++	pruss_writel(dev, (PRU_CAN_ID_MAP +
++		(((u8) ecanmailboxno) * 4)), (u32 *) &amp;u32nodeid, 1);
++
++	return 0;
++}
++
++/*
++ * pru_can_get_intr_status()
++ * Gets the interrupts status register value.
++ * This API will be called by the Application
++ * to get the interrupts status register value
++ *
++ * param  u8prunumber	PRU number for which IntStatusReg
++ * has to be read
++ *
++ * return   SUCCESS or FAILURE
++ */
++s16 pru_can_get_intr_status(struct device *dev,
++		can_emu_app_hndl *pstremuapphndl)
++{
++	u32 u32offset;
++	s16 s16subrtnretval = -1;
++
++	if (pstremuapphndl == NULL) {
++		return -1;
++	}
++
++	if (pstremuapphndl-&gt;u8prunumber == DA8XX_PRUCORE_1) {
++		u32offset = (PRU_CAN_TX_INTERRUPT_STATUS_REGISTER);
++	} else if (pstremuapphndl-&gt;u8prunumber == DA8XX_PRUCORE_0) {
++		u32offset = (PRU_CAN_RX_INTERRUPT_STATUS_REGISTER);
++	} else {
++		return -1;
++	}
++
++	s16subrtnretval = pruss_readl(dev, u32offset,
++		(u32 *) &amp;pstremuapphndl-&gt;u32interruptstatus, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	return 0;
++}
++
++/*
++ * pru_can_get_global_status()	Gets the globalstatus
++ * register value. This API will be called by the Application
++ * to  get the global status register value
++ *
++ * return   SUCCESS or FAILURE
++ */
++s16 pru_can_get_global_status(struct device *dev,
++		can_emu_app_hndl *pstremuapphndl)
++{
++	u32 u32offset;
++	int s16subrtnretval = -1;
++
++	if (pstremuapphndl == NULL) {
++		return -1;
++	}
++
++	if (pstremuapphndl-&gt;u8prunumber == DA8XX_PRUCORE_1) {
++		u32offset = (PRU_CAN_TX_GLOBAL_STATUS_REGISTER);
++	} else if (pstremuapphndl-&gt;u8prunumber == DA8XX_PRUCORE_0) {
++		u32offset = (PRU_CAN_RX_GLOBAL_STATUS_REGISTER);
++	} else {
++		return -1;
++	}
++
++	s16subrtnretval = pruss_readl(dev, u32offset,
++		(u32 *) &amp;pstremuapphndl-&gt;u32globalstatus, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	return 0;
++}
++
++/*
++ * pru_can_get_mailbox_status()		Gets the mailbox status
++ * register value. This API will be called by the Application
++ * to get the mailbox status register value
++ *
++ * return   SUCCESS or FAILURE
++ */
++s16 pru_can_get_mailbox_status(struct device *dev,
++		can_emu_app_hndl *pstremuapphndl)
++{
++	u32 u32offset;
++	s16 s16subrtnretval = -1;
++
++	if (pstremuapphndl == NULL) {
++		return -1;
++	}
++
++	if (pstremuapphndl-&gt;u8prunumber == DA8XX_PRUCORE_1) {
++		switch (pstremuapphndl-&gt;ecanmailboxnumber) {
++		case 0:
++			u32offset = (PRU_CAN_TX_MAILBOX0_STATUS_REGISTER);
++			break;
++		case 1:
++			u32offset = (PRU_CAN_TX_MAILBOX1_STATUS_REGISTER);
++			break;
++		case 2:
++			u32offset = (PRU_CAN_TX_MAILBOX2_STATUS_REGISTER);
++			break;
++		case 3:
++			u32offset = (PRU_CAN_TX_MAILBOX3_STATUS_REGISTER);
++			break;
++		case 4:
++			u32offset = (PRU_CAN_TX_MAILBOX4_STATUS_REGISTER);
++			break;
++		case 5:
++			u32offset = (PRU_CAN_TX_MAILBOX5_STATUS_REGISTER);
++			break;
++		case 6:
++			u32offset = (PRU_CAN_TX_MAILBOX6_STATUS_REGISTER);
++			break;
++		case 7:
++			u32offset = (PRU_CAN_TX_MAILBOX7_STATUS_REGISTER);
++			break;
++		default:
++			return -1;
++		}
++	}
++
++	else if (pstremuapphndl-&gt;u8prunumber == DA8XX_PRUCORE_0) {
++		switch (pstremuapphndl-&gt;ecanmailboxnumber) {
++		case 0:
++			u32offset = (PRU_CAN_RX_MAILBOX0_STATUS_REGISTER);
++			break;
++		case 1:
++			u32offset = (PRU_CAN_RX_MAILBOX1_STATUS_REGISTER);
++			break;
++		case 2:
++			u32offset = (PRU_CAN_RX_MAILBOX2_STATUS_REGISTER);
++			break;
++		case 3:
++			u32offset = (PRU_CAN_RX_MAILBOX3_STATUS_REGISTER);
++			break;
++		case 4:
++			u32offset = (PRU_CAN_RX_MAILBOX4_STATUS_REGISTER);
++			break;
++		case 5:
++			u32offset = (PRU_CAN_RX_MAILBOX5_STATUS_REGISTER);
++			break;
++		case 6:
++			u32offset = (PRU_CAN_RX_MAILBOX6_STATUS_REGISTER);
++			break;
++		case 7:
++			u32offset = (PRU_CAN_RX_MAILBOX7_STATUS_REGISTER);
++			break;
++		case 8:
++			u32offset = (PRU_CAN_RX_MAILBOX8_STATUS_REGISTER);
++			break;
++		default:
++			return -1;
++		}
++	}
++
++	else {
++		return -1;
++	}
++
++	s16subrtnretval = pruss_readl(dev, u32offset,
++		(u32 *) &amp;pstremuapphndl-&gt;u32mailboxstatus, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	return 0;
++}
++
++s16 pru_can_tx_mode_set(struct device *dev, bool btransfer_flag,
++				can_transfer_direction ecan_trx)
++{
++	u32 u32offset;
++	u32 u32value;
++
++	if (ecan_trx == ecantransmit) {
++		u32offset = (PRU_CAN_RX_GLOBAL_STATUS_REGISTER);
++		pruss_readl(dev, u32offset, &amp;u32value, 1);
++		if (btransfer_flag == true) {
++			u32value &amp;= 0x1F;
++			u32value |= 0x80;
++		} else {
++			u32value &amp;= 0x7F;
++		}
++		pruss_writel(dev, u32offset, &amp;u32value, 1);
++		u32offset = (PRU_CAN_TX_GLOBAL_STATUS_REGISTER);
++		pruss_writel(dev, u32offset, &amp;u32value, 1);
++	} else if (ecan_trx == ecanreceive) {
++		u32offset = (PRU_CAN_RX_GLOBAL_STATUS_REGISTER);
++		pruss_readl(dev, u32offset, &amp;u32value, 1);
++		if (btransfer_flag == true) {
++			u32value &amp;= 0x1F;
++			u32value |= 0x40;
++		} else {
++			u32value &amp;= 0xBF;
++		}
++		pruss_writel(dev, u32offset, &amp;u32value, 1);
++		u32offset = (PRU_CAN_TX_GLOBAL_STATUS_REGISTER);
++		pruss_writel(dev, u32offset, &amp;u32value, 1);
++	} else
++		return -1;
++
++	return 0;
++}
++
++/*
++ * pru_can_config_mode_set()		Sets the timing value
++ * for data transfer. This API will be called by the Application
++ * to set timing valus for data transfer
++ *
++ * return   SUCCESS or FAILURE
++ */
++s16 pru_can_config_mode_set(struct device *dev, bool bconfigmodeflag)
++{
++
++	u32 u32bitrateprescaler;
++	u32 u32canbittiming;
++
++	pruss_readl(dev, (PRU_CAN_TX_CLOCK_BRP_REGISTER),
++			(u32 *) &amp;u32bitrateprescaler, 1);
++	pruss_readl(dev, (PRU_CAN_TX_TIMING_REGISTER),
++			(u32 *) &amp;u32canbittiming, 1);
++
++	if (bconfigmodeflag == 1) {
++		pru_can_calc_timing(dev, u32canbittiming, u32bitrateprescaler);
++	}
++
++	else {
++		pru_can_calc_timing(dev, 0, 0);
++	}
++
++	return 0;
++}
++
++/*
++ * pru_can_emu_init()		Initializes the Can
++ * Emulation Parameters. This API will be called by the Application
++ * to Initialize the Can Emulation Parameters
++ *
++ * param    u32pruclock         PRU Clock value
++ *
++ * return   SUCCESS or FAILURE
++ */
++s16 pru_can_emu_init(struct device *dev, u32 u32pruclock)
++{
++	u32 u32offset;
++	u32 u32value;
++	s16 s16subrtnretval = -1;
++	u8 u8loop;
++
++	for (u8loop = 0; u8loop &lt; (u8) ecanmaxinst; u8loop++) {
++		gstr_can_inst[u8loop].bcaninststate = (bool) 0;
++		gstr_can_inst[u8loop].ecantransferdirection =
++		    (can_transfer_direction) 0;
++		gstr_can_inst[u8loop].u32apphandlerptr = 0;
++	}
++
++	u32offset = (PRU_CAN_TX_GLOBAL_CONTROL_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_GLOBAL_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000040;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++	u32offset = (PRU_CAN_RX_GLOBAL_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000040;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_INTERRUPT_MASK_REGISTER &amp; 0xFFFF);
++	u32value = 0x00004000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_INTERRUPT_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_MAILBOX0_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000001;
++	s16subrtnretval =
++	    pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_MAILBOX1_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000001;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_MAILBOX2_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000001;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_MAILBOX3_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000001;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_MAILBOX4_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000001;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_MAILBOX5_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000001;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_MAILBOX6_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000001;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_MAILBOX7_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000001;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_ERROR_COUNTER_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_TIMING_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_CLOCK_BRP_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_TX_ERROR_COUNTER_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_POLARITY0 &amp; 0xFFFF);
++	u32value = 0xFFFFFFFF;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++	u32offset = (PRUSS_INTC_POLARITY1 &amp; 0xFFFF);
++	u32value = 0xFFFFFFFF;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++	u32offset = (PRUSS_INTC_TYPE0 &amp; 0xFFFF);
++	u32value = 0x1C000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++	u32offset = (PRUSS_INTC_TYPE1 &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_HSTINTENIDXCLR &amp; 0xFFFF);
++	u32value = 0x0;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_GLBLEN &amp; 0xFFFF);
++	u32value = 0x1;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++	/* tx intr map arm-&gt;pru */
++	u32offset = (PRUSS_INTC_HSTINTENIDXSET &amp; 0xFFFF);
++	u32value = 0x0;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_HOSTMAP0 &amp; 0xFFFF);
++	u32value = 0x03020100;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_HOSTMAP1 &amp; 0xFFFF);
++	u32value = 0x07060504;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_HOSTMAP2 &amp; 0xFFFF);
++	u32value = 0x0000908;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_CHANMAP0 &amp; 0xFFFF);
++	u32value = 0;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_CHANMAP8 &amp; 0xFFFF);
++	u32value = 0x00020200;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_STATIDXCLR &amp; 0xFFFF);
++	u32value = 32;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_STATIDXCLR &amp; 0xFFFF);
++	u32value = 19;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_ENIDXSET &amp; 0xFFFF);
++	u32value = 19;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++	u32offset = (PRUSS_INTC_STATIDXCLR &amp; 0xFFFF);
++	u32value = 18;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_ENIDXSET &amp; 0xFFFF);
++	u32value = 18;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_STATIDXCLR &amp; 0xFFFF);
++	u32value = 34;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_ENIDXSET &amp; 0xFFFF);
++	u32value = 34;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_ENIDXSET &amp; 0xFFFF);
++	u32value = 32;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRUSS_INTC_HOSTINTEN &amp; 0xFFFF);
++	u32value = 0x5;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++/* PRU0 - Rx Internal Registers Initializations */
++
++	u32offset = (PRU_CAN_RX_GLOBAL_CONTROL_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_GLOBAL_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000040;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_INTERRUPT_MASK_REGISTER &amp; 0xFFFF);
++	u32value = 0x00004000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_INTERRUPT_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_MAILBOX0_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_MAILBOX1_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x0000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_MAILBOX2_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_MAILBOX3_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_MAILBOX4_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_MAILBOX5_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_MAILBOX6_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_MAILBOX7_STATUS_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_ERROR_COUNTER_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_TIMING_REGISTER &amp; 0xFFFF);
++	u32value = 0x0000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++
++	u32offset = (PRU_CAN_RX_CLOCK_BRP_REGISTER &amp; 0xFFFF);
++	u32value = 0x00000000;
++	s16subrtnretval = pruss_writel(dev, u32offset, (u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++	return 0;
++}
++
++
++/*
++ * pru_can_emu_open()		Opens the can emu for
++ * application to use. This API will be called by the Application
++ * to Open the can emu for application to use.
++ *
++ * param	pstremuapphndl	Pointer to application handler
++ * structure
++ *
++ * return   SUCCESS or FAILURE
++ */
++s16 pru_can_emu_open(struct device *dev, can_emu_app_hndl *pstremuapphndl)
++{
++
++	if (pstremuapphndl == NULL) {
++		return -1;
++	}
++
++	if (gstr_can_inst[pstremuapphndl-&gt;ecaninstance].bcaninststate == 1) {
++		return -1;
++	}
++
++	gstr_can_inst[(u8) pstremuapphndl-&gt;ecaninstance].
++					bcaninststate = (bool)1;
++	gstr_can_inst[(u8) pstremuapphndl-&gt;
++		ecaninstance].ecantransferdirection =
++		(can_transfer_direction)(u8)pstremuapphndl-&gt;ecantransferdirection;
++	gstr_can_inst[(u8) pstremuapphndl-&gt;ecaninstance].
++		u32apphandlerptr = (u32) pstremuapphndl;
++
++	return 0;
++}
++
++
++/*
++ * brief    pru_can_emu_close()	Closes the can emu for other
++ * applications to use. This API will be called by the Application to Close
++ * the can emu for other applications to use
++ *
++ * param	pstremuapphndl	Pointer to application handler structure
++ *
++ * return   SUCCESS or FAILURE
++ */
++s16 pru_can_emu_close(struct device *dev, can_emu_app_hndl *pstremuapphndl)
++{
++
++	if (pstremuapphndl == NULL) {
++		return -1;
++	}
++	if (gstr_can_inst[pstremuapphndl-&gt;ecaninstance].bcaninststate == 0) {
++		return -1;
++	}
++	if ((u32) pstremuapphndl != gstr_can_inst[(u8) pstremuapphndl-&gt;
++			ecaninstance].u32apphandlerptr){
++		return -1;
++	}
++	gstr_can_inst[(u8) pstremuapphndl-&gt;ecaninstance].bcaninststate
++		= (bool) 0;
++	gstr_can_inst[(u8) pstremuapphndl-&gt;
++	ecaninstance].ecantransferdirection = (can_transfer_direction) 0;
++	gstr_can_inst[(u8) pstremuapphndl-&gt;ecaninstance].u32apphandlerptr = 0;
++
++	return 0;
++}
++
++/*
++ * brief    pru_can_emu_exit()	Diables all the PRUs
++ * This API will be called by the Application to disable all PRUs
++ * param	None
++ * return   SUCCESS or FAILURE
++ */
++s16 pru_can_emu_exit(struct device *dev)
++{
++	s16 s16subrtnretval;
++
++	s16subrtnretval = pruss_disable(dev, CAN_RX_PRU_0);
++	if (s16subrtnretval == -1)
++		return -1;
++	s16subrtnretval = pruss_disable(dev, CAN_TX_PRU_1);
++	if (s16subrtnretval == -1)
++		return -1;
++
++	return 0;
++}
++
++s16 pru_can_emu_sreset(struct device *dev)
++{
++	return 0;
++}
++
++s16 pru_can_tx(struct device *dev, u8 u8mailboxnumber, u8 u8prunumber)
++{
++	u32 u32offset = 0;
++	u32 u32value = 0;
++	s16 s16subrtnretval = -1;
++
++	if (DA8XX_PRUCORE_1 == u8prunumber) {
++		switch (u8mailboxnumber) {
++		case 0:
++			u32offset = (PRU_CAN_TX_MAILBOX0_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000080;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++					(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 1:
++			u32offset = (PRU_CAN_TX_MAILBOX1_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000080;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 2:
++			u32offset = (PRU_CAN_TX_MAILBOX2_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000080;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 3:
++			u32offset = (PRU_CAN_TX_MAILBOX3_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000080;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 4:
++			u32offset = (PRU_CAN_TX_MAILBOX4_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000080;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 5:
++			u32offset = (PRU_CAN_TX_MAILBOX5_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000080;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 6:
++			u32offset = (PRU_CAN_TX_MAILBOX6_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000080;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 7:
++			u32offset = (PRU_CAN_TX_MAILBOX7_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000080;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		default:
++			return -1;
++		}
++	} else {
++
++		u32offset = (PRU_CAN_RX_INTERRUPT_STATUS_REGISTER &amp; 0xFFFF);
++		u32value = 0x00000000;
++		s16subrtnretval = pruss_readl(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++		if (s16subrtnretval == -1) {
++			return -1;
++		}
++		u32value = u32value &amp; ~(1 &lt;&lt; u8mailboxnumber);
++		s16subrtnretval = pruss_writel(dev, u32offset,
++					(u32 *) &amp;u32value, 1);
++		if (s16subrtnretval == -1) {
++			return -1;
++		}
++
++		switch (u8mailboxnumber) {
++		case 0:
++			u32offset = (PRU_CAN_RX_MAILBOX0_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000000;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 1:
++			u32offset = (PRU_CAN_RX_MAILBOX1_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000000;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 2:
++			u32offset = (PRU_CAN_RX_MAILBOX2_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000000;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 3:
++			u32offset = (PRU_CAN_RX_MAILBOX3_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000000;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 4:
++			u32offset = (PRU_CAN_RX_MAILBOX4_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000000;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 5:
++			u32offset = (PRU_CAN_RX_MAILBOX5_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000000;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 6:
++			u32offset = (PRU_CAN_RX_MAILBOX6_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000000;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		case 7:
++			u32offset = (PRU_CAN_RX_MAILBOX7_STATUS_REGISTER &amp; 0xFFFF);
++			u32value = 0x00000000;
++			s16subrtnretval = pruss_writel(dev, u32offset,
++						(u32 *) &amp;u32value, 1);
++			if (s16subrtnretval == -1) {
++				return -1;
++			}
++			break;
++		default:
++			return -1;
++		}
++	}
++	return 0;
++}
++
++s16 pru_can_start_abort_tx(struct device *dev, bool bcantransmitabortflag)
++{
++	u32 u32offset;
++	u32 u32value;
++	s16 s16subrtnretval;
++	u32offset = (PRUSS_INTC_STATIDXCLR &amp; 0xFFFF);
++	u32value = 32;
++	s16subrtnretval = pruss_writel(dev, u32offset,
++					(u32 *) &amp;u32value, 1);
++
++	u32offset = (PRUSS_INTC_ENIDXSET &amp; 0xFFFF);
++	u32value = 32;
++	s16subrtnretval = pruss_writel(dev, u32offset,
++					(u32 *) &amp;u32value, 1);
++
++	u32offset = (PRUSS_INTC_STATIDXSET &amp; 0xFFFF);
++	u32value = 32;
++	s16subrtnretval = pruss_writel(dev, u32offset,
++					(u32 *) &amp;u32value, 1);
++	if (s16subrtnretval == -1) {
++		return -1;
++	}
++	return 0;
++}
++
++s16 pru_can_mask_ints(struct device *dev, u32 int_mask)
++{
++	return 0;
++}
++
++int pru_can_get_error_cnt(struct device *dev, u8 u8prunumber)
++{
++	return 0;
++}
++
++int pru_can_get_intc_status(struct device *dev)
++{
++	u32 u32offset = 0;
++	u32 u32getvalue = 0;
++	u32 u32clrvalue = 0;
++
++	u32offset = (PRUSS_INTC_STATCLRINT1 &amp; 0xFFFF);
++	pruss_readl(dev, u32offset, (u32 *) &amp;u32getvalue, 1);
++
++	if (u32getvalue &amp; 4)
++		u32clrvalue = 34;	/* CLR Event 34 */
++
++	if (u32getvalue &amp; 2)
++		u32clrvalue = 33;	/* CLR Event 33  */
++
++	if (u32clrvalue) {
++		u32offset = (PRUSS_INTC_STATIDXCLR &amp; 0xFFFF);
++		pruss_writel(dev, u32offset, &amp;u32clrvalue, 1);
++	} else
++		return -1;
++
++	return u32getvalue;
++}
+diff --git a/drivers/net/can/da8xx_pruss/pruss_can_api.h b/drivers/net/can/da8xx_pruss/pruss_can_api.h
+new file mode 100644
+index 0000000..7550456
+--- /dev/null
++++ b/drivers/net/can/da8xx_pruss/pruss_can_api.h
+@@ -0,0 +1,290 @@
++/*
++ * Copyright (C) 2010 Texas Instruments Incorporated
++ * Author: Ganeshan N
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as  published by the
++ * Free Software Foundation version 2.
++ *
++ * This program is distributed &quot;as is&quot; WITHOUT ANY WARRANTY of any kind,
++ * whether express or implied; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ */
++
++#ifndef _PRU_CAN_API_H_
++#define _PRU_CAN_API_H_
++
++#include &lt;linux/types.h&gt;
++#include &lt;linux/mfd/pruss/da8xx_pru.h&gt;
++
++
++#define CAN_BIT_TIMINGS			(0x273)
++
++/* Timer Clock is sourced from DDR freq (PLL1 SYS CLK 2) */
++#define	TIMER_CLK_FREQ			132000000
++
++#define TIMER_SETUP_DELAY		14
++#define GPIO_SETUP_DELAY		150
++
++#define CAN_RX_PRU_0			PRUSS_NUM0
++#define CAN_TX_PRU_1			PRUSS_NUM1
++
++/* Number of Instruction in the Delay loop */
++#define DELAY_LOOP_LENGTH		2
++
++#define PRU1_BASE_ADDR			0x2000
++
++#define PRU_CAN_TX_GLOBAL_CONTROL_REGISTER		(PRU1_BASE_ADDR)
++#define PRU_CAN_TX_GLOBAL_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x04)
++#define PRU_CAN_TX_INTERRUPT_MASK_REGISTER		(PRU1_BASE_ADDR	+ 0x08)
++#define PRU_CAN_TX_INTERRUPT_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x0C)
++#define PRU_CAN_TX_MAILBOX0_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x10)
++#define PRU_CAN_TX_MAILBOX1_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x14)
++#define PRU_CAN_TX_MAILBOX2_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x18)
++#define PRU_CAN_TX_MAILBOX3_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x1C)
++#define PRU_CAN_TX_MAILBOX4_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x20)
++#define PRU_CAN_TX_MAILBOX5_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x24)
++#define PRU_CAN_TX_MAILBOX6_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x28)
++#define PRU_CAN_TX_MAILBOX7_STATUS_REGISTER		(PRU1_BASE_ADDR	+ 0x2C)
++#define PRU_CAN_TX_ERROR_COUNTER_REGISTER		(PRU1_BASE_ADDR	+ 0x30)
++#define PRU_CAN_TX_TIMING_REGISTER			(PRU1_BASE_ADDR	+ 0x34)
++#define PRU_CAN_TX_CLOCK_BRP_REGISTER			(PRU1_BASE_ADDR	+ 0x38)
++
++#define PRU_CAN_TX_MAILBOX0				(PRU1_BASE_ADDR	+ 0x40)
++#define PRU_CAN_TX_MAILBOX1				(PRU1_BASE_ADDR	+ 0x50)
++#define PRU_CAN_TX_MAILBOX2				(PRU1_BASE_ADDR	+ 0x60)
++#define PRU_CAN_TX_MAILBOX3				(PRU1_BASE_ADDR	+ 0x70)
++#define PRU_CAN_TX_MAILBOX4				(PRU1_BASE_ADDR	+ 0x80)
++#define PRU_CAN_TX_MAILBOX5				(PRU1_BASE_ADDR	+ 0x90)
++#define PRU_CAN_TX_MAILBOX6				(PRU1_BASE_ADDR	+ 0xA0)
++#define PRU_CAN_TX_MAILBOX7				(PRU1_BASE_ADDR	+ 0xB0)
++
++#define PRU_CAN_TIMING_VAL_TX				(PRU1_BASE_ADDR	+ 0xC0)
++#define PRU_CAN_TIMING_VAL_TX_SJW			(PRU1_BASE_ADDR	+ 0xC4)
++#define PRU_CAN_TRANSMIT_FRAME				(PRU1_BASE_ADDR	+ 0xE0)
++
++#define PRU0_BASE_ADDR					0
++
++#define PRU_CAN_RX_GLOBAL_CONTROL_REGISTER		(PRU0_BASE_ADDR)
++#define PRU_CAN_RX_GLOBAL_STATUS_REGISTER		(PRU0_BASE_ADDR	+ 0x04)
++#define PRU_CAN_RX_INTERRUPT_MASK_REGISTER		(PRU0_BASE_ADDR	+ 0x08)
++#define PRU_CAN_RX_INTERRUPT_STATUS_REGISTER		(PRU0_BASE_ADDR	+ 0x0C)
++#define PRU_CAN_RX_MAILBOX0_STATUS_REGISTER		(PRU0_BASE_ADDR	+ 0x10)
++#define PRU_CAN_RX_MAILBOX1_STATUS_REGISTER		(PRU0_BASE_ADDR	+ 0x14)
++#define PRU_CAN_RX_MAILBOX2_STATUS_REGISTER		(PRU0_BASE_ADDR	+ 0x18)
++#define PRU_CAN_RX_MAILBOX3_STATUS_REGISTER		(PRU0_BASE_ADDR	+ 0x1C)
++#define PRU_CAN_RX_MAILBOX4_STATUS_REGISTER		(PRU0_BASE_ADDR	+ 0x20)
++#define PRU_CAN_RX_MAILBOX5_STATUS_REGISTER		(PRU0_BASE_ADDR	+ 0x24)
++#define PRU_CAN_RX_MAILBOX6_STATUS_REGISTER		(PRU0_BASE_ADDR	+ 0x28)
++#define PRU_CAN_RX_MAILBOX7_STATUS_REGISTER		(PRU0_BASE_ADDR	+ 0x2C)
++#define PRU_CAN_RX_MAILBOX8_STATUS_REGISTER		(PRU0_BASE_ADDR	+ 0x30)
++#define PRU_CAN_RX_ERROR_COUNTER_REGISTER		(PRU0_BASE_ADDR	+ 0x34)
++#define PRU_CAN_RX_TIMING_REGISTER			(PRU0_BASE_ADDR	+ 0x38)
++#define PRU_CAN_RX_CLOCK_BRP_REGISTER			(PRU0_BASE_ADDR	+ 0x3C)
++
++#define PRU_CAN_RX_MAILBOX0				(PRU0_BASE_ADDR	+ 0x40)
++#define PRU_CAN_RX_MAILBOX1				(PRU0_BASE_ADDR	+ 0x50)
++#define PRU_CAN_RX_MAILBOX2				(PRU0_BASE_ADDR	+ 0x60)
++#define PRU_CAN_RX_MAILBOX3				(PRU0_BASE_ADDR	+ 0x70)
++#define PRU_CAN_RX_MAILBOX4				(PRU0_BASE_ADDR	+ 0x80)
++#define PRU_CAN_RX_MAILBOX5				(PRU0_BASE_ADDR	+ 0x90)
++#define PRU_CAN_RX_MAILBOX6				(PRU0_BASE_ADDR	+ 0xA0)
++#define PRU_CAN_RX_MAILBOX7				(PRU0_BASE_ADDR	+ 0xB0)
++#define PRU_CAN_RX_MAILBOX8				(PRU0_BASE_ADDR	+ 0xC0)
++
++#define PRU_CAN_TIMING_VAL_RX				(PRU0_BASE_ADDR	+ 0xD0)
++#define PRU_CAN_RECEIVE_FRAME				(PRU0_BASE_ADDR	+ 0xD4)
++#define PRU_CAN_ID_MAP					(PRU0_BASE_ADDR	+ 0xF0)
++
++#define PRU_CAN_ERROR_ACTIVE				128
++
++#define CAN_ACK_FAILED					0xE
++#define CAN_ARBTR_FAIL					0xD
++#define CAN_BIT_ERROR					0xC
++#define CAN_TRANSMISSION_SUCCESS			0xA
++
++#define STD_DATA_FRAME					0x1
++#define EXTD_DATA_FRAME					0x2
++#define STD_REMOTE_FRAME				0x3
++#define EXTD_REMOTE_FRAME				0x4
++
++#define PRU_CAN_MAX_SJW					8
++#define PRU_CAN_MAX_PHSEG1				25
++#define PRU_CAN_MAX_PHSEG2				25
++
++#define DA8XX_PRUCANCORE_0_REGS				0x7000
++#define DA8XX_PRUCANCORE_1_REGS				0x7800
++#define PRU0_PROG_RAM_START_OFFSET			0x8000
++#define PRU1_PROG_RAM_START_OFFSET			0xC000
++#define PRU_CAN_INIT_MAX_TIMEOUT			0xFF
++
++typedef enum {
++	ecaninst0 = 0,
++	ecaninst1,
++	ecanmaxinst
++} can_instance_enum;
++
++typedef enum {
++	ecanmailbox0 = 0,
++	ecanmailbox1,
++	ecanmailbox2,
++	ecanmailbox3,
++	ecanmailbox4,
++	ecanmailbox5,
++	ecanmailbox6,
++	ecanmailbox7
++} can_mailbox_number;
++
++typedef enum {
++	ecandirectioninit = 0,
++	ecantransmit,
++	ecanreceive
++} can_transfer_direction;
++
++typedef struct {
++	u16 u16extendedidentifier;
++	u16 u16baseidentifier;
++	u8 u8data7;
++	u8 u8data6;
++	u8 u8data5;
++	u8 u8data4;
++	u8 u8data3;
++	u8 u8data2;
++	u8 u8data1;
++	u8 u8data0;
++	u16 u16datalength;
++	u16 u16crc;
++} can_mail_box_structure;
++
++typedef struct {
++	can_transfer_direction ecantransferdirection;
++} can_mailbox_config;
++
++typedef struct {
++	can_instance_enum ecaninstance;
++	can_transfer_direction ecantransferdirection;
++	can_mail_box_structure strcanmailbox;
++	can_mailbox_number ecanmailboxnumber;
++	u8 u8prunumber;
++	u32 u32globalstatus;
++	u32 u32interruptstatus;
++	u32 u32mailboxstatus;
++} can_emu_app_hndl;
++
++typedef struct {
++	bool bcaninststate;
++	can_transfer_direction ecantransferdirection;
++	u32 u32apphandlerptr;
++} can_emu_drv_inst;
++
++typedef struct {
++	u8 u8syncjumpwidth;
++	u8 u8phseg1;
++	u8 u8phseg2;
++} can_bit_timing_consts;
++
++/* Field Definition Macros  */
++
++/* CONTROL */
++
++/*
++ * pru_can_set_brp() Updates the  BRP register of PRU.
++ */
++s16 pru_can_set_brp(struct device *dev, u16 u16prescaler);
++
++/*
++ * pru_can_set_bit_timing() Updates the  timing register of PRU
++ */
++s16 pru_can_set_bit_timing(struct device *dev,
++			can_bit_timing_consts *pstrbittiming);
++
++/*
++ * pru_can_calc_timing() Updates the timing values of PRU
++ */
++s16 pru_can_calc_timing(struct device *dev,
++			u32 u32bittiming, u32 u32bitrateprescaler);
++
++/*
++ * pru_can_write_data_to_mailbox() Updates the transmit mailboxes of PRU1
++ */
++s16 pru_can_write_data_to_mailbox(struct device *dev,
++			can_emu_app_hndl *pstremuapphndl);
++
++/*
++ * pru_can_get_data_from_mailbox() Receive data from receive mailboxes
++ */
++s16 pru_can_get_data_from_mailbox(struct device *dev,
++			can_emu_app_hndl *pstremuapphndl);
++
++/*
++ * pru_can_rx_id_map() Receive mailboxes ID Mapping of PRU0
++ */
++s16 pru_can_rx_id_map(struct device *dev,
++			u32 u32nodeid, can_mailbox_number ecanmailboxno);
++
++/*
++ *pru_can_get_intr_status() Get interrupts status register value
++ */
++s16 pru_can_get_intr_status(struct device *dev,
++			can_emu_app_hndl *pstremuapphndl);
++
++
++/*
++ * pru_can_get_global_status() Get the globalstatus register value
++ */
++s16 pru_can_get_global_status(struct device *dev,
++			can_emu_app_hndl *pstremuapphndl);
++
++/*
++ * pru_can_get_mailbox_status() Get mailbox status reg value
++ */
++s16 pru_can_get_mailbox_status(struct device *dev,
++			can_emu_app_hndl *pstremuapphndl);
++
++/*
++ * pru_can_configuration_mode_set() Sets timing val for data transfer
++ */
++s16 pru_can_config_mode_set(struct device *dev,
++			bool bconfig_modeflag);
++
++/*
++ * pru_can_emu_init() Initializes Can Emulation Parameters
++ */
++s16 pru_can_emu_init(struct device *dev,
++			u32 u32pruclock);
++
++/*
++ * pru_can_emu_open() Opens can emu for application to use
++ */
++s16 pru_can_emu_open(struct device *dev,
++			can_emu_app_hndl *pstremuapphndl);
++
++/*
++ * pru_can_emu_close() Closes can emu for applications to use
++ */
++s16 pru_can_emu_close(struct device *dev,
++			can_emu_app_hndl *pstremuapphndl);
++
++/*
++ * pru_can_emu_exit() Diables all the PRUs
++ */
++s16 pru_can_emu_exit(struct device *dev);
++
++s16 pru_can_tx_mode_set(struct device *dev, bool btransfer_flag,
++			 can_transfer_direction ecan_trx);
++
++s16 pru_can_emu_sreset(struct device *dev);
++
++s16 pru_can_tx(struct device *dev,
++			u8 u8mailboxnumber, u8 u8prunumber);
++
++s16 pru_can_start_abort_tx(struct device *dev,
++			bool btxabort_flag);
++
++s16 pru_can_mask_ints(struct device *dev, u32 int_mask);
++
++s32 pru_can_get_error_cnt(struct device *dev, u8 u8prunumber);
++
++s32 pru_can_get_intc_status(struct device *dev);
++#endif
+-- 
+1.7.2.3
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005530.html">[PATCH net-next-2.6 v7 1/1] can: c_can: Added support for	Bosch C_CAN controller
+</A></li>
+	<LI>Next message: <A HREF="005520.html">[PATCH v2 09/13] can: pruss CAN driver.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5519">[ date ]</a>
+              <a href="thread.html#5519">[ thread ]</a>
+              <a href="subject.html#5519">[ subject ]</a>
+              <a href="author.html#5519">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

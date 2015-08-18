@@ -1,0 +1,306 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH socketcan SVN trunk] mcp251x: misc bugfixes
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20socketcan%20SVN%20trunk%5D%20mcp251x%3A%20misc%20bugfixes&In-Reply-To=%3C1264858141-4002-1-git-send-email-chripell%40fsfe.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003930.html">
+   <LINK REL="Next"  HREF="003926.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH socketcan SVN trunk] mcp251x: misc bugfixes</H1>
+    <B>Christian Pellegrin</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20socketcan%20SVN%20trunk%5D%20mcp251x%3A%20misc%20bugfixes&In-Reply-To=%3C1264858141-4002-1-git-send-email-chripell%40fsfe.org%3E"
+       TITLE="[PATCH socketcan SVN trunk] mcp251x: misc bugfixes">chripell at fsfe.org
+       </A><BR>
+    <I>Sat Jan 30 14:29:01 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003930.html">[PATCH net-next-2.6 v2] can: mcp251x: Move to threaded interrupts	instead of workqueues.
+</A></li>
+        <LI>Next message: <A HREF="003926.html">[PATCH socketcan SVN trunk] mcp251x: misc bugfixes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3923">[ date ]</a>
+              <a href="thread.html#3923">[ thread ]</a>
+              <a href="subject.html#3923">[ subject ]</a>
+              <a href="author.html#3923">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Several bugs are fixed: utilization of just half of the RX buffers,
+useless wait for interrupt on open, more reliable reset sequence. The MERR interrupt is
+not used anymore: it overloads the CPU in bus-off state without any additional information.
+One shot mode for the MCP2515 is added.
+
+Signed-off-by: Christian Pellegrin &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">chripell at fsfe.org</A>&gt;
+---
+Index: kernel/2.6/include/socketcan/can/platform/mcp251x.h
+===================================================================
+--- kernel/2.6/include/socketcan/can/platform/mcp251x.h	(revision 1120)
++++ kernel/2.6/include/socketcan/can/platform/mcp251x.h	(working copy)
+@@ -7,6 +7,8 @@
+  *
+  */
+ 
++#include &lt;linux/spi/spi.h&gt;
++
+ /**
+  * struct mcp251x_platform_data - MCP251X SPI CAN controller platform data
+  * @oscillator_frequency:       - oscillator frequency in Hz
+Index: kernel/2.6/drivers/net/can/mcp251x.c
+===================================================================
+--- kernel/2.6/drivers/net/can/mcp251x.c	(revision 1120)
++++ kernel/2.6/drivers/net/can/mcp251x.c	(working copy)
+@@ -234,8 +234,7 @@
+ 	struct workqueue_struct *wq;
+ 	struct work_struct tx_work;
+ 	struct work_struct irq_work;
+-	struct completion awake;
+-	int wake;
++
+ 	int force_quit;
+ 	int after_suspend;
+ #define AFTER_SUSPEND_UP 1
+@@ -363,8 +362,10 @@
+ 					  buf[i]);
+ 	} else {
+ 		mutex_lock(&amp;priv-&gt;spi_lock);
++
+ 		memcpy(priv-&gt;spi_tx_buf, buf, TXBDAT_OFF + len);
+ 		mcp251x_spi_trans(spi, TXBDAT_OFF + len);
++
+ 		mutex_unlock(&amp;priv-&gt;spi_lock);
+ 	}
+ }
+@@ -471,21 +472,6 @@
+ 	mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_SLEEP);
+ }
+ 
+-static void mcp251x_hw_wakeup(struct spi_device *spi)
+-{
+-	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
+-
+-	priv-&gt;wake = 1;
+-
+-	/* Can only wake up by generating a wake-up interrupt. */
+-	mcp251x_write_bits(spi, CANINTE, CANINTE_WAKIE, CANINTE_WAKIE);
+-	mcp251x_write_bits(spi, CANINTF, CANINTF_WAKIF, CANINTF_WAKIF);
+-
+-	/* Wait until the device is awake */
+-	if (!wait_for_completion_timeout(&amp;priv-&gt;awake, HZ))
+-		dev_err(&amp;spi-&gt;dev, &quot;MCP251x didn't wake-up\n&quot;);
+-}
+-
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,32)
+ static int mcp251x_hard_start_xmit(struct sk_buff *skb, struct net_device *net)
+ #else
+@@ -535,21 +521,24 @@
+ 
+ static void mcp251x_set_normal_mode(struct spi_device *spi)
+ {
++	struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
+ 	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
+ 	unsigned long timeout;
+ 
+ 	/* Enable interrupts */
+ 	mcp251x_write_reg(spi, CANINTE,
+ 			  CANINTE_ERRIE | CANINTE_TX2IE | CANINTE_TX1IE |
+-			  CANINTE_TX0IE | CANINTE_RX1IE | CANINTE_RX0IE |
+-			  CANINTF_MERRF);
++			  CANINTE_TX0IE | CANINTE_RX1IE | CANINTE_RX0IE);
+ 
+ 	if (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_LOOPBACK) {
+ 		/* Put device into loopback mode */
+ 		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_LOOPBACK);
+ 	} else {
+ 		/* Put device into normal mode */
+-		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_NORMAL);
++		mcp251x_write_reg(spi, CANCTRL, CANCTRL_REQOP_NORMAL |
++				  ((pdata-&gt;model == CAN_MCP251X_MCP2515 &amp;&amp;
++				    priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_ONE_SHOT) ?
++				   CANCTRL_OSM : 0));
+ 
+ 		/* Wait for the device to enter normal mode */
+ 		timeout = jiffies + HZ;
+@@ -594,12 +583,10 @@
+ 	mcp251x_do_set_bittiming(net);
+ 
+ 	/* Enable RX0-&gt;RX1 buffer roll over and disable filters */
+-	mcp251x_write_bits(spi, RXBCTRL(0),
+-			   RXBCTRL_BUKT | RXBCTRL_RXM0 | RXBCTRL_RXM1,
+-			   RXBCTRL_BUKT | RXBCTRL_RXM0 | RXBCTRL_RXM1);
+-	mcp251x_write_bits(spi, RXBCTRL(1),
+-			   RXBCTRL_RXM0 | RXBCTRL_RXM1,
+-			   RXBCTRL_RXM0 | RXBCTRL_RXM1);
++	mcp251x_write_reg(spi, RXBCTRL(0),
++			  RXBCTRL_BUKT | RXBCTRL_RXM0 | RXBCTRL_RXM1);
++	mcp251x_write_reg(spi, RXBCTRL(1),
++			  RXBCTRL_RXM0 | RXBCTRL_RXM1);
+ 	return 0;
+ }
+ 
+@@ -607,19 +594,30 @@
+ {
+ 	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
+ 	int ret;
++	unsigned long timeout;
+ 
+ 	mutex_lock(&amp;priv-&gt;spi_lock);
+ 
+ 	priv-&gt;spi_tx_buf[0] = INSTRUCTION_RESET;
+ 
+ 	ret = spi_write(spi, priv-&gt;spi_tx_buf, 1);
++	if (ret)
++		dev_err(&amp;spi-&gt;dev, &quot;reset failed: ret = %d\n&quot;, ret);
+ 
+ 	mutex_unlock(&amp;priv-&gt;spi_lock);
+ 
+-	if (ret)
+-		dev_err(&amp;spi-&gt;dev, &quot;reset failed: ret = %d\n&quot;, ret);
+ 	/* Wait for reset to finish */
++	timeout = jiffies + HZ;
+ 	mdelay(10);
++	while ((mcp251x_read_reg(spi, CANSTAT) &amp; CANCTRL_REQOP_MASK)
++	       != CANCTRL_REQOP_CONF) {
++		schedule();
++		if (time_after(jiffies, timeout)) {
++			dev_err(&amp;spi-&gt;dev, &quot;MCP251x didn't&quot;
++				&quot; enter in conf mode after reset\n&quot;);
++			break;
++		}
++	}
+ }
+ 
+ static int mcp251x_hw_probe(struct spi_device *spi)
+@@ -685,7 +683,6 @@
+ 		return ret;
+ 	}
+ 
+-	mcp251x_hw_wakeup(spi);
+ 	mcp251x_hw_reset(spi);
+ 	ret = mcp251x_setup(net, priv, spi);
+ 	if (ret) {
+@@ -763,7 +760,6 @@
+ 						 irq_work);
+ 	struct spi_device *spi = priv-&gt;spi;
+ 	struct net_device *net = priv-&gt;net;
+-	u8 txbnctrl;
+ 	u8 intf;
+ 	enum can_state new_state;
+ 
+@@ -791,11 +787,9 @@
+ 		return;
+ 
+ 	while (!priv-&gt;force_quit &amp;&amp; !freezing(current)) {
+-		u8 eflag = mcp251x_read_reg(spi, EFLG);
++		u8 eflag;
+ 		int can_id = 0, data1 = 0;
+ 
+-		mcp251x_write_reg(spi, EFLG, 0x00);
+-
+ 		if (priv-&gt;restart_tx) {
+ 			priv-&gt;restart_tx = 0;
+ 			mcp251x_write_reg(spi, TXBCTRL(0), 0);
+@@ -805,15 +799,22 @@
+ 			can_id |= CAN_ERR_RESTARTED;
+ 		}
+ 
+-		if (priv-&gt;wake) {
+-			/* Wait whilst the device wakes up */
+-			mdelay(10);
+-			priv-&gt;wake = 0;
+-		}
+-
+ 		intf = mcp251x_read_reg(spi, CANINTF);
++
++		if (intf &amp; CANINTF_RX0IF) {
++			mcp251x_hw_rx(spi, 0);
++			/* Free one buffer ASAP */
++			mcp251x_write_bits(spi, CANINTF, intf &amp; CANINTF_RX0IF, 0x00);
++                }
++
++		if (intf &amp; CANINTF_RX1IF)
++			mcp251x_hw_rx(spi, 1);
++
+ 		mcp251x_write_bits(spi, CANINTF, intf, 0x00);
+ 
++		eflag = mcp251x_read_reg(spi, EFLG);
++		mcp251x_write_reg(spi, EFLG, 0x00);
++
+ 		/* Update can state */
+ 		if (eflag &amp; EFLG_TXBO) {
+ 			new_state = CAN_STATE_BUS_OFF;
+@@ -894,19 +895,6 @@
+ 		if (intf == 0)
+ 			break;
+ 
+-		if (intf &amp; CANINTF_WAKIF)
+-			complete(&amp;priv-&gt;awake);
+-
+-		if (intf &amp; CANINTF_MERRF) {
+-			/* If there are pending Tx buffers, restart queue */
+-			txbnctrl = mcp251x_read_reg(spi, TXBCTRL(0));
+-			if (!(txbnctrl &amp; TXBCTRL_TXREQ)) {
+-				if (priv-&gt;tx_skb || priv-&gt;tx_len)
+-					mcp251x_clean(net);
+-				netif_wake_queue(net);
+-			}
+-		}
+-
+ 		if (intf &amp; (CANINTF_TX2IF | CANINTF_TX1IF | CANINTF_TX0IF)) {
+ 			net-&gt;stats.tx_packets++;
+ 			net-&gt;stats.tx_bytes += priv-&gt;tx_len - 1;
+@@ -916,12 +904,6 @@
+ 			}
+ 			netif_wake_queue(net);
+ 		}
+-
+-		if (intf &amp; CANINTF_RX0IF)
+-			mcp251x_hw_rx(spi, 0);
+-
+-		if (intf &amp; CANINTF_RX1IF)
+-			mcp251x_hw_rx(spi, 1);
+ 	}
+ }
+ 
+@@ -1022,8 +1004,6 @@
+ 	INIT_WORK(&amp;priv-&gt;tx_work, mcp251x_tx_work_handler);
+ 	INIT_WORK(&amp;priv-&gt;irq_work, mcp251x_irq_work_handler);
+ 
+-	init_completion(&amp;priv-&gt;awake);
+-
+ 	/* Configure the SPI bus */
+ 	spi-&gt;mode = SPI_MODE_0;
+ 	spi-&gt;bits_per_word = 8;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003930.html">[PATCH net-next-2.6 v2] can: mcp251x: Move to threaded interrupts	instead of workqueues.
+</A></li>
+	<LI>Next message: <A HREF="003926.html">[PATCH socketcan SVN trunk] mcp251x: misc bugfixes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3923">[ date ]</a>
+              <a href="thread.html#3923">[ thread ]</a>
+              <a href="subject.html#3923">[ subject ]</a>
+              <a href="author.html#3923">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

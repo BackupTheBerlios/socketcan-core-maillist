@@ -1,0 +1,582 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 4/6] J1939: add documentation
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%204/6%5D%20J1939%3A%20add%20documentation&In-Reply-To=%3C4D52EB7A.60602%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005466.html">
+   <LINK REL="Next"  HREF="005512.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 4/6] J1939: add documentation</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%204/6%5D%20J1939%3A%20add%20documentation&In-Reply-To=%3C4D52EB7A.60602%40hartkopp.net%3E"
+       TITLE="[PATCH v2 4/6] J1939: add documentation">socketcan at hartkopp.net
+       </A><BR>
+    <I>Wed Feb  9 20:31:06 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005466.html">[PATCH v2 4/6] J1939: add documentation
+</A></li>
+        <LI>Next message: <A HREF="005512.html">j1939: ecu's &amp; dynamic addressing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5504">[ date ]</a>
+              <a href="thread.html#5504">[ thread ]</a>
+              <a href="subject.html#5504">[ subject ]</a>
+              <a href="author.html#5504">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 03.02.2011 10:39, Kurt Van Dijck wrote:
+&gt;<i> This contains the j1939 documentation.
+</I>&gt;<i> 
+</I>
+&gt;<i> +2. Motivation
+</I>&gt;<i> +--------------------------------
+</I>&gt;<i> +
+</I>&gt;<i> +  Given the fact there's something like SocketCAN with an API similar to BSD
+</I>&gt;<i> +  sockets, we found some reasons to justify a kernel implementation for the
+</I>&gt;<i> +  addressing and transport methods used by J1939.
+</I>&gt;<i> +
+</I>&gt;<i> +  * addressing:
+</I>&gt;<i> +    When a process on an ECU communicates via j1939, it should not necessarily
+</I>&gt;<i> +    know its source address. Although at least 1 process per ECU should know
+</I>&gt;<i> +    the source address. Other processes should be able to reuse that address.
+</I>&gt;<i> +    This way, address parameters for different processes cooperating for the
+</I>&gt;<i> +    same ECU, are not duplicated.
+</I>&gt;<i> +    This way of working is closely related to the unix concept where programs
+</I>&gt;<i> +    do just 1 thing, and do it well.
+</I>
+Good idea. As long as it is transparent to the user what's going on ...
+
+&gt;<i> +
+</I>&gt;<i> +  * dynamic addressing:
+</I>&gt;<i> +    Address Claiming in J1939 is time critical. Furthermore data transport
+</I>&gt;<i> +    should be handled properly during the address negotiation. Putting these
+</I>&gt;<i> +    functionality in the kernel eliminates this functionality as a requirement
+</I>&gt;<i> +    for _every_ userspace process that communicates via J1939. This results in
+</I>&gt;<i> +    a consistent J1939 bus with proper addressing.
+</I>
+dito.
+
+
+&gt;<i> +  The j1939 sockets operate on CAN network devices (see SocketCAN). Any j1939
+</I>&gt;<i> +  userspace library operating on CAN raw sockets will still operate properly.
+</I>&gt;<i> +  Since such library does not communicate with the in-kernel implementation,
+</I>&gt;<i> +  care must be taken that these 2 do not interfere. In practice, this means
+</I>&gt;<i> +  they cannot share ECU addresses. A single ECU (or virtual ECU) address is
+</I>&gt;<i> +  used by the library exclusively, or by the in-kernel system exclusively.
+</I>
+I'm really concerned, that there's no possibility to have more than one ECU
+running on our multi-user system ...
+
+If that would be possible, some kind of 'ecu' entry would need to be part of
+the sockaddr_can, right?
+
+&gt;<i> +
+</I>&gt;<i> +
+</I>&gt;<i> +3. J1939 concepts
+</I>&gt;<i> +--------------------------------
+</I>&gt;<i> +
+</I>&gt;<i> +3.1 PGN
+</I>&gt;<i> +
+</I>&gt;<i> +  The PGN (Parameter Group Number) is a number to identify a packet. The PGN
+</I>&gt;<i> +  is composed as follows:
+</I>&gt;<i> +   1 bit  : Reserved Bit
+</I>&gt;<i> +   1 bit  : Data Page
+</I>&gt;<i> +   8 bits : PF (PDU Format)
+</I>&gt;<i> +   8 bits : PS (PDU Specific)
+</I>&gt;<i> +
+</I>&gt;<i> +  In J1939-21, distinction is made between PDU1 Format (where PF &lt; 240) and
+</I>&gt;<i> +  PDU2 Format (where PF &gt;= 240). Furthermore, when using PDU2 Format, the
+</I>&gt;<i> +  PS-field contains a so-called Group Extension, which is part of the PGN.
+</I>&gt;<i> +  When using PDU2 Format, the Group Extension is set in the PS-field.
+</I>&gt;<i> +
+</I>&gt;<i> +  On the other hand, when using PDU1 Format, the PS-field contains a so-called
+</I>&gt;<i> +  Destination Address, which is _not_ part of the PGN. When communicating a
+</I>&gt;<i> +  PGN from userspace to kernel (or visa versa) and PDU2 Format is used, the
+</I>&gt;<i> +  PS-field of the PGN shall be set to zero. The Destination Address shall be
+</I>&gt;<i> +  set elsewhere.
+</I>
+Magically :-)
+
+&gt;<i> +
+</I>&gt;<i> +  Regarding PGN mapping to 29-bit CAN identifier, the Destination Address
+</I>&gt;<i> +  shall be get/set from/to the apropriate bits of the identifier by the kernel.
+</I>&gt;<i> +
+</I>&gt;<i> +
+</I>&gt;<i> +3.2 addressing
+</I>&gt;<i> +
+</I>&gt;<i> +  Both static and dynamic addressing methods can be used.
+</I>&gt;<i> +
+</I>&gt;<i> +  For static addresses, no extra checks are made by the kernel, and provided
+</I>&gt;<i> +  addresses are considered right. This responsibility is for the OEM or system
+</I>&gt;<i> +  integrator.
+</I>
+As it is in many industrial setups.
+
+&gt;<i> +
+</I>&gt;<i> +  For dynamic addressing, so-called Address Claiming, extra support is forseen
+</I>&gt;<i> +  in the kernel. In J1939 any ECU is known by it's 64-bit NAME. At the moment
+</I>&gt;<i> +  of succesfull address claim, the kernel keeps track of both NAME and source
+</I>&gt;<i> +  address being claimed. This serves as a base for filter schemes. By default,
+</I>&gt;<i> +  packets with a destination that is not locally, will be rejected soon after
+</I>&gt;<i> +  reception.
+</I>&gt;<i> +
+</I>&gt;<i> +  Mixed mode packets (from a static to a dynamic address or vice versa) are
+</I>&gt;<i> +  allowed. The BSD sockets define seperate API calls for getting/setting the
+</I>&gt;<i> +  local &amp; remote address and are applicable for J1939 sockets.
+</I>
+Do you mean bind() and connect() here?
+
+I think that is not the intention of bind() and connect(), as you don't
+necessarily need to perform a bind() before connect() as you do to define the
+source address and the destination address.
+
+IMO the sockaddr_can must be capable to define all these settings by only
+invoking connect(). So the src &amp; dest addresses are able to be specified with
+one syscall. It took some time to me to get behind this fact and it was not
+very intuitive.
+
+
+&gt;<i> +4. How to use J1939
+</I>&gt;<i> +--------------------------------
+</I>&gt;<i> +
+</I>&gt;<i> +4.1 API calls
+</I>&gt;<i> +
+</I>&gt;<i> +  Like TCP/IP and CAN, you first need to open a socket for communicating over a
+</I>&gt;<i> +  CAN network. To use j1939, include &lt;include/linux/j1939.h&gt;. From there,
+</I>&gt;<i> +  &lt;include/linux/can.h&gt; will be included too.
+</I>&gt;<i> +  To open a socket, you would write
+</I>&gt;<i> +
+</I>&gt;<i> +    s = socket(PF_CAN, SOCK_DGRAM, CAN_J1939);
+</I>&gt;<i> +
+</I>&gt;<i> +  J1939 does use SOCK_DGRAM sockets. In the j1939 specification, connections are
+</I>&gt;<i> +  mentioned in the context of transport protocol sessions. These still deliver
+</I>&gt;<i> +  packets to the other end (using several CAN packets).
+</I>&gt;<i> +  SOCK_STREAM is never appropriate.
+</I>
+Yep. Only SOCK_SEQPACKET could be candidate ... but DGRAM simply fits here.
+
+&gt;<i> +
+</I>&gt;<i> +  After the successful creation of the socket, you would normally use the
+</I>&gt;<i> +  bind(2) or connect(2) system call to bind the socket to a CAN interface
+</I>&gt;<i> +  (which is different from TCP/IP due to different addressing) After binding or
+</I>&gt;<i> +  connecting the socket, you can read(2) and write(2) from/to the socket or use
+</I>&gt;<i> +  send(2), sendto(2), sendmsg(2) and the recv* counterpart operations on the
+</I>&gt;<i> +  socket as usual. There are also J1939 specific socket options described below.
+</I>&gt;<i> +
+</I>&gt;<i> +  Per default j1939 is not active. Specifying can_ifindex != 0 in bind(2)
+</I>&gt;<i> +  or connect(2) needs an active j1939 on that interface. You must have done
+</I>&gt;<i> +  $ ip link set canX j1939 on
+</I>&gt;<i> +  on that interface.
+</I>
+Ugh! What's that for?
+
+&gt;<i> +
+</I>&gt;<i> +  In order to send data, a bind(2) must have succeeded. bind(2) assigns a local
+</I>&gt;<i> +  address to a socket. For this to succeed, you can only choose addresses
+</I>&gt;<i> +  that have been assigned with '$ ip addr add j1939 .... dev canX'.
+</I>
+When implementing only one ECU on the host.
+
+Now that i have read several documentation and also some j1939 API references like
+
+ <A HREF="http://www.esd-electronics-usa.com/Shared/Handbooks/CAN-J1939StackManual.pdf">http://www.esd-electronics-usa.com/Shared/Handbooks/CAN-J1939StackManual.pdf</A>
+
+i'm really sure that i definitely want to have more than one ECU at a time on
+my host (e.g. for rest-bus-simulation) and that binding j1939 addresses to
+network interfaces is broken.
+
+&gt;<i> +  When an
+</I>&gt;<i> +  empty address is assigned (ie. SA=0xff &amp;&amp; name=0), a default is taken for
+</I>&gt;<i> +  the device that is bound to.
+</I>
+As you stated somewhere above at &quot;2. Motivation *addressing&quot; only one process
+should need to keep track of setting the relevant addresses for a specific
+ECU. Once the ECU is part of struct sockaddr_can this can be managed. All
+processes can use the ECU-specific address information at least one of the ECU
+member processes has defined.
+
+Please keep off attaching j1939 addresses to network devices.
+
+&gt;<i> +
+</I>&gt;<i> +  Different from CAN is that the payload data is just the data that get send,
+</I>&gt;<i> +  without it's header info. The header info is derived from the sockaddr
+</I>&gt;<i> +  supplied to bind(2), connect(2), sendto(2) and recvfrom(2). A write(2) with
+</I>&gt;<i> +  size 4 will result in a packet with 4 bytes.
+</I>&gt;<i> +
+</I>&gt;<i> +  The sockaddr structure has extensions for use with j1939 as specified below:
+</I>&gt;<i> +      struct sockaddr_can {
+</I>&gt;<i> +         sa_family_t can_family;
+</I>&gt;<i> +         int         can_ifindex;
+</I>&gt;<i> +         union {
+</I>&gt;<i> +            struct {
+</I>&gt;<i> +               __u64 name;
+</I>&gt;<i> +               __u32 pgn;
+</I>&gt;<i> +               __u8  addr;
+</I>&gt;<i> +            } j1939;
+</I>&gt;<i> +         } can_addr;
+</I>&gt;<i> +      }
+</I>&gt;<i> +
+</I>&gt;<i> +  can_family &amp; can_ifindex serve the same purpose as for other SocketCAN sockets.
+</I>
+In general i wonder if it would make sense to define
+
+struct {
+    __u32 pgn;
+    __u8 prio;
+    __u8 src;
+    __u8 dest:
+    __u8 ecu;
+} j1939;
+
+As it makes *really* clear in any case - also when using sento() and
+recvfrom() - what the j1939 stack does.
+
+Even when it's a nice idea to handle all the address claiming infrastructure
+inside the kernel:
+
+1. It's not mandatory
+
+2. Things that could be handled outside the kernel should be handled outside
+the kernel. There are several userspace j1939 implementations doing so.
+
+3. The concepts with ECUs, segments and data structures are really complex and
+hard to understand and to review.
+
+If you insist on address claiming in kernelspace you might override the given
+src and dst adresses with a sockopt
+
+SO_J1939_DEST_NAME
+SO_J1939_SRC_NAME
+
+so that these name resolved values are used on this specific bound/connected
+socket instead of the given __u8 values - as an _option_.
+
+
+&gt;<i> +  can_addr.j1939.pgn specifies the PGN (max 0x3ffff). Individual bits are
+</I>&gt;<i> +  specified above.
+</I>&gt;<i> +
+</I>&gt;<i> +  can_addr.j1939.name contains the 64-bit J1939 NAME.
+</I>&gt;<i> +
+</I>&gt;<i> +  can_addr.j1939.addr contains the source address.
+</I>&gt;<i> +
+</I>&gt;<i> +  When sending data, the source address is applied as follows: If
+</I>&gt;<i> +  can_addr.j1939.name != 0 the NAME is looked up by the kernel and the
+</I>&gt;<i> +  corresponding Source Address is used. If can_addr.j1939.name == 0,
+</I>&gt;<i> +  can_addr.j1939.addr is used.
+</I>
+You provide two addressing schemata in one structure here.
+
+&gt;<i> +  After a bind(2), the local address is assigned, i.e. the source address.
+</I>&gt;<i> +  After a connect(2), the remote address is assigned, i.e. the destination
+</I>&gt;<i> +  address.
+</I>
+This is a bad approach. connect() should be able to do the job in one step.
+
+&gt;<i> +  Both write(2) and send(2) will send a packet with local address from bind,
+</I>&gt;<i> +  remote address from connect(2). When the address was not set, a broadcast is
+</I>&gt;<i> +  sent. The PGN is used from bind(2) or overruled with sendto(2), which will
+</I>&gt;<i> +  override the destination address when valid, and the PGN when valid.
+</I>
+Aehmmmm, yes?
+
+Can you see what i think is not easy to understand?
+
+
+&gt;<i> +4.3 Address Claiming
+</I>&gt;<i> +
+</I>&gt;<i> +  Distinction has to be made in and using the claimed address and doing an
+</I>&gt;<i> +  address claim. To use an already claimed address, one has to fill in the
+</I>&gt;<i> +  j1939.name member and provide it to bind(2). If the name had claimed an
+</I>&gt;<i> +  address earlier, all further PGN's being sent will use that address. And the
+</I>&gt;<i> +  j1939.addr member will be ignored.
+</I>&gt;<i> +
+</I>&gt;<i> +  An exception on this is pgn 0x0ee00. This is the &quot;Address Claim/Cannot Claim
+</I>&gt;<i> +  Address&quot; message and when the kernel will use the j1939.addr member for that
+</I>&gt;<i> +  pgn if necessary.
+</I>
+Can there be an inconsistency when the userspace process sends PGNs like this?
+
+&gt;<i> +  To claim an address, bind(2) with:
+</I>&gt;<i> +  j1939.pgn  set to 0x0ee00
+</I>&gt;<i> +  j1939.addr set to the desired Source Address.
+</I>&gt;<i> +  j1939.name set to the NAME you want the Source Address to claim to.
+</I>&gt;<i> +
+</I>&gt;<i> +  Afterwards do a write(2) with data set to the NAME (Little Endian). If the
+</I>&gt;<i> +  NAME provided, does not match the j1939.name provided to bind(2), EPROTO
+</I>&gt;<i> +  will be returned. One might use sendto(2) also to send the Addres Claim. In
+</I>&gt;<i> +  that case, the j1939.addr member must be set to the broadcast address (255)
+</I>&gt;<i> +  and the j1939.pgn must be set to 0x0ee00. If This combination is not given,
+</I>&gt;<i> +  EPROTO is returned.
+</I>
+Why EPROTO?
+
+
+&gt;<i> +  If no-one else contest the address claim within 250ms after transmission, the
+</I>&gt;<i> +  kernel marks the NAME-SA assignment as valid. The valid assignment will be
+</I>&gt;<i> +  kept, among other valid NAME-SA assignments. From that point, any socket
+</I>&gt;<i> +  bound to the NAME can send packets.
+</I>&gt;<i> +
+</I>&gt;<i> +  If another ECU claims the address, the kernel will mark the NAME-SA expired.
+</I>&gt;<i> +  No socket bound to the NAME can send packets (other than address claims).
+</I>&gt;<i> +  To claim another address, some socket bound to NAME, must bind(2) again,
+</I>&gt;<i> +  but with only j1939.addr changed to the new SA, and must then send a
+</I>&gt;<i> +  valid address claim packet. This restarts the state machine in the kernel
+</I>&gt;<i> +  (and any other participant on the bus) for this NAME.
+</I>
+This is the complexity i would prefer to leave out of the kernel ...
+
+&gt;<i> +5 Socket Options
+</I>&gt;<i> +--------------------------------
+</I>&gt;<i> +
+</I>&gt;<i> +  j1939 sockets have some options that are configurable via setsockopt(2).
+</I>&gt;<i> +  Each of those options is initialized with a reasonable default.
+</I>&gt;<i> +
+</I>
+&gt;<i> +5.2 SO_J1939_PROMISC
+</I>&gt;<i> +
+</I>&gt;<i> +  When set, j1939 will receive all packets, not just those with a destination
+</I>&gt;<i> +  on the local system.
+</I>&gt;<i> +  default off.
+</I>&gt;<i> +
+</I>&gt;<i> +    int promisc = 1; /* 0 = disabled (default), 1 = enabled */
+</I>&gt;<i> +
+</I>&gt;<i> +    setsockopt(s, SOL_CAN_J1939, SO_J1939_PROMISC, &amp;promisc, sizeof(promisc));
+</I>
+I think this also belongs to the fact, that you are attaching j1939 addresses
+to network interfaces, right?
+
+&gt;<i> +5.4 SO_J1939_RECV_DEST
+</I>&gt;<i> +
+</I>&gt;<i> +  Received j1939 packets that make their way up to the socket, had a destination
+</I>&gt;<i> +  address matching the socket's local address. This can have several reasons:
+</I>&gt;<i> +  - broadcast packet.
+</I>&gt;<i> +  - destination spec matches the local address
+</I>&gt;<i> +  - destination spec matches _a_ local address on the system, and the socket
+</I>&gt;<i> +    had no local address defined.
+</I>&gt;<i> +  - SO_J1939_PROMISC was set
+</I>&gt;<i> +  If the user is interested in the original destination spec, SO_J1939_RECV_DEST
+</I>&gt;<i> +  can be changed to 1 to receive the destination spec with each packet.
+</I>&gt;<i> +  The destination is attached to the msghdr in the recvmsg(2) call.
+</I>
+Why this option? Is using recvmsg() not enough to detect this info to be
+retrieved?
+
+&gt;<i> +5.5 SO_J1939_RECV_PRIO
+</I>&gt;<i> +
+</I>&gt;<i> +  As stated earlier, the priority field is stripped very soon. In order to
+</I>&gt;<i> +  allow retreiving the packet's priority, SO_J1939_RECV_PRIO can be set to 1.
+</I>&gt;<i> +
+</I>&gt;<i> +  As a result, an extra int will be attached during recvmsg(2), similar
+</I>&gt;<i> +  as in SO_J1939_RECV_DEST, but with cmsg_type == SCM_J1939_PRIO
+</I>&gt;<i> +
+</I>&gt;<i> +6.6 SO_J1939_SEND_PRIO
+</I>&gt;<i> +
+</I>&gt;<i> +  To set the priority field for outgoing packets, the SO_J1939_SEND_PRIO can
+</I>&gt;<i> +  be changed. This int field specifies the priority that will be used.
+</I>&gt;<i> +  j1939 defines a priority between 0 and 7 inclusive,
+</I>&gt;<i> +  with 7 the lowest priority.
+</I>&gt;<i> +  Per default, the priority is set to 6 (conforming J1939).
+</I>&gt;<i> +  This priority socket option operates on the same value that is modified
+</I>&gt;<i> +  with
+</I>&gt;<i> +
+</I>&gt;<i> +    setsockopt(s, SOL_SOCKET, SO_PRIORITY, &amp;pri, sizeof(pri))
+</I>&gt;<i> +
+</I>&gt;<i> +  socketoption, with a difference that SOL_SOCKET/SO_PRIORITY is defined with
+</I>&gt;<i> +  0 the lowest priority. SOL_CAN_J1939/SO_J1939_SEND_PRIO inverts this value
+</I>&gt;<i> +  for you.
+</I>
+Why is the priority not part of sockaddr_can in the same way as the PGN?
+
+&gt;<i> +
+</I>&gt;<i> +5.7 SO_J1939_DEST_MASK
+</I>&gt;<i> +
+</I>&gt;<i> +  When a destination is specified by its name (and thus using dynamic addressing),
+</I>&gt;<i> +  and such name should be unique amongst the world, it may be hard to predict the
+</I>&gt;<i> +  name of eg. a gearbox controller on the bus, although its type and manufacturer
+</I>&gt;<i> +  are know. This is because the serial number is part of the name.
+</I>&gt;<i> +  To simplify specifying a destination, a per-socket destination mask is provided
+</I>&gt;<i> +  that is activated whenever a destination name is wanted. Any bits cleared in
+</I>&gt;<i> +  this mask are ignored during the lookup. As a result, more than 1 ECU may match
+</I>&gt;<i> +  this name/mask pair. In all cases, the first match is used.
+</I>&gt;<i> +  The API is thus capable of specifying a name for eg. the gearbox controller,
+</I>&gt;<i> +  without knowing its serial number.
+</I>
+Yes. The address claiming and name handling inside the kernel is a heavy thing.
+
+&gt;<i> +  This mask can mask out any part in the name. Note there's only 1 mask per socket.
+</I>&gt;<i> +
+</I>&gt;<i> +  this mask is default set to mask the serial number.
+</I>&gt;<i> +
+</I>&gt;<i> +  when can_addr.j1939.name is used for destination in outgoing packets
+</I>&gt;<i> +  (see bind(2), sendto(2)), the exact name is often not known due to serial
+</I>&gt;<i> +  numbers in it.
+</I>&gt;<i> +  Therefore, SO_J1939_DEST_MASK sets an uint64_t mask that will be used
+</I>&gt;<i> +  for resolving these names. Only the bits set to 1 in the mask will be
+</I>&gt;<i> +  evaluated for find the destination name.
+</I>&gt;<i> +  Per default, the mask is set to mask out the serial number
+</I>&gt;<i> +  (0xffffffffffe00000ULL)
+</I>&gt;<i> +
+</I>&gt;<i> +  to mask out only the manufacturer code (bits 21-31), do
+</I>&gt;<i> +
+</I>&gt;<i> +    uint64_t mask = 0xffffffff001fffffULL;
+</I>&gt;<i> +
+</I>&gt;<i> +    setsockopt(s, SOL_CAN_J1939, SO_J1939_DEST_MASK, &amp;mask, sizeof(mask));
+</I>&gt;<i> +
+</I>&gt;<i> +
+</I>&gt;<i> +6. /proc Interface.
+</I>&gt;<i> +--------------------------------
+</I>&gt;<i> +
+</I>&gt;<i> +
+</I>&gt;<i> +  Files giving you a view on the in-kernel operation of J1939 are located at:
+</I>&gt;<i> +  /proc/net/j1939.
+</I>&gt;<i> +
+</I>&gt;<i> +6.1 /proc/net/j1939/ecu
+</I>&gt;<i> +
+</I>&gt;<i> +  This file gives an overview of the known ECU's to the kernel.
+</I>&gt;<i> +  - iface : network interface they operate on.
+</I>&gt;<i> +  - SA : current address.
+</I>&gt;<i> +  - name : 64bit NAME
+</I>&gt;<i> +  - flags : 'L' = local, 'R' = remote
+</I>&gt;<i> +
+</I>
+Ah, you have ECUs - can you have more that one ECU marked as 'L'ocal?
+
+
+&gt;<i> +6.3 /proc/net/j1939/sock
+</I>&gt;<i> +
+</I>&gt;<i> +  This file gives a list of all j1939 sockets currently open.
+</I>&gt;<i> +  - iface : network interface
+</I>&gt;<i> +  - flags :
+</I>&gt;<i> +    'b' : bound
+</I>&gt;<i> +    'c' : connected
+</I>&gt;<i> +    'P' : PROMISC
+</I>&gt;<i> +    'o' : RECV_OWN
+</I>&gt;<i> +    'd' : RECV_DEST
+</I>&gt;<i> +    'p' : RECV_PRIO
+</I>&gt;<i> +  - local: [NAME],SA
+</I>&gt;<i> +  - remote: [NAME]/MASK,DA
+</I>&gt;<i> +  - pgn : PGN
+</I>&gt;<i> +  - prio : priority
+</I>
+Indeed this shows, that my suggestion for the struct j1939 in sockaddr_can is
+not that far from the contents you need.
+
+&gt;<i> +6.4 /proc/net/j1939/stack
+</I>&gt;<i> +
+</I>&gt;<i> +  The internal j1939 is build with a stack of code blocks. This blocks are
+</I>&gt;<i> +  passed for each packet (both RX &amp; TX).
+</I>&gt;<i> +  this file gives an insight view on this stack.
+</I>&gt;<i> +  - prio : level, priority
+</I>
+Why has the _stack_ a priority?
+
+&gt;<i> +  - name :
+</I>&gt;<i> +  - tx matches :
+</I>&gt;<i> +  - rx matches :
+</I>&gt;<i> +
+</I>&gt;<i> +
+</I>&gt;<i> +6.5 /proc/net/j1939/transport
+</I>&gt;<i> +
+</I>&gt;<i> +
+</I>&gt;<i> +6.6 /proc/sys/net/j1939 - SYSCTL
+</I>&gt;<i> +
+</I>&gt;<i> +  Via these sysctl files, several parameters of the j1939 module can be tuned.
+</I>&gt;<i> +
+</I>&gt;<i> +  - /proc/sys/net/j1939/loop [bool]:
+</I>&gt;<i> +    Control if packets with local source _and_ local destination may be (true)
+</I>&gt;<i> +    loopback'd (injected directly in the receive path from the transmit path)
+</I>&gt;<i> +    or (false, default) must be sent on CAN via the regular transmit path.
+</I>
+Is done by sockopts - don't specify two interfaces for one functionality.
+
+&gt;<i> +
+</I>&gt;<i> +  - /proc/sys/net/j1939/promisc [bool]:
+</I>&gt;<i> +    Specifies PROMISC mode for the whole stack, i.e. _all_ J1939-sockets. The
+</I>&gt;<i> +    PROMISC mode is normally set per socket via setsockopt(2).
+</I>
+Dito. Here you already detected the problem by yourself :-)
+
+
+&gt;<i> +  - /proc/sys/net/j1939/tp/max_packet_size [int]:
+</I>&gt;<i> +    Is the maximum packet size to accept on both transmit &amp; receive side.
+</I>&gt;<i> +    Bigger packets will be rejected (local sender), aborted (local receiver)
+</I>&gt;<i> +    or ignored (broadcasts &amp; remote recievers in PROMISC).
+</I>
+What's that for?
+Why is it a global setting and not a sockopt?
+
+&gt;<i> +  - /proc/sys/net/j1939/tp/preferred_block_count [int]:
+</I>&gt;<i> +    Controls how many data packets the TP &amp; ETP will receive before requiring
+</I>&gt;<i> +    flow control packets.
+</I>
+Why is it a global setting and not a sockopt?
+Make it a constant that can be overridden via sockopt.
+
+&gt;<i> +
+</I>&gt;<i> +  - /proc/sys/net/j1939/tp/queue_len [int]:
+</I>&gt;<i> +    Controls how many pending packets the TP module may queue before returning
+</I>&gt;<i> +    ENOBUFS to sender. Note this is not the only source of ENOBUFS, the CAN
+</I>&gt;<i> +    device driver may also return ENOBUFS.
+</I>
+Make it a constant - or at least a Kconfig option
+
+&gt;<i> +  - /proc/sys/net/j1939/tp/retry_ms [int]:
+</I>&gt;<i> +    Controls how many time to wait before retrying to send an individual TP
+</I>&gt;<i> +    flow or data packet after transmission failure.
+</I>
+Make it a constant that can be overridden via sockopt.
+
+&gt;<i> +7. Credits
+</I>&gt;<i> +--------------------------------
+</I>&gt;<i> +
+</I>&gt;<i> +  Kurt Van Dijck (j1939 core, transport protocol, API)
+</I>&gt;<i> +  Pieter Beyens (j1939 core, address claiming)
+</I>
+Summarizing you really started an interesting new CAN protocol for PF_CAN but
+especially the current socket API is not easy to understand and hides to much
+of the real world complexity in an unfortunate way. The lack of multiple ECU
+support on a single host (coming hand-in-hand with addresses attached to
+network interfaces) needs some rework. There is not reason on a multi-user
+system to stay away from a multi-ECU support that's implemnted in userspace
+j1939 stacks (as referenced above).
+
+If it's clear to me as a j1939 newbie, then it's probably mature enough. So
+far the socket API is confusing me.
+
+Thanks,
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005466.html">[PATCH v2 4/6] J1939: add documentation
+</A></li>
+	<LI>Next message: <A HREF="005512.html">j1939: ecu's &amp; dynamic addressing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5504">[ date ]</a>
+              <a href="thread.html#5504">[ thread ]</a>
+              <a href="subject.html#5504">[ subject ]</a>
+              <a href="author.html#5504">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

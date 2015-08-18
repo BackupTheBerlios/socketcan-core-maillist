@@ -1,0 +1,151 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2] Fix SJA1000 command register writes on SMP systems
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20Fix%20SJA1000%20command%20register%20writes%20on%20SMP%20systems&In-Reply-To=%3C4BF1A464.6070207%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004372.html">
+   <LINK REL="Next"  HREF="004376.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2] Fix SJA1000 command register writes on SMP systems</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%5D%20Fix%20SJA1000%20command%20register%20writes%20on%20SMP%20systems&In-Reply-To=%3C4BF1A464.6070207%40hartkopp.net%3E"
+       TITLE="[PATCH v2] Fix SJA1000 command register writes on SMP systems">socketcan at hartkopp.net
+       </A><BR>
+    <I>Mon May 17 22:17:40 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004372.html">[PATCH net-next-2.6] can: sja1000 platform data fixes
+</A></li>
+        <LI>Next message: <A HREF="004376.html">[PATCH v2] Fix SJA1000 command register writes on SMP systems
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4375">[ date ]</a>
+              <a href="thread.html#4375">[ thread ]</a>
+              <a href="subject.html#4375">[ subject ]</a>
+              <a href="author.html#4375">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The SJA1000 command register is concurrently written in the rx-path to free
+the receive buffer _and_ in the tx-path to start the transmission.
+
+The SJA1000 data sheet, 6.4.4 COMMAND REGISTER (CMR) states:
+&quot;Between two commands at least one internal clock cycle is needed in
+order to proceed. The internal clock is half of the external oscillator
+frequency.&quot;
+
+On SMP systems this leads to a write stall in the tx-path, which can be
+solved by adding some locking for the command register in the SMP case.
+In this special case we also read the status register to settle the command
+register write.
+
+Thanks to Klaus Hitschler for the original fix and detailed problem
+description.
+
+This patch applies on net-2.6 and (with some offsets) on net-next-2.6 .
+
+Signed-off-by: Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan at hartkopp.net</A>&gt;
+Acked-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+
+---
+
+diff --git a/drivers/net/can/sja1000/sja1000.c b/drivers/net/can/sja1000/sja1000.c
+index 145b1a7..2760085 100644
+--- a/drivers/net/can/sja1000/sja1000.c
++++ b/drivers/net/can/sja1000/sja1000.c
+@@ -84,6 +84,27 @@ static struct can_bittiming_const sja1000_bittiming_const = {
+ 	.brp_inc = 1,
+ };
+ +static void sja1000_write_cmdreg(struct sja1000_priv *priv, u8 val)
++{
++	/* the command register needs some locking on SMP systems */
++
++#ifdef CONFIG_SMP
++
++	unsigned long flags;
++
++	spin_lock_irqsave(&amp;priv-&gt;cmdreg_lock, flags);
++	priv-&gt;write_reg(priv, REG_CMR, val);
++	priv-&gt;read_reg(priv, REG_SR);
++	spin_unlock_irqrestore(&amp;priv-&gt;cmdreg_lock, flags);
++
++#else
++
++	/* write to the command register without locking */
++	priv-&gt;write_reg(priv, REG_CMR, val);
++
++#endif
++}
++
+ static int sja1000_probe_chip(struct net_device *dev)
+ {
+ 	struct sja1000_priv *priv = netdev_priv(dev);
+@@ -297,7 +318,7 @@ static netdev_tx_t sja1000_start_xmit(struct sk_buff *skb,
+  	can_put_echo_skb(skb, dev, 0);
+ -	priv-&gt;write_reg(priv, REG_CMR, CMD_TR);
++	sja1000_write_cmdreg(priv, CMD_TR);
+  	return NETDEV_TX_OK;
+ }
+@@ -346,7 +367,7 @@ static void sja1000_rx(struct net_device *dev)
+ 	cf-&gt;can_id = id;
+  	/* release receive buffer */
+-	priv-&gt;write_reg(priv, REG_CMR, CMD_RRB);
++	sja1000_write_cmdreg(priv, CMD_RRB);
+  	netif_rx(skb);
+ @@ -374,7 +395,7 @@ static int sja1000_err(struct net_device *dev, uint8_t isrc, uint8_t status)
+ 		cf-&gt;data[1] = CAN_ERR_CRTL_RX_OVERFLOW;
+ 		stats-&gt;rx_over_errors++;
+ 		stats-&gt;rx_errors++;
+-		priv-&gt;write_reg(priv, REG_CMR, CMD_CDO);	/* clear bit */
++		sja1000_write_cmdreg(priv, CMD_CDO);	/* clear bit */
+ 	}
+  	if (isrc &amp; IRQ_EI) {
+diff --git a/drivers/net/can/sja1000/sja1000.h b/drivers/net/can/sja1000/sja1000.h
+index 97a622b..4527d95 100644
+--- a/drivers/net/can/sja1000/sja1000.h
++++ b/drivers/net/can/sja1000/sja1000.h
+@@ -168,6 +168,10 @@ struct sja1000_priv {
+ 	void __iomem *reg_base;	 /* ioremap'ed address to registers */
+ 	unsigned long irq_flags; /* for request_irq() */
+ +#ifdef CONFIG_SMP
++	spinlock_t cmdreg_lock; /* lock for concurrent cmd register writes */
++#endif
++
+ 	u16 flags;		/* custom mode flags */
+ 	u8 ocr;			/* output control register */
+ 	u8 cdr;			/* clock divider register */
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004372.html">[PATCH net-next-2.6] can: sja1000 platform data fixes
+</A></li>
+	<LI>Next message: <A HREF="004376.html">[PATCH v2] Fix SJA1000 command register writes on SMP systems
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4375">[ date ]</a>
+              <a href="thread.html#4375">[ thread ]</a>
+              <a href="subject.html#4375">[ subject ]</a>
+              <a href="author.html#4375">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,412 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v2] can/sja1000: driver for PEAK PCAN PCI/PCIe	cards
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can/sja1000%3A%20driver%20for%20PEAK%20PCAN%20PCI/PCIe%0A%09cards&In-Reply-To=%3C4E6F0336.1030504%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006116.html">
+   <LINK REL="Next"  HREF="006092.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v2] can/sja1000: driver for PEAK PCAN PCI/PCIe	cards</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can/sja1000%3A%20driver%20for%20PEAK%20PCAN%20PCI/PCIe%0A%09cards&In-Reply-To=%3C4E6F0336.1030504%40grandegger.com%3E"
+       TITLE="[PATCH net-next-2.6 v2] can/sja1000: driver for PEAK PCAN PCI/PCIe	cards">wg at grandegger.com
+       </A><BR>
+    <I>Tue Sep 13 09:16:06 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006116.html">[PATCH v2] EMS CPC-Card driver reworked for kernel 3.x
+</A></li>
+        <LI>Next message: <A HREF="006092.html">[PATCH net-next-2.6 v2] can/sja1000: driver for PEAK PCAN	PCI/PCIe cards
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6079">[ date ]</a>
+              <a href="thread.html#6079">[ thread ]</a>
+              <a href="subject.html#6079">[ subject ]</a>
+              <a href="author.html#6079">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch add the peak_pci driver for the PCAN PCI/PCIe cards (1, 2, 3
+or 4 channels) from PEAK Systems (<A HREF="http://www.peak-system.com">http://www.peak-system.com</A>).
+
+Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+Acked-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+Tested-by: Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan at hartkopp.net</A>&gt;
+
+---
+
+Changes since v1:
+
+- Remove support for the PCAN ExpressCards (device ID 0x0002) as it
+  is not yet complete, e.g. I2C initialisations to enable the CAN
+  transceiver (and the funky status LEDs) is missing.
+
+ drivers/net/can/sja1000/Kconfig    |    7 +
+ drivers/net/can/sja1000/Makefile   |    1 +
+ drivers/net/can/sja1000/peak_pci.c |  291 ++++++++++++++++++++++++++++++++++++
+ 3 files changed, 299 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/net/can/sja1000/peak_pci.c
+
+diff --git a/drivers/net/can/sja1000/Kconfig b/drivers/net/can/sja1000/Kconfig
+index 6fdc031..72b637d 100644
+--- a/drivers/net/can/sja1000/Kconfig
++++ b/drivers/net/can/sja1000/Kconfig
+@@ -37,6 +37,13 @@ config CAN_EMS_PCI
+ 	  CPC-PCIe and CPC-104P cards from EMS Dr. Thomas Wuensche
+ 	  (<A HREF="http://www.ems-wuensche.de">http://www.ems-wuensche.de</A>).
+ 
++config CAN_PEAK_PCI
++	tristate &quot;PEAK PCAN PCI/PCIe Cards&quot;
++	depends on PCI
++	---help---
++	  This driver is for the PCAN PCI/PCIe cards (1, 2, 3 or 4 channels)
++	  from PEAK Systems (<A HREF="http://www.peak-system.com">http://www.peak-system.com</A>).
++
+ config CAN_KVASER_PCI
+ 	tristate &quot;Kvaser PCIcanx and Kvaser PCIcan PCI Cards&quot;
+ 	depends on PCI
+diff --git a/drivers/net/can/sja1000/Makefile b/drivers/net/can/sja1000/Makefile
+index 2c591eb..428f5cf 100644
+--- a/drivers/net/can/sja1000/Makefile
++++ b/drivers/net/can/sja1000/Makefile
+@@ -8,6 +8,7 @@ obj-$(CONFIG_CAN_SJA1000_PLATFORM) += sja1000_platform.o
+ obj-$(CONFIG_CAN_SJA1000_OF_PLATFORM) += sja1000_of_platform.o
+ obj-$(CONFIG_CAN_EMS_PCI) += ems_pci.o
+ obj-$(CONFIG_CAN_KVASER_PCI) += kvaser_pci.o
++obj-$(CONFIG_CAN_PEAK_PCI) += peak_pci.o
+ obj-$(CONFIG_CAN_PLX_PCI) += plx_pci.o
+ obj-$(CONFIG_CAN_TSCAN1) += tscan1.o
+ 
+diff --git a/drivers/net/can/sja1000/peak_pci.c b/drivers/net/can/sja1000/peak_pci.c
+new file mode 100644
+index 0000000..905bce0
+--- /dev/null
++++ b/drivers/net/can/sja1000/peak_pci.c
+@@ -0,0 +1,291 @@
++/*
++ * Copyright (C) 2007, 2011 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
++ *
++ * Derived from the PCAN project file driver/src/pcan_pci.c:
++ *
++ * Copyright (C) 2001-2006  PEAK System-Technik GmbH
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software Foundation,
++ * Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
++ */
++
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/version.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/delay.h&gt;
++#include &lt;linux/pci.h&gt;
++#include &lt;linux/io.h&gt;
++#include &lt;linux/can.h&gt;
++#include &lt;linux/can/dev.h&gt;
++
++#include &quot;sja1000.h&quot;
++
++MODULE_AUTHOR(&quot;Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;&quot;);
++MODULE_DESCRIPTION(&quot;Socket-CAN driver for PEAK PCAN PCI/PCIe cards&quot;);
++MODULE_SUPPORTED_DEVICE(&quot;PEAK PCAN PCI/PCIe CAN card&quot;);
++MODULE_LICENSE(&quot;GPL v2&quot;);
++
++#define DRV_NAME  &quot;peak_pci&quot;
++
++struct peak_pci_chan {
++	void __iomem *cfg_base;	     /* Common for all channels */
++	struct net_device *next_dev; /* Chain of network devices */
++	u16 icr_mask;		     /* Interrupt mask for fast ack */
++};
++
++#define PEAK_PCI_CAN_CLOCK	(16000000 / 2)
++
++#define PEAK_PCI_CDR		(CDR_CBP | CDR_CLKOUT_MASK)
++#define PEAK_PCI_OCR		OCR_TX0_PUSHPULL
++
++/*
++ * Important PITA registers
++ */
++#define PITA_ICR		0x00	/* Interrupt control register */
++#define PITA_GPIOICR		0x18	/* GPIO interface control register */
++#define PITA_MISC		0x1C	/* Miscellaneous register */
++
++#define PEAK_PCI_CFG_SIZE	0x1000	/* Size of the config PCI bar */
++#define PEAK_PCI_CHAN_SIZE	0x0400	/* Size used by the channel */
++
++#define PEAK_PCI_VENDOR_ID	0x001C	/* The PCI device and vendor IDs */
++#define PEAK_PCI_DEVICE_ID	0x0001	/* for PCI/PCIe slot cards */
++
++static const u16 peak_pci_icr_masks[] = {0x02, 0x01, 0x40, 0x80};
++
++static DEFINE_PCI_DEVICE_TABLE(peak_pci_tbl) = {
++	{PEAK_PCI_VENDOR_ID, PEAK_PCI_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID,},
++	{0,}
++};
++
++MODULE_DEVICE_TABLE(pci, peak_pci_tbl);
++
++static u8 peak_pci_read_reg(const struct sja1000_priv *priv, int port)
++{
++	return readb(priv-&gt;reg_base + (port &lt;&lt; 2));
++}
++
++static void peak_pci_write_reg(const struct sja1000_priv *priv,
++			       int port, u8 val)
++{
++	writeb(val, priv-&gt;reg_base + (port &lt;&lt; 2));
++}
++
++static void peak_pci_post_irq(const struct sja1000_priv *priv)
++{
++	struct peak_pci_chan *chan = priv-&gt;priv;
++	u16 icr;
++
++	/* Select and clear in PITA stored interrupt */
++	icr = readw(chan-&gt;cfg_base + PITA_ICR);
++	if (icr &amp; chan-&gt;icr_mask)
++		writew(chan-&gt;icr_mask, chan-&gt;cfg_base + PITA_ICR);
++}
++
++static int __devinit peak_pci_probe(struct pci_dev *pdev,
++				    const struct pci_device_id *ent)
++{
++	struct sja1000_priv *priv;
++	struct peak_pci_chan *chan;
++	struct net_device *dev, *dev0 = NULL;
++	void __iomem *cfg_base, *reg_base;
++	u16 sub_sys_id, icr;
++	int i, err, channels;
++
++	err = pci_enable_device(pdev);
++	if (err)
++		return err;
++
++	err = pci_request_regions(pdev, DRV_NAME);
++	if (err)
++		goto failure_disable_pci;
++
++	err = pci_read_config_word(pdev, 0x2e, &amp;sub_sys_id);
++	if (err)
++		goto failure_release_regions;
++
++	dev_dbg(&amp;pdev-&gt;dev, &quot;probing device %04x:%04x:%04x\n&quot;,
++		pdev-&gt;vendor, pdev-&gt;device, sub_sys_id);
++
++	err = pci_write_config_word(pdev, 0x44, 0);
++	if (err)
++		goto failure_release_regions;
++
++	if (sub_sys_id &gt;= 12)
++		channels = 4;
++	else if (sub_sys_id &gt;= 10)
++		channels = 3;
++	else if (sub_sys_id &gt;= 4)
++		channels = 2;
++	else
++		channels = 1;
++
++	cfg_base = pci_iomap(pdev, 0, PEAK_PCI_CFG_SIZE);
++	if (!cfg_base) {
++		dev_err(&amp;pdev-&gt;dev, &quot;failed to map PCI resource #0\n&quot;);
++		goto failure_release_regions;
++	}
++
++	reg_base = pci_iomap(pdev, 1, PEAK_PCI_CHAN_SIZE * channels);
++	if (!reg_base) {
++		dev_err(&amp;pdev-&gt;dev, &quot;failed to map PCI resource #1\n&quot;);
++		goto failure_unmap_cfg_base;
++	}
++
++	/* Set GPIO control register */
++	writew(0x0005, cfg_base + PITA_GPIOICR + 2);
++	/* Enable all channels of this card */
++	writeb(0x00, cfg_base + PITA_GPIOICR);
++	/* Toggle reset */
++	writeb(0x05, cfg_base + PITA_MISC + 3);
++	mdelay(5);
++	/* Leave parport mux mode */
++	writeb(0x04, cfg_base + PITA_MISC + 3);
++
++	icr = readw(cfg_base + PITA_ICR + 2);
++
++	for (i = 0; i &lt; channels; i++) {
++		dev = alloc_sja1000dev(sizeof(struct peak_pci_chan));
++		if (!dev) {
++			err = -ENOMEM;
++			goto failure_remove_channels;
++		}
++
++		priv = netdev_priv(dev);
++		chan = priv-&gt;priv;
++
++		chan-&gt;cfg_base = cfg_base;
++		priv-&gt;reg_base = reg_base + i * PEAK_PCI_CHAN_SIZE;
++
++		priv-&gt;read_reg = peak_pci_read_reg;
++		priv-&gt;write_reg = peak_pci_write_reg;
++		priv-&gt;post_irq = peak_pci_post_irq;
++
++		priv-&gt;can.clock.freq = PEAK_PCI_CAN_CLOCK;
++		priv-&gt;ocr = PEAK_PCI_OCR;
++		priv-&gt;cdr = PEAK_PCI_CDR;
++		/* Neither a slave nor a single device distributes the clock */
++		if (channels == 1 || i &gt; 0)
++			priv-&gt;cdr |= CDR_CLK_OFF;
++
++		/* Setup interrupt handling */
++		priv-&gt;irq_flags = IRQF_SHARED;
++		dev-&gt;irq = pdev-&gt;irq;
++
++		chan-&gt;icr_mask = peak_pci_icr_masks[i];
++		icr |= chan-&gt;icr_mask;
++
++		SET_NETDEV_DEV(dev, &amp;pdev-&gt;dev);
++
++		err = register_sja1000dev(dev);
++		if (err) {
++			dev_err(&amp;pdev-&gt;dev, &quot;failed to register device\n&quot;);
++			free_sja1000dev(dev);
++			goto failure_remove_channels;
++		}
++
++		/* Create chain of SJA1000 devices */
++		if (i == 0)
++			dev0 = dev;
++		else
++			chan-&gt;next_dev = dev;
++
++		dev_info(&amp;pdev-&gt;dev,
++			 &quot;%s at reg_base=0x%p cfg_base=0x%p irq=%d\n&quot;,
++			 dev-&gt;name, priv-&gt;reg_base, chan-&gt;cfg_base, dev-&gt;irq);
++	}
++
++	pci_set_drvdata(pdev, dev0);
++
++	/* Enable interrupts */
++	writew(icr, cfg_base + PITA_ICR + 2);
++
++	return 0;
++
++failure_remove_channels:
++	/* Disable interrupts */
++	writew(0x0, cfg_base + PITA_ICR + 2);
++
++	for (dev = dev0; dev; dev = chan-&gt;next_dev) {
++		unregister_sja1000dev(dev);
++		free_sja1000dev(dev);
++		priv = netdev_priv(dev);
++		chan = priv-&gt;priv;
++		dev = chan-&gt;next_dev;
++	}
++
++	pci_iounmap(pdev, reg_base);
++
++failure_unmap_cfg_base:
++	pci_iounmap(pdev, cfg_base);
++
++failure_release_regions:
++	pci_release_regions(pdev);
++
++failure_disable_pci:
++	pci_disable_device(pdev);
++
++	return err;
++}
++
++static void __devexit peak_pci_remove(struct pci_dev *pdev)
++{
++	struct net_device *dev = pci_get_drvdata(pdev); /* First device */
++	struct sja1000_priv *priv = netdev_priv(dev);
++	struct peak_pci_chan *chan = priv-&gt;priv;
++	void __iomem *cfg_base = chan-&gt;cfg_base;
++	void __iomem *reg_base = priv-&gt;reg_base;
++
++	/* Disable interrupts */
++	writew(0x0, cfg_base + PITA_ICR + 2);
++
++	/* Loop over all registered devices */
++	while (1) {
++		dev_info(&amp;pdev-&gt;dev, &quot;removing device %s\n&quot;, dev-&gt;name);
++		unregister_sja1000dev(dev);
++		free_sja1000dev(dev);
++		dev = chan-&gt;next_dev;
++		if (!dev)
++			break;
++		priv = netdev_priv(dev);
++		chan = priv-&gt;priv;
++	}
++
++	pci_iounmap(pdev, reg_base);
++	pci_iounmap(pdev, cfg_base);
++	pci_release_regions(pdev);
++	pci_disable_device(pdev);
++
++	pci_set_drvdata(pdev, NULL);
++}
++
++static struct pci_driver peak_pci_driver = {
++	.name = DRV_NAME,
++	.id_table = peak_pci_tbl,
++	.probe = peak_pci_probe,
++	.remove = __devexit_p(peak_pci_remove),
++};
++
++static int __init peak_pci_init(void)
++{
++	return pci_register_driver(&amp;peak_pci_driver);
++}
++module_init(peak_pci_init);
++
++static void __exit peak_pci_exit(void)
++{
++	pci_unregister_driver(&amp;peak_pci_driver);
++}
++module_exit(peak_pci_exit);
+-- 
+1.7.4.1
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006116.html">[PATCH v2] EMS CPC-Card driver reworked for kernel 3.x
+</A></li>
+	<LI>Next message: <A HREF="006092.html">[PATCH net-next-2.6 v2] can/sja1000: driver for PEAK PCAN	PCI/PCIe cards
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6079">[ date ]</a>
+              <a href="thread.html#6079">[ thread ]</a>
+              <a href="subject.html#6079">[ subject ]</a>
+              <a href="author.html#6079">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

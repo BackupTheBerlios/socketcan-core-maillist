@@ -1,0 +1,424 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] can-j1939: allow j1939 to build of older kernel versions
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20can-j1939%3A%20allow%20j1939%20to%20build%20of%20older%20kernel%20versions&In-Reply-To=%3C20110503084943.GB341%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005690.html">
+   <LINK REL="Next"  HREF="005697.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] can-j1939: allow j1939 to build of older kernel versions</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20can-j1939%3A%20allow%20j1939%20to%20build%20of%20older%20kernel%20versions&In-Reply-To=%3C20110503084943.GB341%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH] can-j1939: allow j1939 to build of older kernel versions">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Tue May  3 10:49:43 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005690.html">[PATCH v4 2/5] can: add rtnetlink support
+</A></li>
+        <LI>Next message: <A HREF="005697.html">[PATCH] can-j1939: allow j1939 to build of older kernel versions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5696">[ date ]</a>
+              <a href="thread.html#5696">[ thread ]</a>
+              <a href="subject.html#5696">[ subject ]</a>
+              <a href="author.html#5696">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Sun, May 01, 2011 at 07:16:54PM +0200, Oliver Hartkopp wrote:
+&gt;<i> On 27.04.2011 10:57, Kurt Van Dijck wrote:
+</I>&gt;<i> &gt; This patch adds rtnetlink support for AF_CAN. This support is really
+</I>&gt;<i> &gt; a multiplexer towards the different CAN protocols.
+</I>&gt;<i> 
+</I>&gt;<i> Hello Kurt,
+</I>&gt;<i> 
+</I>&gt;<i> i applied all your patches for the can-utils and the network layer stuff to
+</I>&gt;<i> the BerliOS SVN in socketcan/branches/j1939 for testing.
+</I>&gt;<i> 
+</I>[...]
+&gt;<i> 
+</I>&gt;<i> The can-j1939.ko builds properly in the SVN against 2.6.39-rc5 and the
+</I>&gt;<i> net-next-2.6 tree - and e.g. against a debian wheezy kernel:
+</I>
+Since we're actually building this on a 2.6.25 yet, I added some version
+checks for the berlios svn. It makes it build for older kernels than 2.6.38.
+
+Biggest change is that:
+$ ip link set can0 j1939 on
+will not work. before 2.6.36, you must:
+
+$ echo can0 &gt; /proc/net/can-j1939/net
+
+and likewise, '$ ip link set can0 j1939 off' is replaced by
+'$ echo -can0 &gt; /proc/net/can-j1939/net'
+
+Kurt
+---
+
+Index: net/can/j1939/rtnl.c
+===================================================================
+--- net/can/j1939/rtnl.c	(revision 1249)
++++ net/can/j1939/rtnl.c	(working copy)
+@@ -36,8 +36,10 @@
+ 
+ 	struct nlattr *nla, *tb[IFA_J1939_MAX];
+ 
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,26)
+ 	if (!net_eq(sock_net(skb-&gt;sk), &amp;init_net))
+ 		return -EINVAL;
++#endif
+ 
+ 	nla = nlmsg_find_attr(nlh, sizeof(*ifm), IFA_LOCAL);
+ 	if (!nla)
+@@ -96,8 +98,10 @@
+ 	int ret;
+ 	struct nlattr *nla, *tb[IFA_J1939_MAX];
+ 
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,26)
+ 	if (!net_eq(sock_net(skb-&gt;sk), &amp;init_net))
+ 		return -EINVAL;
++#endif
+ 
+ 	nla = nlmsg_find_attr(nlh, sizeof(*ifm), IFA_LOCAL);
+ 	if (!nla)
+@@ -180,8 +184,10 @@
+ 	struct j1939_ecu *ecu;
+ 	struct addr_ent *ent;
+ 
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,26)
+ 	if (!net_eq(sock_net(skb-&gt;sk), &amp;init_net))
+ 		return 0;
++#endif
+ 
+ 	ndev = 0;
+ 	for_each_netdev(&amp;init_net, netdev) {
+@@ -243,6 +249,7 @@
+ 	return skb-&gt;len;
+ }
+ 
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,36)
+ /*
+  * rtnl_link_ops
+  */
+@@ -305,4 +312,5 @@
+ 	.validate_link_af = j1939_validate_link_af,
+ 	.set_link_af	  = j1939_set_link_af,
+ };
++#endif
+ 
+Index: net/can/j1939/j1939-priv.h
+===================================================================
+--- net/can/j1939/j1939-priv.h	(revision 1249)
++++ net/can/j1939/j1939-priv.h	(working copy)
+@@ -19,7 +19,11 @@
+ #include &lt;linux/proc_fs.h&gt;
+ #include &lt;linux/module.h&gt;
+ #include &lt;socketcan/can/j1939.h&gt;
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,37)
+ #include &lt;linux/atomic.h&gt;
++#else
++#include &lt;asm/atomic.h&gt;
++#endif
+ 
+ /* TODO: return ENETRESET on busoff. */
+ 
+@@ -306,7 +310,9 @@
+ extern void j1939tp_module_exit(void);
+ 
+ /* rtnetlink */
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,36)
+ extern const struct rtnl_af_ops j1939_rtnl_af_ops;
++#endif
+ extern int j1939rtnl_new_addr(struct sk_buff *, struct nlmsghdr *, void *arg);
+ extern int j1939rtnl_del_addr(struct sk_buff *, struct nlmsghdr *, void *arg);
+ extern int j1939rtnl_dump_addr(struct sk_buff *, struct netlink_callback *);
+Index: net/can/j1939/proc.c
+===================================================================
+--- net/can/j1939/proc.c	(revision 1249)
++++ net/can/j1939/proc.c	(working copy)
+@@ -90,15 +90,26 @@
+ __init int j1939_proc_module_init(void)
+ {
+ 	/* create /proc/net/can directory */
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,24)
+ 	rootdir = proc_mkdir(j1939_procname, init_net.proc_net);
++#else
++	rootdir = proc_mkdir(j1939_procname, proc_net);
++#endif
+ 	if (!rootdir)
+ 		return -EINVAL;
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,30)
++	rootdir-&gt;owner = THIS_MODULE;
++#endif
+ 	return 0;
+ }
+ 
+ void j1939_proc_module_exit(void)
+ {
+ 	if (rootdir)
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,24)
+ 		proc_net_remove(&amp;init_net, j1939_procname);
++#else
++		proc_net_remove(j1939_procname);
++#endif
+ }
+ 
+Index: net/can/j1939/main.c
+===================================================================
+--- net/can/j1939/main.c	(revision 1249)
++++ net/can/j1939/main.c	(working copy)
+@@ -381,8 +381,13 @@
+ 	struct net_device *netdev = (struct net_device *)data;
+ 	struct j1939_segment *jseg;
+ 
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,26)
+ 	if (!net_eq(dev_net(netdev), &amp;init_net))
+ 		return NOTIFY_DONE;
++#elif LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,24)
++	if (netdev-&gt;nd_net != &amp;init_net)
++		return NOTIFY_DONE;
++#endif
+ 
+ 	if (netdev-&gt;type != ARPHRD_CAN)
+ 		return NOTIFY_DONE;
+Index: net/can/j1939/socket.c
+===================================================================
+--- net/can/j1939/socket.c	(revision 1249)
++++ net/can/j1939/socket.c	(working copy)
+@@ -544,8 +544,13 @@
+ 	return tmp;
+ }
+ 
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,32)
+ static int j1939sk_setsockopt(struct socket *sock, int level, int optname,
+ 		char __user *optval, unsigned int optlen)
++#else
++static int j1939sk_setsockopt(struct socket *sock, int level, int optname,
++		char __user *optval, int optlen)
++#endif
+ {
+ 	struct sock *sk = sock-&gt;sk;
+ 	struct j1939_sock *jsk = j1939_sk(sk);
+@@ -555,6 +560,11 @@
+ 	if (level != SOL_CAN_J1939)
+ 		return -EINVAL;
+ 
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,32)
++	if (optlen &lt; 0)
++		return -EINVAL;
++#endif
++
+ 	switch (optname) {
+ 	case SO_J1939_FILTER:
+ 		if (optval) {
+@@ -938,7 +948,9 @@
+ 	.ops = &amp;j1939_ops,
+ 	.prot = &amp;j1939_proto,
+ 
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,36)
+ 	.rtnl_link_ops = &amp;j1939_rtnl_af_ops,
++#endif
+ 	.rtnl_new_addr = j1939rtnl_new_addr,
+ 	.rtnl_del_addr = j1939rtnl_del_addr,
+ 	.rtnl_dump_addr = j1939rtnl_dump_addr,
+Index: net/can/j1939/bus.c
+===================================================================
+--- net/can/j1939/bus.c	(revision 1249)
++++ net/can/j1939/bus.c	(working copy)
+@@ -489,11 +489,82 @@
+ 	return 0;
+ }
+ 
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,36)
++static int j1939_proc_net(struct seq_file *sqf, void *v)
++{
++	struct j1939_segment *jseg;
++	struct net_device *netdev;
++
++	seq_printf(sqf, &quot;ifindex\tiface\tid\n&quot;);
++	spin_lock_bh(&amp;segments.lock);
++	list_for_each_entry(jseg, &amp;segments.list, flist) {
++		get_j1939_segment(jseg);
++		netdev = dev_get_by_index(&amp;init_net, jseg-&gt;ifindex);
++		if (!netdev) {
++			pr_alert(&quot;j1939 proc: ifindex %i not found\n&quot;,
++				jseg-&gt;ifindex);
++			put_j1939_segment(jseg);
++			continue;
++		}
++		seq_printf(sqf, &quot;%i\t%s\n&quot;, jseg-&gt;ifindex,
++				netdev ? netdev-&gt;name : &quot;!&quot;);
++		if (netdev)
++			dev_put(netdev);
++		put_j1939_segment(jseg);
++	}
++	spin_unlock_bh(&amp;segments.lock);
++	return 0;
++}
++
++static int j1939_proc_wr_net(struct file *file, const char __user *buffer,
++		unsigned long count, void *data)
++{
++	int ret;
++	char *arg;
++	int opt;
++	struct net_device *netdev = NULL;
++	char buf[IFNAMSIZ+4];
++
++	if (!capable(CAP_NET_ADMIN))
++		return -EPERM;
++	if (count &gt;= sizeof(buf))
++		return -EINVAL;
++	if (copy_from_user(buf, buffer, count))
++		return -EFAULT;
++	buf[count] = 0;
++	arg = strstrip(buf);
++
++	opt = '+';
++	if (strchr(&quot;+-~!&quot;, arg[0])) {
++		opt = arg[0];
++		++arg;
++	}
++	netdev = dev_get_by_name(&amp;init_net, arg);
++	if (!netdev)
++		return -ENOENT;
++	if (strchr(&quot;+&quot;, opt))
++		ret = j1939_segment_attach(netdev);
++	else
++		ret = j1939_segment_detach(netdev);
++	if (ret &lt; 0)
++		goto failed;
++	ret = count;
++
++failed:
++	if (netdev)
++		dev_put(netdev);
++	return ret;
++}
++#endif
++
+ /* exported init */
+ int __init j1939bus_module_init(void)
+ {
+ 	INIT_LIST_HEAD(&amp;segments.list);
+ 	spin_lock_init(&amp;segments.lock);
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,36)
++	j1939_proc_add(&quot;net&quot;, j1939_proc_net, j1939_proc_wr_net);
++#endif
+ 	j1939_proc_add(&quot;addr&quot;, j1939_proc_addr, NULL);
+ 	j1939_proc_add(&quot;ecu&quot;, j1939_proc_ecu, NULL);
+ 	return 0;
+@@ -518,6 +589,9 @@
+ 
+ 	j1939_proc_remove(&quot;ecu&quot;);
+ 	j1939_proc_remove(&quot;addr&quot;);
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,36)
++	j1939_proc_remove(&quot;net&quot;);
++#endif
+ }
+ 
+ 
+Index: net/can/j1939/transport.c
+===================================================================
+--- net/can/j1939/transport.c	(revision 1249)
++++ net/can/j1939/transport.c	(working copy)
+@@ -1298,8 +1298,13 @@
+ 	struct net_device *netdev = (struct net_device *)data;
+ 	struct session *session, *saved;
+ 
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,26)
+ 	if (!net_eq(dev_net(netdev), &amp;init_net))
+ 		return NOTIFY_DONE;
++#elif LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,24)
++	if (netdev-&gt;nd_net != &amp;init_net)
++		return NOTIFY_DONE;
++#endif
+ 
+ 	if (netdev-&gt;type != ARPHRD_CAN)
+ 		return NOTIFY_DONE;
+Index: net/can/af_can.c
+===================================================================
+--- net/can/af_can.c	(revision 1249)
++++ net/can/af_can.c	(working copy)
+@@ -1090,6 +1090,7 @@
+ /*
+  * LINK AF properties
+  */
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,36)
+ static size_t can_get_link_af_size(const struct net_device *dev)
+ {
+ 	int ret, j, total;
+@@ -1218,6 +1219,7 @@
+ 	.validate_link_af = can_validate_link_af,
+ 	.set_link_af	  = can_set_link_af,
+ };
++#endif
+ 
+ /* exported init */
+ 
+@@ -1259,7 +1261,9 @@
+ 	register_netdevice_notifier(&amp;can_netdev_notifier);
+ 	dev_add_pack(&amp;can_packet);
+ 
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,36)
+ 	rtnl_af_register(&amp;can_rtnl_af_ops);
++#endif
+ 	rtnl_register(PF_CAN, RTM_NEWADDR, can_rtnl_doit, NULL);
+ 	rtnl_register(PF_CAN, RTM_DELADDR, can_rtnl_doit, NULL);
+ 	rtnl_register(PF_CAN, RTM_GETADDR, NULL, can_rtnl_dump_addr);
+@@ -1278,7 +1282,9 @@
+ 	rtnl_unregister(PF_CAN, RTM_NEWADDR);
+ 	rtnl_unregister(PF_CAN, RTM_DELADDR);
+ 	rtnl_unregister(PF_CAN, RTM_GETADDR);
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,36)
+ 	rtnl_af_unregister(&amp;can_rtnl_af_ops);
++#endif
+ 
+ 	can_remove_proc();
+ 
+Index: Makefile
+===================================================================
+--- Makefile	(revision 1249)
++++ Makefile	(working copy)
+@@ -37,6 +37,7 @@
+ export CONFIG_CAN_RAW=m
+ export CONFIG_CAN_BCM=m
+ export CONFIG_CAN_ISOTP=m
++export CONFIG_CAN_J1939=m
+ 
+ modules modules_install clean:
+ 	$(MAKE) -C $(KERNELDIR) M=$(PWD) $@ TOPDIR=$(TOPDIR)
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005690.html">[PATCH v4 2/5] can: add rtnetlink support
+</A></li>
+	<LI>Next message: <A HREF="005697.html">[PATCH] can-j1939: allow j1939 to build of older kernel versions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5696">[ date ]</a>
+              <a href="thread.html#5696">[ thread ]</a>
+              <a href="subject.html#5696">[ subject ]</a>
+              <a href="author.html#5696">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

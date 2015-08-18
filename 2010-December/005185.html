@@ -1,0 +1,213 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v8 03/20] CAN : Fix endianness issue.
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v8%2003/20%5D%20CAN%20%3A%20Fix%20endianness%20issue.&In-Reply-To=%3C4D04EA92.2010802%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005155.html">
+   <LINK REL="Next"  HREF="005156.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v8 03/20] CAN : Fix endianness issue.</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v8%2003/20%5D%20CAN%20%3A%20Fix%20endianness%20issue.&In-Reply-To=%3C4D04EA92.2010802%40pengutronix.de%3E"
+       TITLE="[PATCH net-next-2.6 v8 03/20] CAN : Fix endianness issue.">mkl at pengutronix.de
+       </A><BR>
+    <I>Sun Dec 12 16:30:26 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005155.html">[PATCH net-next-2.6 v8 03/20] CAN : Fix endianness issue.
+</A></li>
+        <LI>Next message: <A HREF="005156.html">[PATCH net-next-2.6 v8 04/20] CAN : Improve rx processing.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5185">[ date ]</a>
+              <a href="thread.html#5185">[ thread ]</a>
+              <a href="subject.html#5185">[ subject ]</a>
+              <a href="author.html#5185">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 12/07/2010 12:03 PM, Tomoya MORINAGA wrote:
+&gt;<i> there is endianness issue both Tx and Rx.
+</I>&gt;<i> Currently, data is set like below.
+</I>&gt;<i> Register:
+</I>&gt;<i> MSB--LSB
+</I>&gt;<i> x x D0 D1
+</I>&gt;<i> x x D2 D3
+</I>&gt;<i> x x D4 D5
+</I>&gt;<i> x x D6 D7
+</I>&gt;<i> 
+</I>&gt;<i> But Data to be sent must be set like below.
+</I>&gt;<i> Register:
+</I>&gt;<i> MSB--LSB
+</I>&gt;<i> x x D1 D0
+</I>&gt;<i> x x D3 D2
+</I>&gt;<i> x x D5 D4
+</I>&gt;<i> x x D7 D6  (x means reserved area.)
+</I>
+Nitpick inline, please fix it, then add my Acked-by
+
+Marc
+
+&gt;<i> Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+</I>&gt;<i> ---
+</I>&gt;<i>  drivers/net/can/pch_can.c |   47 +++++++++++++++++++-------------------------
+</I>&gt;<i>  1 files changed, 20 insertions(+), 27 deletions(-)
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+</I>&gt;<i> index 0b6d4f4..b17ca0c 100644
+</I>&gt;<i> --- a/drivers/net/can/pch_can.c
+</I>&gt;<i> +++ b/drivers/net/can/pch_can.c
+</I>&gt;<i> @@ -138,10 +138,7 @@ struct pch_can_if_regs {
+</I>&gt;<i>  	u32 id1;
+</I>&gt;<i>  	u32 id2;
+</I>&gt;<i>  	u32 mcont;
+</I>&gt;<i> -	u32 dataa1;
+</I>&gt;<i> -	u32 dataa2;
+</I>&gt;<i> -	u32 datab1;
+</I>&gt;<i> -	u32 datab2;
+</I>&gt;<i> +	u32 data[4];
+</I>&gt;<i>  	u32 rsv[13];
+</I>&gt;<i>  };
+</I>&gt;<i>  
+</I>&gt;<i> @@ -424,10 +421,10 @@ static void pch_can_clear_buffers(struct pch_can_priv *priv)
+</I>&gt;<i>  		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].id1);
+</I>&gt;<i>  		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].id2);
+</I>&gt;<i>  		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].mcont);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].dataa1);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].dataa2);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].datab1);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].datab2);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].data[0]);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].data[1]);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].data[2]);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[0].data[3]);
+</I>&gt;<i>  		iowrite32(PCH_CMASK_RDWR | PCH_CMASK_MASK |
+</I>&gt;<i>  			  PCH_CMASK_ARB | PCH_CMASK_CTRL,
+</I>&gt;<i>  			  &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+</I>&gt;<i> @@ -441,10 +438,10 @@ static void pch_can_clear_buffers(struct pch_can_priv *priv)
+</I>&gt;<i>  		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].id1);
+</I>&gt;<i>  		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].id2);
+</I>&gt;<i>  		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].mcont);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].dataa1);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].dataa2);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].datab1);
+</I>&gt;<i> -		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].datab2);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].data[0]);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].data[1]);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].data[2]);
+</I>&gt;<i> +		iowrite32(0x0, &amp;priv-&gt;regs-&gt;ifregs[1].data[3]);
+</I>&gt;<i>  		iowrite32(PCH_CMASK_RDWR | PCH_CMASK_MASK |
+</I>&gt;<i>  			  PCH_CMASK_ARB | PCH_CMASK_CTRL,
+</I>&gt;<i>  			  &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+</I>&gt;<i> @@ -707,12 +704,13 @@ static int pch_can_rx_normal(struct net_device *ndev, u32 int_stat)
+</I>&gt;<i>  	canid_t id;
+</I>&gt;<i>  	u32 ide;
+</I>&gt;<i>  	u32 rtr;
+</I>&gt;<i> -	int i, j, k;
+</I>&gt;<i> +	int i, k;
+</I>&gt;<i>  	int rcv_pkts = 0;
+</I>&gt;<i>  	struct sk_buff *skb;
+</I>&gt;<i>  	struct can_frame *cf;
+</I>&gt;<i>  	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i>  	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
+</I>&gt;<i> +	u16 data_reg;
+</I>&gt;<i>  
+</I>&gt;<i>  	/* Reading the messsage object from the Message RAM */
+</I>&gt;<i>  	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+</I>&gt;<i> @@ -778,12 +776,10 @@ static int pch_can_rx_normal(struct net_device *ndev, u32 int_stat)
+</I>&gt;<i>  			      ((ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].mcont)) &amp; 0x0f);
+</I>&gt;<i>  		}
+</I>&gt;<i>  
+</I>&gt;<i> -		for (i = 0, j = 0; i &lt; cf-&gt;can_dlc; j++) {
+</I>&gt;<i> -			reg = ioread32(&amp;priv-&gt;regs-&gt;ifregs[0].dataa1 + j*4);
+</I>&gt;<i> -			cf-&gt;data[i++] = cpu_to_le32(reg &amp; 0xff);
+</I>&gt;<i> -			if (i == cf-&gt;can_dlc)
+</I>&gt;<i> -				break;
+</I>&gt;<i> -			cf-&gt;data[i++] = cpu_to_le32((reg &gt;&gt; 8) &amp; 0xff);
+</I>&gt;<i> +		for (i = 0; i &lt; cf-&gt;can_dlc; i += 2) {
+</I>&gt;<i> +			data_reg = ioread16(&amp;priv-&gt;regs-&gt;ifregs[0].data[i / 2]);
+</I>&gt;<i> +			cf-&gt;data[i] = data_reg &amp; 0xff;
+</I>
+The &amp; 0xff is not needed cf-&gt;data is only 8bit wide.
+
+&gt;<i> +			cf-&gt;data[i + 1] = data_reg &gt;&gt; 8;
+</I>&gt;<i>  		}
+</I>&gt;<i>  
+</I>&gt;<i>  		netif_receive_skb(skb);
+</I>&gt;<i> @@ -1016,10 +1012,10 @@ static int pch_close(struct net_device *ndev)
+</I>&gt;<i>  
+</I>&gt;<i>  static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+</I>&gt;<i>  {
+</I>&gt;<i> -	int i, j;
+</I>&gt;<i>  	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i>  	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i>  	int tx_buffer_avail = 0;
+</I>&gt;<i> +	int i;
+</I>&gt;<i>  
+</I>&gt;<i>  	if (can_dropped_invalid_skb(ndev, skb))
+</I>&gt;<i>  		return NETDEV_TX_OK;
+</I>&gt;<i> @@ -1060,13 +1056,10 @@ static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+</I>&gt;<i>  	if (cf-&gt;can_id &amp; CAN_RTR_FLAG)
+</I>&gt;<i>  		pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[1].id2, PCH_ID2_DIR);
+</I>&gt;<i>  
+</I>&gt;<i> -	for (i = 0, j = 0; i &lt; cf-&gt;can_dlc; j++) {
+</I>&gt;<i> -		iowrite32(le32_to_cpu(cf-&gt;data[i++]),
+</I>&gt;<i> -			 (&amp;priv-&gt;regs-&gt;ifregs[1].dataa1) + j*4);
+</I>&gt;<i> -		if (i == cf-&gt;can_dlc)
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		iowrite32(le32_to_cpu(cf-&gt;data[i++] &lt;&lt; 8),
+</I>&gt;<i> -			 (&amp;priv-&gt;regs-&gt;ifregs[1].dataa1) + j*4);
+</I>&gt;<i> +	/* Copy data to register */
+</I>&gt;<i> +	for (i = 0; i &lt; cf-&gt;can_dlc; i += 2) {
+</I>&gt;<i> +		iowrite16(cf-&gt;data[i] | (cf-&gt;data[i + 1] &lt;&lt; 8),
+</I>&gt;<i> +			  &amp;priv-&gt;regs-&gt;ifregs[1].data[i / 2]);
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i>  	can_put_echo_skb(skb, ndev, tx_buffer_avail - PCH_RX_OBJ_END - 1);
+</I>
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101212/6bd31adc/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101212/6bd31adc/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005155.html">[PATCH net-next-2.6 v8 03/20] CAN : Fix endianness issue.
+</A></li>
+	<LI>Next message: <A HREF="005156.html">[PATCH net-next-2.6 v8 04/20] CAN : Improve rx processing.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5185">[ date ]</a>
+              <a href="thread.html#5185">[ thread ]</a>
+              <a href="subject.html#5185">[ subject ]</a>
+              <a href="author.html#5185">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

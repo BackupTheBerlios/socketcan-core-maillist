@@ -1,0 +1,126 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Self-reception and more
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Self-reception%20and%20more&In-Reply-To=%3C4C9B4429.2050107%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004662.html">
+   <LINK REL="Next"  HREF="004672.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Self-reception and more</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Self-reception%20and%20more&In-Reply-To=%3C4C9B4429.2050107%40hartkopp.net%3E"
+       TITLE="Self-reception and more">socketcan at hartkopp.net
+       </A><BR>
+    <I>Thu Sep 23 14:12:25 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004662.html">Self-reception and more
+</A></li>
+        <LI>Next message: <A HREF="004672.html">Self-reception and more
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4671">[ date ]</a>
+              <a href="thread.html#4671">[ thread ]</a>
+              <a href="subject.html#4671">[ subject ]</a>
+              <a href="author.html#4671">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 22.09.2010 16:53, Kurt Van Dijck wrote:
+&gt;<i> On Wed, Sep 22, 2010 at 04:16:50PM +0200, <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A> wrote:
+</I>
+&gt;&gt;&gt;<i> For self-received messages, the originating socket (sk_buff-&gt;sk) is 
+</I>&gt;&gt;&gt;<i> set. I think it's only accessible in kernel. Using this would IMO 
+</I>&gt;&gt;&gt;<i> avoid adding code in difficult places, and limit such feature to 
+</I>&gt;&gt;&gt;<i> adding code in easy places.
+</I>&gt;<i> More exactly, self-received messages originating from a socket have
+</I>&gt;<i> this member set. It is possible from kernelspace to inject CAN messages
+</I>&gt;<i> without any socket, but I guess that's beyond scope.
+</I>
+But if we would use skb-&gt;sk to distinguish internal from external originated
+traffic, we need to make sure that internally generated traffic also sets
+skb-&gt;sk correctly.
+
+E.g. in bcm.c this is already done:
+
+<A HREF="http://lxr.linux.no/#linux+v2.6.35.5/net/can/bcm.c#L268">http://lxr.linux.no/#linux+v2.6.35.5/net/can/bcm.c#L268</A>
+
+In raw.c this is done here:
+
+<A HREF="http://lxr.linux.no/#linux+v2.6.35.5/net/can/raw.c#L663">http://lxr.linux.no/#linux+v2.6.35.5/net/can/raw.c#L663</A>
+
+&gt;&gt;<i> Hmm, the sk_buff-&gt;sk for the message is like motherland for the 
+</I>&gt;&gt;<i> person?
+</I>&gt;&gt;<i> So the self-reception messages are the &quot;fellow citizens&quot; and the
+</I>&gt;&gt;<i> rest are foreigners? 8)
+</I>&gt;<i> Put like that, self-reception messages have their passport (different
+</I>&gt;<i> sockets in the system ~ different countries ...), and messages not
+</I>&gt;<i> originating on the system, but received from outside, well, they're
+</I>&gt;<i> alien, they come from somewhere undefined and have no passport :-)
+</I>
+Very nice analogy :-)
+
+To stick on the code in candump.c the field msg.msg_flags could contain a bit
+MSG_DONTROUTE after recvmsg(), whenever the CAN frames are not routed inside
+the system.
+
+In raw.c this (untested) patch could set the flag according to an available sk
+reference. When we have an 'alien' from outside our system the bit would be set.
+
+So far MSG_DONTROUTE is only used in sendmsg() - if this tiny patch fits your
+needs we need to see, if it's ok for the netdev guys to use this flag in the
+receive path for CAN also.
+
+Best regards,
+Oliver
+
+
+diff --git a/net/can/raw.c b/net/can/raw.c
+index 7d77e67..3348c7e 100644
+--- a/net/can/raw.c
++++ b/net/can/raw.c
+@@ -694,6 +694,9 @@ static int raw_recvmsg(struct kiocb *iocb, struct socket
+*sock,
+ 	else
+ 		size = skb-&gt;len;
+
++	if (!skb-&gt;sk)
++		msg-&gt;msg_flags |= MSG_DONTROUTE;
++
+ 	err = memcpy_toiovec(msg-&gt;msg_iov, skb-&gt;data, size);
+ 	if (err &lt; 0) {
+ 		skb_free_datagram(sk, skb);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004662.html">Self-reception and more
+</A></li>
+	<LI>Next message: <A HREF="004672.html">Self-reception and more
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4671">[ date ]</a>
+              <a href="thread.html#4671">[ thread ]</a>
+              <a href="subject.html#4671">[ subject ]</a>
+              <a href="author.html#4671">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

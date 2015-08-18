@@ -1,0 +1,1951 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH RFC v2] Add support for Janz ICAN3 CAN module
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20RFC%20v2%5D%20Add%20support%20for%20Janz%20ICAN3%20CAN%20module&In-Reply-To=%3C4B7980A7.3070806%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004089.html">
+   <LINK REL="Next"  HREF="004039.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH RFC v2] Add support for Janz ICAN3 CAN module</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20RFC%20v2%5D%20Add%20support%20for%20Janz%20ICAN3%20CAN%20module&In-Reply-To=%3C4B7980A7.3070806%40grandegger.com%3E"
+       TITLE="[PATCH RFC v2] Add support for Janz ICAN3 CAN module">wg at grandegger.com
+       </A><BR>
+    <I>Mon Feb 15 18:13:11 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004089.html">[PATCH RFC v2] Add support for Janz ICAN3 CAN module
+</A></li>
+        <LI>Next message: <A HREF="004039.html">[PATCH RFC v2] Add support for Janz ICAN3 CAN module
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4036">[ date ]</a>
+              <a href="thread.html#4036">[ thread ]</a>
+              <a href="subject.html#4036">[ subject ]</a>
+              <a href="author.html#4036">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Ira,
+
+Ira W. Snyder wrote:
+&gt;<i> The Janz ICAN3 is a MODULbus daughterboard which fits on the Janz CMOD-IO
+</I>&gt;<i> PCI carrier board. It is an intelligent CAN controller, with a
+</I>&gt;<i> microcontroller and associated firmware.
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Ira W. Snyder &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">iws at ovro.caltech.edu</A>&gt;
+</I>&gt;<i> ---
+</I>&gt;<i> 
+</I>&gt;<i> I'm quite sure this driver still has style issues and other problems
+</I>&gt;<i> that would prevent it from going to mainline immediately. I have
+</I>&gt;<i> included the drivers for the CMOD-IO PCI carrier board, as well as the
+</I>&gt;<i> driver for the VMOD-ICAN3 CAN daughterboard and VMOD-TTL GPIO
+</I>&gt;<i> daughterboard. When this driver is ready for mainline, the GPIO driver
+</I>&gt;<i> will not be included with the CAN driver. Feel free to ignore it for
+</I>&gt;<i> now, it is just a placeholder at the moment.
+</I>
+Nice, splitting the code into a generic MODULbus driver and sub-module
+drivers it the right way to go. But they should also go into different
+kernel locations: CMOD-IO to drivers/mfd, VMOD-TTL GPIO to drivers/gpio
+and VMOD-ICAN3 to drivers/net/can, I think. They also belong to
+different kernel sub-systems managed by different maintainers and you
+therefore need to split up the patches before you post them to the
+relevant mailing lists.
+
+&gt;<i> Other than the above issues, I believe that the CAN bus error state
+</I>&gt;<i> handling is correct, as well as the bit timing issues mentioned
+</I>&gt;<i> previously.
+</I>
+I will focus on the CAN driver.
+
+&gt;<i> Any review is appreciated. Thanks to everyone who has provided comments
+</I>&gt;<i> on the earlier posting of this driver.
+</I>&gt;<i> 
+</I>&gt;<i> Ira
+</I>&gt;<i> 
+</I>&gt;<i> RFCv1 -&gt; RFCv2:
+</I>&gt;<i> - converted to a multi-driver model
+</I>&gt;<i> - addressed many review comments
+</I>&gt;<i> - added CAN bus error handling
+</I>&gt;<i> - use a work function only instead of work + NAPI
+</I>&gt;<i> - use SJA1000 bittiming calculation code
+</I>&gt;<i> 
+</I>&gt;<i>  drivers/net/can/Kconfig            |    2 +
+</I>&gt;<i>  drivers/net/can/Makefile           |    1 +
+</I>&gt;<i>  drivers/net/can/janz/Kconfig       |   29 +
+</I>&gt;<i>  drivers/net/can/janz/Makefile      |    5 +
+</I>&gt;<i>  drivers/net/can/janz/janz-cmodio.c |  343 ++++++++
+</I>&gt;<i>  drivers/net/can/janz/janz-ican3.c  | 1657 ++++++++++++++++++++++++++++++++++++
+</I>&gt;<i>  drivers/net/can/janz/janz-ttl.c    |   72 ++
+</I>&gt;<i>  drivers/net/can/janz/janz.h        |   29 +
+</I>&gt;<i>  8 files changed, 2138 insertions(+), 0 deletions(-)
+</I>&gt;<i>  create mode 100644 drivers/net/can/janz/Kconfig
+</I>&gt;<i>  create mode 100644 drivers/net/can/janz/Makefile
+</I>&gt;<i>  create mode 100644 drivers/net/can/janz/janz-cmodio.c
+</I>&gt;<i>  create mode 100644 drivers/net/can/janz/janz-ican3.c
+</I>&gt;<i>  create mode 100644 drivers/net/can/janz/janz-ttl.c
+</I>&gt;<i>  create mode 100644 drivers/net/can/janz/janz.h
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/Kconfig b/drivers/net/can/Kconfig
+</I>&gt;<i> index 05b7517..a643ccd 100644
+</I>&gt;<i> --- a/drivers/net/can/Kconfig
+</I>&gt;<i> +++ b/drivers/net/can/Kconfig
+</I>&gt;<i> @@ -69,6 +69,8 @@ source &quot;drivers/net/can/sja1000/Kconfig&quot;
+</I>&gt;<i>  
+</I>&gt;<i>  source &quot;drivers/net/can/usb/Kconfig&quot;
+</I>&gt;<i>  
+</I>&gt;<i> +source &quot;drivers/net/can/janz/Kconfig&quot;
+</I>&gt;<i> +
+</I>&gt;<i>  config CAN_DEBUG_DEVICES
+</I>&gt;<i>  	bool &quot;CAN devices debugging messages&quot;
+</I>&gt;<i>  	depends on CAN
+</I>&gt;<i> diff --git a/drivers/net/can/Makefile b/drivers/net/can/Makefile
+</I>&gt;<i> index 7a702f2..00c24cd 100644
+</I>&gt;<i> --- a/drivers/net/can/Makefile
+</I>&gt;<i> +++ b/drivers/net/can/Makefile
+</I>&gt;<i> @@ -15,5 +15,6 @@ obj-$(CONFIG_CAN_AT91)		+= at91_can.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_TI_HECC)	+= ti_hecc.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_MCP251X)	+= mcp251x.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_BFIN)		+= bfin_can.o
+</I>&gt;<i> +obj-$(CONFIG_CAN_JANZ_CMODIO)	+= janz/
+</I>&gt;<i>  
+</I>&gt;<i>  ccflags-$(CONFIG_CAN_DEBUG_DEVICES) := -DDEBUG
+</I>&gt;<i> diff --git a/drivers/net/can/janz/Kconfig b/drivers/net/can/janz/Kconfig
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..6f260f7
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/janz/Kconfig
+</I>&gt;<i> @@ -0,0 +1,29 @@
+</I>&gt;<i> +config CAN_JANZ_CMODIO
+</I>&gt;<i> +	depends on CAN_DEV
+</I>&gt;<i> +	tristate &quot;Support for Janz CMOD-IO PCI Carrier Board&quot;
+</I>&gt;<i> +	---help---
+</I>&gt;<i> +	  The Janz CMOD-IO PCI Carrier Board is a MODULbus to PCI bridge
+</I>&gt;<i> +	  which allows many types of MODULbus modules to be used.
+</I>&gt;<i> +
+</I>&gt;<i> +if CAN_JANZ_CMODIO
+</I>&gt;<i> +
+</I>&gt;<i> +config CAN_JANZ_ICAN3
+</I>&gt;<i> +	tristate &quot;Janz VMOD-ICAN3 CAN controller&quot;
+</I>&gt;<i> +	---help---
+</I>&gt;<i> +	  If you say yes here you get support for the Janz VMOD-ICAN3
+</I>&gt;<i> +	  intelligent CAN module.
+</I>&gt;<i> +
+</I>&gt;<i> +	  This driver can also be built as a module.  If so, the module
+</I>&gt;<i> +	  will be called janz-ican3.ko.
+</I>&gt;<i> +
+</I>&gt;<i> +config CAN_JANZ_TTL
+</I>&gt;<i> +	tristate &quot;Janz VMOD-TTL GPIO controller&quot;
+</I>&gt;<i> +	---help---
+</I>&gt;<i> +	  If you say yes here you get support for the Janz VMOD-TTL
+</I>&gt;<i> +	  GPIO module.
+</I>&gt;<i> +
+</I>&gt;<i> +	  This driver can also be built as a module.  If so, the module
+</I>&gt;<i> +	  will be called janz-ttl.ko
+</I>&gt;<i> +
+</I>&gt;<i> +endif
+</I>&gt;<i> +
+</I>&gt;<i> diff --git a/drivers/net/can/janz/Makefile b/drivers/net/can/janz/Makefile
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..a5c5e67
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/janz/Makefile
+</I>&gt;<i> @@ -0,0 +1,5 @@
+</I>&gt;<i> +obj-$(CONFIG_JANZ_CMODIO)	+= janz-cmodio.o
+</I>&gt;<i> +obj-$(CONFIG_JANZ_ICAN3)	+= janz-ican3.o
+</I>&gt;<i> +obj-$(CONFIG_JANZ_TTL)		+= janz-ttl.o
+</I>&gt;<i> +
+</I>&gt;<i> +ccflags-$(CONFIG_CAN_DEBUG_DEVICES) := -DDEBUG
+</I>&gt;<i> diff --git a/drivers/net/can/janz/janz-cmodio.c b/drivers/net/can/janz/janz-cmodio.c
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..3827902
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/janz/janz-cmodio.c
+</I>&gt;<i> @@ -0,0 +1,343 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Janz CMOD-IO MODULbus Carrier Board PCI Driver
+</I>&gt;<i> + *
+</I>&gt;<i> + * Copyright (c) 2010 Ira W. Snyder &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">iws at ovro.caltech.edu</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + * Lots of inspiration and code was copied from drivers/mfd/sm501.c
+</I>&gt;<i> + *
+</I>&gt;<i> + * This file is licensed under the terms of the GNU General Public License
+</I>&gt;<i> + * version 2. This program is licensed &quot;as is&quot; without any warranty of any
+</I>&gt;<i> + * kind, whether express or implied.
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;linux/kernel.h&gt;
+</I>&gt;<i> +#include &lt;linux/module.h&gt;
+</I>&gt;<i> +#include &lt;linux/init.h&gt;
+</I>&gt;<i> +#include &lt;linux/pci.h&gt;
+</I>&gt;<i> +#include &lt;linux/interrupt.h&gt;
+</I>&gt;<i> +#include &lt;linux/delay.h&gt;
+</I>&gt;<i> +#include &lt;linux/platform_device.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &quot;janz.h&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +#define DRV_NAME &quot;janz-cmodio&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +/* Maximum number of buffers on a CMOD-IO carrier board */
+</I>&gt;<i> +#define JANZ_MAX_MODULES 4
+</I>&gt;<i> +
+</I>&gt;<i> +struct janz_device {
+</I>&gt;<i> +	struct device *dev;
+</I>&gt;<i> +	struct pci_dev *pdev;
+</I>&gt;<i> +
+</I>&gt;<i> +	void __iomem *modulbus_regs;
+</I>&gt;<i> +	void __iomem *onboard_regs;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* hex switch position */
+</I>&gt;<i> +	u8 hex;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* list of available modules */
+</I>&gt;<i> +	struct list_head devices;
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* Subdevice Support                                                          */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>
+As multi-line comment should look like:
+
+/*
+ * Subdevice Support
+ */
+
+What you have looks similar to the MFD deriver in drivers/mfd. They also
+serve as example. For the time being, I will focus on the CAN driver.
+
+[snip]
+&gt;<i> diff --git a/drivers/net/can/janz/janz-ican3.c b/drivers/net/can/janz/janz-ican3.c
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..640c4bb
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/janz/janz-ican3.c
+</I>&gt;<i> @@ -0,0 +1,1657 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Janz MODULbus VMOD-ICAN3 CAN Interface Driver
+</I>&gt;<i> + *
+</I>&gt;<i> + * Copyright (c) 2010 Ira W. Snyder &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">iws at ovro.caltech.edu</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + * This file is licensed under the terms of the GNU General Public License
+</I>&gt;<i> + * version 2. This program is licensed &quot;as is&quot; without any warranty of any
+</I>&gt;<i> + * kind, whether express or implied.
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;linux/kernel.h&gt;
+</I>&gt;<i> +#include &lt;linux/module.h&gt;
+</I>&gt;<i> +#include &lt;linux/init.h&gt;
+</I>&gt;<i> +#include &lt;linux/interrupt.h&gt;
+</I>&gt;<i> +#include &lt;linux/delay.h&gt;
+</I>&gt;<i> +#include &lt;linux/platform_device.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;linux/netdevice.h&gt;
+</I>&gt;<i> +#include &lt;linux/can.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/dev.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/error.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &quot;janz.h&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +/* the DPM has 64k of memory, organized into 256x 256 byte pages */
+</I>&gt;<i> +#define DPM_NUM_PAGES		256
+</I>&gt;<i> +#define DPM_PAGE_SIZE		256
+</I>&gt;<i> +#define DPM_PAGE_ADDR(p)	((p) * DPM_PAGE_SIZE)
+</I>&gt;<i> +
+</I>&gt;<i> +/* Janz ICAN3 DPM control registers */
+</I>&gt;<i> +#define DPM_REG_ADDR		0x100
+</I>&gt;<i> +#define DPM_REG_INT		0x102
+</I>&gt;<i> +#define DPM_REG_HWRESET		0x104
+</I>&gt;<i> +#define DPM_REG_TPUINT		0x106
+</I>&gt;<i> +
+</I>&gt;<i> +/* Janz &quot;old-style&quot; host interface control registers */
+</I>&gt;<i> +#define MSYNC_PEER		0x00		/* ICAN only */
+</I>&gt;<i> +#define MSYNC_LOCL		0x01		/* host only */
+</I>&gt;<i> +#define TARGET_RUNNING		0x02
+</I>&gt;<i> +
+</I>&gt;<i> +/* Janz &quot;new-style&quot; host interface queue page numbers */
+</I>&gt;<i> +#define QUEUE_TOHOST		5
+</I>&gt;<i> +#define QUEUE_FROMHOST_MID	6
+</I>&gt;<i> +#define QUEUE_FROMHOST_HIGH	7
+</I>&gt;<i> +#define QUEUE_FROMHOST_LOW	8
+</I>&gt;<i> +
+</I>&gt;<i> +/* Janz &quot;new-style&quot; and &quot;fast&quot; host interface descriptor flags */
+</I>&gt;<i> +#define DESC_VALID		0x80
+</I>&gt;<i> +#define DESC_WRAP		0x40
+</I>&gt;<i> +#define DESC_INTERRUPT		0x20
+</I>&gt;<i> +#define DESC_IVALID		0x10
+</I>&gt;<i> +#define DESC_LEN(len)		(len)
+</I>&gt;<i> +
+</I>&gt;<i> +/* Janz Firmware Messages */
+</I>&gt;<i> +#define MSG_CONNECTI		0x02
+</I>&gt;<i> +#define MSG_DISCONNECT		0x03
+</I>&gt;<i> +#define MSG_IDVERS		0x04
+</I>&gt;<i> +#define MSG_MSGLOST		0x05
+</I>&gt;<i> +#define MSG_NEWHOSTIF		0x08
+</I>&gt;<i> +#define MSG_SETAFILMASK		0x10
+</I>&gt;<i> +#define MSG_INITFDPMQUEUE	0x11
+</I>&gt;<i> +#define MSG_HWCONF		0x12
+</I>&gt;<i> +#define MSG_FMSGLOST		0x15
+</I>&gt;<i> +#define MSG_CEVTIND		0x37
+</I>&gt;<i> +#define MSG_CBTRREQ		0x41
+</I>&gt;<i> +#define MSG_COFFREQ		0x42
+</I>&gt;<i> +#define MSG_CONREQ		0x43
+</I>&gt;<i> +
+</I>&gt;<i> +/* Number of buffers for use in the &quot;new-style&quot; host interface */
+</I>&gt;<i> +#define JANZ_NEW_BUFFERS 16
+</I>&gt;<i> +
+</I>&gt;<i> +/* Number of buffers for use in the &quot;fast&quot; host interface */
+</I>&gt;<i> +#define JANZ_FAST_BUFFERS 256
+</I>&gt;<i> +
+</I>&gt;<i> +/* Driver Name */
+</I>&gt;<i> +#define DRV_NAME &quot;janz-ican3&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +struct janz_ican3 {
+</I>&gt;<i> +
+</I>&gt;<i> +	/* must be the first member */
+</I>&gt;<i> +	struct can_priv can;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* CAN network device */
+</I>&gt;<i> +	struct net_device *ndev;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Device for printing */
+</I>&gt;<i> +	struct device *dev;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* module number */
+</I>&gt;<i> +	unsigned int num;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* base address of registers and IRQ */
+</I>&gt;<i> +	void __iomem *ctrl;
+</I>&gt;<i> +	void __iomem *regs;
+</I>&gt;<i> +	int irq;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* old and new style host interface */
+</I>&gt;<i> +	unsigned int iftype;
+</I>&gt;<i> +	spinlock_t lock;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* new host interface */
+</I>&gt;<i> +	unsigned int rx_int;
+</I>&gt;<i> +	unsigned int rx_num;
+</I>&gt;<i> +	unsigned int tx_num;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* fast host interface */
+</I>&gt;<i> +	unsigned int fastrx_start;
+</I>&gt;<i> +	unsigned int fastrx_int;
+</I>&gt;<i> +	unsigned int fastrx_num;
+</I>&gt;<i> +	unsigned int fasttx_start;
+</I>&gt;<i> +	unsigned int fasttx_num;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* first free DPM page */
+</I>&gt;<i> +	unsigned int free_page;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* interrupt handling */
+</I>&gt;<i> +	struct work_struct work;
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +struct janz_msg {
+</I>&gt;<i> +	u8 control;
+</I>&gt;<i> +	u8 spec;
+</I>&gt;<i> +	__le16 len;
+</I>&gt;<i> +	u8 data[252];
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +struct janz_new_desc {
+</I>&gt;<i> +	u8 control;
+</I>&gt;<i> +	u8 pointer;
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +struct janz_fast_desc {
+</I>&gt;<i> +	u8 control;
+</I>&gt;<i> +	u8 command;
+</I>&gt;<i> +	u8 data[14];
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* DPM Register Access                                                        */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>
+See above.
+
+&gt;<i> +/* write to the window basic address register */
+</I>&gt;<i> +static inline void janz_set_page(struct janz_ican3 *mod, unsigned int page)
+</I>&gt;<i> +{
+</I>&gt;<i> +	/* the DPM only has 256 pages */
+</I>&gt;<i> +	BUG_ON(page &gt;= 256);
+</I>&gt;<i> +	iowrite8(page, mod-&gt;regs + DPM_REG_ADDR);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* clear a MODULbus interrupt */
+</I>&gt;<i> +static inline void janz_clr_int(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	ioread8(mod-&gt;regs + DPM_REG_INT);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* generate a MODULbus interrupt */
+</I>&gt;<i> +static inline void janz_set_int(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	iowrite8(0x01, mod-&gt;regs + DPM_REG_INT);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* Onboard Registers                                                          */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +
+</I>&gt;<i> +static inline void janz_disable_interrupts(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	iowrite8(1 &lt;&lt; mod-&gt;num, mod-&gt;ctrl + JANZ_OB_INT_DISABLE);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static inline void janz_enable_interrupts(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	iowrite8(1 &lt;&lt; mod-&gt;num, mod-&gt;ctrl + JANZ_OB_INT_ENABLE);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* Janz &quot;old-style&quot; host interface                                            */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +
+</I>&gt;<i> +/* Get the MSYNC bits from the &quot;old-style&quot; interface control registers */
+</I>&gt;<i> +static void janz_get_msync(struct janz_ican3 *mod, u8 *locl, u8 *peer)
+</I>&gt;<i> +{
+</I>&gt;<i> +	janz_set_page(mod, 0);
+</I>&gt;<i> +	*peer = ioread8(mod-&gt;regs + MSYNC_PEER);
+</I>&gt;<i> +	*locl = ioread8(mod-&gt;regs + MSYNC_LOCL);
+</I>&gt;<i> +}
+</I>
+What are your arguments against using structures to describe the
+register layout?
+
+&gt;<i> +/*
+</I>&gt;<i> + * Recieve a message from the Janz &quot;old-style&quot; firmware interface
+</I>&gt;<i> + *
+</I>&gt;<i> + * returns 0 on success, -ENOMEM when no message exists
+</I>&gt;<i> + */
+</I>&gt;<i> +static int janz_old_recv_msg(struct janz_ican3 *mod, struct janz_msg *msg)
+</I>&gt;<i> +{
+</I>&gt;<i> +	u8 locl, peer, xord;
+</I>&gt;<i> +	unsigned int mbox;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* get the MSYNC registers */
+</I>&gt;<i> +	janz_get_msync(mod, &amp;locl, &amp;peer);
+</I>&gt;<i> +	xord = locl ^ peer;
+</I>&gt;<i> +
+</I>&gt;<i> +	if ((xord &amp; 0x03) == 0x00) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;no mbox for reading\n&quot;);
+</I>&gt;<i> +		return -ENOMEM;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* find the first free mbox to read */
+</I>&gt;<i> +	if ((xord &amp; 0x03) == 0x03)
+</I>&gt;<i> +		mbox = (xord &amp; 0x04) ? 0 : 1;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		mbox = (xord &amp; 0x01) ? 0 : 1;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* copy the message */
+</I>&gt;<i> +	janz_set_page(mod, mbox + 1);
+</I>&gt;<i> +	memcpy_fromio(msg, mod-&gt;regs, sizeof(*msg));
+</I>&gt;<i> +
+</I>&gt;<i> +	/*
+</I>&gt;<i> +	 * notify the firmware that the read buffer is available
+</I>&gt;<i> +	 * for it to fill again
+</I>&gt;<i> +	 */
+</I>&gt;<i> +	locl ^= (1 &lt;&lt; mbox);
+</I>&gt;<i> +
+</I>&gt;<i> +	janz_set_page(mod, 0);
+</I>&gt;<i> +	iowrite8(locl, mod-&gt;regs + MSYNC_LOCL);
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Send a message through the &quot;old-style&quot; firmware interface
+</I>&gt;<i> + *
+</I>&gt;<i> + * returns 0 on success, -ENOMEM when no free space exists
+</I>&gt;<i> + */
+</I>&gt;<i> +static int janz_old_send_msg(struct janz_ican3 *mod, struct janz_msg *msg)
+</I>&gt;<i> +{
+</I>&gt;<i> +	u8 locl, peer, xord;
+</I>&gt;<i> +	unsigned int mbox;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* get the MSYNC registers */
+</I>&gt;<i> +	janz_get_msync(mod, &amp;locl, &amp;peer);
+</I>&gt;<i> +	xord = locl ^ peer;
+</I>&gt;<i> +
+</I>&gt;<i> +	if ((xord &amp; 0x30) == 0x30) {
+</I>&gt;<i> +		dev_err(mod-&gt;dev, &quot;no mbox for writing\n&quot;);
+</I>&gt;<i> +		return -ENOMEM;
+</I>&gt;<i> +	}
+</I>
+Here and in many other places macro definitions would make the code more
+readable.
+
+&gt;<i> +	/* calculate a free mbox to use */
+</I>&gt;<i> +	mbox = (xord &amp; 0x10) ? 1 : 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* copy the message to the DPM */
+</I>&gt;<i> +	janz_set_page(mod, mbox + 3);
+</I>&gt;<i> +	memcpy_toio(mod-&gt;regs, msg, sizeof(*msg));
+</I>&gt;<i> +
+</I>&gt;<i> +	locl ^= (mbox == 0) ? 0x10 : 0x20;
+</I>&gt;<i> +	locl |= (mbox == 0) ? 0x00 : 0x40;
+</I>&gt;<i> +
+</I>&gt;<i> +	janz_set_page(mod, 0);
+</I>&gt;<i> +	iowrite8(locl, mod-&gt;regs + MSYNC_LOCL);
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* Janz &quot;new-style&quot; Host Interface Setup                                      */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +
+</I>&gt;<i> +static void janz_init_new_host_interface(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_new_desc desc;
+</I>&gt;<i> +	unsigned long flags;
+</I>&gt;<i> +	void __iomem *dst;
+</I>&gt;<i> +	int i;
+</I>&gt;<i> +
+</I>&gt;<i> +	spin_lock_irqsave(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: starting at page %d\n&quot;, __func__, mod-&gt;free_page);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* setup the internal datastructures for RX */
+</I>&gt;<i> +	mod-&gt;rx_num = 0;
+</I>&gt;<i> +	mod-&gt;rx_int = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* tohost queue descriptors are in page 5 */
+</I>&gt;<i> +	janz_set_page(mod, 5);
+</I>&gt;<i> +	dst = mod-&gt;regs;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* initialize the tohost (rx) queue descriptors: pages 9-24 */
+</I>&gt;<i> +	for (i = 0; i &lt; JANZ_NEW_BUFFERS; i++) {
+</I>&gt;<i> +		desc.control = DESC_INTERRUPT | DESC_LEN(1); /* I L=1 */
+</I>&gt;<i> +		desc.pointer = mod-&gt;free_page;
+</I>&gt;<i> +
+</I>&gt;<i> +		/* set wrap flag on last buffer */
+</I>&gt;<i> +		if (i == JANZ_NEW_BUFFERS - 1)
+</I>&gt;<i> +			desc.control |= DESC_WRAP;
+</I>&gt;<i> +
+</I>&gt;<i> +		memcpy_toio(dst, &amp;desc, sizeof(desc));
+</I>&gt;<i> +		dst += sizeof(desc);
+</I>&gt;<i> +		mod-&gt;free_page++;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* fromhost (tx) mid queue descriptors are in page 6 */
+</I>&gt;<i> +	janz_set_page(mod, 6);
+</I>&gt;<i> +	dst = mod-&gt;regs;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* setup the internal datastructures for TX */
+</I>&gt;<i> +	mod-&gt;tx_num = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* initialize the fromhost mid queue descriptors: pages 25-40 */
+</I>&gt;<i> +	for (i = 0; i &lt; JANZ_NEW_BUFFERS; i++) {
+</I>&gt;<i> +		desc.control = DESC_VALID | DESC_LEN(1); /* V L=1 */
+</I>&gt;<i> +		desc.pointer = mod-&gt;free_page;
+</I>&gt;<i> +
+</I>&gt;<i> +		/* set wrap flag on last buffer */
+</I>&gt;<i> +		if (i == JANZ_NEW_BUFFERS - 1)
+</I>&gt;<i> +			desc.control |= DESC_WRAP;
+</I>&gt;<i> +
+</I>&gt;<i> +		memcpy_toio(dst, &amp;desc, sizeof(desc));
+</I>&gt;<i> +		dst += sizeof(desc);
+</I>&gt;<i> +		mod-&gt;free_page++;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* fromhost hi queue descriptors are in page 7 */
+</I>&gt;<i> +	janz_set_page(mod, 7);
+</I>&gt;<i> +	dst = mod-&gt;regs;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* initialize only a single buffer in the fromhost hi queue (unused) */
+</I>&gt;<i> +	desc.control = DESC_VALID | DESC_WRAP | DESC_LEN(1); /* VW L=1 */
+</I>&gt;<i> +	desc.pointer = mod-&gt;free_page;
+</I>&gt;<i> +	memcpy_toio(dst, &amp;desc, sizeof(desc));
+</I>&gt;<i> +	mod-&gt;free_page++;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* fromhost low queue descriptors are in page 8 */
+</I>&gt;<i> +	janz_set_page(mod, 8);
+</I>&gt;<i> +	dst = mod-&gt;regs;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* initialize only a single buffer in the fromhost low queue (unused) */
+</I>&gt;<i> +	desc.control = DESC_VALID | DESC_WRAP | DESC_LEN(1); /* VW L=1 */
+</I>&gt;<i> +	desc.pointer = mod-&gt;free_page;
+</I>&gt;<i> +	memcpy_toio(dst, &amp;desc, sizeof(desc));
+</I>&gt;<i> +	mod-&gt;free_page++;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: next free page %d\n&quot;, __func__, mod-&gt;free_page);
+</I>&gt;<i> +	spin_unlock_irqrestore(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* Janz Fast Host Interface Setup                                             */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +
+</I>&gt;<i> +static void janz_init_fast_host_interface(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_fast_desc desc;
+</I>&gt;<i> +	unsigned long flags;
+</I>&gt;<i> +	unsigned int addr;
+</I>&gt;<i> +	void __iomem *dst;
+</I>&gt;<i> +	int i;
+</I>&gt;<i> +
+</I>&gt;<i> +	spin_lock_irqsave(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: starting at page %d\n&quot;, __func__, mod-&gt;free_page);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* save the start recv page */
+</I>&gt;<i> +	mod-&gt;fastrx_start = mod-&gt;free_page;
+</I>&gt;<i> +	mod-&gt;fastrx_num   = 0;
+</I>&gt;<i> +	mod-&gt;fastrx_int   = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* build a single fast tohost queue descriptor */
+</I>&gt;<i> +	memset(&amp;desc, 0, sizeof(desc));
+</I>&gt;<i> +	desc.control = 0x00;
+</I>&gt;<i> +	desc.command = 1;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* build the tohost queue descriptor ring in memory */
+</I>&gt;<i> +	addr = 0;
+</I>&gt;<i> +	for (i = 0; i &lt; JANZ_FAST_BUFFERS; i++) {
+</I>&gt;<i> +
+</I>&gt;<i> +		/* set the wrap bit on the last buffer */
+</I>&gt;<i> +		if (i == JANZ_FAST_BUFFERS - 1)
+</I>&gt;<i> +			desc.control |= DESC_WRAP;
+</I>&gt;<i> +
+</I>&gt;<i> +		/* switch to the correct page */
+</I>&gt;<i> +		janz_set_page(mod, mod-&gt;free_page);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* copy the descriptor to the DPM */
+</I>&gt;<i> +		dst = mod-&gt;regs + addr;
+</I>&gt;<i> +		memcpy_toio(dst, &amp;desc, sizeof(desc));
+</I>&gt;<i> +		addr += sizeof(desc);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* move to the next page if necessary */
+</I>&gt;<i> +		if (addr &gt;= 256) {
+</I>
+Macro definitons! See above.
+
+&gt;<i> +			addr = 0;
+</I>&gt;<i> +			mod-&gt;free_page++;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* make sure we page-align the next queue */
+</I>&gt;<i> +	if (addr != 0)
+</I>&gt;<i> +		mod-&gt;free_page++;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* save the start xmit page */
+</I>&gt;<i> +	mod-&gt;fasttx_start = mod-&gt;free_page;
+</I>&gt;<i> +	mod-&gt;fasttx_num   = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* build a single fast fromhost queue descriptor */
+</I>&gt;<i> +	memset(&amp;desc, 0, sizeof(desc));
+</I>&gt;<i> +	desc.control = DESC_VALID;
+</I>&gt;<i> +	desc.command = 1;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* build the fromhost queue descriptor ring in memory */
+</I>&gt;<i> +	addr = 0;
+</I>&gt;<i> +	for (i = 0; i &lt; JANZ_FAST_BUFFERS; i++) {
+</I>&gt;<i> +
+</I>&gt;<i> +		/* set the wrap bit on the last buffer */
+</I>&gt;<i> +		if (i == JANZ_FAST_BUFFERS - 1)
+</I>&gt;<i> +			desc.control |= DESC_WRAP;
+</I>&gt;<i> +
+</I>&gt;<i> +		/* switch to the correct page */
+</I>&gt;<i> +		janz_set_page(mod, mod-&gt;free_page);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* copy the descriptor to the DPM */
+</I>&gt;<i> +		dst = mod-&gt;regs + addr;
+</I>&gt;<i> +		memcpy_toio(dst, &amp;desc, sizeof(desc));
+</I>&gt;<i> +		addr += sizeof(desc);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* move to the next page if necessary */
+</I>&gt;<i> +		if (addr &gt;= 256) {
+</I>&gt;<i> +			addr = 0;
+</I>&gt;<i> +			mod-&gt;free_page++;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: next free page %d\n&quot;, __func__, mod-&gt;free_page);
+</I>&gt;<i> +	spin_unlock_irqrestore(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* Janz &quot;new-style&quot; Host Interface Message Helpers                            */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * LOCKING: must hold mod-&gt;lock
+</I>&gt;<i> + */
+</I>&gt;<i> +static int janz_new_send_msg(struct janz_ican3 *mod, struct janz_msg *msg)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_new_desc desc;
+</I>&gt;<i> +	void __iomem *desc_addr = mod-&gt;regs + (mod-&gt;tx_num * sizeof(desc));
+</I>&gt;<i> +
+</I>&gt;<i> +	/* switch to the fromhost mid queue, and read the buffer descriptor */
+</I>&gt;<i> +	janz_set_page(mod, 6);
+</I>&gt;<i> +	memcpy_fromio(&amp;desc, desc_addr, sizeof(desc));
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!(desc.control &amp; DESC_VALID)) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;%s: no free buffers\n&quot;, __func__);
+</I>&gt;<i> +		return -ENOMEM;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* switch to the data page, copy the data */
+</I>&gt;<i> +	janz_set_page(mod, desc.pointer);
+</I>&gt;<i> +	memcpy_toio(mod-&gt;regs, msg, sizeof(*msg));
+</I>&gt;<i> +
+</I>&gt;<i> +	/* switch back to the descriptor, set the valid bit, write it back */
+</I>&gt;<i> +	janz_set_page(mod, 6);
+</I>&gt;<i> +	desc.control ^= DESC_VALID;
+</I>&gt;<i> +	memcpy_toio(desc_addr, &amp;desc, sizeof(desc));
+</I>&gt;<i> +
+</I>&gt;<i> +	/* update the tx number */
+</I>&gt;<i> +	mod-&gt;tx_num = (desc.control &amp; DESC_WRAP) ? 0 : (mod-&gt;tx_num + 1);
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: update TX num -&gt; %d\n&quot;, __func__, mod-&gt;tx_num);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * LOCKING: must hold mod-&gt;lock
+</I>&gt;<i> + */
+</I>&gt;<i> +static int janz_new_recv_msg(struct janz_ican3 *mod, struct janz_msg *msg)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_new_desc desc;
+</I>&gt;<i> +	void __iomem *desc_addr = mod-&gt;regs + (mod-&gt;rx_num * sizeof(desc));
+</I>&gt;<i> +
+</I>&gt;<i> +	/* switch to the tohost queue, and read the buffer descriptor */
+</I>&gt;<i> +	janz_set_page(mod, 5);
+</I>&gt;<i> +	memcpy_fromio(&amp;desc, desc_addr, sizeof(desc));
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!(desc.control &amp; DESC_VALID)) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;%s: no buffers to recv\n&quot;, __func__);
+</I>&gt;<i> +		return -ENOMEM;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* switch to the data page, copy the data */
+</I>&gt;<i> +	janz_set_page(mod, desc.pointer);
+</I>&gt;<i> +	memcpy_fromio(msg, mod-&gt;regs, sizeof(*msg));
+</I>&gt;<i> +
+</I>&gt;<i> +	/* switch back to the descriptor, toggle the valid bit, write it back */
+</I>&gt;<i> +	janz_set_page(mod, 5);
+</I>&gt;<i> +	desc.control ^= DESC_VALID;
+</I>&gt;<i> +	memcpy_toio(desc_addr, &amp;desc, sizeof(desc));
+</I>&gt;<i> +
+</I>&gt;<i> +	/* update the rx number */
+</I>&gt;<i> +	mod-&gt;rx_num = (desc.control &amp; DESC_WRAP) ? 0 : (mod-&gt;rx_num + 1);
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: update RX num -&gt; %d\n&quot;, __func__, mod-&gt;rx_num);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* Message Send / Recv Helpers                                                */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +
+</I>&gt;<i> +static int janz_send_msg(struct janz_ican3 *mod, struct janz_msg *msg)
+</I>&gt;<i> +{
+</I>&gt;<i> +	unsigned long flags;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	spin_lock_irqsave(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (mod-&gt;iftype == 0)
+</I>&gt;<i> +		ret = janz_old_send_msg(mod, msg);
+</I>&gt;<i> +	else
+</I>&gt;<i> +		ret = janz_new_send_msg(mod, msg);
+</I>&gt;<i> +
+</I>&gt;<i> +	spin_unlock_irqrestore(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +	return ret;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int janz_recv_msg(struct janz_ican3 *mod, struct janz_msg *msg)
+</I>&gt;<i> +{
+</I>&gt;<i> +	unsigned long flags;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	spin_lock_irqsave(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (mod-&gt;iftype == 0)
+</I>&gt;<i> +		ret = janz_old_recv_msg(mod, msg);
+</I>&gt;<i> +	else
+</I>&gt;<i> +		ret = janz_new_recv_msg(mod, msg);
+</I>&gt;<i> +
+</I>&gt;<i> +	spin_unlock_irqrestore(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +	return ret;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* Quick Pre-constructed Messages                                             */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +
+</I>&gt;<i> +static int janz_msg_connect(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_msg msg;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	memset(&amp;msg, 0, sizeof(msg));
+</I>&gt;<i> +	msg.control = 0x00;
+</I>&gt;<i> +	msg.spec    = MSG_CONNECTI;
+</I>&gt;<i> +	msg.len     = cpu_to_le16(0);
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = janz_send_msg(mod, &amp;msg);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;unable to send CONNECT message\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int janz_msg_disconnect(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_msg msg;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	memset(&amp;msg, 0, sizeof(msg));
+</I>&gt;<i> +	msg.control = 0x00;
+</I>&gt;<i> +	msg.spec    = MSG_DISCONNECT;
+</I>&gt;<i> +	msg.len     = cpu_to_le16(0);
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = janz_send_msg(mod, &amp;msg);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;unable to send DISCONNECT message\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int janz_msg_newhostif(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_msg msg;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	memset(&amp;msg, 0, sizeof(msg));
+</I>&gt;<i> +	msg.control = 0x00;
+</I>&gt;<i> +	msg.spec    = MSG_NEWHOSTIF;
+</I>&gt;<i> +	msg.len     = cpu_to_le16(0);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* If we're not using the old interface, switching seems bogus */
+</I>&gt;<i> +	WARN_ON(mod-&gt;iftype != 0);
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = janz_send_msg(mod, &amp;msg);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;unable to send NEWHOSTIF message\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* mark the module as using the new host interface */
+</I>&gt;<i> +	mod-&gt;iftype = 1;
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int janz_msg_fasthostif(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_msg msg;
+</I>&gt;<i> +	unsigned int addr;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	memset(&amp;msg, 0, sizeof(msg));
+</I>&gt;<i> +	msg.control = 0x00;
+</I>&gt;<i> +	msg.spec    = MSG_INITFDPMQUEUE;
+</I>&gt;<i> +	msg.len     = cpu_to_le16(8);
+</I>
+Please do not align expressions. Just use *one* space before and after
+&quot;=&quot;. Please fix globally.
+
+&gt;<i> +
+</I>&gt;<i> +	/* write the tohost queue start address */
+</I>&gt;<i> +	addr = DPM_PAGE_ADDR(mod-&gt;fastrx_start);
+</I>&gt;<i> +	msg.data[0] = addr &amp; 0xff;
+</I>&gt;<i> +	msg.data[1] = (addr &gt;&gt; 8) &amp; 0xff;
+</I>&gt;<i> +	msg.data[2] = (addr &gt;&gt; 16) &amp; 0xff;
+</I>&gt;<i> +	msg.data[3] = (addr &gt;&gt; 24) &amp; 0xff;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* write the fromhost queue start address */
+</I>&gt;<i> +	addr = DPM_PAGE_ADDR(mod-&gt;fasttx_start);
+</I>&gt;<i> +	msg.data[4] = addr &amp; 0xff;
+</I>&gt;<i> +	msg.data[5] = (addr &gt;&gt; 8) &amp; 0xff;
+</I>&gt;<i> +	msg.data[6] = (addr &gt;&gt; 16) &amp; 0xff;
+</I>&gt;<i> +	msg.data[7] = (addr &gt;&gt; 24) &amp; 0xff;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* If we're not using the new interface yet, we cannot do this */
+</I>&gt;<i> +	WARN_ON(mod-&gt;iftype != 1);
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = janz_send_msg(mod, &amp;msg);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;unable to send FASTHOSTIF message\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Setup the CAN filter to either accept or reject all
+</I>&gt;<i> + * messages from the CAN bus.
+</I>&gt;<i> + */
+</I>&gt;<i> +static int janz_set_id_filter(struct janz_ican3 *mod, bool accept)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_msg msg;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Standard Frame Format */
+</I>&gt;<i> +	memset(&amp;msg, 0, sizeof(msg));
+</I>&gt;<i> +	msg.control = 0x00;
+</I>&gt;<i> +	msg.spec    = MSG_SETAFILMASK;
+</I>&gt;<i> +	msg.len     = cpu_to_le16(5);
+</I>
+Ditto.
+
+&gt;<i> +	msg.data[0] = 0x00; /* IDLo LSB */
+</I>&gt;<i> +	msg.data[1] = 0x00; /* IDLo MSB */
+</I>&gt;<i> +	msg.data[2] = 0xff; /* IDHi LSB */
+</I>&gt;<i> +	msg.data[3] = 0x07; /* IDHi MSB */
+</I>&gt;<i> +
+</I>&gt;<i> +	/* accept all frames for fast host if, or reject all frames */
+</I>&gt;<i> +	msg.data[4] = accept ? 0x02 : 0x00;
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = janz_send_msg(mod, &amp;msg);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;unable to send SETAFILMASK message\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Extended Frame Format */
+</I>&gt;<i> +	memset(&amp;msg, 0, sizeof(msg));
+</I>&gt;<i> +	msg.control = 0x00;
+</I>&gt;<i> +	msg.spec    = MSG_SETAFILMASK;
+</I>&gt;<i> +	msg.len     = cpu_to_le16(13);
+</I>&gt;<i> +	msg.data[0] = 0;    /* MUX = 0 */
+</I>&gt;<i> +	msg.data[1] = 0x00; /* IDLo LSB */
+</I>&gt;<i> +	msg.data[2] = 0x00;
+</I>&gt;<i> +	msg.data[3] = 0x00;
+</I>&gt;<i> +	msg.data[4] = 0x20; /* IDLo MSB */
+</I>&gt;<i> +	msg.data[5] = 0xff; /* IDHi LSB */
+</I>&gt;<i> +	msg.data[6] = 0xff;
+</I>&gt;<i> +	msg.data[7] = 0xff;
+</I>&gt;<i> +	msg.data[8] = 0x3f; /* IDHi MSB */
+</I>&gt;<i> +
+</I>&gt;<i> +	/* accept all frames for fast host if, or reject all frames */
+</I>&gt;<i> +	msg.data[9] = accept ? 0x02 : 0x00;
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = janz_send_msg(mod, &amp;msg);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;unable to send SETAFILMASK message\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Bring the CAN bus online or offline
+</I>&gt;<i> + */
+</I>&gt;<i> +static int janz_set_bus_state(struct janz_ican3 *mod, bool on)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_msg msg;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	memset(&amp;msg, 0, sizeof(msg));
+</I>&gt;<i> +	msg.control = 0x00;
+</I>&gt;<i> +	msg.spec    = on ? MSG_CONREQ : MSG_COFFREQ;
+</I>&gt;<i> +	msg.len     = cpu_to_le16(0);
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: %s request: spec %.2x\n&quot;, __func__, on ? &quot;on&quot; : &quot;off&quot;, msg.spec);
+</I>&gt;<i> +	ret = janz_send_msg(mod, &amp;msg);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;unable to send CONREQ/COFFREQ message\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int janz_set_termination(struct janz_ican3 *mod, bool on)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_msg msg;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	memset(&amp;msg, 0, sizeof(msg));
+</I>&gt;<i> +	msg.control = 0x00;
+</I>&gt;<i> +	msg.spec    = MSG_HWCONF;
+</I>&gt;<i> +	msg.len     = cpu_to_le16(2);
+</I>&gt;<i> +	msg.data[0] = 0x00;
+</I>&gt;<i> +	msg.data[1] = on ? 0x01 : 0x00;
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = janz_send_msg(mod, &amp;msg);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;unable to send HWCONF message\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* Janz to CAN Frame Conversion                                               */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +
+</I>&gt;<i> +static void janz_to_can(struct janz_ican3 *mod, struct janz_fast_desc *desc,
+</I>&gt;<i> +			struct can_frame *cf)
+</I>&gt;<i> +{
+</I>&gt;<i> +	if ((desc-&gt;command &amp; 0x0f) == 0) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;%s: old frame format\n&quot;, __func__);
+</I>&gt;<i> +		if (desc-&gt;data[1] &amp; 0x10)
+</I>&gt;<i> +			cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;<i> +
+</I>&gt;<i> +		cf-&gt;can_id |= desc-&gt;data[0] &lt;&lt; 3;
+</I>&gt;<i> +		cf-&gt;can_id |= (desc-&gt;data[1] &amp; 0xe0) &gt;&gt; 5;
+</I>&gt;<i> +		cf-&gt;can_dlc = desc-&gt;data[1] &amp; 0x0f;
+</I>&gt;<i> +		memcpy(cf-&gt;data, &amp;desc-&gt;data[2], sizeof(cf-&gt;data));
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;%s: new frame format\n&quot;, __func__);
+</I>&gt;<i> +		cf-&gt;can_dlc = desc-&gt;data[0] &amp; 0x0f;
+</I>&gt;<i> +		if (desc-&gt;data[0] &amp; 0x40)
+</I>&gt;<i> +			cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;<i> +
+</I>&gt;<i> +		if (desc-&gt;data[0] &amp; 0x80) {
+</I>&gt;<i> +			cf-&gt;can_id |= CAN_EFF_FLAG;
+</I>&gt;<i> +			cf-&gt;can_id |= desc-&gt;data[2] &lt;&lt; 21; /* 28-21 */
+</I>&gt;<i> +			cf-&gt;can_id |= desc-&gt;data[3] &lt;&lt; 13; /* 20-13 */
+</I>&gt;<i> +			cf-&gt;can_id |= desc-&gt;data[4] &lt;&lt; 5;  /* 12-5  */
+</I>&gt;<i> +			cf-&gt;can_id |= (desc-&gt;data[5] &amp; 0xf8) &gt;&gt; 3;
+</I>&gt;<i> +		} else {
+</I>&gt;<i> +			cf-&gt;can_id |= desc-&gt;data[2] &lt;&lt; 3;  /* 10-3  */
+</I>&gt;<i> +			cf-&gt;can_id |= desc-&gt;data[3] &gt;&gt; 5;  /* 2-0   */
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		memcpy(cf-&gt;data, &amp;desc-&gt;data[6], sizeof(cf-&gt;data));
+</I>&gt;<i> +	}
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void can_to_janz(struct janz_ican3 *mod, struct can_frame *cf,
+</I>&gt;<i> +			struct janz_fast_desc *desc)
+</I>
+Use a better name please.
+
+&gt;<i> +{
+</I>&gt;<i> +	/* clear out any stale data in the descriptor */
+</I>&gt;<i> +	memset(desc-&gt;data, 0, sizeof(desc-&gt;data));
+</I>&gt;<i> +
+</I>&gt;<i> +	/* we always use the extended format, with the ECHO flag set */
+</I>&gt;<i> +	desc-&gt;command = 1;
+</I>&gt;<i> +	desc-&gt;data[0] |= cf-&gt;can_dlc;
+</I>&gt;<i> +	desc-&gt;data[1] |= 0x10; /* echo */
+</I>&gt;<i> +
+</I>&gt;<i> +	if (cf-&gt;can_id &amp; CAN_RTR_FLAG)
+</I>&gt;<i> +		desc-&gt;data[0] |= 0x40;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* pack the id into the correct places */
+</I>&gt;<i> +	if (cf-&gt;can_id &amp; CAN_EFF_FLAG) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;%s: extended frame\n&quot;, __func__);
+</I>&gt;<i> +		desc-&gt;data[0] |= 0x80; /* extended id frame */
+</I>&gt;<i> +		desc-&gt;data[2] = (cf-&gt;can_id &amp; 0x1fe00000) &gt;&gt; 21; /* 28-21 */
+</I>&gt;<i> +		desc-&gt;data[3] = (cf-&gt;can_id &amp; 0x001fe000) &gt;&gt; 13; /* 20-13 */
+</I>&gt;<i> +		desc-&gt;data[4] = (cf-&gt;can_id &amp; 0x00001fe0) &gt;&gt; 5;  /* 12-5  */
+</I>&gt;<i> +		desc-&gt;data[5] = (cf-&gt;can_id &amp; 0x0000001f) &lt;&lt; 3;  /* 4-0   */
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;%s: standard frame\n&quot;, __func__);
+</I>&gt;<i> +		desc-&gt;data[2] = (cf-&gt;can_id &amp; 0x7F8) &gt;&gt; 3; /* bits 10-3 */
+</I>&gt;<i> +		desc-&gt;data[3] = (cf-&gt;can_id &amp; 0x007) &lt;&lt; 5; /* bits 2-0  */
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* copy the data bits into the descriptor */
+</I>&gt;<i> +	memcpy(&amp;desc-&gt;data[6], cf-&gt;data, sizeof(cf-&gt;data));
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int janz_err_frame(struct janz_ican3 *mod, canid_t idflags, u8 d1)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *ndev = mod-&gt;ndev;
+</I>&gt;<i> +	struct net_device_stats *stats = &amp;ndev-&gt;stats;
+</I>&gt;<i> +	struct can_frame *cf;
+</I>&gt;<i> +	struct sk_buff *skb;
+</I>&gt;<i> +
+</I>&gt;<i> +	skb = alloc_can_err_skb(ndev, &amp;cf);
+</I>&gt;<i> +	if (unlikely(skb == NULL))
+</I>&gt;<i> +		return -ENOMEM;
+</I>&gt;<i> +
+</I>&gt;<i> +	cf-&gt;can_id |= idflags;
+</I>&gt;<i> +	cf-&gt;data[1] = d1;
+</I>
+Hm, the data field to be used depends on the error type.
+
+&gt;<i> +
+</I>&gt;<i> +	netif_rx(skb);
+</I>&gt;<i> +
+</I>&gt;<i> +	stats-&gt;rx_packets++;
+</I>&gt;<i> +	stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* Interrupt Handling                                                         */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +
+</I>&gt;<i> +static void janz_handle_idvers(struct janz_ican3 *mod, struct janz_msg *msg)
+</I>&gt;<i> +{
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: %s\n&quot;, __func__, msg-&gt;data);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void janz_handle_msglost(struct janz_ican3 *mod, struct janz_msg *msg)
+</I>&gt;<i> +{
+</I>&gt;<i> +	char *queue;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (msg-&gt;spec == MSG_MSGLOST)
+</I>&gt;<i> +		queue = &quot;new&quot;;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		queue = &quot;fast&quot;;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: %s hostif: %d messages lost\n&quot;,
+</I>&gt;<i> +			   __func__, queue, msg-&gt;data[0]);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void janz_handle_cevtind(struct janz_ican3 *mod, struct janz_msg *msg)
+</I>&gt;<i> +{
+</I>&gt;<i> +	enum can_state state;
+</I>&gt;<i> +	u8 rxerr, txerr, err;
+</I>&gt;<i> +	int i;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: message len: %d\n&quot;, __func__, le16_to_cpu(msg-&gt;len));
+</I>&gt;<i> +	for (i = 0; i &lt; le16_to_cpu(msg-&gt;len); i++)
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;%s: data[%.2d] -&gt; %.2x\n&quot;, __func__, i, msg-&gt;data[i]);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* we can only handle the SJA1000 part */
+</I>&gt;<i> +	if (msg-&gt;data[1] != 0x02) {
+</I>&gt;<i> +		dev_err(mod-&gt;dev, &quot;unable to handle errors on non-SJA1000\n&quot;);
+</I>&gt;<i> +		return;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* check the message length for sanity */
+</I>&gt;<i> +	if (msg-&gt;len &lt; 6) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;unable to handle short error message\n&quot;);
+</I>&gt;<i> +		return;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	rxerr = msg-&gt;data[4];
+</I>&gt;<i> +	txerr = msg-&gt;data[5];
+</I>
+Should go to field 6 and 7.
+
+&gt;<i> +
+</I>&gt;<i> +	/* state is error-active by default */
+</I>&gt;<i> +	state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (rxerr &gt;= 96 || txerr &gt;= 96)
+</I>&gt;<i> +		state = CAN_STATE_ERROR_WARNING;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (rxerr &gt;= 128 || txerr &gt;= 128)
+</I>&gt;<i> +		state = CAN_STATE_ERROR_PASSIVE;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (rxerr &gt;= 255 || txerr &gt;= 255)
+</I>&gt;<i> +		state = CAN_STATE_BUS_OFF;
+</I>
+You could use &quot;else if&quot; if you revert the order. Also, 255 does not yet
+mean bus-error, strictly speaking. Have you seen the device going bus-off?
+
+&gt;<i> +
+</I>&gt;<i> +	/* check if we should generate an error frame at all */
+</I>&gt;<i> +	if (state == mod-&gt;can.state || mod-&gt;can.state == CAN_STATE_STOPPED) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;no error frame needed: state %d\n&quot;, state);
+</I>&gt;<i> +		return;
+</I>&gt;<i> +	}
+</I>
+Shouldn't this check be done first?
+
+&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;state change: state %d\n&quot;, state);
+</I>&gt;<i> +	mod-&gt;can.state = state;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (state == CAN_STATE_BUS_OFF) {
+</I>&gt;<i> +		janz_err_frame(mod, CAN_ERR_BUSOFF, 0);
+</I>&gt;<i> +		return;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (state == CAN_STATE_ERROR_PASSIVE) {
+</I>&gt;<i> +		err = (rxerr &gt;= 128) ? CAN_ERR_CRTL_RX_PASSIVE
+</I>&gt;<i> +				     : CAN_ERR_CRTL_TX_PASSIVE;
+</I>&gt;<i> +		janz_err_frame(mod, CAN_ERR_CRTL, err);
+</I>&gt;<i> +		return;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (state == CAN_STATE_ERROR_WARNING) {
+</I>&gt;<i> +		err = (rxerr &gt;= 96) ? CAN_ERR_CRTL_RX_WARNING
+</I>&gt;<i> +				    : CAN_ERR_CRTL_TX_WARNING;
+</I>&gt;<i> +		janz_err_frame(mod, CAN_ERR_CRTL, err);
+</I>&gt;<i> +		return;
+</I>&gt;<i> +	}
+</I>
+If you use &quot;else if&quot; as suggested, the code could be shortened a lot, I
+think (by doing everything within the if/else block).
+
+Just for curiosity, what does &quot;candump -t d any,0:0,#FFFFFFFF&quot; report
+when you trigger a bus-error or when you send a message with no cable
+connected.
+
+&gt;<i> +	/* nothing needed for error-active state */
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void janz_handle_unknown(struct janz_ican3 *mod, struct janz_msg *msg)
+</I>
+Handle what?
+
+&gt;<i> +{
+</I>&gt;<i> +	u16 len;
+</I>&gt;<i> +	int i;
+</I>&gt;<i> +
+</I>&gt;<i> +	len = le16_to_cpu(msg-&gt;len);
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: modno %d UNKNOWN spec 0x%.2x len %d\n&quot;,
+</I>&gt;<i> +			   __func__, mod-&gt;num, msg-&gt;spec, len);
+</I>&gt;<i> +	for (i = 0; i &lt; len; i++)
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;msg-&gt;data[%.2d] -&gt; 0x%.2x\n&quot;, i, msg-&gt;data[i]);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Handle a control message from the firmware
+</I>&gt;<i> + */
+</I>&gt;<i> +static void janz_handle_message(struct janz_ican3 *mod, struct janz_msg *msg)
+</I>&gt;<i> +{
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: modno %d spec 0x%.2x len %d bytes\n&quot;, __func__,
+</I>&gt;<i> +			   mod-&gt;num, msg-&gt;spec, le16_to_cpu(msg-&gt;len));
+</I>&gt;<i> +
+</I>&gt;<i> +	switch (msg-&gt;spec) {
+</I>&gt;<i> +	case MSG_IDVERS:
+</I>&gt;<i> +		janz_handle_idvers(mod, msg);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case MSG_MSGLOST:
+</I>&gt;<i> +	case MSG_FMSGLOST:
+</I>&gt;<i> +		janz_handle_msglost(mod, msg);
+</I>&gt;<i> +		break;
+</I>
+You shoud create error messages for msglost as well.
+
+&gt;<i> +	case MSG_CEVTIND:
+</I>&gt;<i> +		janz_handle_cevtind(mod, msg);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	default:
+</I>&gt;<i> +		janz_handle_unknown(mod, msg);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	}
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Recieve one CAN frame from the hardware
+</I>&gt;<i> + *
+</I>&gt;<i> + * This works like the core of a NAPI function, but is intended to be called
+</I>&gt;<i> + * from workqueue context instead. This driver already needs a workqueue to
+</I>&gt;<i> + * process control messages, so we use the workqueue instead of using NAPI.
+</I>&gt;<i> + * This was done to simplify locking.
+</I>&gt;<i> + *
+</I>&gt;<i> + * CONTEXT: must be called from user context
+</I>&gt;<i> + */
+</I>&gt;<i> +static int janz_recv_skb(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *ndev = mod-&gt;ndev;
+</I>&gt;<i> +	struct net_device_stats *stats = &amp;ndev-&gt;stats;
+</I>&gt;<i> +	struct janz_fast_desc desc;
+</I>&gt;<i> +	void __iomem *desc_addr;
+</I>&gt;<i> +	struct can_frame *cf;
+</I>&gt;<i> +	struct sk_buff *skb;
+</I>&gt;<i> +	unsigned long flags;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: modno %d called\n&quot;, __func__, mod-&gt;num);
+</I>&gt;<i> +	spin_lock_irqsave(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* copy the whole descriptor */
+</I>&gt;<i> +	janz_set_page(mod, mod-&gt;fastrx_start + (mod-&gt;fastrx_num / 16));
+</I>&gt;<i> +	desc_addr = mod-&gt;regs + ((mod-&gt;fastrx_num % 16) * sizeof(desc));
+</I>&gt;<i> +	memcpy_fromio(&amp;desc, desc_addr, sizeof(desc));
+</I>&gt;<i> +
+</I>&gt;<i> +	/* check that we actually have a CAN frame */
+</I>&gt;<i> +	if (!(desc.control &amp; DESC_VALID)) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;%s: no more frames\n&quot;, __func__);
+</I>&gt;<i> +		ret = -ENOBUFS;
+</I>&gt;<i> +		goto out_unlock;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* allocate an skb */
+</I>&gt;<i> +	skb = alloc_can_skb(ndev, &amp;cf);
+</I>&gt;<i> +	if (unlikely(skb == NULL)) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;%s: no more skbs\n&quot;, __func__);
+</I>&gt;<i> +		stats-&gt;rx_dropped++;
+</I>&gt;<i> +		goto err_noalloc;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* convert the Janz frame into CAN format */
+</I>&gt;<i> +	janz_to_can(mod, &amp;desc, cf);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* receive the skb, update statistics */
+</I>&gt;<i> +	netif_rx(skb);
+</I>&gt;<i> +	stats-&gt;rx_packets++;
+</I>&gt;<i> +	stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;<i> +
+</I>&gt;<i> +err_noalloc:
+</I>&gt;<i> +	/* toggle the valid bit and return the descriptor to the ring */
+</I>&gt;<i> +	desc.control ^= DESC_VALID;
+</I>&gt;<i> +	memcpy_toio(desc_addr, &amp;desc, 1);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* update the next buffer pointer */
+</I>&gt;<i> +	mod-&gt;fastrx_num = (desc.control &amp; DESC_WRAP) ? 0 : (mod-&gt;fastrx_num + 1);
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: update fast RX num -&gt; %d\n&quot;, __func__, mod-&gt;fastrx_num);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* there are still more buffers to process */
+</I>&gt;<i> +	ret = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +out_unlock:
+</I>&gt;<i> +	spin_unlock_irqrestore(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +	return ret;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void janz_work(struct work_struct *work)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_ican3 *mod = container_of(work, struct janz_ican3, work);
+</I>&gt;<i> +	unsigned int handled = 0;
+</I>&gt;<i> +	struct janz_msg msg;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: module number %d\n&quot;, __func__, mod-&gt;num);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* process all communication messages */
+</I>&gt;<i> +	while (true) {
+</I>&gt;<i> +
+</I>&gt;<i> +		ret = janz_recv_msg(mod, &amp;msg);
+</I>&gt;<i> +		if (ret) {
+</I>&gt;<i> +			dev_dbg(mod-&gt;dev, &quot;%s: no more messages\n&quot;, __func__);
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		janz_handle_message(mod, &amp;msg);
+</I>&gt;<i> +		handled++;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* process all CAN frames from the fast interface */
+</I>&gt;<i> +	while (true) {
+</I>&gt;<i> +
+</I>&gt;<i> +		ret = janz_recv_skb(mod);
+</I>&gt;<i> +		if (ret) {
+</I>&gt;<i> +			dev_dbg(mod-&gt;dev, &quot;%s: no more CAN frames\n&quot;, __func__);
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		handled++;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: handled %d messages\n&quot;, __func__, handled);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Handle a MODULbus interrupt
+</I>&gt;<i> + *
+</I>&gt;<i> + * Due to the way the firmware works, we must first go through all of the
+</I>&gt;<i> + * buffers and unset their IVALID flag, then notify our work function to
+</I>&gt;<i> + * process the message. The IVALID flag must be unset before clearing the
+</I>&gt;<i> + * interrupt.
+</I>&gt;<i> + *
+</I>&gt;<i> + * Only after the message has been processed can the VALID flag be unset.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void janz_handle_interrupt(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	unsigned long flags;
+</I>&gt;<i> +	void __iomem *addr;
+</I>&gt;<i> +	u8 control;
+</I>&gt;<i> +
+</I>&gt;<i> +	spin_lock_irqsave(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +
+</I>&gt;<i> +	/*
+</I>&gt;<i> +	 * If we're using the old-style host interface, we only need to
+</I>&gt;<i> +	 * start the work function, since the fast host interface (and
+</I>&gt;<i> +	 * therefore CAN frame reception) cannot be working yet
+</I>&gt;<i> +	 */
+</I>&gt;<i> +	if (mod-&gt;iftype == 0) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;%s: old style host interface\n&quot;, __func__);
+</I>&gt;<i> +		schedule_work(&amp;mod-&gt;work);
+</I>&gt;<i> +		goto out_unlock;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/*
+</I>&gt;<i> +	 * Ok, at least the new-style host interface must be running, so we
+</I>&gt;<i> +	 * need to go through it's buffers and unset all of their DESC_IVALID
+</I>&gt;<i> +	 * bits before clearing the interrupt
+</I>&gt;<i> +	 */
+</I>&gt;<i> +	while (true) {
+</I>&gt;<i> +
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;%s: modno %d new style host interface\n&quot;, __func__, mod-&gt;num);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* check the new host interface tohost queue */
+</I>&gt;<i> +		janz_set_page(mod, 5);
+</I>&gt;<i> +		addr = mod-&gt;regs + (mod-&gt;rx_int * sizeof(struct janz_new_desc));
+</I>&gt;<i> +		control = ioread8(addr);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* check if we're finished with buffers */
+</I>&gt;<i> +		if (!(control &amp; DESC_IVALID))
+</I>&gt;<i> +			break;
+</I>&gt;<i> +
+</I>&gt;<i> +		/* write the control bits back with IVALID unset */
+</I>&gt;<i> +		control &amp;= ~DESC_IVALID;
+</I>&gt;<i> +		iowrite8(control, addr);
+</I>&gt;<i> +
+</I>&gt;<i> +		/*
+</I>&gt;<i> +		 * update the interrupt handler's position and schedule
+</I>&gt;<i> +		 * the work function to run at some point in the future
+</I>&gt;<i> +		 */
+</I>&gt;<i> +		mod-&gt;rx_int = (control &amp; DESC_WRAP) ? 0 : (mod-&gt;rx_int + 1);
+</I>&gt;<i> +		schedule_work(&amp;mod-&gt;work);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Check the fast host interface for interrupts */
+</I>&gt;<i> +	while (true) {
+</I>&gt;<i> +
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;%s: modno %d fast interface\n&quot;, __func__, mod-&gt;num);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* check the fast host interface */
+</I>&gt;<i> +		janz_set_page(mod, mod-&gt;fastrx_start + (mod-&gt;fastrx_int / 16));
+</I>&gt;<i> +		addr = mod-&gt;regs + ((mod-&gt;fastrx_int % 16) * sizeof(struct janz_fast_desc));
+</I>&gt;<i> +		control = ioread8(addr);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* check if we're finished with buffers */
+</I>&gt;<i> +		if (!(control &amp; DESC_IVALID))
+</I>&gt;<i> +			break;
+</I>&gt;<i> +
+</I>&gt;<i> +		/* write back the control bits with IVALID unset */
+</I>&gt;<i> +		control &amp;= ~DESC_IVALID;
+</I>&gt;<i> +		iowrite8(control, addr);
+</I>
+This seems to be duplicated code. Here a helper function would make
+sense in contrast to your *one* line functions, e.g. to enable the
+interrupts, which just increases code size.
+
+&gt;<i> +
+</I>&gt;<i> +		/*
+</I>&gt;<i> +		 * update the interrupt handler's position and schedule
+</I>&gt;<i> +		 * the work function to run at some point in the future
+</I>&gt;<i> +		 */
+</I>&gt;<i> +		mod-&gt;fastrx_int = (control &amp; DESC_WRAP) ? 0 : (mod-&gt;fastrx_int + 1);
+</I>&gt;<i> +		schedule_work(&amp;mod-&gt;work);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +out_unlock:
+</I>&gt;<i> +	janz_clr_int(mod);
+</I>&gt;<i> +	spin_unlock_irqrestore(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static irqreturn_t janz_irq(int irq, void *dev_id)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_ican3 *mod = dev_id;
+</I>&gt;<i> +	u8 stat;
+</I>&gt;<i> +
+</I>&gt;<i> +	/*
+</I>&gt;<i> +	 * The interrupt status register on this device reports interrupts
+</I>&gt;<i> +	 * as zeroes instead of using ones like most other devices
+</I>&gt;<i> +	 */
+</I>&gt;<i> +	stat = ioread8(mod-&gt;ctrl + JANZ_OB_INT_STAT) &amp; (1 &lt;&lt; mod-&gt;num);
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;IRQ: enter stat 0x%.2x\n&quot;, stat);
+</I>&gt;<i> +	if (stat == (1 &lt;&lt; mod-&gt;num)) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;IRQ: none pending\n&quot;);
+</I>&gt;<i> +		return IRQ_NONE;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;IRQ: module %d\n&quot;, mod-&gt;num);
+</I>&gt;<i> +	janz_handle_interrupt(mod);
+</I>&gt;<i> +
+</I>&gt;<i> +	stat = ioread8(mod-&gt;ctrl + JANZ_OB_INT_STAT) &amp; (1 &lt;&lt; mod-&gt;num);
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;IRQ: exit stat 0x%.2x\n&quot;, stat);
+</I>&gt;<i> +
+</I>&gt;<i> +	return IRQ_HANDLED;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* TEST CODE                                                                  */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Reset an ICAN module to its power-on state
+</I>&gt;<i> + *
+</I>&gt;<i> + * CONTEXT: no network device registered
+</I>&gt;<i> + * LOCKING: work function disabled
+</I>&gt;<i> + */
+</I>&gt;<i> +static int janz_reset_module(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	u8 val = 1 &lt;&lt; mod-&gt;num;
+</I>&gt;<i> +	unsigned long start;
+</I>&gt;<i> +	u8 runold, runnew;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* disable interrupts so no more work is scheduled */
+</I>&gt;<i> +	janz_disable_interrupts(mod);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* flush any pending work */
+</I>&gt;<i> +	flush_scheduled_work();
+</I>&gt;<i> +
+</I>&gt;<i> +	/* the first unallocated page in the DPM is 9 */
+</I>&gt;<i> +	mod-&gt;free_page = 9;
+</I>&gt;<i> +
+</I>&gt;<i> +	janz_set_page(mod, 0);
+</I>&gt;<i> +	runold = ioread8(mod-&gt;regs + TARGET_RUNNING);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* reset the module */
+</I>&gt;<i> +	iowrite8(val, mod-&gt;ctrl + JANZ_OB_RESET_ASSERT);
+</I>&gt;<i> +	iowrite8(val, mod-&gt;ctrl + JANZ_OB_RESET_DEASSERT);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* wait until the module has finished resetting and is running */
+</I>&gt;<i> +	start = jiffies;
+</I>&gt;<i> +	do {
+</I>&gt;<i> +		janz_set_page(mod, 0);
+</I>&gt;<i> +		runnew = ioread8(mod-&gt;regs + TARGET_RUNNING);
+</I>&gt;<i> +		if (runnew == (runold ^ 0xff)) {
+</I>&gt;<i> +			dev_dbg(mod-&gt;dev, &quot;%s: success\n&quot;, __func__);
+</I>&gt;<i> +			return 0;
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;%s: msleep(10)\n&quot;, __func__);
+</I>&gt;<i> +		msleep(10);
+</I>&gt;<i> +	} while (time_before(jiffies, start + HZ / 4));
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: timed out\n&quot;, __func__);
+</I>&gt;<i> +	return -ETIMEDOUT;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void janz_shutdown_module(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: disconnect and reset module\n&quot;, __func__);
+</I>&gt;<i> +	janz_msg_disconnect(mod);
+</I>&gt;<i> +	ret = janz_reset_module(mod);
+</I>&gt;<i> +	if (ret)
+</I>&gt;<i> +		dev_err(mod-&gt;dev, &quot;unable to reset module\n&quot;);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Startup an ICAN module, bringing it into fast mode
+</I>&gt;<i> + */
+</I>&gt;<i> +static int janz_startup_module(struct janz_ican3 *mod)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: reset module\n&quot;, __func__);
+</I>&gt;<i> +	ret = janz_reset_module(mod);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_err(mod-&gt;dev, &quot;unable to reset module\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* re-enable interrupts so we can send messages */
+</I>&gt;<i> +	janz_enable_interrupts(mod);
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: connect and switch to new if\n&quot;, __func__);
+</I>&gt;<i> +	ret = janz_msg_connect(mod);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_err(mod-&gt;dev, &quot;unable to connect to module\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	janz_init_new_host_interface(mod);
+</I>&gt;<i> +	ret = janz_msg_newhostif(mod);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_err(mod-&gt;dev, &quot;unable to switch to new-style interface\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: enable termination\n&quot;, __func__);
+</I>&gt;<i> +	ret = janz_set_termination(mod, true);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_err(mod-&gt;dev, &quot;unable to enable termination\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: start fast host if\n&quot;, __func__);
+</I>&gt;<i> +	janz_init_fast_host_interface(mod);
+</I>&gt;<i> +	ret = janz_msg_fasthostif(mod);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_err(mod-&gt;dev, &quot;unable to switch to fast host interface\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: set filter to accept everything\n&quot;, __func__);
+</I>&gt;<i> +	ret = janz_set_id_filter(mod, true);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_err(mod-&gt;dev, &quot;unable to set acceptance filter\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* CAN Network Device                                                         */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +
+</I>&gt;<i> +static int janz_open(struct net_device *ndev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_ican3 *mod = netdev_priv(ndev);
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: called\n&quot;, __func__);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* bring the bus online */
+</I>&gt;<i> +	ret = janz_set_bus_state(mod, true);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_err(mod-&gt;dev, &quot;unable to set bus-on\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* start up the network device */
+</I>&gt;<i> +	mod-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;<i> +	netif_start_queue(ndev);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int janz_stop(struct net_device *ndev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_ican3 *mod = netdev_priv(ndev);
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: called\n&quot;, __func__);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* stop the network device xmit routine */
+</I>&gt;<i> +	netif_stop_queue(ndev);
+</I>&gt;<i> +	mod-&gt;can.state = CAN_STATE_STOPPED;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* bring the bus offline, stop receiving packets */
+</I>&gt;<i> +	ret = janz_set_bus_state(mod, false);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_err(mod-&gt;dev, &quot;unable to set bus-off\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int janz_xmit(struct sk_buff *skb, struct net_device *ndev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_ican3 *mod = netdev_priv(ndev);
+</I>&gt;<i> +	struct net_device_stats *stats = &amp;ndev-&gt;stats;
+</I>&gt;<i> +	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i> +	struct janz_fast_desc desc;
+</I>&gt;<i> +	void __iomem *desc_addr;
+</I>&gt;<i> +	unsigned long flags;
+</I>&gt;<i> +
+</I>&gt;<i> +	spin_lock_irqsave(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* copy the control bits of the descriptor */
+</I>&gt;<i> +	janz_set_page(mod, mod-&gt;fasttx_start + (mod-&gt;fasttx_num / 16));
+</I>&gt;<i> +	desc_addr = mod-&gt;regs + ((mod-&gt;fasttx_num % 16) * sizeof(desc));
+</I>&gt;<i> +	memset(&amp;desc, 0, sizeof(desc));
+</I>&gt;<i> +	memcpy_fromio(&amp;desc, desc_addr, 1);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* check that we can actually transmit */
+</I>&gt;<i> +	if (!(desc.control &amp; DESC_VALID)) {
+</I>&gt;<i> +		dev_err(mod-&gt;dev, &quot;%s: no buffers\n&quot;, __func__);
+</I>&gt;<i> +		stats-&gt;tx_dropped++;
+</I>&gt;<i> +		kfree_skb(skb);
+</I>&gt;<i> +		goto out_unlock;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* convert the CAN frame into Janz format */
+</I>&gt;<i> +	can_to_janz(mod, cf, &amp;desc);
+</I>&gt;<i> +
+</I>&gt;<i> +	/*
+</I>&gt;<i> +	 * the programming manual says that you must set the IVALID bit, then
+</I>&gt;<i> +	 * interrupt, then set the valid bit. Quite weird, but it seems to be
+</I>&gt;<i> +	 * required for this to work
+</I>&gt;<i> +	 */
+</I>&gt;<i> +	desc.control |= DESC_IVALID;
+</I>&gt;<i> +	memcpy_toio(desc_addr, &amp;desc, sizeof(desc));
+</I>&gt;<i> +	janz_set_int(mod);
+</I>&gt;<i> +	desc.control ^= DESC_VALID;
+</I>&gt;<i> +	memcpy_toio(desc_addr, &amp;desc, sizeof(desc));
+</I>&gt;<i> +
+</I>&gt;<i> +	/* update the next buffer pointer */
+</I>&gt;<i> +	mod-&gt;fasttx_num = (desc.control &amp; DESC_WRAP) ? 0 : (mod-&gt;fasttx_num + 1);
+</I>&gt;<i> +	dev_dbg(mod-&gt;dev, &quot;%s: update fast TX num -&gt; %d\n&quot;, __func__, mod-&gt;fasttx_num);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* update statistics */
+</I>&gt;<i> +	stats-&gt;tx_packets++;
+</I>&gt;<i> +	stats-&gt;tx_bytes += cf-&gt;can_dlc;
+</I>&gt;<i> +	kfree_skb(skb);
+</I>&gt;<i> +
+</I>&gt;<i> +out_unlock:
+</I>&gt;<i> +	spin_unlock_irqrestore(&amp;mod-&gt;lock, flags);
+</I>&gt;<i> +	return NETDEV_TX_OK;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static const struct net_device_ops janz_netdev_ops = {
+</I>&gt;<i> +	.ndo_open	= janz_open,
+</I>&gt;<i> +	.ndo_stop	= janz_stop,
+</I>&gt;<i> +	.ndo_start_xmit	= janz_xmit,
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* Low-level CAN Device                                                       */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +
+</I>&gt;<i> +/* This structure was stolen from drivers/net/can/sja1000/sja1000.c */
+</I>&gt;<i> +static struct can_bittiming_const janz_bittiming_const = {
+</I>&gt;<i> +	.name = DRV_NAME,
+</I>&gt;<i> +	.tseg1_min = 1,
+</I>&gt;<i> +	.tseg1_max = 16,
+</I>&gt;<i> +	.tseg2_min = 1,
+</I>&gt;<i> +	.tseg2_max = 8,
+</I>&gt;<i> +	.sjw_max = 4,
+</I>&gt;<i> +	.brp_min = 1,
+</I>&gt;<i> +	.brp_max = 64,
+</I>&gt;<i> +	.brp_inc = 1,
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * This routine was stolen from drivers/net/can/sja1000/sja1000.c
+</I>&gt;<i> + *
+</I>&gt;<i> + * The bittiming register command for the ICAN3 just sets the bit timing
+</I>&gt;<i> + * registers on the SJA1000 chip directly
+</I>&gt;<i> + */
+</I>&gt;<i> +static int janz_set_bittiming(struct net_device *ndev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_ican3 *mod = netdev_priv(ndev);
+</I>&gt;<i> +	struct can_bittiming *bt = &amp;mod-&gt;can.bittiming;
+</I>&gt;<i> +	struct janz_msg msg;
+</I>&gt;<i> +	u8 btr0, btr1;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	btr0 = ((bt-&gt;brp - 1) &amp; 0x3f) | (((bt-&gt;sjw - 1) &amp; 0x3) &lt;&lt; 6);
+</I>&gt;<i> +	btr1 = ((bt-&gt;prop_seg + bt-&gt;phase_seg1 - 1) &amp; 0xf) |
+</I>&gt;<i> +		(((bt-&gt;phase_seg2 - 1) &amp; 0x7) &lt;&lt; 4);
+</I>&gt;<i> +	if (mod-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES)
+</I>&gt;<i> +		btr1 |= 0x80;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_info(mod-&gt;dev, &quot;setting BTR0=0x%02x BTR1=0x%02x\n&quot;, btr0, btr1);
+</I>&gt;<i> +
+</I>&gt;<i> +	memset(&amp;msg, 0, sizeof(msg));
+</I>&gt;<i> +	msg.spec    = MSG_CBTRREQ;
+</I>&gt;<i> +	msg.len     = cpu_to_le16(4);
+</I>&gt;<i> +	msg.data[0] = 0x00;
+</I>&gt;<i> +	msg.data[1] = 0x00;
+</I>&gt;<i> +	msg.data[2] = btr0;
+</I>&gt;<i> +	msg.data[3] = btr1;
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = janz_send_msg(mod, &amp;msg);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_dbg(mod-&gt;dev, &quot;unable to send CBTRREQ message\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int janz_set_mode(struct net_device *ndev, enum can_mode mode)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_ican3 *mod = netdev_priv(ndev);
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (mode != CAN_MODE_START)
+</I>&gt;<i> +		return -ENOTSUPP;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* bring the bus online */
+</I>&gt;<i> +	ret = janz_set_bus_state(mod, true);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_err(mod-&gt;dev, &quot;unable to set bus-on\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>
+How is bus-off recovery supposed to work? In general, if the card/hw
+recovery automatically, we use the following procedure:
+
+restart_ms == 0: the device should be *stopped* on bus-off allowing
+                 to user/app to restart it manually using this function.
+
+restart_ms  &gt; 0: the device is allowed to recover from bus-off
+                 automatically.
+
+Could that be implemented?
+
+&gt;<i> +	/* start up the network device */
+</I>&gt;<i> +	mod-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (netif_queue_stopped(ndev))
+</I>&gt;<i> +		netif_wake_queue(ndev);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +/* PCI Subsystem                                                              */
+</I>&gt;<i> +/*----------------------------------------------------------------------------*/
+</I>&gt;<i> +
+</I>&gt;<i> +static int __devinit ican3_probe(struct platform_device *pdev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct janz_platform_data *pdata;
+</I>&gt;<i> +	struct net_device *ndev;
+</I>&gt;<i> +	struct janz_ican3 *mod;
+</I>&gt;<i> +	struct resource *res;
+</I>&gt;<i> +	struct device *dev;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	pdata = pdev-&gt;dev.platform_data;
+</I>&gt;<i> +	if (!pdata)
+</I>&gt;<i> +		return -ENXIO;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(&amp;pdev-&gt;dev, &quot;probe: module number %d\n&quot;, pdata-&gt;modno);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* save the struct device for printing */
+</I>&gt;<i> +	dev = &amp;pdev-&gt;dev;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* allocate the CAN device and private data */
+</I>&gt;<i> +	ndev = alloc_candev(sizeof(*mod), 0);
+</I>&gt;<i> +	if (!ndev) {
+</I>&gt;<i> +		dev_err(dev, &quot;unable to allocate CANdev\n&quot;);
+</I>&gt;<i> +		ret = -ENOMEM;
+</I>&gt;<i> +		goto out_return;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	platform_set_drvdata(pdev, ndev);
+</I>&gt;<i> +	mod = netdev_priv(ndev);
+</I>&gt;<i> +	mod-&gt;ndev = ndev;
+</I>&gt;<i> +	mod-&gt;dev = &amp;pdev-&gt;dev;
+</I>&gt;<i> +	mod-&gt;num = pdata-&gt;modno;
+</I>&gt;<i> +	INIT_WORK(&amp;mod-&gt;work, janz_work);
+</I>&gt;<i> +	spin_lock_init(&amp;mod-&gt;lock);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* initialize the software state */
+</I>&gt;<i> +
+</I>&gt;<i> +	/* the first unallocated page in the DPM is 9 */
+</I>&gt;<i> +	mod-&gt;free_page = 9;
+</I>
+Macro definition?
+
+&gt;<i> +
+</I>&gt;<i> +	ndev-&gt;netdev_ops = &amp;janz_netdev_ops;
+</I>&gt;<i> +	ndev-&gt;flags |= IFF_ECHO;
+</I>&gt;<i> +
+</I>&gt;<i> +	mod-&gt;can.bittiming_const = &amp;janz_bittiming_const;
+</I>&gt;<i> +	mod-&gt;can.do_set_bittiming = janz_set_bittiming;
+</I>&gt;<i> +	mod-&gt;can.do_set_mode = janz_set_mode;
+</I>&gt;<i> +
+</I>&gt;<i> +	SET_NETDEV_DEV(ndev, &amp;pdev-&gt;dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* find our IRQ number */
+</I>&gt;<i> +	mod-&gt;irq = platform_get_irq(pdev, 0);
+</I>&gt;<i> +	if (mod-&gt;irq &lt; 0) {
+</I>&gt;<i> +		dev_err(dev, &quot;IRQ line not found\n&quot;);
+</I>&gt;<i> +		ret = -ENODEV;
+</I>&gt;<i> +		goto out_free_ndev;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	ndev-&gt;irq = mod-&gt;irq;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* get access to the MODULbus registers for this module */
+</I>&gt;<i> +	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+</I>&gt;<i> +	if (!res) {
+</I>&gt;<i> +		dev_err(dev, &quot;MODULbus registers not found\n&quot;);
+</I>&gt;<i> +		ret = -ENODEV;
+</I>&gt;<i> +		goto out_free_ndev;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	mod-&gt;regs = ioremap(res-&gt;start, resource_size(res));
+</I>&gt;<i> +	if (!mod-&gt;regs) {
+</I>&gt;<i> +		dev_err(dev, &quot;MODULbus registers not ioremap\n&quot;);
+</I>&gt;<i> +		ret = -ENOMEM;
+</I>&gt;<i> +		goto out_free_ndev;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* get access to the control registers for this module */
+</I>&gt;<i> +	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+</I>&gt;<i> +	if (!res) {
+</I>&gt;<i> +		dev_err(dev, &quot;CONTROL registers not found\n&quot;);
+</I>&gt;<i> +		ret = -ENODEV;
+</I>&gt;<i> +		goto out_iounmap_regs;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	mod-&gt;ctrl = ioremap(res-&gt;start, resource_size(res));
+</I>&gt;<i> +	if (!mod-&gt;ctrl) {
+</I>&gt;<i> +		dev_err(dev, &quot;CONTROL registers not ioremap\n&quot;);
+</I>&gt;<i> +		ret = -ENOMEM;
+</I>&gt;<i> +		goto out_iounmap_regs;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* disable our IRQ, then hookup the IRQ handler */
+</I>&gt;<i> +	janz_disable_interrupts(mod);
+</I>&gt;<i> +	ret = request_irq(mod-&gt;irq, janz_irq, IRQF_SHARED, DRV_NAME, mod);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_err(dev, &quot;unable to request IRQ\n&quot;);
+</I>&gt;<i> +		goto out_iounmap_ctrl;
+</I>&gt;<i> +	}
+</I>
+Is this interrupt exclisively for CAN? ... or do you need a dispatcher
+in the MODULbus driver?
+
+&gt;<i> +	/* reset and initialize the CAN controller into fast mode */
+</I>&gt;<i> +	ret = janz_startup_module(mod);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_err(dev, &quot;%s: unable to start CANdev\n&quot;, __func__);
+</I>&gt;<i> +		goto out_free_irq;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* register with the Linux CAN layer */
+</I>&gt;<i> +	ret = register_candev(ndev);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_err(dev, &quot;%s: unable to register CANdev\n&quot;, __func__);
+</I>&gt;<i> +		goto out_free_irq;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_info(dev, &quot;module %d: registered CAN device\n&quot;, pdata-&gt;modno);
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +
+</I>&gt;<i> +out_free_irq:
+</I>&gt;<i> +	janz_disable_interrupts(mod);
+</I>&gt;<i> +	free_irq(mod-&gt;irq, mod);
+</I>&gt;<i> +out_iounmap_ctrl:
+</I>&gt;<i> +	iounmap(mod-&gt;ctrl);
+</I>&gt;<i> +out_iounmap_regs:
+</I>&gt;<i> +	iounmap(mod-&gt;regs);
+</I>&gt;<i> +out_free_ndev:
+</I>&gt;<i> +	free_netdev(ndev);
+</I>&gt;<i> +out_return:
+</I>&gt;<i> +	return ret;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int __devexit ican3_remove(struct platform_device *pdev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *ndev = platform_get_drvdata(pdev);
+</I>&gt;<i> +	struct janz_ican3 *mod = netdev_priv(ndev);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* unregister the netdevice, stop interrupts */
+</I>&gt;<i> +	unregister_netdev(ndev);
+</I>
+unregister_candev?
+
+[snip]
+
+Also, dev_dbg() cleanup is required and try to reduce your one/two line
+functions.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004089.html">[PATCH RFC v2] Add support for Janz ICAN3 CAN module
+</A></li>
+	<LI>Next message: <A HREF="004039.html">[PATCH RFC v2] Add support for Janz ICAN3 CAN module
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4036">[ date ]</a>
+              <a href="thread.html#4036">[ thread ]</a>
+              <a href="subject.html#4036">[ subject ]</a>
+              <a href="author.html#4036">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

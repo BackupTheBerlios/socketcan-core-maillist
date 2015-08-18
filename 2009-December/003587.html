@@ -1,0 +1,133 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> sja1000, can_dlc&gt;8
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20sja1000%2C%20can_dlc%3E8&In-Reply-To=%3C4B178A2F.1060400%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003586.html">
+   <LINK REL="Next"  HREF="003588.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>sja1000, can_dlc&gt;8</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20sja1000%2C%20can_dlc%3E8&In-Reply-To=%3C4B178A2F.1060400%40grandegger.com%3E"
+       TITLE="sja1000, can_dlc&gt;8">wg at grandegger.com
+       </A><BR>
+    <I>Thu Dec  3 10:51:43 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003586.html">sja1000, can_dlc&gt;8
+</A></li>
+        <LI>Next message: <A HREF="003588.html">sja1000, can_dlc&gt;8
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3587">[ date ]</a>
+              <a href="thread.html#3587">[ thread ]</a>
+              <a href="subject.html#3587">[ subject ]</a>
+              <a href="author.html#3587">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver Hartkopp wrote:
+&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> Marc Kleine-Budde wrote:
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;&gt;<i> +	if (unlikely(dlc &gt; 8)) {
+</I>&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;&gt;<i> +		static int print_dlc_err;
+</I>&gt;&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;&gt;<i> +		if (!print_dlc_err) {
+</I>&gt;&gt;&gt;&gt;<i> +			dev_err(dev-&gt;dev.parent, &quot;illegal dlc %d\n&quot;, dlc);
+</I>&gt;&gt;&gt;&gt;<i> +			print_dlc_err = 1;
+</I>&gt;&gt;&gt;&gt;<i> +		}
+</I>&gt;&gt;&gt;<i> You should use something like &quot;WARN_ONCE&quot; instead of open-coding it.
+</I>&gt;&gt;<i> WARN_ONCE is OK if it's acceptable that dlc &gt; 8 happens.
+</I>&gt;<i> 
+</I>&gt;<i> Yes. I also thought about something like
+</I>&gt;<i> 
+</I>&gt;<i> if (WARN_ONCE(dlc &gt; 8, &quot;%s: Illegal dlc %d\n&quot;, DRV_NAME, dlc))
+</I>&gt;<i>       dlc = 8;
+</I>&gt;<i> 
+</I>&gt;<i> Would this be ok?
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> The general question is should a driver print this message or not. The
+</I>&gt;&gt;&gt;<i> at91 silently limits the dlc to 8. I'm not sure what the other mainline
+</I>&gt;&gt;&gt;<i> drivers do.
+</I>&gt;&gt;<i> It depends. If it's due to a malfunctioning of the hardware (or
+</I>&gt;&gt;<i> software), we should inform the user. Unfortunately, the drivers do not
+</I>&gt;&gt;<i> yet handle that case consistently. I have realized:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> - ignore dlc &gt; 8
+</I>&gt;&gt;<i> - dlc &amp;= 0xf
+</I>&gt;&gt;<i> - print error message (or oops)
+</I>&gt;&gt;<i> - min(dlc, 8)
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> The problem is to define what a dlc &gt; 8 provided by the CAN controller (which
+</I>&gt;<i> IS a BUG inside the CAN controller!) should mean to the rest of the data
+</I>&gt;<i> inside the registers containing the received CAN frame:
+</I>&gt;<i> 
+</I>&gt;<i> - do we assume the rest to be a valid CAN frame?
+</I>&gt;<i> - should we drop the frame  ?
+</I>&gt;<i> 
+</I>&gt;<i> Is this something that depends on the CAN controller? E.g. is a wrong dlc
+</I>&gt;<i> tolerable for SJA1000 but not for at91_can ??
+</I>&gt;<i> 
+</I>&gt;<i> Once we've checked that, we should clean this up.
+</I>
+Yep. Are there SJA1000 chips delivering invalid dlc's?
+
+&gt;&gt;<i> This is just for incoming messages. The dlc of out-going messages could
+</I>&gt;&gt;<i> be check by the upper layer. Is that already done? We need to fix that
+</I>&gt;&gt;<i> issue consistently for all drivers.
+</I>&gt;<i> 
+</I>&gt;<i> The CAN protocols that are using the PF_CAN core should use can_send() which
+</I>&gt;<i> does this check:
+</I>&gt;<i> 
+</I>&gt;<i> int can_send(struct sk_buff *skb, int loop)
+</I>&gt;<i> {
+</I>&gt;<i>         struct sk_buff *newskb = NULL;
+</I>&gt;<i>         struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i>         int err;
+</I>&gt;<i> 
+</I>&gt;<i>         if (skb-&gt;len != sizeof(struct can_frame) || cf-&gt;can_dlc &gt; 8) {
+</I>&gt;<i>                 kfree_skb(skb);
+</I>&gt;<i>                 return -EINVAL;
+</I>&gt;<i>         }
+</I>&gt;<i> (..)
+</I>
+Ok, then we can also drop dlc checks in the driver's xmit function.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003586.html">sja1000, can_dlc&gt;8
+</A></li>
+	<LI>Next message: <A HREF="003588.html">sja1000, can_dlc&gt;8
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3587">[ date ]</a>
+              <a href="thread.html#3587">[ thread ]</a>
+              <a href="subject.html#3587">[ subject ]</a>
+              <a href="author.html#3587">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

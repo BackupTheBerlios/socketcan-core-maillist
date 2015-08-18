@@ -1,0 +1,168 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] can-utils: fix RTR support with dlc != 0
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20can-utils%3A%20fix%20RTR%20support%20with%20dlc%20%21%3D%200&In-Reply-To=%3C20090416133933.GA3579%40uranus.ravnborg.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002429.html">
+   <LINK REL="Next"  HREF="002422.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] can-utils: fix RTR support with dlc != 0</H1>
+    <B>Sam Ravnborg</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20can-utils%3A%20fix%20RTR%20support%20with%20dlc%20%21%3D%200&In-Reply-To=%3C20090416133933.GA3579%40uranus.ravnborg.org%3E"
+       TITLE="[PATCH] can-utils: fix RTR support with dlc != 0">sam at ravnborg.org
+       </A><BR>
+    <I>Thu Apr 16 15:39:33 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002429.html">[PATCH] Drivers for esd SJA1000 based PCI CAN cards
+</A></li>
+        <LI>Next message: <A HREF="002422.html">[PATCH] can-utils: fix RTR support with dlc != 0
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2421">[ date ]</a>
+              <a href="thread.html#2421">[ thread ]</a>
+              <a href="subject.html#2421">[ subject ]</a>
+              <a href="author.html#2421">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>A remote request frame is only replied upon if dlc specify the number of
+databytes the answer will contain.
+
+can-utils only supported RTR frames with dlc equal to 0.
+
+Fix this to allow specifying data in RTR frames.
+
+Update lib.c to support RTR frames with data including frame printing functions.
+Update lib.h to reflect the updated syntax.
+
+Note: This patch change the output format of RTR frames.
+
+    Before it printed &quot; remote frame&quot;.
+    With this patch it prints &quot; RTR&quot;.
+
+The patch is tested using IXXAT Minimon to sniff CAN frames.
+
+Signed-off-by: Sam Ravnborg &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">sam at ravnborg.org</A>&gt;
+---
+
+I realize the patch needs to be applied while in the can-utils directory
+as there is no leading patch.
+I can recreate it if you want another format.
+
+	Sam
+
+Index: lib.c
+===================================================================
+--- lib.c	(revision 967)
++++ lib.c	(working copy)
+@@ -56,8 +56,8 @@
+ #define CANID_DELIM '#'
+ #define DATA_SEPERATOR '.'
+ 
+-#define MAX_CANFRAME      &quot;12345678#01.23.45.67.89.AB.CD.EF&quot;
+-#define MAX_LONG_CANFRAME &quot;12345678  [8] 10101010 10101010 10101010 10101010 10101010 10101010 10101010 10101010   '........'&quot;
++#define MAX_CANFRAME      &quot;12345678#R01.23.45.67.89.AB.CD.EF&quot;
++#define MAX_LONG_CANFRAME &quot;12345678  [8] RTR 10101010 10101010 10101010 10101010 10101010 10101010 10101010 10101010   '........'&quot;
+ 
+ unsigned char asc2nibble(char c) {
+ 
+@@ -139,7 +139,7 @@
+ 
+ 	if((cs[idx] == 'R') || (cs[idx] == 'r')){ /* RTR frame */
+ 		cf-&gt;can_id |= CAN_RTR_FLAG;
+-		return 0;
++		idx++;
+ 	}
+ 
+ 	for (i=0, dlc=0; i&lt;8; i++){
+@@ -192,15 +192,16 @@
+ 		offset = 4;
+ 	}
+ 
+-	if (cf-&gt;can_id &amp; CAN_RTR_FLAG) /* there are no ERR frames with RTR */
++	if (cf-&gt;can_id &amp; CAN_RTR_FLAG)  {/* there are no ERR frames with RTR */
+ 		sprintf(buf+offset, &quot;R&quot;);
+-	else
+-		for (i = 0; i &lt; dlc; i++) {
+-			sprintf(buf+offset, &quot;%02X&quot;, cf-&gt;data[i]);
+-			offset += 2;
+-			if (sep &amp;&amp; (i+1 &lt; dlc))
+-				sprintf(buf+offset++, &quot;.&quot;);
+-		}
++		offset++;
++	}
++	for (i = 0; i &lt; dlc; i++) {
++		sprintf(buf+offset, &quot;%02X&quot;, cf-&gt;data[i]);
++		offset += 2;
++		if (sep &amp;&amp; (i+1 &lt; dlc))
++			sprintf(buf+offset++, &quot;.&quot;);
++	}
+ 
+ 
+ }
+@@ -237,8 +238,7 @@
+ 	offset += 3;
+ 
+ 	if (cf-&gt;can_id &amp; CAN_RTR_FLAG) { /* there are no ERR frames with RTR */
+-		sprintf(buf+offset, &quot; remote request&quot;);
+-		return;
++		offset += sprintf(buf + offset, &quot; RTR &quot;);
+ 	}
+ 
+ 	if (view &amp; CANLIB_VIEW_BINARY) {
+Index: lib.h
+===================================================================
+--- lib.h	(revision 967)
++++ lib.h	(working copy)
+@@ -77,7 +77,8 @@
+ /*
+  * Transfers a valid ASCII string decribing a CAN frame into struct can_frame.
+  *
+- * &lt;can_id&gt;#{R|data}
++ * &lt;can_id&gt;#&lt;data&gt;
++ * &lt;can_id&gt;#R&lt;data&gt;
+  *
+  * can_id can have 3 (standard frame format) or 8 (extended frame format)
+  *        hexadecimal chars
+@@ -90,6 +91,7 @@
+  * 12345678# -&gt; extended CAN-Id = 0x12345678, dlc = 0
+  * 123#R -&gt; standard CAN-Id = 0x123, dlc = 0, RTR-frame
+  * 7A1#r -&gt; standard CAN-Id = 0x7A1, dlc = 0, RTR-frame
++ * 7A1#r11.22.33 -&gt; standard CAN-Id = 0x7A1, dlc = 3, RTR-frame
+  *
+  * 123#00 -&gt; standard CAN-Id = 0x123, dlc = 1, data[0] = 0x00
+  * 123#1122334455667788 -&gt; standard CAN-Id = 0x123, dlc = 8
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002429.html">[PATCH] Drivers for esd SJA1000 based PCI CAN cards
+</A></li>
+	<LI>Next message: <A HREF="002422.html">[PATCH] can-utils: fix RTR support with dlc != 0
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2421">[ date ]</a>
+              <a href="thread.html#2421">[ thread ]</a>
+              <a href="subject.html#2421">[ subject ]</a>
+              <a href="author.html#2421">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

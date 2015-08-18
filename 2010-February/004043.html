@@ -1,0 +1,152 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] ems_pcmcia: Replace defunc cs_error and fix related issues
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20ems_pcmcia%3A%20Replace%20defunc%20cs_error%20and%20fix%20related%20issues&In-Reply-To=%3Chlgoj2%24lsh%241%40ger.gmane.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004033.html">
+   <LINK REL="Next"  HREF="004044.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] ems_pcmcia: Replace defunc cs_error and fix related issues</H1>
+    <B>Markus Plessing</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20ems_pcmcia%3A%20Replace%20defunc%20cs_error%20and%20fix%20related%20issues&In-Reply-To=%3Chlgoj2%24lsh%241%40ger.gmane.org%3E"
+       TITLE="[PATCH] ems_pcmcia: Replace defunc cs_error and fix related issues">plessing at ems-wuensche.com
+       </A><BR>
+    <I>Wed Feb 17 13:48:35 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004033.html">[PATCH]can: fix compile warnings in esd_usb2.c
+</A></li>
+        <LI>Next message: <A HREF="004044.html">[PATCH] ems_pcmcia: Replace defunc cs_error and fix related issues
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4043">[ date ]</a>
+              <a href="thread.html#4043">[ thread ]</a>
+              <a href="subject.html#4043">[ subject ]</a>
+              <a href="author.html#4043">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Replaced the removed cs_error function and fixed other minor issues 
+introduced with the following commit in net-next-2.6.
+net-next-2.6 --- commit 5fa9167a1bf5f5a4b7282f5e7ac56a4a5a1fa044
+
+The new maintainer is set to be the MODULE_AUTHOR and an additional line 
+of copyright has been added.
+
+Signed-off-by: Markus Plessing &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">plessing at ems-wuensche.com</A>&gt;
+---
+
+Index: kernel/2.6/drivers/net/can/sja1000/ems_pcmcia.c
+===================================================================
+--- kernel/2.6/drivers/net/can/sja1000/ems_pcmcia.c	(Revision 1126)
++++ kernel/2.6/drivers/net/can/sja1000/ems_pcmcia.c	(Arbeitskopie)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2008 Sebastian Haas &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">haas at ems-wuensche.com</A>&gt;
++ * Copyright (C) 2010 Markus Plessing &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">plessing at ems-wuensche.com</A>&gt;
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the version 2 of the GNU General Public License
+@@ -40,7 +41,7 @@
+ #error This driver does not support Kernel versions &lt; 2.6.16
+ #endif
+ 
+-MODULE_AUTHOR(&quot;Sebastian Haas &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">haas at ems-wuenche.com</A>&gt;&quot;);
++MODULE_AUTHOR(&quot;Markus Plessing &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">plessing at ems-wuenche.com</A>&gt;&quot;);
+ MODULE_DESCRIPTION(&quot;Socket-CAN driver for EMS CPC-CARD cards&quot;);
+ MODULE_SUPPORTED_DEVICE(&quot;EMS CPC-CARD CAN card&quot;);
+ MODULE_LICENSE(&quot;GPL v2&quot;);
+@@ -344,7 +345,6 @@
+ 
+ 	/* Interrupt setup */
+ 	dev-&gt;irq.Attributes = IRQ_TYPE_DYNAMIC_SHARING;
+-	dev-&gt;irq.IRQInfo1 = IRQ_LEVEL_ID;
+ 
+ 	/* General socket configuration */
+ 	dev-&gt;conf.Attributes = CONF_ENABLE_IRQ;
+@@ -352,7 +352,7 @@
+ 	dev-&gt;conf.ConfigIndex = 1;
+ 	dev-&gt;conf.Present = PRESENT_OPTION;
+ 
+-	dev-&gt;win = NULL;
++	dev-&gt;win = 0;
+ 
+ 	ems_pcmcia_config(dev);
+ 
+@@ -374,31 +374,35 @@
+ 	req.Base = req.Size = 0;
+ 	req.AccessSpeed = 0;
+ 
+-	csval = pcmcia_request_window(&amp;dev, &amp;req, &amp;dev-&gt;win);
++	csval = pcmcia_request_window(dev, &amp;req, &amp;dev-&gt;win);
+ 	if (csval) {
+-		cs_error(dev, RequestWindow, csval);
++		dev_err(&amp;dev-&gt;dev, &quot;RequestWindow failed (err=%d)\n&quot;, 
++			csval);
+ 		return;
+ 	}
+ 
+ 	mem.CardOffset = mem.Page = 0;
+ 	mem.CardOffset = dev-&gt;conf.ConfigBase;
+ 
+-	csval = pcmcia_map_mem_page(dev-&gt;win, &amp;mem);
++	csval = pcmcia_map_mem_page(dev, dev-&gt;win, &amp;mem);
+ 	if (csval) {
+-		cs_error(dev, MapMemPage, csval);
++		dev_err(&amp;dev-&gt;dev, &quot;MapMemPage failed (err=%d)\n&quot;, 
++			csval);
+ 		return;
+ 	}
+ 
+ 	csval = pcmcia_request_irq(dev, &amp;dev-&gt;irq);
+ 	if (csval) {
+-		cs_error(dev, RequestIRQ, csval);
++		dev_err(&amp;dev-&gt;dev, &quot;RequestIRQ failed (err=%d)\n&quot;, 
++			csval);
+ 		return;
+ 	}
+ 
+ 	/* This actually configures the PCMCIA socket */
+ 	csval = pcmcia_request_configuration(dev, &amp;dev-&gt;conf);
+ 	if (csval) {
+-		cs_error(dev, RequestConfiguration, csval);
++		dev_err(&amp;dev-&gt;dev, &quot;RequestConfig failed (err=%d)\n&quot;, 
++			csval);
+ 		return;
+ 	}
+ 
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004033.html">[PATCH]can: fix compile warnings in esd_usb2.c
+</A></li>
+	<LI>Next message: <A HREF="004044.html">[PATCH] ems_pcmcia: Replace defunc cs_error and fix related issues
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4043">[ date ]</a>
+              <a href="thread.html#4043">[ thread ]</a>
+              <a href="subject.html#4043">[ subject ]</a>
+              <a href="author.html#4043">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,251 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] Driver for esd CAN cards
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Driver%20for%20esd%20CAN%20cards&In-Reply-To=%3C4A12DA96.2030904%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002533.html">
+   <LINK REL="Next"  HREF="002537.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] Driver for esd CAN cards</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Driver%20for%20esd%20CAN%20cards&In-Reply-To=%3C4A12DA96.2030904%40grandegger.com%3E"
+       TITLE="[PATCH] Driver for esd CAN cards">wg at grandegger.com
+       </A><BR>
+    <I>Tue May 19 18:13:10 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002533.html">[PATCH] Driver for esd CAN cards
+</A></li>
+        <LI>Next message: <A HREF="002537.html">[PATCH] Driver for esd CAN cards
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2535">[ date ]</a>
+              <a href="thread.html#2535">[ thread ]</a>
+              <a href="subject.html#2535">[ subject ]</a>
+              <a href="author.html#2535">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thomas K&#246;rper wrote:
+&gt;<i> Hi Wolfgang,
+</I>&gt;<i> 
+</I>&gt;<i> thanks for your tips, most things are changed accordingly.
+</I>&gt;<i> Remaining comments/questions follow.
+</I>&gt;<i> 
+</I>&gt;<i>  &gt;&gt; &gt; +	data = readl((u8 *)pci331_confspace + 0x50);
+</I>&gt;<i>  &gt;&gt; &gt; +	data &amp;= ~0x40000028;
+</I>&gt;<i>  &gt;&gt; &gt; +	writel(data, (u8 *)pci331_confspace + 0x50);
+</I>&gt;<i>  &gt;&gt; &gt; +
+</I>&gt;<i>  &gt;&gt; &gt; +	msleep(3500);
+</I>&gt;<i>  &gt;
+</I>&gt;<i>  &gt; ... and that takes ages ;-). Is this a typo or is the hardware/firmware
+</I>&gt;<i>  &gt; really that slow ;-(. Anyhow, msleep() does not busy sleep but calls
+</I>&gt;<i>  &gt; schedule_timeout_uninterruptible(),
+</I>&gt;<i> 
+</I>&gt;<i> Sorry, no typo ;-)
+</I>&gt;<i> 
+</I>&gt;<i> What about using msleep_interruptible(), and, when interrupted,
+</I>&gt;<i> return an error to esd331_pci_init_one() and let it return that it failed?
+</I>
+Does that mean that the insmod blocks for about 3.5 seconds and
+interrupting with ^C may abort the reset?
+
+&gt;<i>  &gt;&gt; &gt; +static void esd331_enableIRQ(void *pci331_confspace)
+</I>&gt;<i>  &gt;&gt; &gt; +{
+</I>&gt;<i>  &gt;&gt; &gt; +	u32 data;
+</I>&gt;<i>  &gt;&gt; &gt; +
+</I>&gt;<i>  &gt;&gt; &gt; +	data = readl((u8 *)pci331_confspace + 0x4c);
+</I>&gt;<i>  &gt;&gt; &gt; +	data |= 0x00000041;
+</I>&gt;<i>  &gt;&gt; &gt; +	writel(data, (u8 *)pci331_confspace + 0x4c);
+</I>&gt;<i>  &gt;
+</I>&gt;<i>  &gt; In general, the correct type for read[lwb} and write[lwb] is
+</I>&gt;<i>  &gt; &quot;void __iomem *&quot;:
+</I>&gt;<i>  &gt;
+</I>&gt;<i>  &gt;         void __iomem *addr = pci331_confspace + 0x4c;
+</I>&gt;<i>  &gt;
+</I>&gt;<i>  &gt; And it would also be nice to define meaningful macros for the various
+</I>&gt;<i>  &gt; offsets.
+</I>&gt;<i> 
+</I>&gt;<i> OK, now it looks like:
+</I>&gt;<i> static void esd331_enableIRQ(void *pci331_confspace)
+</I>&gt;<i> {
+</I>&gt;<i> 	void __iomem *addr = pci331_confspace + ESD331_CONF_OFFS_ICS;
+</I>&gt;<i> 	u32 data;
+</I>&gt;<i> 
+</I>&gt;<i> 	data = readl(addr);
+</I>&gt;<i> 	data |= 0x00000041;
+</I>&gt;<i> 	writel(data, addr);
+</I>&gt;<i> }
+</I>
+OK, but defines for the mask here and in other placses would be nice as
+well ;-). It makes the code much more readable and gives other deveopers
+a chance understanding what it's good for.
+
+&gt;<i>  &gt;&gt; &gt; +		case ESD331_I20_TXTOUT:
+</I>&gt;<i>  &gt;&gt; &gt; +		case ESD331_I20_EX_TXTOUT:
+</I>&gt;<i>  &gt;&gt; &gt; +			stats-&gt;tx_errors++;
+</I>&gt;<i>  &gt;&gt; &gt; +			can_get_echo_skb(board-&gt;dev[msg.net], 0);
+</I>&gt;<i>  &gt;&gt; &gt; +			netif_wake_queue(board-&gt;dev[msg.net]);
+</I>&gt;<i>  &gt;&gt; &gt; +			break;
+</I>&gt;<i>  &gt;
+</I>&gt;<i>  &gt; Hm, this will loopback the message even if it did not go out. And if the
+</I>&gt;<i>  &gt; message get's dropped, stats-&gt;tx_dropped should be increments. Why might
+</I>&gt;<i>  &gt; the hardware signal such an error.
+</I>&gt;<i> 
+</I>&gt;<i> Instead of can_get_echo_skb() now I do:
+</I>&gt;<i> kfree_skb(priv-&gt;can.echo_skb[0]);
+</I>&gt;<i> priv-&gt;can.echo_skb[0] = NULL;
+</I>&gt;<i> 
+</I>&gt;<i> Or how else would it be freed again?
+</I>
+Yep, but we should have a common function for that purpose, e.g.
+can_free_echo_skb().
+
+&gt;<i>  &gt;&gt; &gt; +/* also disables interrupt when all other nets on card are closed already*/
+</I>&gt;<i>  &gt;&gt; &gt; +static int esd331_close(struct net_device *dev)
+</I>&gt;<i>  &gt;&gt; &gt; +{
+</I>&gt;<i>  &gt;&gt; &gt; +	struct esd331_priv *priv = netdev_priv(dev);
+</I>&gt;<i>  &gt;&gt; &gt; +	int disable_int = 1;
+</I>&gt;<i>  &gt;&gt; &gt; +	int i;
+</I>&gt;<i>  &gt;&gt; &gt; +
+</I>&gt;<i>  &gt;&gt; &gt; +	priv-&gt;can.state = CAN_STATE_STOPPED;
+</I>&gt;<i>  &gt;&gt; &gt; +	netif_stop_queue(dev);
+</I>&gt;<i>  &gt;&gt; &gt; +	can_close_cleanup(dev);
+</I>&gt;<i>  &gt;&gt; &gt; +
+</I>&gt;<i>  &gt;&gt; &gt; +	for (i = 0; i &lt; ESD331_MAX_CAN; i++) {
+</I>&gt;<i>  &gt;&gt; &gt; +		if (priv-&gt;board-&gt;dev[i] == NULL) {
+</I>&gt;<i>  &gt;&gt; &gt; +			break;
+</I>&gt;<i>  &gt;&gt; &gt; +		} else {
+</I>&gt;<i>  &gt;&gt; &gt; +			struct esd331_priv *otherPriv;
+</I>&gt;<i>  &gt;&gt; &gt; +			otherPriv = netdev_priv(priv-&gt;board-&gt;dev[i]);
+</I>&gt;<i>  &gt;&gt; &gt; +			if (otherPriv-&gt;can.state != CAN_STATE_STOPPED) {
+</I>&gt;<i>  &gt;&gt; &gt; +				disable_int = 0;
+</I>&gt;<i>  &gt;&gt; &gt; +				break;
+</I>&gt;<i>  &gt;&gt; &gt; +			}
+</I>&gt;<i>  &gt;&gt; &gt; +		}
+</I>&gt;<i>  &gt;&gt; &gt; +	}
+</I>&gt;<i>  &gt;&gt; &gt; +
+</I>&gt;<i>  &gt;&gt; &gt; +	if (disable_int)
+</I>&gt;<i>  &gt;&gt; &gt; +		esd331_disableIRQ(priv-&gt;board-&gt;conf_addr);
+</I>&gt;<i>  &gt;
+</I>&gt;<i>  &gt; Please disable the interrupts earlier, especially before calling
+</I>&gt;<i>  &gt; can_close_cleanup().
+</I>&gt;<i> 
+</I>&gt;<i> After setting can.state to CAN_STATE_STOPPED the interrupt handler will ignore
+</I>&gt;<i> messages for that CAN net. Disabling the interrupt would disable all other
+</I>&gt;<i> nets on that card, too.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>  &gt;&gt; &gt; +static int esd331_start_xmit(struct sk_buff *skb, struct net_device *dev)
+</I>&gt;<i>  &gt;&gt; &gt; +{
+</I>&gt;<i>  &gt;&gt; &gt; +	struct esd331_priv *priv = netdev_priv(dev);
+</I>&gt;<i>  &gt;&gt; &gt; +	struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;<i>  &gt;&gt; &gt; +	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i>  &gt;&gt; &gt; +
+</I>&gt;<i>  &gt;&gt; &gt; +	if ((cf-&gt;can_id &amp; CAN_EFF_FLAG) &amp;&amp; (priv-&gt;board-&gt;eff_supp == 0)) {
+</I>&gt;<i>  &gt;&gt; &gt; +		stats-&gt;tx_errors++;
+</I>&gt;<i>  &gt;&gt; &gt; +		return 0;
+</I>&gt;<i>  &gt;&gt; &gt; +	}
+</I>&gt;<i>  &gt;&gt; &gt; +
+</I>&gt;<i>  &gt;&gt; &gt; +	netif_stop_queue(dev);
+</I>&gt;<i>  &gt;&gt; &gt; +
+</I>&gt;<i>  &gt;&gt; &gt; +	if (esd331_send(priv-&gt;board, priv-&gt;boardsNet, cf-&gt;can_id &amp; 0x1FFFFFFF,
+</I>&gt;<i>  &gt;&gt; &gt; +						cf-&gt;can_id &amp; CAN_EFF_FLAG,
+</I>&gt;<i>  &gt;&gt; &gt; +						cf-&gt;can_id &amp; CAN_RTR_FLAG,
+</I>&gt;<i>  &gt;&gt; &gt; +						cf-&gt;can_dlc, cf-&gt;data)) {
+</I>&gt;<i>  &gt;&gt; &gt; +		stats-&gt;tx_fifo_errors++;
+</I>&gt;<i>  &gt;&gt; &gt; +		return 0;
+</I>&gt;<i>  &gt;&gt; &gt; +	}
+</I>&gt;<i>  &gt;&gt; &gt; +
+</I>&gt;<i>  &gt;&gt; &gt; +	stats-&gt;tx_bytes += cf-&gt;can_dlc;
+</I>&gt;<i>  &gt;&gt; &gt; +	dev-&gt;trans_start = jiffies;
+</I>&gt;<i>  &gt;&gt; &gt; +
+</I>&gt;<i>  &gt;&gt; &gt; +	can_put_echo_skb(skb, dev, 0);
+</I>&gt;<i>  &gt;
+</I>&gt;<i>  &gt; This should be called before sending the message. And in case of errors
+</I>&gt;<i>  &gt; you need to free the skb and increment stats-&gt;tx_errors *and*
+</I>&gt;<i>  &gt; stats-&gt;tx_dropped.
+</I>&gt;<i> 
+</I>&gt;<i> I don't understand why calling that _before_ trying to send...
+</I>
+Because the TX done interrupt may come before can_put_echo_skb().
+
+&gt;<i> But the function looks now:
+</I>&gt;<i> 
+</I>&gt;<i> static int esd331_start_xmit(struct sk_buff *skb, struct net_device *dev)
+</I>&gt;<i> {
+</I>&gt;<i> 	struct esd331_priv *priv = netdev_priv(dev);
+</I>&gt;<i> 	struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;<i> 	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i> 	int err;
+</I>&gt;<i> 
+</I>&gt;<i> 	can_put_echo_skb(skb, dev, 0);
+</I>&gt;<i> 
+</I>&gt;<i> 	if ((cf-&gt;can_id &amp; CAN_EFF_FLAG) &amp;&amp; (priv-&gt;board-&gt;eff_supp == 0)) {
+</I>&gt;<i> 		stats-&gt;tx_errors++;
+</I>&gt;<i> 		stats-&gt;tx_dropped++;
+</I>&gt;<i> 		kfree_skb(skb);
+</I>&gt;<i> 		priv-&gt;can.echo_skb[0] = NULL;
+</I>&gt;<i> 		return -EOPNOTSUPP;
+</I>&gt;<i> 	}
+</I>&gt;<i> 
+</I>&gt;<i> 	err = esd331_send(priv-&gt;board, priv-&gt;boards_net,
+</I>&gt;<i> 				cf-&gt;can_id &amp; CAN_EFF_MASK,
+</I>&gt;<i> 				cf-&gt;can_id &amp; CAN_EFF_FLAG,
+</I>&gt;<i> 				cf-&gt;can_id &amp; CAN_RTR_FLAG,
+</I>&gt;<i> 				cf-&gt;can_dlc, cf-&gt;data);
+</I>&gt;<i> 	if (err) {
+</I>&gt;<i> 		stats-&gt;tx_fifo_errors++;
+</I>&gt;<i> 		stats-&gt;tx_errors++;
+</I>&gt;<i> 		stats-&gt;tx_dropped++;
+</I>&gt;<i> 		kfree_skb(skb);
+</I>&gt;<i> 		priv-&gt;can.echo_skb[0] = NULL;
+</I>&gt;<i> 		return err;
+</I>&gt;<i> 	}
+</I>&gt;<i> 
+</I>&gt;<i> 	netif_stop_queue(dev);
+</I>&gt;<i> 	stats-&gt;tx_bytes += cf-&gt;can_dlc;
+</I>&gt;<i> 	dev-&gt;trans_start = jiffies;
+</I>&gt;<i> 
+</I>&gt;<i> 	return 0;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> Is that OK?
+</I>
+Yes, but also here we should use can_free_echo_skb() and using &quot;goto
+out&quot; might be be handy here as well.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002533.html">[PATCH] Driver for esd CAN cards
+</A></li>
+	<LI>Next message: <A HREF="002537.html">[PATCH] Driver for esd CAN cards
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2535">[ date ]</a>
+              <a href="thread.html#2535">[ thread ]</a>
+              <a href="subject.html#2535">[ subject ]</a>
+              <a href="author.html#2535">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

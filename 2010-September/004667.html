@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: [PATCH] CAN: mcp251x.c: Add support for two TX message boxes
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20%5BPATCH%5D%20CAN%3A%20mcp251x.c%3A%20Add%20support%20for%20two%20TX%20message%20boxes&In-Reply-To=%3C1285230620-20884-1-git-send-email-david.jander%40protonic.nl%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004666.html">
+   <LINK REL="Next"  HREF="004668.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: [PATCH] CAN: mcp251x.c: Add support for two TX message boxes</H1>
+    <B>david.jander at protonic.nl</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20%5BPATCH%5D%20CAN%3A%20mcp251x.c%3A%20Add%20support%20for%20two%20TX%20message%20boxes&In-Reply-To=%3C1285230620-20884-1-git-send-email-david.jander%40protonic.nl%3E"
+       TITLE="RFC: [PATCH] CAN: mcp251x.c: Add support for two TX message boxes">david.jander at protonic.nl
+       </A><BR>
+    <I>Thu Sep 23 10:30:20 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004666.html">[PATCH] CAN: mcp251x.c: Reduce amount of SPI transactions in ISR
+</A></li>
+        <LI>Next message: <A HREF="004668.html">RFC: [PATCH] CAN: mcp251x.c: Add support for two TX message boxes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4667">[ date ]</a>
+              <a href="thread.html#4667">[ thread ]</a>
+              <a href="subject.html#4667">[ subject ]</a>
+              <a href="author.html#4667">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>From: David Jander &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">david at protonic.nl</A>&gt;
+
+With this patch the driver is able to sustain a transmit data stream
+without gaps between messages.
+
+Signed-off-by: David Jander &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">david at protonic.nl</A>&gt;
+---
+ drivers/net/can/mcp251x.c |   37 ++++++++++++++++++++++++++++++-------
+ 1 files changed, 30 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/can/mcp251x.c b/drivers/net/can/mcp251x.c
+index 32037d8..ce5e2f1 100644
+--- a/drivers/net/can/mcp251x.c
++++ b/drivers/net/can/mcp251x.c
+@@ -202,7 +202,7 @@
+ #define SPI_TRANSFER_BUF_LEN	(6 + CAN_FRAME_MAX_DATA_LEN)
+ #define CAN_FRAME_MAX_BITS	128
+ 
+-#define TX_ECHO_SKB_MAX	1
++#define TX_ECHO_SKB_MAX	2
+ 
+ #define DEVICE_NAME &quot;mcp251x&quot;
+ 
+@@ -248,18 +248,22 @@ struct mcp251x_priv {
+ #define AFTER_SUSPEND_POWER 4
+ #define AFTER_SUSPEND_RESTART 8
+ 	int restart_tx;
++	int tx_buf_busy_mask;
+ };
+ 
+ static void mcp251x_clean(struct net_device *net)
+ {
+ 	struct mcp251x_priv *priv = netdev_priv(net);
+ 
+-	if (priv-&gt;tx_skb || priv-&gt;tx_len)
++	if (priv-&gt;tx_skb || priv-&gt;tx_buf_busy_mask)
+ 		net-&gt;stats.tx_errors++;
+ 	if (priv-&gt;tx_skb)
+ 		dev_kfree_skb(priv-&gt;tx_skb);
+-	if (priv-&gt;tx_len)
++	if (priv-&gt;tx_buf_busy_mask &amp; 1)
+ 		can_free_echo_skb(priv-&gt;net, 0);
++	if (priv-&gt;tx_buf_busy_mask &amp; 2)
++		can_free_echo_skb(priv-&gt;net, 1);
++
+ 	priv-&gt;tx_skb = NULL;
+ 	priv-&gt;tx_len = 0;
+ }
+@@ -491,7 +495,7 @@ static netdev_tx_t mcp251x_hard_start_xmit(struct sk_buff *skb,
+ 	struct mcp251x_priv *priv = netdev_priv(net);
+ 	struct spi_device *spi = priv-&gt;spi;
+ 
+-	if (priv-&gt;tx_skb || priv-&gt;tx_len) {
++	if (priv-&gt;tx_skb || ((priv-&gt;tx_buf_busy_mask &amp; 3) == 3)) {
+ 		dev_warn(&amp;spi-&gt;dev, &quot;hard_xmit called while tx busy\n&quot;);
+ 		return NETDEV_TX_BUSY;
+ 	}
+@@ -726,10 +730,20 @@ static void mcp251x_tx_work_handler(struct work_struct *ws)
+ 
+ 			if (frame-&gt;can_dlc &gt; CAN_FRAME_MAX_DATA_LEN)
+ 				frame-&gt;can_dlc = CAN_FRAME_MAX_DATA_LEN;
+-			mcp251x_hw_tx(spi, frame, 0);
++			if ((priv-&gt;tx_buf_busy_mask &amp; 1) == 0) {
++				mcp251x_hw_tx(spi, frame, 0);
++				priv-&gt;tx_buf_busy_mask |= 1;
++				can_put_echo_skb(priv-&gt;tx_skb, net, 0);
++			} else if ((priv-&gt;tx_buf_busy_mask &amp; 2) == 0) {
++				mcp251x_hw_tx(spi, frame, 1);
++				priv-&gt;tx_buf_busy_mask |= 2;
++				can_put_echo_skb(priv-&gt;tx_skb, net, 1);
++			}
+ 			priv-&gt;tx_len = 1 + frame-&gt;can_dlc;
+-			can_put_echo_skb(priv-&gt;tx_skb, net, 0);
++
+ 			priv-&gt;tx_skb = NULL;
++			if (priv-&gt;tx_buf_busy_mask &lt; 3)
++				netif_wake_queue(net);
+ 		}
+ 	}
+ 	mutex_unlock(&amp;priv-&gt;mcp_lock);
+@@ -868,9 +882,17 @@ static irqreturn_t mcp251x_can_ist(int irq, void *dev_id)
+ 			net-&gt;stats.tx_packets++;
+ 			net-&gt;stats.tx_bytes += priv-&gt;tx_len - 1;
+ 			if (priv-&gt;tx_len) {
+-				can_get_echo_skb(net, 0);
+ 				priv-&gt;tx_len = 0;
+ 			}
++			if (intf &amp; CANINTF_TX0IF) {
++				can_get_echo_skb(net, 0);
++				priv-&gt;tx_buf_busy_mask &amp;= ~1;
++			}
++			if (intf &amp; CANINTF_TX1IF) {
++				can_get_echo_skb(net, 1);
++				priv-&gt;tx_buf_busy_mask &amp;= ~2;
++			}
++
+ 			netif_wake_queue(net);
+ 		}
+ 
+@@ -977,6 +999,7 @@ static int __devinit mcp251x_can_probe(struct spi_device *spi)
+ 	dev_set_drvdata(&amp;spi-&gt;dev, priv);
+ 
+ 	priv-&gt;spi = spi;
++	priv-&gt;tx_buf_busy_mask = 0;
+ 	mutex_init(&amp;priv-&gt;mcp_lock);
+ 
+ 	/* If requested, allocate DMA buffers */
+-- 
+1.6.3.3
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004666.html">[PATCH] CAN: mcp251x.c: Reduce amount of SPI transactions in ISR
+</A></li>
+	<LI>Next message: <A HREF="004668.html">RFC: [PATCH] CAN: mcp251x.c: Add support for two TX message boxes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4667">[ date ]</a>
+              <a href="thread.html#4667">[ thread ]</a>
+              <a href="subject.html#4667">[ subject ]</a>
+              <a href="author.html#4667">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

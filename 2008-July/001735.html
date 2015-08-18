@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Again bit time settings
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Again%20bit%20time%20settings&In-Reply-To=%3C48847EB2.3050006%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001732.html">
+   <LINK REL="Next"  HREF="001733.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Again bit time settings</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Again%20bit%20time%20settings&In-Reply-To=%3C48847EB2.3050006%40grandegger.com%3E"
+       TITLE="Again bit time settings">wg at grandegger.com
+       </A><BR>
+    <I>Mon Jul 21 14:18:58 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001732.html">Again bit time settings
+</A></li>
+        <LI>Next message: <A HREF="001733.html">Again bit time settings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1735">[ date ]</a>
+              <a href="thread.html#1735">[ thread ]</a>
+              <a href="subject.html#1735">[ subject ]</a>
+              <a href="author.html#1735">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hans J. Koch wrote:
+&gt;<i> On Mon, Jul 21, 2008 at 11:55:11AM +0200, Robert Schwebel wrote:
+</I>&gt;&gt;<i> On Mon, Jul 21, 2008 at 11:42:36AM +0200, Hans J. Koch wrote:
+</I>&gt;&gt;&gt;&gt;<i> Yes. IMHO, it would be bad enough to have to *rely* on a userspace
+</I>&gt;&gt;&gt;&gt;<i> library. Look at for example wlan, where you *always* have the wrong
+</I>&gt;&gt;&gt;&gt;<i> revisions of that tools. The absolute minimum would be revisionable
+</I>&gt;&gt;&gt;&gt;<i> interfaces, but it's always better dont to *need* userspace support.
+</I>&gt;&gt;&gt;<i> I agree. I still believe that it's possible to have an algorithm built
+</I>&gt;&gt;&gt;<i> into the core that does the bittiming calculations in a generic way if
+</I>&gt;&gt;&gt;<i> each driver exports its capabilities. It can't be rocket science to
+</I>&gt;&gt;&gt;<i> write an algorithm that does this:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> input:
+</I>&gt;&gt;&gt;<i> - clock frequency
+</I>&gt;&gt;&gt;<i> - min and max divider settings (leads to possible time quanta lengths)
+</I>&gt;&gt;&gt;<i> - min and max number of time quantas (ideally 8 and 25)
+</I>&gt;&gt;&gt;<i> - desired bitrate
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> output:
+</I>&gt;&gt;&gt;<i> - bittimings so that bitrate has the least error and timings follow the
+</I>&gt;&gt;&gt;<i>   recommendations as close as possible.
+</I>&gt;&gt;<i> The problem is that the equations have more than one solution. So there
+</I>&gt;&gt;<i> may be different combinations which lead to the *same* bittime.
+</I>&gt;<i> 
+</I>&gt;<i> Yes, sure. But the number of solutions is small. You can choose by
+</I>&gt;<i> making additional requirements, e.g. &quot;sample point near 87.5%&quot;.
+</I>&gt;<i> 
+</I>&gt;<i> It is clear that the solution delivered by that algorithm might not be
+</I>&gt;<i> suitable for each and every application, that's why we all agree that
+</I>&gt;<i> userspace should be able to set sync, prop, phase1, and phase2 manually.
+</I>
+I have the code ready for implementing a resalable algorithm into 
+Socket-CAN.
+
+&gt;<i> To enable userspace to perform its own calculations, we must provide the
+</I>&gt;<i> chip specific capabilities/limitations I mentioned above.
+</I>
+Yep, instead of &quot;can_driver&quot;, you convinced me :-). We would need:
+
+   can_clock
+   can_tseg1_min
+   can_tseg1_max
+   can_tseg2_min
+   can tseg2_max
+   can_brp_min
+   can_brp_max
+   can_brp_inc
+
+Not sure if SYSFS is the right interface to export capabilities.
+
+&gt;&gt;<i> We've done it for the MPC5200's MSCAN. What you have to do is to make a
+</I>&gt;&gt;<i> really big table (we did that in OpenOffice Calc) and do a minimum
+</I>&gt;&gt;<i> search on the remaining errors; in fact, it is multiple such searches
+</I>&gt;&gt;<i> for different sets of input parameters.
+</I>&gt;<i> 
+</I>&gt;<i> I thought about something like this:
+</I>&gt;<i> 
+</I>&gt;<i> - For all possible numbers of time quanta (usually 8 to 25), calculate
+</I>&gt;<i>   the necessary divider settings. Rule out those where the divider is
+</I>&gt;<i>   not within min_div to max_div. Choose the number of time quanta where
+</I>&gt;<i>   the bittime error is minimal.
+</I>
+And the sampling point?
+
+&gt;<i> - Choose sync, prop, phase1, phase2 according to recommendations.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> So definitely nothing you want
+</I>&gt;&gt;<i> to do in the kernel. And what do you do if you get more than one result?
+</I>&gt;&gt;<i> Somebody has to decide.
+</I>&gt;<i> 
+</I>&gt;<i> You choose the solution that's nearest to the recommendations.
+</I>
+It's already available, just test it and tell us if you are happy with 
+the result. Going to re-send the code and some results.
+
+&gt;&gt;<i> Our conclusion was:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> - Variant a): use the default set of bit timing parameters (CiA values)
+</I>&gt;&gt;<i> - Variant b): let the user define his own parameters, on a per-bitrate
+</I>&gt;&gt;<i>   base (we do that in /etc/network/interfaces).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The driver itself does only see the bit timing parameter set and has to
+</I>&gt;&gt;<i> transform that to corresponding register values. No need for tables in
+</I>&gt;&gt;<i> the driver.
+</I>&gt;<i> 
+</I>&gt;<i> Yes, agreed.
+</I>
+You agree on what? Robert is proposing the in-direct setting of the 
+bitrate. Do you support this approach or do you prefer the direct 
+setting of the bit-timing parameters.
+
+&gt;&gt;&gt;<i> If all the values metioned above and the bittimings (sync, prop,
+</I>&gt;&gt;&gt;<i> phase1, phase2) are available in sysfs, there is no _need_ for any
+</I>&gt;&gt;&gt;<i> userspace tools or libraries. It's just convenient, and if the kernel
+</I>&gt;&gt;&gt;<i> to userspace interface is designed properly, all versions of such
+</I>&gt;&gt;&gt;<i> tools or libraries should always work with every kernel. Without
+</I>&gt;&gt;&gt;<i> having to know the chip type.
+</I>&gt;&gt;<i> Right, seconded.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Vladislav Gribov made some suggestions for a userspace table system, I
+</I>&gt;&gt;&gt;<i> really don't understand why his concept is ignored.
+</I>&gt;&gt;<i> Maybe this discussion grew too large in the meantime :)
+</I>&gt;<i> 
+</I>&gt;<i> That could be a reason, right ;-)
+</I>
+Puh, and almost everbody seems still to have a somehow different opinion 
+on how bit-timing parameters should be set :-(.
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001732.html">Again bit time settings
+</A></li>
+	<LI>Next message: <A HREF="001733.html">Again bit time settings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1735">[ date ]</a>
+              <a href="thread.html#1735">[ thread ]</a>
+              <a href="subject.html#1735">[ subject ]</a>
+              <a href="author.html#1735">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

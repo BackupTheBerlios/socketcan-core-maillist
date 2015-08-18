@@ -1,0 +1,178 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-core] Re: [Socket-can] AW: Error handling
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Re%3A%20%5BSocket-can%5D%20AW%3A%20Error%20handling&In-Reply-To=%3C444D2970.7050106%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000025.html">
+   <LINK REL="Next"  HREF="000029.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-core] Re: [Socket-can] AW: Error handling</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Re%3A%20%5BSocket-can%5D%20AW%3A%20Error%20handling&In-Reply-To=%3C444D2970.7050106%40grandegger.com%3E"
+       TITLE="[Socketcan-core] Re: [Socket-can] AW: Error handling">wg at grandegger.com
+       </A><BR>
+    <I>Mon Apr 24 21:39:28 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000025.html">[Socketcan-core] AW: Error handling
+</A></li>
+        <LI>Next message: <A HREF="000029.html">[Socketcan-core] Re: AW: Error handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27">[ date ]</a>
+              <a href="thread.html#27">[ thread ]</a>
+              <a href="subject.html#27">[ subject ]</a>
+              <a href="author.html#27">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hartkopp, Oliver (K-GEFE/E) wrote:
+&gt;<i> Hi Andrey,
+</I>&gt;<i> 
+</I>&gt;<i> &quot;_PHYSICAL_LAYER_REDUNDANCY_&quot; - cool! You're making strange things, but
+</I>&gt;<i> cool!
+</I>&gt;<i> 
+</I>&gt;<i> I had a discussion with our series CAN people and now i'm a bit more clearly
+</I>&gt;<i> on some CAN errors.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> 1) On any CAN error condition driver allocate special error frame in
+</I>&gt;&gt;<i> addition to a received frame (in case of overrun) and pushed it to
+</I>&gt;&gt;<i> a socket layer.
+</I>&gt;<i> 
+</I>&gt;<i> The idea to send some kind of 'error frames' the same way as standard data
+</I>&gt;<i> frames is indeed reasonable for all (temporary) errors that can occur. With
+</I>&gt;<i> this way you can check after which frame you got the error frame as well as
+</I>&gt;<i> you have a valid timestamp for the error condition.
+</I>&gt;<i> 
+</I>&gt;<i> My suggestion is to add an additional flag to the can_id in can.h:
+</I>&gt;<i> 
+</I>&gt;<i> /* special address description flags for the CAN_ID */
+</I>&gt;<i> #define CAN_EFF_FLAG 0x80000000U /* EFF/SFF is set in the MSB */
+</I>&gt;<i> #define CAN_RTR_FLAG 0x40000000U /* remote transmission request */
+</I>&gt;<i> #define CAN_ERR_FLAG 0x20000000U /* error frame */
+</I>&gt;<i> 
+</I>&gt;<i> This leads me to an tiny problem, that this bit is currently used in the
+</I>&gt;<i> can_id to identify 'inverse filters' for raw-sockets and in af_can.c. But
+</I>&gt;<i> this is not that critical, as i can move the bit-functionality to the
+</I>&gt;<i> can_mask easily.
+</I>&gt;<i> 
+</I>&gt;<i> IF an error occures the driver sets the CAN_ERR_FLAG as can_id and
+</I>&gt;<i> (suggestion) put the error type in data[0] and additional data describing
+</I>&gt;<i> this type of error in data[1] or data [1..7] or whatever.
+</I>&gt;<i> 
+</I>&gt;<i> E.g. 
+</I>&gt;<i> data[0] // error type 
+</I>&gt;<i> #define ACTIVE_ERROR  1
+</I>&gt;<i> #define PASSIVE_ERROR 2
+</I>&gt;<i> #define BUS_OFF_ERROR 3
+</I>&gt;<i> 
+</I>&gt;<i> data[1] // error description
+</I>&gt;<i> #define BIT_ERROR   1
+</I>&gt;<i> #define FORM_ERROR  2
+</I>&gt;<i> #define STUFF_ERROR 3
+</I>&gt;<i> #define OTHER_ERROR 4
+</I>&gt;<i> 
+</I>&gt;<i> data[2]
+</I>&gt;<i> #define START_OF_FRAME 1
+</I>&gt;<i> #define DATA_FIELD     2
+</I>&gt;<i> #define CRC_DELIMITER  3
+</I>&gt;<i> (..)
+</I>&gt;<i> 
+</I>&gt;<i> Something like this.
+</I>
+E.g., MSCAN does not report most of the errors above. Therefore we may 
+also distinguish between general/common errors, like bus-off, and 
+controller specific errors.
+
+&gt;<i> 
+</I>&gt;&gt;<i> 2a) If application open CAN raw socket, then it receive this error frame,
+</I>&gt;&gt;<i>     unless it filtered out (by socket option).
+</I>&gt;<i> OK. Is opt-out ok for everybody? 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;&gt;<i> And read-syscall return
+</I>&gt;&gt;<i> error codes related _only_ with user actions (if-down as ex.),
+</I>&gt;<i> Hm. See my ideas for the bus-off state below.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;&gt;<i>     but for all CAN errors, syscall always return 0 (for rx/tx-timeouts
+</I>&gt;<i> too).
+</I>&gt;&gt;<i>     This behavior will useful mainly for development.
+</I>&gt;<i> NO! Even if we send a CAN 'error' frame to the user it remains a CAN frame -
+</I>&gt;<i> so it has always sizeof(can_frame). If you want to see error frames you have
+</I>&gt;<i> to check, if you got one by checking for the CAN_ERR_FLAG.
+</I>
+I agree.
+
+&gt;<i> 
+</I>&gt;&gt;<i> 2b) If some higher level protocol over CAN exist, then syscall should
+</I>&gt;&gt;<i>     return appropriated -E&lt;something&gt; on CAN errors too, and filtered out
+</I>&gt;&gt;<i>     all error-frames at protocol-driver level.
+</I>&gt;&gt;<i>     As ex., on bus-off state read should return -ENOMEDIUM.
+</I>&gt;<i> 
+</I>&gt;<i> The higher level protocols do not need these detailed problem descriptions
+</I>&gt;<i> on internal CAN-specific failures as long the medium seems to be
+</I>&gt;<i> 'repairable'. BUT the bus-off topic IS interesting - even for higher level
+</I>&gt;<i> protocols.
+</I>
+&gt;<i> 
+</I>&gt;<i> In the Volkswagen specifications the bus-off state causes a
+</I>&gt;<i> re-initialisation of the controller after 50ms (the first time) and 200ms
+</I>&gt;<i> (the following times). So if we assume all can-drivers behave like this (do
+</I>&gt;<i> we?) and the auto-repair functionality works, the bus-off state remains a
+</I>&gt;<i> serious problem on the CAN that has to be announced to the user.
+</I>
+I realized the bus-off-recovery code in the socket-can drivers and asked 
+myself, if this is always the intended behavior (or should the 
+application handle it).
+
+&gt;<i> So my suggestion ist, that the can-driver sends an error frame with a
+</I>&gt;<i> bus-off error type and the (raw, bcm, tpxxx) socket returns a -ENOMEDIUM to
+</I>&gt;<i> the user.
+</I>
+No ... see below.
+
+&gt;<i> So the userland application can react to this error how it want's to.
+</I>&gt;<i> 
+</I>&gt;<i> Isn't this a nice idea?
+</I>
+The read, recvfrom, etc. should return the number of bytes returned into 
+buf. The application should then check CAN_ERR_FLAG and react accordingly.
+I think it would also be nice, if the error frames could be disabled via 
+socket or filter option (or enabled).
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000025.html">[Socketcan-core] AW: Error handling
+</A></li>
+	<LI>Next message: <A HREF="000029.html">[Socketcan-core] Re: AW: Error handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27">[ date ]</a>
+              <a href="thread.html#27">[ thread ]</a>
+              <a href="subject.html#27">[ subject ]</a>
+              <a href="author.html#27">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

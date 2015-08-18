@@ -1,0 +1,162 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: Hardware independent bit timing
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20Hardware%20independent%20bit%20timing&In-Reply-To=%3C483E71A5.1090103%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001253.html">
+   <LINK REL="Next"  HREF="001255.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: Hardware independent bit timing</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20Hardware%20independent%20bit%20timing&In-Reply-To=%3C483E71A5.1090103%40grandegger.com%3E"
+       TITLE="RFC: Hardware independent bit timing">wg at grandegger.com
+       </A><BR>
+    <I>Thu May 29 11:04:37 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001253.html">RFC: Hardware independent bit timing
+</A></li>
+        <LI>Next message: <A HREF="001255.html">RFC: Hardware independent bit timing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1254">[ date ]</a>
+              <a href="thread.html#1254">[ thread ]</a>
+              <a href="subject.html#1254">[ subject ]</a>
+              <a href="author.html#1254">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Sebastian Haas wrote:
+&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> I also thought about &quot;- can_custom_bitrate (with tseg &amp; friends)
+</I>&gt;&gt;&gt;&gt;&gt;<i> [requires clock]&quot; but i don't think, that these (mostly) specific
+</I>&gt;&gt;&gt;&gt;&gt;<i> calculation functions need to be part of the *kernel* at all. This has
+</I>&gt;&gt;&gt;&gt;&gt;<i> been confirmed by Uwe and is also my experience. If anyone has the
+</I>&gt;&gt;&gt;&gt;&gt;<i> request for defined settings this should be calculated by a userspace
+</I>&gt;&gt;&gt;&gt;&gt;<i> tool which can provide specific btr register values. And these 2,3 or 4
+</I>&gt;&gt;&gt;&gt;&gt;<i> bytes could be easily pushed into /sys/.../can_custom_btregs .
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> I agree with you, that there should not be sophisticated functions to
+</I>&gt;&gt;&gt;&gt;<i> calculate bit timing parameters in the driver. Ony a simple calculation
+</I>&gt;&gt;&gt;&gt;<i> would is acceptable. But do we really want to drop the idea of providing
+</I>&gt;&gt;&gt;&gt;<i> a hardware *independent* way of setting custom bit timing parameters.
+</I>&gt;&gt;&gt;&gt;<i> It's seems to be difficult, at least, as the MSCAN hardware shows.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I would not have any objections to provide this hardware independent
+</I>&gt;&gt;&gt;<i> calculation in the form of a userspace application. This would also help
+</I>&gt;&gt;&gt;<i> to keep the discussions about the magic of bitrate calculation away from
+</I>&gt;&gt;&gt;<i> netdev ML ;-)
+</I>&gt;&gt;<i> Thinking more about it, it would also simplify the API and the kernel
+</I>&gt;&gt;<i> code. A tool for calculating bit timing parameters could be added to
+</I>&gt;&gt;<i> can-utils. What is needed from the driver is the CAN system clock and
+</I>&gt;&gt;<i> the CAN controller type. In the SYSFS we have already &quot;can_sys_clock&quot;,
+</I>&gt;&gt;<i> but &quot;can_type&quot; is missing.
+</I>&gt;<i> I have several objections on it. :-)
+</I>&gt;<i> 
+</I>&gt;<i> I don't want a tool in the userspace which must be aware of any controller
+</I>&gt;<i> and controller type and the way the bitrate is calculated.
+</I>
+You don't need the tools as long as you are happy with the default
+settings, either calculated by a small function or table. That's what we
+should provide for non-experts in any case.
+
+&gt;<i> The specific controller driver (e.g. SJA1000) already knows the hardware
+</I>&gt;<i> (incl. controller clock from the specific device driver), it knows how the
+</I>&gt;<i> bittiming register is build up out of the bitrate parameters (sample
+</I>&gt;<i> point, ...). Why don't we let the controller do it?
+</I>
+Because sophisticated calculations should not be done in kernel space
+and also be aware of the maintenance impact. It's always a big effort to
+get patches upstream.
+
+&gt;<i> The SYSFS module provides a predefined table of common bitrates and the
+</I>&gt;<i> parameters (_not_ the btregs).
+</I>&gt;<i> 
+</I>&gt;<i> cat can_bitrates
+</I>&gt;<i> # bitrate bittime ...
+</I>&gt;<i> 1000000 1&#181;s 8 125ns 75,0%
+</I>&gt;<i> 800000  1,25&#181;s 10 125ns 80,0%
+</I>&gt;<i> 
+</I>&gt;<i> This way the bitrates configuration is in the application' point of view
+</I>&gt;<i> identical for _all_ controllers e.g. SJA1000, MSCAN, CC770.
+</I>
+But it may fail for controllers with exotic CAN clock frequencies and
+bit-rates like we already know for the MSCAN. Furthermore, if you chose
+an hardware independent setting, I definitely prefer our existing
+&quot;struct can_bittime_std&quot; (with tq instead of bpr). For example, you
+cannot set SAM with your approach.
+
+&gt;<i> To configure a bitrate the following happens.
+</I>&gt;<i> echo &quot;800000&quot; &gt; can_bitrate
+</I>&gt;<i> 
+</I>&gt;<i> SYSFS drivers passes the parameters to the controller specific function
+</I>&gt;<i> (e.g. sja1000_set_bitrate_parameters(struct bitrate_params *params), it
+</I>&gt;<i> then calculate the btregs based on the passed parameters and the CAN
+</I>&gt;<i> system clock provided by the specific device driver.
+</I>&gt;<i> 
+</I>&gt;<i> If someone needs more exotic bitrates we may provide a can_custom_bitrate
+</I>&gt;<i> like:
+</I>&gt;<i> echo &quot;800000 1,25&#181;s 10 125ns 80,0%&quot; &gt; can_custom_bitrate.
+</I>&gt;<i> 
+</I>&gt;<i> This is also same handling for an application no matter which controller
+</I>&gt;<i> type is used.
+</I>
+Yes, but the settings may not work, as Uwe pointed out.
+
+&gt;<i> 
+</I>&gt;<i> With this solution the normal user and the sophisticated user are satisfied.
+</I>
+No, see above. The expert might not be happy with the calculated values
+and he has no way to set the bit timing regs directly. It could use a
+common tool to calculate them or write its own if he knows what he's doing.
+
+&gt;<i> This also solve the kernel maintenance problem, the table is only defined
+</I>&gt;<i> once and additional bitrates are supported from the userspace.
+</I>&gt;<i> 
+</I>&gt;<i> And this works for all controller, since they must support things like
+</I>&gt;<i> sample point, quantas (via CAN system clock?), ...
+</I>
+I'm afraid that we fail to provide a function working well for all
+controllers and clocks out there.
+
+More comments are welcome?
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001253.html">RFC: Hardware independent bit timing
+</A></li>
+	<LI>Next message: <A HREF="001255.html">RFC: Hardware independent bit timing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1254">[ date ]</a>
+              <a href="thread.html#1254">[ thread ]</a>
+              <a href="subject.html#1254">[ subject ]</a>
+              <a href="author.html#1254">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

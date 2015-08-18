@@ -1,0 +1,233 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> CAN procfs rework
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20CAN%20procfs%20rework&In-Reply-To=%3C4CD1F7DF.20508%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004913.html">
+   <LINK REL="Next"  HREF="004915.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>CAN procfs rework</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20CAN%20procfs%20rework&In-Reply-To=%3C4CD1F7DF.20508%40pengutronix.de%3E"
+       TITLE="CAN procfs rework">mkl at pengutronix.de
+       </A><BR>
+    <I>Thu Nov  4 01:01:35 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004913.html">CAN procfs rework
+</A></li>
+        <LI>Next message: <A HREF="004915.html">CAN procfs rework
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4914">[ date ]</a>
+              <a href="thread.html#4914">[ thread ]</a>
+              <a href="subject.html#4914">[ subject ]</a>
+              <a href="author.html#4914">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 11/03/2010 07:41 PM, Oliver Hartkopp wrote:
+&gt;<i> Hi Urs,
+</I>&gt;<i> 
+</I>&gt;<i> i tested your patch that uses the sockets inode number instead of the pointer
+</I>&gt;<i> address to the sock structure. It works great and has indeed a new benefit
+</I>&gt;<i> for the debugging.
+</I>&gt;<i> 
+</I>&gt;<i> Additionally i added a counter for tx drops to the bcm that was missing in my
+</I>&gt;<i> tests for ages:
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hartko at vwagwolkf320</A>:~/linux-2.6$ cat /proc/net/can-bcm/43572 
+</I>&gt;&gt;&gt;&gt;<i> socket inode 43572 / dropped 0 / dropped_tx 0 / bound vcan1 &lt;&lt;&lt;
+</I>&gt;<i> 
+</I>&gt;<i> The problem of the address exposure for the callback function and its
+</I>&gt;<i> parameter could be fixed by adding a new kernel config option - as done by
+</I>&gt;<i> different other kernel code: CONFIG_CAN_DEBUG_NETLAYER
+</I>&gt;<i> 
+</I>&gt;<i> Unfortunately i mixed all this into one patch for this testing.
+</I>&gt;<i> Anyway, what's your opinion about the suggested changes?
+</I>
+I have some nitpicking...see comments inline:
+
+&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>&gt;<i> 
+</I>&gt;<i> ---
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/net/can/Kconfig b/net/can/Kconfig
+</I>&gt;<i> index 89395b2..b57f3c4 100644
+</I>&gt;<i> --- a/net/can/Kconfig
+</I>&gt;<i> +++ b/net/can/Kconfig
+</I>&gt;<i> @@ -40,5 +40,14 @@ config CAN_BCM
+</I>&gt;<i>  	  CAN messages are used on the bus (e.g. in automotive environments).
+</I>&gt;<i>  	  To use the Broadcast Manager, use AF_CAN with protocol CAN_BCM.
+</I>&gt;<i>  
+</I>&gt;<i> +config CAN_DEBUG_NETLAYER
+</I>&gt;<i> +	bool &quot;Enable CAN network layer debugging&quot;
+</I>&gt;<i> +	depends on CAN
+</I>&gt;<i> +	default N
+</I>
+default no is the default, so the default statement can be removed
+completely.
+
+&gt;<i> +	---help---
+</I>&gt;<i> +	  Say Y here if you are developing and/or debugging protocols for the
+</I>&gt;<i> +	  CAN network layer. When enabled e.g. kernel internal addresses to
+</I>&gt;<i> +	  structures and function pointers are exposed in the procfs output
+</I>&gt;<i> +	  in /proc/net/can/rcvlist_* .
+</I>&gt;<i>  
+</I>&gt;<i>  source &quot;drivers/net/can/Kconfig&quot;
+</I>&gt;<i> diff --git a/net/can/bcm.c b/net/can/bcm.c
+</I>&gt;<i> index 08ffe9e..768e79f 100644
+</I>&gt;<i> --- a/net/can/bcm.c
+</I>&gt;<i> +++ b/net/can/bcm.c
+</I>&gt;<i> @@ -124,8 +124,8 @@ struct bcm_sock {
+</I>&gt;<i>  	struct list_head rx_ops;
+</I>&gt;<i>  	struct list_head tx_ops;
+</I>&gt;<i>  	unsigned long dropped_usr_msgs;
+</I>&gt;<i> +	unsigned long dropped_tx_msgs;
+</I>&gt;<i>  	struct proc_dir_entry *bcm_proc_read;
+</I>&gt;<i> -	char procname [9]; /* pointer printed in ASCII with \0 */
+</I>&gt;<i>  };
+</I>&gt;<i>  
+</I>&gt;<i>  static inline struct bcm_sock *bcm_sk(const struct sock *sk)
+</I>&gt;<i> @@ -165,10 +165,9 @@ static int bcm_proc_show(struct seq_file *m, void *v)
+</I>&gt;<i>  	struct bcm_sock *bo = bcm_sk(sk);
+</I>&gt;<i>  	struct bcm_op *op;
+</I>&gt;<i>  
+</I>&gt;<i> -	seq_printf(m, &quot;&gt;&gt;&gt; socket %p&quot;, sk-&gt;sk_socket);
+</I>&gt;<i> -	seq_printf(m, &quot; / sk %p&quot;, sk);
+</I>&gt;<i> -	seq_printf(m, &quot; / bo %p&quot;, bo);
+</I>&gt;<i> +	seq_printf(m, &quot;&gt;&gt;&gt; socket inode %lu&quot;, sock_i_ino(sk));
+</I>&gt;<i>  	seq_printf(m, &quot; / dropped %lu&quot;, bo-&gt;dropped_usr_msgs);
+</I>&gt;<i> +	seq_printf(m, &quot; / dropped_tx %lu&quot;, bo-&gt;dropped_tx_msgs);
+</I>&gt;<i>  	seq_printf(m, &quot; / bound %s&quot;, bcm_proc_getifname(ifname, bo-&gt;ifindex));
+</I>&gt;<i>  	seq_printf(m, &quot; &lt;&lt;&lt;\n&quot;);
+</I>&gt;<i>  
+</I>&gt;<i> @@ -266,7 +265,12 @@ static void bcm_can_tx(struct bcm_op *op)
+</I>&gt;<i>  	/* send with loopback */
+</I>&gt;<i>  	skb-&gt;dev = dev;
+</I>&gt;<i>  	skb-&gt;sk = op-&gt;sk;
+</I>&gt;<i> -	can_send(skb, 1);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (can_send(skb, 1)) {
+</I>
+That's unusual coding style. In the kernel often an intermediate
+variable &quot;ret&quot; or &quot;err&quot; is used.
+
+&gt;<i> +		struct bcm_sock *bo = bcm_sk(op-&gt;sk);
+</I>&gt;<i> +
+</I>&gt;<i> +		bo-&gt;dropped_tx_msgs++;
+</I>&gt;<i> +	}
+</I>&gt;<i>  
+</I>&gt;<i>  	/* update statistics */
+</I>&gt;<i>  	op-&gt;currframe++;
+</I>&gt;<i> @@ -1426,6 +1430,7 @@ static int bcm_release(struct socket *sock)
+</I>&gt;<i>  	struct sock *sk = sock-&gt;sk;
+</I>&gt;<i>  	struct bcm_sock *bo = bcm_sk(sk);
+</I>&gt;<i>  	struct bcm_op *op, *next;
+</I>&gt;<i> +	char proc_fname[32];
+</I>&gt;<i>  
+</I>&gt;<i>  	/* remove bcm_ops, timer, rx_unregister(), etc. */
+</I>&gt;<i>  
+</I>&gt;<i> @@ -1465,8 +1470,10 @@ static int bcm_release(struct socket *sock)
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i>  	/* remove procfs entry */
+</I>&gt;<i> -	if (proc_dir &amp;&amp; bo-&gt;bcm_proc_read)
+</I>&gt;<i> -		remove_proc_entry(bo-&gt;procname, proc_dir);
+</I>&gt;<i> +	if (proc_dir &amp;&amp; bo-&gt;bcm_proc_read) {
+</I>&gt;<i> +		snprintf(proc_fname, sizeof(proc_fname), &quot;%lu&quot;, sock_i_ino(sk));
+</I>&gt;<i> +		remove_proc_entry(proc_fname, proc_dir);
+</I>&gt;<i> +	}
+</I>&gt;<i>  
+</I>&gt;<i>  	/* remove device reference */
+</I>&gt;<i>  	if (bo-&gt;bound) {
+</I>&gt;<i> @@ -1489,6 +1496,7 @@ static int bcm_connect(struct socket *sock, struct sockaddr *uaddr, int len,
+</I>&gt;<i>  	struct sockaddr_can *addr = (struct sockaddr_can *)uaddr;
+</I>&gt;<i>  	struct sock *sk = sock-&gt;sk;
+</I>&gt;<i>  	struct bcm_sock *bo = bcm_sk(sk);
+</I>&gt;<i> +	char proc_fname[32];
+</I>&gt;<i>  
+</I>&gt;<i>  	if (len &lt; sizeof(*addr))
+</I>&gt;<i>  		return -EINVAL;
+</I>&gt;<i> @@ -1521,8 +1529,8 @@ static int bcm_connect(struct socket *sock, struct sockaddr *uaddr, int len,
+</I>&gt;<i>  
+</I>&gt;<i>  	if (proc_dir) {
+</I>&gt;<i>  		/* unique socket address as filename */
+</I>&gt;<i> -		sprintf(bo-&gt;procname, &quot;%p&quot;, sock);
+</I>                        ^^^^^^^^^^^^^
+Just wondering:
+Is this a &quot;struct bcm_sock&quot;, right? Is the procname member still used,
+or can it be removed now?
+
+&gt;<i> -		bo-&gt;bcm_proc_read = proc_create_data(bo-&gt;procname, 0644,
+</I>&gt;<i> +		snprintf(proc_fname, sizeof(proc_fname), &quot;%lu&quot;, sock_i_ino(sk));
+</I>&gt;<i> +		bo-&gt;bcm_proc_read = proc_create_data(proc_fname, 0644,
+</I>&gt;<i>  						     proc_dir,
+</I>&gt;<i>  						     &amp;bcm_proc_fops, sk);
+</I>&gt;<i>  	}
+</I>&gt;<i> diff --git a/net/can/proc.c b/net/can/proc.c
+</I>&gt;<i> index f4265cc..6011547 100644
+</I>&gt;<i> --- a/net/can/proc.c
+</I>&gt;<i> +++ b/net/can/proc.c
+</I>&gt;<i> @@ -208,8 +208,12 @@ static void can_print_rcvlist(struct seq_file *m, struct hlist_head *rx_list,
+</I>&gt;<i>  			&quot;   %-5s     %03X    %08x  %08lx  %08lx  %8ld  %s\n&quot;;
+</I>&gt;<i>  
+</I>&gt;<i>  		seq_printf(m, fmt, DNAME(dev), r-&gt;can_id, r-&gt;mask,
+</I>&gt;<i> -				(unsigned long)r-&gt;func, (unsigned long)r-&gt;data,
+</I>&gt;<i> -				r-&gt;matches, r-&gt;ident);
+</I>&gt;<i> +#ifdef CONFIG_CAN_DEBUG_NETLAYER
+</I>&gt;<i> +			   (unsigned long)r-&gt;func, (unsigned long)r-&gt;data,
+</I>&gt;<i> +#else
+</I>&gt;<i> +			   0, 0,
+</I>&gt;<i> +#endif
+</I>&gt;<i> +			   r-&gt;matches, r-&gt;ident);
+</I>&gt;<i>  	}
+</I>&gt;<i>  }
+</I>
+cheers, Marc
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101104/b3e07887/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101104/b3e07887/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004913.html">CAN procfs rework
+</A></li>
+	<LI>Next message: <A HREF="004915.html">CAN procfs rework
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4914">[ date ]</a>
+              <a href="thread.html#4914">[ thread ]</a>
+              <a href="subject.html#4914">[ subject ]</a>
+              <a href="author.html#4914">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

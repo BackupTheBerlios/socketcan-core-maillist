@@ -1,0 +1,141 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/10%5D%20SJA1000DEV%20using%20device%20interface%20and%20further%20fixes%0A%09and%20improvements&In-Reply-To=%3C47448E3D.8080104%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000825.html">
+   <LINK REL="Next"  HREF="000832.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/10%5D%20SJA1000DEV%20using%20device%20interface%20and%20further%20fixes%0A%09and%20improvements&In-Reply-To=%3C47448E3D.8080104%40hartkopp.net%3E"
+       TITLE="[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements">socketcan at hartkopp.net
+       </A><BR>
+    <I>Wed Nov 21 20:59:57 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000825.html">[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements
+</A></li>
+        <LI>Next message: <A HREF="000832.html">[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#830">[ date ]</a>
+              <a href="thread.html#830">[ thread ]</a>
+              <a href="subject.html#830">[ subject ]</a>
+              <a href="author.html#830">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Sam Ravnborg wrote:
+&gt;<i> Hi Wolfgang.
+</I>&gt;<i>
+</I>&gt;<i> A few comments..
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>&gt;&gt;<i> o sja1000-dev-interface.patch
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   It provides the improved driver for the SJA1000 using the existing
+</I>&gt;&gt;<i>   CAN device interface in &quot;drivers/net/can/sja1000dev&quot;. I have some
+</I>&gt;&gt;<i>   further improvements concerning names in mind (prefixes), but that's
+</I>&gt;&gt;<i>   a minor issue. I didn't want to change to much.
+</I>&gt;&gt;<i>     
+</I>&gt;<i>
+</I>&gt;<i> The kernel approach is use keep drives in the same directory unless they
+</I>&gt;<i> are complicated (as in &gt; 3 files).
+</I>&gt;<i>   
+</I>
+Yes. The cleanup from Wolfgang should make it possible to remove these 
+directories.
+
+&gt;<i> +#define CONFIG_CAN_DEBUG_DEVICES
+</I>&gt;<i> +#ifdef CONFIG_CAN_DEBUG_DEVICES
+</I>&gt;<i> +#define DBG(args...)   ((priv-&gt;debug &gt; 0) ? printk(args) : 0)
+</I>&gt;<i> +/* logging in interrupt context! */
+</I>&gt;<i> +#define iDBG(args...)  ((priv-&gt;debug &gt; 1) ? printk(args) : 0)
+</I>&gt;<i> +#define iiDBG(args...) ((priv-&gt;debug &gt; 2) ? printk(args) : 0)
+</I>&gt;<i> +#else
+</I>&gt;<i> +#define DBG(args...)
+</I>&gt;<i> +#define iDBG(args...)
+</I>&gt;<i> +#define iiDBG(args...)
+</I>&gt;<i> +#endif
+</I>&gt;<i> Should use one of the existing driver debug message frameworks.
+</I>&gt;<i>   
+</I>
+Definitely! This is 'old stuff' and as i've seen there is some netdev 
+debug facility that should be used. These cleanups won't bring the code 
+to the style that would be needed on netdev ML in the first step ;-)
+&gt;<i> +module_param(speed, int, 0);
+</I>&gt;<i> +module_param(btr, int, 0);
+</I>&gt;<i> +module_param(debug, int, 0);
+</I>&gt;<i> +module_param(restart_ms, int, 0);
+</I>&gt;<i>
+</I>&gt;<i> Why '0' in permission here?
+</I>&gt;<i>   
+</I>
+Didn't ever look at this in detail two years ago :-/
+
+&gt;<i> +static void can_restart_dev(unsigned long data);
+</I>&gt;<i> +static void chipset_init(struct net_device *dev, int wake);
+</I>&gt;<i> +static void chipset_init_trx(struct net_device *dev);
+</I>&gt;<i> +int set_reset_mode(struct net_device *dev);
+</I>&gt;<i>
+</I>&gt;<i> It is often good practice to arrange functions so forward declarations are not needed.
+</I>&gt;<i>   
+</I>
+Yes, i know this also now. I rearranged many code in the CAN core for 
+that reason. One additional point, why the code is not kernel style 
+right now.
+
+
+(..)
+
+&gt;<i> --- trunk.orig/kernel/2.6/net/can/proc.c
+</I>&gt;<i> +++ trunk/kernel/2.6/net/can/proc.c
+</I>&gt;<i> @@ -46,6 +46,8 @@
+</I>&gt;<i>
+</I>&gt;<i> General comment.. The direction is to restrict /proc to process
+</I>&gt;<i> information and keep info such as what the CAN subsystem provides
+</I>&gt;<i> in dedicated &quot;one-value-per-file&quot; sysfs files.
+</I>&gt;<i>   
+</I>
+Oh. Thanks for this remark! Robert already acceded to use the sysfs for 
+the CAN netdrivers in another mail and looking into the sysfs i feel the 
+same :-)
+
+So the CAN netdevices could be found e.g. under /sys/class/net/can0 , right?
+
+Oliver
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000825.html">[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements
+</A></li>
+	<LI>Next message: <A HREF="000832.html">[PATCH 0/10] SJA1000DEV using device interface and further fixes	and improvements
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#830">[ date ]</a>
+              <a href="thread.html#830">[ thread ]</a>
+              <a href="subject.html#830">[ subject ]</a>
+              <a href="author.html#830">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

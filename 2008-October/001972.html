@@ -1,0 +1,195 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> loopback default - was Re: MCP251x driver against SVN-835
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20loopback%20default%20-%20was%20Re%3A%20MCP251x%20driver%20against%20SVN-835&In-Reply-To=%3C48F4EABD.2040004%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001970.html">
+   <LINK REL="Next"  HREF="001973.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>loopback default - was Re: MCP251x driver against SVN-835</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20loopback%20default%20-%20was%20Re%3A%20MCP251x%20driver%20against%20SVN-835&In-Reply-To=%3C48F4EABD.2040004%40hartkopp.net%3E"
+       TITLE="loopback default - was Re: MCP251x driver against SVN-835">socketcan at hartkopp.net
+       </A><BR>
+    <I>Tue Oct 14 20:53:49 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001970.html">loopback default - was Re: MCP251x driver against SVN-835
+</A></li>
+        <LI>Next message: <A HREF="001973.html">loopback default - was Re: MCP251x driver against SVN-835
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1972">[ date ]</a>
+              <a href="thread.html#1972">[ thread ]</a>
+              <a href="subject.html#1972">[ subject ]</a>
+              <a href="author.html#1972">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Sorry - i mixed up my answer with IFF_ECHO handling.
+
+But still there should be some sanity check if a driver supports
+
+#define CAN_CTRLMODE_LOOPBACK 0x1
+#define CAN_CTRLMODE_LISTENONLY 0x2
+#define CAN_CTRLMODE_3_SAMPLES 0x4 /* Triple sampling mode */
+
+(which is always disabled at netdev creation time!)
+
+So what about:
+
+Index: include/linux/can/dev.h
+===================================================================
+--- include/linux/can/dev.h (Revision 836)
++++ include/linux/can/dev.h (Arbeitskopie)
+@@ -104,6 +104,7 @@
+
+enum can_state state;
+u32 ctrlmode;
++ u32 *ctrlmode_capabilities_const;
+
+int restart_ms;
+struct timer_list timer;
+Index: drivers/net/can/sysfs.c
+===================================================================
+--- drivers/net/can/sysfs.c (Revision 836)
++++ drivers/net/can/sysfs.c (Arbeitskopie)
+@@ -133,11 +133,17 @@
+static int change_can_ctrlmode(struct net_device *dev, unsigned long 
+ctrlmode)
+{
+struct can_priv *priv = netdev_priv(dev);
++ u32 *ctrlmode_capabilities_const = priv-&gt;ctrlmode_capabilities_const;
+int err = 0;
+
+if (priv-&gt;state != CAN_STATE_STOPPED)
+return -EBUSY;
+
++ BUG_ON(!ctrlmode_capabilities_const);
++
++ if ((ctrlmode &amp; *ctrlmode_capabilities_const) != ctrlmode)
++ return -EINVAL;
++
+if (priv-&gt;do_set_ctrlmode)
+err = priv-&gt;do_set_ctrlmode(dev, ctrlmode);
+
+Index: drivers/net/can/sja1000/sja1000.c
+===================================================================
+--- drivers/net/can/sja1000/sja1000.c (Revision 836)
++++ drivers/net/can/sja1000/sja1000.c (Arbeitskopie)
+@@ -143,6 +143,8 @@
+.brp_inc = 1,
+};
+
++static const u32 sja1000_capabilities_const = 0;
++
+static int debug;
+
+module_param(debug, int, S_IRUGO | S_IWUSR);
+@@ -762,6 +764,7 @@
+
+priv-&gt;can.bittiming_const = &amp;sja1000_bittiming_const;
+priv-&gt;can.do_set_bittiming = sja1000_set_bittiming;
++ priv-&gt;can.ctrlmode_capabilities_const = (u32 *) 
+&amp;sja1000_capabilities_const;
+priv-&gt;can.do_get_state = sja1000_get_state;
+priv-&gt;can.do_set_mode = sja1000_set_mode;
+priv-&gt;dev = dev;
+
+Just for discussion ...
+
+Oliver
+
+
+Oliver Hartkopp wrote:
+&gt;<i> Christian Pellegrin wrote:
+</I>&gt;<i>   
+</I>&gt;&gt;<i> Fixes for the MCP251x driver.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> (..)
+</I>&gt;&gt;<i> @@ -1098,7 +1080,8 @@
+</I>&gt;&gt;<i>  	ret = register_netdev(net);
+</I>&gt;&gt;<i>  	if (ret &gt;= 0) {
+</I>&gt;&gt;<i>  		dev_info(&amp;spi-&gt;dev, &quot;probed%s\n&quot;,
+</I>&gt;&gt;<i> -			(loopback) ? &quot; (loopback)&quot; : &quot;&quot;);
+</I>&gt;&gt;<i> +			(priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_LOOPBACK) ?
+</I>&gt;&gt;<i> +			 &quot; (loopback)&quot; : &quot;&quot;);
+</I>&gt;&gt;<i>  		return ret;
+</I>&gt;&gt;<i>  	}
+</I>&gt;&gt;<i>  
+</I>&gt;&gt;<i>   
+</I>&gt;&gt;<i>     
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Sorry, i missed one thing - that brought up a completely different question.
+</I>&gt;<i>
+</I>&gt;<i>  From what i know the loopback mode can be set via sysfs AFTER netdev 
+</I>&gt;<i> creation BEFORE bringing the interface up.
+</I>&gt;<i>
+</I>&gt;<i> So this information output in the code above IMO *always* indicates an 
+</I>&gt;<i> *unset* loopback handling.
+</I>&gt;<i>
+</I>&gt;<i> @Wolfgang: Is this the intention?
+</I>&gt;<i>
+</I>&gt;<i> IMO the driver should set this ctrlmode bit at netdev creation time 
+</I>&gt;<i> according to it's real capabilities:
+</I>&gt;<i>
+</I>&gt;<i> Driver supports loopback: set  priv-&gt;can.ctrlmode |= CAN_CTRLMODE_LOOPBACK
+</I>&gt;<i> Driver does not support loopback: leave priv-&gt;can.ctrlmode as it is
+</I>&gt;<i>
+</I>&gt;<i> This bit could then be changed (reasonable == from 1 to 0) when the 
+</I>&gt;<i> interface is down. But you can not enable CAN_CTRLMODE_LOOPBACK when the 
+</I>&gt;<i> driver does not have these capabilities.
+</I>&gt;<i>
+</I>&gt;<i> Hm. From what i've seen we do not have any code so far that implements 
+</I>&gt;<i> this kind of handling nor any sanity checks, right?
+</I>&gt;<i>
+</I>&gt;<i> IMO we need to check the ctrlmode bits according to the drivers 
+</I>&gt;<i> capabilites (for all those bits). Maybe we must create a new value like 
+</I>&gt;<i> const u32 can_ctrlmode_capabilities that indicates which bits can be set 
+</I>&gt;<i> in can_ctrlmode via sysfs.
+</I>&gt;<i>
+</I>&gt;<i> The default settings need to be set at netdev creation time anyway.
+</I>&gt;<i>
+</I>&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>&gt;<i>
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> Socketcan-core mailing list
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>&gt;<i>   
+</I>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001970.html">loopback default - was Re: MCP251x driver against SVN-835
+</A></li>
+	<LI>Next message: <A HREF="001973.html">loopback default - was Re: MCP251x driver against SVN-835
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1972">[ date ]</a>
+              <a href="thread.html#1972">[ thread ]</a>
+              <a href="subject.html#1972">[ subject ]</a>
+              <a href="author.html#1972">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

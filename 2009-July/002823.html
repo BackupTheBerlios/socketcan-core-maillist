@@ -1,0 +1,185 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH V3] CAN: Add Flexcan CAN controller driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V3%5D%20CAN%3A%20Add%20Flexcan%20CAN%20controller%20driver&In-Reply-To=%3C4A7011BA.7040906%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002822.html">
+   <LINK REL="Next"  HREF="002824.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH V3] CAN: Add Flexcan CAN controller driver</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V3%5D%20CAN%3A%20Add%20Flexcan%20CAN%20controller%20driver&In-Reply-To=%3C4A7011BA.7040906%40grandegger.com%3E"
+       TITLE="[PATCH V3] CAN: Add Flexcan CAN controller driver">wg at grandegger.com
+       </A><BR>
+    <I>Wed Jul 29 11:09:14 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002822.html">[PATCH V3] CAN: Add Flexcan CAN controller driver
+</A></li>
+        <LI>Next message: <A HREF="002824.html">[PATCH V3] CAN: Add Flexcan CAN controller driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2823">[ date ]</a>
+              <a href="thread.html#2823">[ thread ]</a>
+              <a href="subject.html#2823">[ subject ]</a>
+              <a href="author.html#2823">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Sascha Hauer wrote:
+&gt;<i> And another go...
+</I>&gt;<i> 
+</I>&gt;<i> Sascha
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;&gt;<i>From 9f6f6fb67d57d082e056dec8121f1423c1b4fa0b Mon Sep 17 00:00:00 2001
+</I>&gt;<i> From: Sascha Hauer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;
+</I>&gt;<i> Date: Tue, 21 Jul 2009 10:47:19 +0200
+</I>&gt;<i> Subject: [PATCH] CAN: Add Flexcan CAN driver
+</I>&gt;<i> 
+</I>&gt;<i> This core is found on some Freescale SoCs and also some Coldfire
+</I>&gt;<i> SoCs. Support for Coldfire is missing though at the moment as
+</I>&gt;<i> they have an older revision of the core which does not have RX FIFO
+</I>&gt;<i> support.
+</I>&gt;<i> 
+</I>&gt;<i> V3: integrated comments from Oliver Hartkopp
+</I>&gt;<i> V2: integrated comments from Wolfgang Grandegger
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Sascha Hauer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;
+</I>&gt;<i> ---
+</I>&gt;<i>  drivers/net/can/Kconfig   |    6 +
+</I>&gt;<i>  drivers/net/can/Makefile  |    1 +
+</I>&gt;<i>  drivers/net/can/flexcan.c |  719 +++++++++++++++++++++++++++++++++++++++++++++
+</I>&gt;<i>  3 files changed, 726 insertions(+), 0 deletions(-)
+</I>&gt;<i>  create mode 100644 drivers/net/can/flexcan.c
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/Kconfig b/drivers/net/can/Kconfig
+</I>&gt;<i> index 33821a8..99c6da4 100644
+</I>&gt;<i> --- a/drivers/net/can/Kconfig
+</I>&gt;<i> +++ b/drivers/net/can/Kconfig
+</I>&gt;<i> @@ -74,6 +74,12 @@ config CAN_KVASER_PCI
+</I>&gt;<i>  	  This driver is for the the PCIcanx and PCIcan cards (1, 2 or
+</I>&gt;<i>  	  4 channel) from Kvaser (<A HREF="http://www.kvaser.com">http://www.kvaser.com</A>).
+</I>&gt;<i>  
+</I>&gt;<i> +config CAN_FLEXCAN
+</I>&gt;<i> +	tristate &quot;Support for Freescale FLEXCAN based chips&quot;
+</I>&gt;<i> +	depends on CAN_DEV
+</I>&gt;<i> +	---help---
+</I>&gt;<i> +	  Say Y here if you want to support for Freescale FlexCAN.
+</I>&gt;<i> +
+</I>&gt;<i>  config CAN_DEBUG_DEVICES
+</I>&gt;<i>  	bool &quot;CAN devices debugging messages&quot;
+</I>&gt;<i>  	depends on CAN
+</I>&gt;<i> diff --git a/drivers/net/can/Makefile b/drivers/net/can/Makefile
+</I>&gt;<i> index 523a941..25f2032 100644
+</I>&gt;<i> --- a/drivers/net/can/Makefile
+</I>&gt;<i> +++ b/drivers/net/can/Makefile
+</I>&gt;<i> @@ -8,5 +8,6 @@ obj-$(CONFIG_CAN_DEV)		+= can-dev.o
+</I>&gt;<i>  can-dev-y			:= dev.o
+</I>&gt;<i>  
+</I>&gt;<i>  obj-$(CONFIG_CAN_SJA1000)	+= sja1000/
+</I>&gt;<i> +obj-$(CONFIG_CAN_FLEXCAN)	+= flexcan.o
+</I>&gt;<i>  
+</I>&gt;<i>  ccflags-$(CONFIG_CAN_DEBUG_DEVICES) := -DDEBUG
+</I>&gt;<i> diff --git a/drivers/net/can/flexcan.c b/drivers/net/can/flexcan.c
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..77661b3
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/flexcan.c
+</I>[...]
+&gt;<i> +static void flexcan_error(struct net_device *ndev, u32 stat)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct can_frame *cf;
+</I>&gt;<i> +	struct sk_buff *skb;
+</I>&gt;<i> +	struct flexcan_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> +	struct net_device_stats *stats = &amp;ndev-&gt;stats;
+</I>&gt;<i> +	enum can_state state = priv-&gt;can.state;
+</I>&gt;<i> +	int error_warning = 0, rx_errors = 0, tx_errors = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	skb = dev_alloc_skb(sizeof(struct can_frame));
+</I>&gt;<i> +	if (!skb)
+</I>&gt;<i> +		return;
+</I>&gt;<i> +
+</I>&gt;<i> +	skb-&gt;dev = ndev;
+</I>&gt;<i> +	skb-&gt;protocol = __constant_htons(ETH_P_CAN);
+</I>&gt;<i> +	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+</I>&gt;<i> +
+</I>&gt;<i> +	cf = (struct can_frame *)skb_put(skb, sizeof(*cf));
+</I>&gt;<i> +	memset(cf, 0, sizeof(*cf));
+</I>&gt;<i> +
+</I>&gt;<i> +	cf-&gt;can_id = CAN_ERR_FLAG;
+</I>&gt;<i> +	cf-&gt;can_dlc = CAN_ERR_DLC;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (stat &amp; ERRSTAT_RWRNINT) {
+</I>&gt;<i> +		error_warning = 1;
+</I>&gt;<i> +		cf-&gt;data[1] |= CAN_ERR_CRTL_RX_WARNING;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (stat &amp; ERRSTAT_TWRNINT) {
+</I>&gt;<i> +		error_warning = 1;
+</I>&gt;<i> +		cf-&gt;data[1] |= CAN_ERR_CRTL_TX_WARNING;
+</I>&gt;<i> +	}
+</I>
+What is the meaning of this error warning interrupt? It does *not*
+change the state.
+
+&gt;<i> +	switch ((stat &gt;&gt; 4) &amp; 0x3) {
+</I>&gt;<i> +	case 0:
+</I>&gt;<i> +		state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case 1:
+</I>&gt;<i> +		state = CAN_STATE_ERROR_PASSIVE;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	default:
+</I>&gt;<i> +		state = CAN_STATE_BUS_OFF;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	}
+</I>
+I'm still not happy with the error message generation. If a state change
+to error passive happens, it should be signaled to the user. Here my ideas:
+
+	if (state != priv-&gt;can.state) {
+		if (state == CAN_STATE_ERROR_WARNING) {
+			cf-&gt;data[1] |= CAN_ERR_CRTL_RX_WARNING;
+			priv-&gt;can.can_stats.error_warning++;
+		} else if (state == CAN_STATE_ERROR_PASSIVE) {
+			cf-&gt;data[1] |= CAN_ERR_CRTL_RX_PASSIVE;
+			priv-&gt;can.can_stats.error_passive++;
+		}
+
+It might have missed something, though.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002822.html">[PATCH V3] CAN: Add Flexcan CAN controller driver
+</A></li>
+	<LI>Next message: <A HREF="002824.html">[PATCH V3] CAN: Add Flexcan CAN controller driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2823">[ date ]</a>
+              <a href="thread.html#2823">[ thread ]</a>
+              <a href="subject.html#2823">[ subject ]</a>
+              <a href="author.html#2823">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

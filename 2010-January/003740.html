@@ -1,0 +1,164 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%202/3%5D%20can%3A%20mscan-mpc5xxx%3A%20add%20support%20for%20the%0A%09MPC521x%20processor&In-Reply-To=%3C20100104172209.GC4665%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003738.html">
+   <LINK REL="Next"  HREF="003741.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor</H1>
+    <B>Wolfram Sang</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%202/3%5D%20can%3A%20mscan-mpc5xxx%3A%20add%20support%20for%20the%0A%09MPC521x%20processor&In-Reply-To=%3C20100104172209.GC4665%40pengutronix.de%3E"
+       TITLE="[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor">w.sang at pengutronix.de
+       </A><BR>
+    <I>Mon Jan  4 18:22:09 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003738.html">[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor
+</A></li>
+        <LI>Next message: <A HREF="003741.html">[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3740">[ date ]</a>
+              <a href="thread.html#3740">[ thread ]</a>
+              <a href="subject.html#3740">[ subject ]</a>
+              <a href="author.html#3740">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+&gt;<i> Nice. Just for curiosity, what clock and frequency does it select on
+</I>&gt;<i> your board? It should be listed when the driver is loaded.
+</I>
+Using this simple dts-snipplet
+
+                <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mscan at 1300</A> {
+                        compatible = &quot;fsl,mpc5121-mscan&quot;;
+                        cell-index = &lt;0&gt;;
+                        interrupts = &lt;12 8&gt;;
+                        interrupt-parent = &lt; &amp;ipic &gt;;
+                        reg = &lt;0x1300 0x80&gt;;
+                };
+
+I get this output:
+
+mpc5xxx_can 80001300.mscan: using 'sys_clk' with frequency divider 25
+mpc5xxx_can 80001300.mscan: MSCAN at 0xe1064300, irq 16, clock 16000000 Hz
+
+mpc5xxx_can 80001380.mscan: using 'sys_clk' with frequency divider 25
+mpc5xxx_can 80001380.mscan: MSCAN at 0xe106c380, irq 17, clock 16000000 Hz
+
+
+&gt;<i> &gt; My idea was: it might be nice to save both #else-branches and the if-clause in
+</I>&gt;<i> &gt; probe() which calls this get_clock() or the other (and then another in case
+</I>&gt;<i> &gt; there will be a new mpc5xyz-user in the future). And replace it with some
+</I>&gt;<i> &gt; mpc5xxx_custom_init() which is taken from of_device_id-&gt;data. No big issue,
+</I>&gt;<i> &gt; though; no show-stopper.
+</I>&gt;<i> 
+</I>&gt;<i> You mean like in the i2c-mpc driver:
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://lxr.linux.no/#linux+v2.6.32/drivers/i2c/busses/i2c-mpc.c#L585">http://lxr.linux.no/#linux+v2.6.32/drivers/i2c/busses/i2c-mpc.c#L585</A>
+</I>
+Yes.
+
+&gt;<i> No problem, if I handle the regs property inside the mpc5121-specific
+</I>&gt;<i> function. The #ifdef's are for *space saving*. If nobody else than me
+</I>&gt;<i> cares, I will remove them.
+</I>
+I'd be fine with keeping them.
+
+&gt;<i> &gt;&gt;&gt;&gt; +
+</I>&gt;<i> &gt;&gt;&gt;&gt; +#ifdef CONFIG_PPC_MPC512x
+</I>&gt;<i> &gt;&gt;&gt;&gt; +struct mpc512x_clockctl {
+</I>&gt;<i> &gt;&gt;&gt;&gt; +	u32 spmr;		/* System PLL Mode Reg */
+</I>&gt;<i> &gt;&gt;&gt;&gt; +	u32 sccr[2];		/* System Clk Ctrl Reg 1 &amp; 2 */
+</I>&gt;<i> &gt;&gt;&gt;&gt; +	u32 scfr1;		/* System Clk Freq Reg 1 */
+</I>&gt;<i> &gt;&gt;&gt;&gt; +	u32 scfr2;		/* System Clk Freq Reg 2 */
+</I>&gt;<i> &gt;&gt;&gt;&gt; +	u32 reserved;
+</I>&gt;<i> &gt;&gt;&gt;&gt; +	u32 bcr;		/* Bread Crumb Reg */
+</I>&gt;<i> &gt;&gt;&gt;&gt; +	u32 pccr[12];		/* PSC Clk Ctrl Reg 0-11 */
+</I>&gt;<i> &gt;&gt;&gt;&gt; +	u32 spccr;		/* SPDIF Clk Ctrl Reg */
+</I>&gt;<i> &gt;&gt;&gt;&gt; +	u32 cccr;		/* CFM Clk Ctrl Reg */
+</I>&gt;<i> &gt;&gt;&gt;&gt; +	u32 dccr;		/* DIU Clk Cnfg Reg */
+</I>&gt;<i> &gt;&gt;&gt;&gt; +	u32 mccr[4];		/* MSCAN Clk Ctrl Reg 1-3 */
+</I>&gt;<i> &gt;&gt;&gt;&gt; +};
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I wonder if this (and the occurence in clock.c) should be factored out and
+</I>&gt;<i> &gt; moved to asm/mpc5xxx.h?
+</I>&gt;<i> 
+</I>&gt;<i> I was thinking about that as well but mpc5xxx.h seems not (yet) to be a
+</I>&gt;<i> popular place to store mpc5xxx related definitions.
+</I>
+Probably because the mpc5121 is not very popular when it comes to mainline
+activity. (BTW, I also wondered why it is not named mpc512x.h as I'd think
+mpc5xxx is for common stuff between mpc5200 and mpc5121. But this is another
+issue, not relevant here.)
+
+&gt;<i> &gt; One further note: I couldn't spot any code handling Rev1 of the MPC5121? Do you
+</I>&gt;<i> &gt; plan to add such code? If not, we should at least put a comment that it is
+</I>&gt;<i> &gt; missing. The binding documentation should be updated as well, as you can't use
+</I>&gt;<i> &gt; all options on such revisions.
+</I>&gt;<i> 
+</I>&gt;<i> Do we have rev1 support in the mainline kernel? I also understood that
+</I>&gt;<i> there are only a few devel boards out there with v1 CPUs. If necessary,
+</I>&gt;<i> this could be fixed later on demand. But it should be documented, e.g.
+</I>&gt;<i> in the KConfig and dts bindings doc, of course.
+</I>
+Yup, documenting it will do.
+
+&gt;<i> Did you have a chance to test bus-off recovery? I just realized one
+</I>&gt;<i> issue if the device is stopped while in bus-off.
+</I>
+Sorry, I just did basic transfer-tests as I am currently busy with other
+projects.
+
+&gt;<i> Will come up with a v2 patch soon...
+</I>
+Please do an s/latetr/latter/ before posting it :)
+
+Regards,
+
+   Wolfram
+
+-- 
+Pengutronix e.K.                           | Wolfram Sang                |
+Industrial Linux Solutions                 | <A HREF="http://www.pengutronix.de/">http://www.pengutronix.de/</A>  |
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 197 bytes
+Desc: Digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20100104/28cf36f4/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20100104/28cf36f4/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003738.html">[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor
+</A></li>
+	<LI>Next message: <A HREF="003741.html">[PATCH net-next 2/3] can: mscan-mpc5xxx: add support for the	MPC521x processor
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3740">[ date ]</a>
+              <a href="thread.html#3740">[ thread ]</a>
+              <a href="subject.html#3740">[ subject ]</a>
+              <a href="author.html#3740">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

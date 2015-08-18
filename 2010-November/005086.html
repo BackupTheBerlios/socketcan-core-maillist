@@ -1,0 +1,268 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 05/19 v5] can: EG20T PCH: Delete unnecessary	spin_lock
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%2005/19%20v5%5D%20can%3A%20EG20T%20PCH%3A%20Delete%20unnecessary%0A%09spin_lock&In-Reply-To=%3C4CEF16F1.3030603%40dsn.okisemi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005085.html">
+   <LINK REL="Next"  HREF="005087.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 05/19 v5] can: EG20T PCH: Delete unnecessary	spin_lock</H1>
+    <B>Tomoya MORINAGA</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%2005/19%20v5%5D%20can%3A%20EG20T%20PCH%3A%20Delete%20unnecessary%0A%09spin_lock&In-Reply-To=%3C4CEF16F1.3030603%40dsn.okisemi.com%3E"
+       TITLE="[PATCH net-next-2.6 05/19 v5] can: EG20T PCH: Delete unnecessary	spin_lock">tomoya-linux at dsn.okisemi.com
+       </A><BR>
+    <I>Fri Nov 26 03:09:53 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005085.html">[PATCH net-next-2.6 04/19 v5] can: EG20T PCH: Add Tx Flow Control
+</A></li>
+        <LI>Next message: <A HREF="005087.html">[PATCH net-next-2.6 06/19 v5] can: EG20T PCH: Fix endianness issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5086">[ date ]</a>
+              <a href="thread.html#5086">[ thread ]</a>
+              <a href="subject.html#5086">[ subject ]</a>
+              <a href="author.html#5086">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Delete unnecessary spin_lock
+ Delete unnecessary spin_lock for accessing Message Object.
+ Since all message objects are divided into tx/rx area completely,
+ spin_lock processing is unnecessary.
+
+Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+Acked-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+---
+ drivers/net/can/pch_can.c |   34 ----------------------------------
+ 1 files changed, 0 insertions(+), 34 deletions(-)
+
+diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+index 8686d93..6437e60 100644
+--- a/drivers/net/can/pch_can.c
++++ b/drivers/net/can/pch_can.c
+@@ -71,7 +71,6 @@
+ #define PCH_REC			0x00007f00
+ #define PCH_TEC			0x000000ff
+ 
+-
+ #define PCH_TX_OK		BIT(3)
+ #define PCH_RX_OK		BIT(4)
+ #define PCH_EPASSIV		BIT(5)
+@@ -178,7 +177,6 @@ struct pch_can_priv {
+ 	unsigned int int_enables;
+ 	unsigned int int_stat;
+ 	struct net_device *ndev;
+-	spinlock_t msgif_reg_lock; /* Message Interface Registers Access Lock*/
+ 	unsigned int msg_obj[PCH_TX_OBJ_END];
+ 	struct pch_can_regs __iomem *regs;
+ 	struct napi_struct napi;
+@@ -309,7 +307,6 @@ static void pch_can_check_if_busy(u32 __iomem *creq_addr, u32 num)
+ static void pch_can_set_rxtx(struct pch_can_priv *priv, u32 buff_num,
+ 			     u32 set, enum pch_ifreg dir)
+ {
+-	unsigned long flags;
+ 	u32 ie;
+ 
+ 	if (dir)
+@@ -317,7 +314,6 @@ static void pch_can_set_rxtx(struct pch_can_priv *priv, u32 buff_num,
+ 	else
+ 		ie = PCH_IF_MCONT_RXIE;
+ 
+-	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+ 	/* Reading the receive buffer data from RAM to Interface1 registers */
+ 	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[dir].cmask);
+ 	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[dir].creq, buff_num);
+@@ -338,10 +334,8 @@ static void pch_can_set_rxtx(struct pch_can_priv *priv, u32 buff_num,
+ 	}
+ 
+ 	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[dir].creq, buff_num);
+-	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+ }
+ 
+-
+ static void pch_can_set_rx_all(struct pch_can_priv *priv, u32 set)
+ {
+ 	int i;
+@@ -363,7 +357,6 @@ static void pch_can_set_tx_all(struct pch_can_priv *priv, u32 set)
+ static u32 pch_can_get_rxtx_ir(struct pch_can_priv *priv, u32 buff_num,
+ 			       enum pch_ifreg dir)
+ {
+-	unsigned long flags;
+ 	u32 ie, enable;
+ 
+ 	if (dir)
+@@ -371,7 +364,6 @@ static u32 pch_can_get_rxtx_ir(struct pch_can_priv *priv, u32 buff_num,
+ 	else
+ 		ie = PCH_IF_MCONT_TXIE;
+ 
+-	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+ 	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[dir].cmask);
+ 	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[dir].creq, buff_num);
+ 
+@@ -381,7 +373,6 @@ static u32 pch_can_get_rxtx_ir(struct pch_can_priv *priv, u32 buff_num,
+ 	} else {
+ 		enable = 0;
+ 	}
+-	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+ 	return enable;
+ }
+ 
+@@ -393,9 +384,6 @@ static int pch_can_int_pending(struct pch_can_priv *priv)
+ static void pch_can_set_rx_buffer_link(struct pch_can_priv *priv,
+ 				       u32 buffer_num, u32 set)
+ {
+-	unsigned long flags;
+-
+-	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+ 	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+ 	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, buffer_num);
+ 	iowrite32(PCH_CMASK_RDWR | PCH_CMASK_CTRL,
+@@ -407,15 +395,11 @@ static void pch_can_set_rx_buffer_link(struct pch_can_priv *priv,
+ 		pch_can_bit_set(&amp;priv-&gt;regs-&gt;ifregs[0].mcont, PCH_IF_MCONT_EOB);
+ 
+ 	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, buffer_num);
+-	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+ }
+ 
+ static void pch_can_get_rx_buffer_link(struct pch_can_priv *priv,
+ 				       u32 buffer_num, u32 *link)
+ {
+-	unsigned long flags;
+-
+-	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+ 	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[0].cmask);
+ 	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[0].creq, buffer_num);
+ 
+@@ -423,7 +407,6 @@ static void pch_can_get_rx_buffer_link(struct pch_can_priv *priv,
+ 		*link = PCH_DISABLE;
+ 	else
+ 		*link = PCH_ENABLE;
+-	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+ }
+ 
+ static void pch_can_clear_buffers(struct pch_can_priv *priv)
+@@ -468,9 +451,6 @@ static void pch_can_clear_buffers(struct pch_can_priv *priv)
+ static void pch_can_config_rx_tx_buffers(struct pch_can_priv *priv)
+ {
+ 	int i;
+-	unsigned long flags;
+-
+-	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+ 
+ 	for (i = PCH_RX_OBJ_START; i &lt;= PCH_RX_OBJ_END; i++) {
+ 		iowrite32(PCH_CMASK_RX_TX_GET,
+@@ -529,7 +509,6 @@ static void pch_can_config_rx_tx_buffers(struct pch_can_priv *priv)
+ 
+ 		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[1].creq, i);
+ 	}
+-	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+ }
+ 
+ static void pch_can_init(struct pch_can_priv *priv)
+@@ -845,7 +824,6 @@ static int pch_can_rx_poll(struct napi_struct *napi, int quota)
+ 	u32 int_stat;
+ 	int rcv_pkts = 0;
+ 	u32 reg_stat;
+-	unsigned long flags;
+ 
+ 	int_stat = pch_can_int_pending(priv);
+ 	if (!int_stat)
+@@ -860,12 +838,10 @@ INT_STAT:
+ 		}
+ 
+ 		if (reg_stat &amp; PCH_TX_OK) {
+-			spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+ 			iowrite32(PCH_CMASK_RX_TX_GET,
+ 				  &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+ 			pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[1].creq,
+ 					       ioread32(&amp;priv-&gt;regs-&gt;intr));
+-			spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+ 			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;stat, PCH_TX_OK);
+ 		}
+ 
+@@ -879,22 +855,18 @@ INT_STAT:
+ 
+ MSG_OBJ:
+ 	if ((int_stat &gt;= PCH_RX_OBJ_START) &amp;&amp; (int_stat &lt;= PCH_RX_OBJ_END)) {
+-		spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+ 		rcv_pkts = pch_can_rx_normal(ndev, int_stat);
+-		spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+ 		if (rcv_pkts &lt; 0)
+ 			return 0;
+ 	} else if ((int_stat &gt;= PCH_TX_OBJ_START) &amp;&amp;
+ 		   (int_stat &lt;= PCH_TX_OBJ_END)) {
+ 		/* Handle transmission interrupt */
+ 		can_get_echo_skb(ndev, int_stat - PCH_RX_OBJ_END - 1);
+-		spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+ 		iowrite32(PCH_CMASK_RX_TX_GET | PCH_CMASK_CLRINTPND,
+ 			  &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+ 		dlc = ioread32(&amp;priv-&gt;regs-&gt;ifregs[1].mcont) &amp;
+ 			       PCH_IF_MCONT_DLC;
+ 		pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[1].creq, int_stat);
+-		spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+ 		if (dlc &gt; 8)
+ 			dlc = 8;
+ 		stats-&gt;tx_bytes += dlc;
+@@ -1042,7 +1014,6 @@ static int pch_close(struct net_device *ndev)
+ static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+ {
+ 	int i, j;
+-	unsigned long flags;
+ 	struct pch_can_priv *priv = netdev_priv(ndev);
+ 	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+ 	int tx_buffer_avail = 0;
+@@ -1061,9 +1032,6 @@ static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+ 		priv-&gt;tx_obj++;
+ 	}
+ 
+-	/* Attaining the lock. */
+-	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+-
+ 	/* Reading the Msg Obj from the Msg RAM to the Interface register. */
+ 	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+ 	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[1].creq, tx_buffer_avail);
+@@ -1115,8 +1083,6 @@ static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+ 
+ 	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[1].creq, tx_buffer_avail);
+ 
+-	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+-
+ 	return NETDEV_TX_OK;
+ }
+ 
+-- 
+1.6.0.6
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005085.html">[PATCH net-next-2.6 04/19 v5] can: EG20T PCH: Add Tx Flow Control
+</A></li>
+	<LI>Next message: <A HREF="005087.html">[PATCH net-next-2.6 06/19 v5] can: EG20T PCH: Fix endianness issue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5086">[ date ]</a>
+              <a href="thread.html#5086">[ thread ]</a>
+              <a href="subject.html#5086">[ subject ]</a>
+              <a href="author.html#5086">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

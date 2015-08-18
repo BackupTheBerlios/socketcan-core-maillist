@@ -1,0 +1,231 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Self-reception and more
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Self-reception%20and%20more&In-Reply-To=%3C166589D0B9DD2547A1319599B9BADA1F53AB0F%40vsv-exchange.ixxat.intranet.priv%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004640.html">
+   <LINK REL="Next"  HREF="004651.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Self-reception and more</H1>
+    <B>gribov at ixxat.de</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Self-reception%20and%20more&In-Reply-To=%3C166589D0B9DD2547A1319599B9BADA1F53AB0F%40vsv-exchange.ixxat.intranet.priv%3E"
+       TITLE="Self-reception and more">gribov at ixxat.de
+       </A><BR>
+    <I>Mon Sep 20 16:28:00 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004640.html">[MeeGo-Dev][PATCH v2] Topcliff: Update PCH_CAN driver to 2.6.35
+</A></li>
+        <LI>Next message: <A HREF="004651.html">Self-reception and more
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4650">[ date ]</a>
+              <a href="thread.html#4650">[ thread ]</a>
+              <a href="subject.html#4650">[ subject ]</a>
+              <a href="author.html#4650">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello all,
+
+we are doing some CANopen stuff with SocketCAN again and I have 
+some questions / feature requests here.
+
+First the background to our use case:
+We have CANopen Client SDO (CSDO) functionality, which, from 
+the CAN Layer 2 point of view, is nothing more than sending 
+some CAN message (request) over CAN and waiting on the response. 
+So normally we send one message and wait for reception of the 
+message. The response shall arrive in specified time. If no 
+response message is received, the timeout condition shall be 
+signaled.
+
+So the question now is: when is the right moment to start CSDO
+timeout timer? Here we have few approaches:
+
+1) Start the timeout timer at the moment we write request message
+to the socket. 
+This simple approach have huge disadvantage - the moment of writing 
+CAN message to the socket is far from being the moment the recipient 
+will get it. So if doing like that, we start our timeout timer 
+before request message has achieve to the CAN bus. On heavy loaded 
+systems, with bigger CAN interface Tx queue length on sender side 
+and short timeout times, this can lead to CSDO signaling timeout 
+condition before the request CAN message even arrived the CAN bus!
+
+The SocketCAN framework has mechanism to improve the situation -
+this is the self-reception mechanism.
+
+2) So the better scenario may be to configure option
+CAN_RAW_RECV_OWN_MSGS for the socket, which is used for sending the
+CSDO request. The timeout countdown is than started on the self-
+reception of the CSDO request. We can even use the timestamp of the
+message for adjusting the timeout to be more precise (let call this 
+solution 2b).
+The problem with self-reception however is that we cannot distinguish
+on reception between messages &quot;truly&quot; received from other CAN nodes
+and messages, which are sent by ourselves. Here will be nice to have
+some per-message-self-reception-flag, which will immediately signal if
+the received message is self-reception message. 
+Another additional nice feature helping on this issue may be marking 
+the CAN message with some value similar to &quot;--set-mark&quot; used in 
+iptables to mark packets.
+
+
+Can you still follow me? Because I have to commit, the solution based
+On currently implemented and available self-reception is still not 
+perfect. The self-reception message is put to the Rx queue at the 
+moment we put Tx message to the CAN Tx buffer (passive interfaces) 
+or transmit queue of the active CAN interface (that is what I see for 
+SJA1000). This is still not the moment, when the CAN message is going 
+on the bus! Here is the figure to illustrate that (at least how I 
+understand the current implementation):
+
+
+         socket
+         write
+           |
+          (1)
+           |
+TxQueue  --********-----------------
+                  |
+                 (2a)
+                  |
+CAN buff ---------********----------
+                      |  |
+                      | (3)
+                      |  |
+CANbus  --------------***-----------
+                  |
+RxQueue ----------*************-----
+                              |
+                             (2)
+                              |
+                            socket
+                            read
+
+
+
+(1)  - moment we write CAN message to socket
+(2)  - moment we read written message over self-reception mechanism
+(2a) - moment the self-reception message is looped back to Rx queue
+(3)  - Tx interrupt of the CAN controller, the moment when CAN message
+       is actually sent. Correct start point for CSDO timeout countdown.
+
+
+So, for getting the really correct Tx time stamp, the self reception 
+message shall be written back to Rx queue and &quot;labeled&quot; with 
+timestamp at the moment it really sent on the CAN, means in Tx 
+interrupt:
+
+
+         socket
+         write
+           |
+          (1)
+           |
+TxQueue  --********--------------------
+                  |
+                 (2a)
+                  |
+CAN buff ---------********-------------
+                      |  |
+                      | (3)
+                      |  |
+CANbus  --------------***--------------
+                         |
+RxQueue -----------------*********-----
+                                 |
+                                (2)
+                                 |
+                               socket
+                               read
+
+
+If the self reception message is looped back to Rx queue in Tx 
+interrupt (3) end becomes time stamp exactly at this moment - when we 
+are getting the correct starting point for our timeout countdown. And 
+important issue - if we are using active CAN interface (the one with 
+own microcontroller), the timestamp shall be generated by 
+microcontroller and passed to SocketCAN driver.
+
+
+&lt;--------------------------------------------------------------------&gt;
+
+
+So, to sum that much stuff up:
+
+A) The proposal to extend CAN message with self reception flag. The
+   self-received messages will have that flag set. One of the 4 unused
+   bits of the can_frame.can_dlc may be e.g. used for that.
+B) Is it possible to label CAN packets in the similar way as done by
+   &quot;--set-mark&quot; in iptables?
+C) The looping back of self reception messages shall be done in CAN
+   Tx interrupt and not in the &quot;.ndo_start_xmit&quot; .
+D) Do we still need extra ioctl call to get the Rx message timestamp?
+   I remember the discussion about the possibility to pass timestamp 
+   with the message itself about two years ago.
+
+
+
+
+Regards and RFC,
+Vladislav
+
+
+Mit freundlichen Gr&#252;&#223;en / Kind regards,
+Dipl.-Ing. Vladislav Gribov MSc
+Development
+--------------------------------------------
+IXXAT Automation GmbH
+Leibnizstr. 15, 88250 Weingarten, Germany 
+Phone  +49-751-56146-0 
+Direct +49-751-56146-162
+Fax    +49-751-56146-29
+mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A>
+<A HREF="http://www.ixxat.de">http://www.ixxat.de</A>
+--------------------------------------------
+PRIVILEGED AND CONFIDENTIAL.
+Any unauthorized use or disclosure
+is strictly prohibited.
+--------------------------------------------
+Sitz der Gesellschaft: Weingarten
+Handelsregister Ulm HRB 551905
+Gesch&#228;ftsf&#252;hrer:
+Dipl.-Ing. Christian Schlegel,
+Dipl.-Ing. Werner Sauter
+--------------------------------------------
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004640.html">[MeeGo-Dev][PATCH v2] Topcliff: Update PCH_CAN driver to 2.6.35
+</A></li>
+	<LI>Next message: <A HREF="004651.html">Self-reception and more
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4650">[ date ]</a>
+              <a href="thread.html#4650">[ thread ]</a>
+              <a href="subject.html#4650">[ subject ]</a>
+              <a href="author.html#4650">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

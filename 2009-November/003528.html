@@ -1,0 +1,129 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6] can: fix setting mcp251x bit timing on open
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%5D%20can%3A%20fix%20setting%20mcp251x%20bit%20timing%20on%20open&In-Reply-To=%3C1258474844-10239-1-git-send-email-chripell%40fsfe.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003527.html">
+   <LINK REL="Next"  HREF="003529.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6] can: fix setting mcp251x bit timing on open</H1>
+    <B>Christian Pellegrin</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%5D%20can%3A%20fix%20setting%20mcp251x%20bit%20timing%20on%20open&In-Reply-To=%3C1258474844-10239-1-git-send-email-chripell%40fsfe.org%3E"
+       TITLE="[PATCH net-next-2.6] can: fix setting mcp251x bit timing on open">chripell at fsfe.org
+       </A><BR>
+    <I>Tue Nov 17 17:20:44 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003527.html">updates to the mscan-driver in net-next
+</A></li>
+        <LI>Next message: <A HREF="003529.html">[PATCH net-next-2.6] can: fix setting mcp251x bit timing on open
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3528">[ date ]</a>
+              <a href="thread.html#3528">[ thread ]</a>
+              <a href="subject.html#3528">[ subject ]</a>
+              <a href="author.html#3528">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+Signed-off-by: Christian Pellegrin &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">chripell at fsfe.org</A>&gt;
+---
+ drivers/net/can/mcp251x.c |   18 ++++++++++--------
+ 1 files changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/net/can/mcp251x.c b/drivers/net/can/mcp251x.c
+index 8f48f4b..78b1b69 100644
+--- a/drivers/net/can/mcp251x.c
++++ b/drivers/net/can/mcp251x.c
+@@ -594,13 +594,7 @@ static int mcp251x_do_set_bittiming(struct net_device *net)
+ static int mcp251x_setup(struct net_device *net, struct mcp251x_priv *priv,
+ 			 struct spi_device *spi)
+ {
+-	int ret;
+-
+-	ret = open_candev(net);
+-	if (ret) {
+-		dev_err(&amp;spi-&gt;dev, &quot;unable to set initial baudrate!\n&quot;);
+-		return ret;
+-	}
++	mcp251x_do_set_bittiming(net);
+ 
+ 	/* Enable RX0-&gt;RX1 buffer roll over and disable filters */
+ 	mcp251x_write_bits(spi, RXBCTRL(0),
+@@ -671,6 +665,12 @@ static int mcp251x_open(struct net_device *net)
+ 	struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
+ 	int ret;
+ 
++	ret = open_candev(net);
++	if (ret) {
++		dev_err(&amp;spi-&gt;dev, &quot;unable to set initial baudrate!\n&quot;);
++		return ret;
++	}
++
+ 	if (pdata-&gt;transceiver_enable)
+ 		pdata-&gt;transceiver_enable(1);
+ 
+@@ -684,6 +684,7 @@ static int mcp251x_open(struct net_device *net)
+ 		dev_err(&amp;spi-&gt;dev, &quot;failed to acquire irq %d\n&quot;, spi-&gt;irq);
+ 		if (pdata-&gt;transceiver_enable)
+ 			pdata-&gt;transceiver_enable(0);
++		close_candev(net);
+ 		return ret;
+ 	}
+ 
+@@ -692,8 +693,10 @@ static int mcp251x_open(struct net_device *net)
+ 	ret = mcp251x_setup(net, priv, spi);
+ 	if (ret) {
+ 		free_irq(spi-&gt;irq, net);
++		mcp251x_hw_sleep(spi);
+ 		if (pdata-&gt;transceiver_enable)
+ 			pdata-&gt;transceiver_enable(0);
++		close_candev(net);
+ 		return ret;
+ 	}
+ 	mcp251x_set_normal_mode(spi);
+@@ -956,7 +959,6 @@ static int __devinit mcp251x_can_probe(struct spi_device *spi)
+ 	priv-&gt;can.bittiming_const = &amp;mcp251x_bittiming_const;
+ 	priv-&gt;can.do_set_mode = mcp251x_do_set_mode;
+ 	priv-&gt;can.clock.freq = pdata-&gt;oscillator_frequency / 2;
+-	priv-&gt;can.do_set_bittiming = mcp251x_do_set_bittiming;
+ 	priv-&gt;net = net;
+ 	dev_set_drvdata(&amp;spi-&gt;dev, priv);
+ 
+-- 
+1.5.6.5
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003527.html">updates to the mscan-driver in net-next
+</A></li>
+	<LI>Next message: <A HREF="003529.html">[PATCH net-next-2.6] can: fix setting mcp251x bit timing on open
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3528">[ date ]</a>
+              <a href="thread.html#3528">[ thread ]</a>
+              <a href="subject.html#3528">[ subject ]</a>
+              <a href="author.html#3528">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

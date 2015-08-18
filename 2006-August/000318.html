@@ -1,0 +1,297 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Best of both: comparing LinCAN and Socket-CAN
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Best%20of%20both%3A%20comparing%20LinCAN%20and%20Socket-CAN&In-Reply-To=%3C200608170426.25954.pisa%40cmp.felk.cvut.cz%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000316.html">
+   <LINK REL="Next"  HREF="000319.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Best of both: comparing LinCAN and Socket-CAN</H1>
+    <B>Pavel Pisa</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Best%20of%20both%3A%20comparing%20LinCAN%20and%20Socket-CAN&In-Reply-To=%3C200608170426.25954.pisa%40cmp.felk.cvut.cz%3E"
+       TITLE="Best of both: comparing LinCAN and Socket-CAN">pisa at cmp.felk.cvut.cz
+       </A><BR>
+    <I>Thu Aug 17 04:26:24 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000316.html">Best of both: comparing LinCAN and Socket-CAN
+</A></li>
+        <LI>Next message: <A HREF="000319.html">Best of both: comparing LinCAN and Socket-CAN
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#318">[ date ]</a>
+              <a href="thread.html#318">[ thread ]</a>
+              <a href="subject.html#318">[ subject ]</a>
+              <a href="author.html#318">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello All,
+
+I have spent some days with putting things together
+and preparation for our more Linux kernel variants testing.
+We have not finished, but because I would not be there
+from Friday over next week and I have to prepare
+for trip now, I am sending some replies and progress
+info.
+
+On Monday 14 August 2006 20:35, Oliver Hartkopp wrote:
+&gt;<i> &gt;&gt; We need to prepare board support for cards which we have
+</I>&gt;<i> &gt;&gt; on test system and we try to run some tests during next weeks.
+</I>&gt;<i>
+</I>&gt;<i> What hardware are you running there?
+</I>
+We have more CAN hardware. Some fraction is on next page:
+
+  <A HREF="http://dce.felk.cvut.cz/nms/?p=hardware">http://dce.felk.cvut.cz/nms/?p=hardware</A>
+
+Basically we have more SJA1000 based cards with different chip mappings
+on PC-104, PCI and embedded boards, some i82527 board, more intelligent
+cards (PCI, PC-104, VME from Unicontrols) some PCMCI adapters (support not finished),
+SH4 7760 etc. Most of above working under Linux and supported by our code.
+We have even many system-less devices (H8S 2638, HC12, 68376, etc)
+and complete CAN IO modules (Wago, Unicontrols, etc).
+
+As for our first socketcan tests, we decided to use PC-104
+(Elan SC520 133MHz Am5x86) with PCM3680 double can interface board.
+It is running Linux-2.6.17.6 + RT8 at this moment.
+We can use interconnected interfaces on the board for tests,
+we can to use Kvaser PCI card with Lincan to generate some
+traffic as well. I use simple SJA1000 based ISA card and PiMX1 ARM
+based board equipped by SJA1000 add-on for testing at home too.
+All boards with simple SJA1000 mapping use memory mapped access
+so I have added support for it into socketcan kernel sources (patch is attached).
+In the fact, I have done it such way, that new sja1000_mem can handle both
+IO and MEM. It is questionable if new kernel option to use single
+I/O access macros for both spaces should be used there instead.
+I am slightly against that, because it would lead to conditional
+jumps in each IO instruction on x86 and providing selection through
+indirect call is better option and indirection has to be there anyway
+for indexed and other mapping.
+
+On Monday 14 August 2006 09:27, Jan Kiszka wrote:
+&gt;<i> &gt; I am not big fan of pushing as much as possible parts into
+</I>&gt;<i> &gt; RT-Linux, RTAI or Xenomai double kernels. Only really fast things
+</I>&gt;<i> &gt; belongs there.
+</I>&gt;<i>
+</I>&gt;<i> That's a too narrow view. Those tasks that need predictable latencies
+</I>&gt;<i> (practically) independent of what the rest of the Linux system does,
+</I>&gt;<i> they benefit from the reduced complexity and different optimisation
+</I>&gt;<i> goals of a co-scheduling system.
+</I>
+OK, it has sense for some applications. I have rebuilt some more kernels.
+I have rebuild even my home desktop (old 600MHz Duron) to -rt and socketcan
+patched variants to prepare for testing with socketcan on ARM target.
+The kernel on desktop behaves reasonably well with RT.
+Absolute maximal latencies has been bellow 150 usec for considerable long
+time, but there has occurred even some almost 1 ms latency after some hour
+of run and more tests. Switching between X and text mode seems to be
+total killer, but I expect, that some of these are due Nvidia driver.
+
+&gt;<i> 20 us is marketing. -rt basically only works on x86[_64] ATM, and the
+</I>&gt;<i> latencies you see on those platforms due to PC hardware are already in
+</I>&gt;<i> the same order of magnitude.
+</I>
+RT kernel works on our ARM. The full ping-pong latency for LinCAN is from
+500 usec to 1200 usec even if both sides fully are loaded. The priority of
+test application and SJA1000 ISRs has to be above network cards
+interrupts priority. The latency is caused mainly by our ARM design,
+which has been designed mainly for size and low consumption (only 16-bit
+busses, 96/150 MHz, reasonable battery life etc) and is normally
+driven by RTEMS executive.
+MMU-less uCLinux would help considerably there, because necessary
+VIVT cache flushing makes context switching painfull (about 100-200 usec).
+I have only Linux threads there on ARM at this moment,
+which is not good either.  Socketcan runs on both sides after some
+hours invested, but I need to adapt CANping for it to receive timing
+results.
+
+Test from PC-104 would be more representative because it is not
+fast system either, but doesnot have so horrible context switch
+overhead.
+
+I have only LinCAN timing at this moment for prepared home
+setup which runs socket can too.
+If you are interrested in partial results, I can sent them.
+I am not sure, when I would find time to prepare more results.
+My colleague should work on PC-104 meanwhile.
+
+&gt;<i> &gt; We need to prepare board support for cards which we have
+</I>&gt;<i> &gt; on test system and we try to run some tests during next weeks.
+</I>&gt;<i>
+</I>&gt;<i> If you are already on it, you may want to check-out latest Xenomai as
+</I>&gt;<i> well: the CAN stack has been merged into trunk on Friday, all you need
+</I>&gt;<i> to run it is contained.
+</I>
+We had already in plan to test Xenomai and I have looked at it with
+my colleague at university. He has it running on desktop for tests
+now and prepares it for PC-104.
+
+&gt;<i> &gt;&gt; I think we have three options regarding a multi-frame API:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;  o read/write (as alternative to recv/send)
+</I>&gt;<i> &gt;&gt;  o special IOCTLs
+</I>&gt;<i> &gt;&gt;  o new protocol type with different recv/send message format
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; All three require to define an enhanced message format in order to pass
+</I>&gt;<i> &gt;&gt; ifindex and timestamp.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Hm - i don't know, if this is too much overhead.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Regarding the sending:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; If the application wants to send more than one CAN-Frame at a time it may
+</I>&gt;<i> &gt; send/write an array of 'n' CAN-Frames at one syscall - so the RAW-sockets
+</I>&gt;<i> &gt; splits this up one-by-one from the first CAN-Frame in the array and sends
+</I>&gt;<i> &gt; it to the CAN-device. This can be implemented even without any extension
+</I>&gt;<i> &gt; on the socket-API nor any new socket-option for the RAW-Socket. BUT: This
+</I>&gt;<i> &gt; is only working, when you want to send multiple CAN-Frames to _one_
+</I>&gt;<i> &gt; CAN-device.
+</I>&gt;<i>
+</I>&gt;<i> Cannot say if this limitation to one CAN port is too restrictive in
+</I>&gt;<i> practice. The only use-case I have in mind ATM which may require to spit
+</I>&gt;<i> out frames to multiple ports is redundant transmission.
+</I>
+My original idea has been based on connection of file handle
+to one chip only. The usual rule is, that for each network is
+separated process or at least thread in application a it is better
+to separate networks to prevent blocking of them all by one thread
+misbehave. But it could be to simplified view.
+
+I think, that write/read/send/recv or even vector variants are good
+candidates. I am against IOCTL - it had significant locking overhead
+at least for not recent 2.6 kernels. I have not looked into latest ones.
+
+&gt;<i> &gt; Regarding the receiving:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I don't know if the receiving of more than one CAN-Frame with one read
+</I>&gt;<i> &gt; syscall is at least a wanted usecase (please check this first!). But if
+</I>&gt;<i> &gt; it is (and there is a socket-option that enables the receiving of more
+</I>&gt;<i> &gt; than one CAN-Frame at a time), there are IMO two possibilities to deal
+</I>&gt;<i> &gt; e.g. with timestamps when receiving more than one CAN-Frame:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; o the timestamp you can get with ioctl() reflects only one (of x)
+</I>&gt;<i> &gt; CAN-Frames (the easy way)
+</I>&gt;<i>
+</I>&gt;<i> The first one would be best then. When you are interested in timestamps
+</I>&gt;<i> for a stream, it is to my experience almost always its beginning. [This
+</I>&gt;<i> is also how our real-time serial device API works.]
+</I>&gt;<i>
+</I>&gt;<i> &gt; o the timestamp is part of your suggested enhanced message format struct
+</I>&gt;<i> &gt; (covering the CAN-Frame, the timestamp and the ifindex).
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Or maybe there are two new socket options for the RAW-Socket:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; 1. Enable to read more than one CAN-Frame with one read() syscall on this
+</I>&gt;<i> &gt; RAW-Socket
+</I>&gt;<i> &gt; 2. Switch this RAW-Socket to the suggested 'enhanced message format' (RX
+</I>&gt;<i> &gt; &amp; TX)
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; In the TX-case the timestamp of the enhanced message is ignored and the
+</I>&gt;<i> &gt; ifindex is only used if the socket is not bound to any ifindex ...
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; What do you think?
+</I>&gt;<i>
+</I>&gt;<i> This all depends on the scenario. Let's try to categorise:
+</I>&gt;<i>
+</I>&gt;<i>  1. sending or receiving  a stream of frames over a single port (e.g.
+</I>&gt;<i>     Pavel's drive commands or our Ibeo scanner)
+</I>&gt;<i>  2. sending or receiving frames for redundancy reasons over several
+</I>&gt;<i>     ports (should this be handled at application or kernel level?)
+</I>&gt;<i>  3. receiving frames from all ports, maybe also being interested in
+</I>&gt;<i>     timestamps (traffic sniffer)
+</I>&gt;<i>
+</I>&gt;<i> If we push 2. into the kernel and let 3. suffer, we could get away with
+</I>&gt;<i> a &quot;cheap&quot; solution based on the existing can_frame - unless there are
+</I>&gt;<i> other demanding scenarios...
+</I>&gt;<i>
+</I>&gt;<i> Pavel, what scenarios did you encounter so far for multi-frame
+</I>&gt;<i> transmission/reception? Are all covered by the list above?
+</I>
+I would vote for can frame with timestamp to eliminate IOCTLs
+and to have info for each of them. I am not sure about interface.
+I would probably prefer that socket is associated to one interface
+during its active lifetime to prevent some flooding from
+killing all networks from one broken thread. On the other hand,
+there should be reserved some place to store info about message
+box number inside chip (full CAN concept), because it cannot be
+fully hidden for some controllers from application.
+
+On Tuesday 15 August 2006 22:46, Andrey Volkov wrote:
+&gt;<i> In some our applications, we are used memory mapped circ_buf shared
+</I>&gt;<i> between device and user application for a incoming CAN frames,
+</I>&gt;<i> in this case overhead was _very_ small (only interrupt handler called),
+</I>&gt;<i> but disadvantages big too: only one process could work with device, and
+</I>&gt;<i> if someone make bug in application - system say goodbye.
+</I>&gt;<i>
+</I>&gt;<i> For a sending N frames, small problem exist: what driver should done
+</I>&gt;<i> with error in middle of sequence? (I certainly vote for a possibility to
+</I>&gt;<i> send many frames)
+</I>
+We have decided to honnor POSIX file IO rules for LinCAN.
+If open with O_NONBLOCK, then as much messages is stored into
+outgoing queue as there is free slots. The number of accepted
+messages is reported by byte size of transferred part of buffer.
+No direct error can be reported in such case.
+The default behavior is to wait for available space for at least
+one message in FIFO and report transferred size. No waiting
+for data transfer finished same as for previous case.
+If data are sent in O_SYNC mode then user is blocked until
+last message is fully transmitted to wire.
+The logic is not probably optimal, because caller has to check,
+how many messages has been actually sent or received from
+size in bytes. Socket logic is different so it could make
+sense to search for better concept.
+
+&gt;<i> &gt; Thanks for the hint! I'll try to get this patch together with other
+</I>&gt;<i> &gt; changes in my working copy into the SVN tomorrow.
+</I>&gt;<i>
+</I>&gt;<i> And it will be nice, if you convert it to be can_device based (but not
+</I>&gt;<i> network device based)
+</I>
+In the fact, I expect, that driver should be somehow divided
+to independent (platform device?) part and code which creates
+HW nodes.
+
+Best wishes
+
+                Pavel
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: sja1000-mem.patch
+Type: text/x-diff
+Size: 9820 bytes
+Desc: not available
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20060817/1966424a/attachment.patch">https://lists.berlios.de/pipermail/socketcan-core/attachments/20060817/1966424a/attachment.patch</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000316.html">Best of both: comparing LinCAN and Socket-CAN
+</A></li>
+	<LI>Next message: <A HREF="000319.html">Best of both: comparing LinCAN and Socket-CAN
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#318">[ date ]</a>
+              <a href="thread.html#318">[ thread ]</a>
+              <a href="subject.html#318">[ subject ]</a>
+              <a href="author.html#318">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,178 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 3/4] mscan: new interface for setting bit-timing parameters
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/4%5D%20mscan%3A%20new%20interface%20for%20setting%20bit-timing%20parameters&In-Reply-To=%3C48919551.8050100%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001771.html">
+   <LINK REL="Next"  HREF="001767.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 3/4] mscan: new interface for setting bit-timing parameters</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/4%5D%20mscan%3A%20new%20interface%20for%20setting%20bit-timing%20parameters&In-Reply-To=%3C48919551.8050100%40grandegger.com%3E"
+       TITLE="[PATCH 3/4] mscan: new interface for setting bit-timing parameters">wg at grandegger.com
+       </A><BR>
+    <I>Thu Jul 31 12:34:57 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001771.html">[PATCH 2/4] sysfs: new interface for setting bit-timing parameters
+</A></li>
+        <LI>Next message: <A HREF="001767.html">[PATCH 4/4] sja1000: new interface for setting bit-timing parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1766">[ date ]</a>
+              <a href="thread.html#1766">[ thread ]</a>
+              <a href="subject.html#1766">[ subject ]</a>
+              <a href="author.html#1766">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+ kernel/2.6/drivers/net/can/mscan/mpc52xx_can.c |    6 +--
+ kernel/2.6/drivers/net/can/mscan/mscan.c       |   43 +++++++++++++++----------
+ 2 files changed, 29 insertions(+), 20 deletions(-)
+
+Index: trunk/kernel/2.6/drivers/net/can/mscan/mscan.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/mscan/mscan.c
++++ trunk/kernel/2.6/drivers/net/can/mscan/mscan.c
+@@ -74,6 +74,17 @@ RCSID(&quot;$Id: mscan.c 794 2008-06-22 18:54
+ 				 BTR1_TSEG2_MASK)
+ #define BTR1_SET_SAM(sam)	(((sam) &amp; 1) &lt;&lt; BTR1_SAM_SHIFT)
+ 
++static struct can_bittiming_const mscan_bittiming_const = {
++	.tseg1_min = 1,
++	.tseg1_max = 16,
++	.tseg2_min = 1,
++	.tseg2_max = 8,
++	.sjw_max = 4,
++	.brp_min = 1,
++	.brp_max = 64,
++	.brp_inc = 1,
++};
++
+ struct mscan_state {
+ 	u8 mode;
+ 	u8 canrier;
+@@ -588,27 +599,19 @@ static int mscan_do_set_mode(struct net_
+ 	return ret;
+ }
+ 
+-static int mscan_do_set_bittime(struct net_device *dev, struct can_bittime *bt)
++static int mscan_do_set_bittiming(struct net_device *dev,
++				  struct can_bittiming *bt)
+ {
+ 	struct mscan_regs *regs = (struct mscan_regs *)dev-&gt;base_addr;
++	struct mscan_priv *priv = netdev_priv(dev);
+ 	u8 btr0, btr1;
+ 
+-	switch (bt-&gt;type) {
+-	case CAN_BITTIME_BTR:
+-		btr0 = bt-&gt;btr.btr0;
+-		btr1 = bt-&gt;btr.btr1;
+-		break;
+-
+-	case CAN_BITTIME_STD:
+-		btr0 = BTR0_SET_BRP(bt-&gt;std.brp) | BTR0_SET_SJW(bt-&gt;std.sjw);
+-		btr1 = (BTR1_SET_TSEG1(bt-&gt;std.prop_seg + bt-&gt;std.phase_seg1) |
+-			BTR1_SET_TSEG2(bt-&gt;std.phase_seg2) |
+-			BTR1_SET_SAM(bt-&gt;std.sam));
+-		break;
++	btr0 = BTR0_SET_BRP(bt-&gt;brp) | BTR0_SET_SJW(bt-&gt;sjw);
++	btr1 = (BTR1_SET_TSEG1(bt-&gt;prop_seg + bt-&gt;phase_seg1) |
++		BTR1_SET_TSEG2(bt-&gt;phase_seg2) |
++		BTR1_SET_SAM(priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES));
+ 
+-	default:
+-		return -EINVAL;
+-	}
++	dev_info(ND2D(dev), &quot;BTR0=0x%02x BTR1=0x%02x\n&quot;, btr0, btr1);
+ 
+ 	out_8(&amp;regs-&gt;canbtr0, btr0);
+ 	out_8(&amp;regs-&gt;canbtr1, btr1);
+@@ -622,6 +625,11 @@ static int mscan_open(struct net_device 
+ 	struct mscan_priv *priv = netdev_priv(dev);
+ 	struct mscan_regs *regs = (struct mscan_regs *)dev-&gt;base_addr;
+ 
++	/* determine and set bittime */
++	ret = can_set_bittiming(dev);
++	if (ret)
++		return ret;
++
+ #if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,23)
+ 	napi_enable(&amp;priv-&gt;napi);
+ #endif
+@@ -741,7 +749,8 @@ struct net_device *alloc_mscandev(void)
+ 	dev-&gt;weight = 8;
+ #endif
+ 
+-	priv-&gt;can.do_set_bittime = mscan_do_set_bittime;
++	priv-&gt;can.bittiming_const = &amp;mscan_bittiming_const;
++	priv-&gt;can.do_set_bittiming = mscan_do_set_bittiming;
+ 	priv-&gt;can.do_set_mode = mscan_do_set_mode;
+ 
+ 	for (i = 0; i &lt; TX_QUEUE_SIZE; i++) {
+Index: trunk/kernel/2.6/drivers/net/can/mscan/mpc52xx_can.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/mscan/mpc52xx_can.c
++++ trunk/kernel/2.6/drivers/net/can/mscan/mpc52xx_can.c
+@@ -57,7 +57,7 @@ static int __devinit mpc52xx_can_probe(s
+ 	struct resource *mem;
+ 	struct net_device *dev;
+ 	struct mscan_platform_data *pdata = pdev-&gt;dev.platform_data;
+-	struct can_priv *can;
++	struct can_priv *priv;
+ 	u32 mem_size;
+ 	int ret = -ENODEV;
+ 
+@@ -67,7 +67,7 @@ static int __devinit mpc52xx_can_probe(s
+ 	dev = alloc_mscandev();
+ 	if (!dev)
+ 		return -ENOMEM;
+-	can = netdev_priv(dev);
++	priv = netdev_priv(dev);
+ 
+ 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+ 	dev-&gt;irq = platform_get_irq(pdev, 0);
+@@ -90,7 +90,7 @@ static int __devinit mpc52xx_can_probe(s
+ 		goto fail_map;
+ 	}
+ 
+-	can-&gt;can_sys_clock = pdata-&gt;clock_frq;
++	priv-&gt;bittiming_const-&gt;clock = pdata-&gt;clock_frq;
+ 
+ 	platform_set_drvdata(pdev, dev);
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001771.html">[PATCH 2/4] sysfs: new interface for setting bit-timing parameters
+</A></li>
+	<LI>Next message: <A HREF="001767.html">[PATCH 4/4] sja1000: new interface for setting bit-timing parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1766">[ date ]</a>
+              <a href="thread.html#1766">[ thread ]</a>
+              <a href="subject.html#1766">[ subject ]</a>
+              <a href="author.html#1766">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

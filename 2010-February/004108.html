@@ -1,0 +1,478 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 0/2] add support for Janz MODULbus devices
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/2%5D%20add%20support%20for%20Janz%20MODULbus%20devices&In-Reply-To=%3C4B8580D2.2040203%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004107.html">
+   <LINK REL="Next"  HREF="004109.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 0/2] add support for Janz MODULbus devices</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%200/2%5D%20add%20support%20for%20Janz%20MODULbus%20devices&In-Reply-To=%3C4B8580D2.2040203%40pengutronix.de%3E"
+       TITLE="[PATCH 0/2] add support for Janz MODULbus devices">mkl at pengutronix.de
+       </A><BR>
+    <I>Wed Feb 24 20:41:06 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004107.html">[PATCH 0/2] add support for Janz MODULbus devices
+</A></li>
+        <LI>Next message: <A HREF="004109.html">[PATCH 0/2] add support for Janz MODULbus devices
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4108">[ date ]</a>
+              <a href="thread.html#4108">[ thread ]</a>
+              <a href="subject.html#4108">[ subject ]</a>
+              <a href="author.html#4108">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ira W. Snyder wrote:
+&gt;<i> On Wed, Feb 24, 2010 at 08:08:15PM +0100, Marc Kleine-Budde wrote:
+</I>&gt;&gt;<i> Ira W. Snyder wrote:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> [...]
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> But we want so solve the TX problem. You only have to stop the
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> netif_queue if you TX ring is full. Then you have to deal with calling
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> netif_wake_queue() eventually. But we obviously don't want to poll.
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> The solution might be to look at the TX queue in the interrupt handler
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> and/or the NAPI loop. And now we get back to my first question. If the
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> controller does a loopback in hardware, i.e. you receive a frame for
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> each frame send, you don't need to poll the TX queue length.
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> If you receive a CAN frame it might be on of your's, which means the TX
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> queue might have at least room for one frame. In pseudo code it might
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> look like this:
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> xmit()
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> {
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 	send_frame_to_hardware();
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 	if (tx_ring_full) {
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 		netif_stop_queue();
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 		priv-&gt;flags |= TX_RING_FULL;
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 	}
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> irq() and netif_poll()
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> {
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 	if (priv-&gt;flags &amp; TX_RING_FULL) {
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 		if (room_in_ring()) {
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 			priv-&gt;flags &amp;= ~TX_RING_FULL;
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 			netif_wake_queue();
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 		}
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 	}
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> Should be implemented race-free, i.e. you might have to use atomic_*
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> operations and/or don't use a shared flag variable.
+</I>&gt;&gt;&gt;&gt;&gt;<i> Cool, that should work. netif_queue_stopped() could be used instead of
+</I>&gt;&gt;&gt;&gt;&gt;<i> the TX_RING_FULL flag.
+</I>&gt;&gt;&gt;&gt;<i> right...good point
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> I should have looked at my own driver :)
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> If room_in_ring() is cheap, it boils down to:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> irq() and netif_poll()
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> {
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 	if (room_in_ring()) {
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 		netif_wake_queue();
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;&gt;<i> Otherwise:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> irq() and netif_poll()
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> {
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 	if (netif_queue_stopped() &amp;&amp; room_in_ring()) {
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> 		netif_wake_queue();
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;<i> Hmm, this *almost* works. Running &quot;cangen -g 0 can0&quot; quickly gets the
+</I>&gt;&gt;&gt;<i> queue into a hung state, though.
+</I>&gt;&gt;<i> what is a &quot;hung state&quot;?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I added printk() to the sites where I stop/wake the queue. It is always
+</I>&gt;&gt;&gt;<i> woken up correctly, but cangen always exits with &quot;write: No buffer space
+</I>&gt;&gt;&gt;<i> available&quot; after a few stop/wake cycles. Immediately running cangen
+</I>&gt;&gt;&gt;<i> again works for a few more stop/wake cycles.
+</I>&gt;&gt;<i> let's look the the cangen source if there's propper error handling...
+</I>&gt;&gt;<i> <A HREF="http://svn.berlios.de/viewvc/socketcan/trunk/can-utils/cangen.c?revision=787&amp;view=markup">http://svn.berlios.de/viewvc/socketcan/trunk/can-utils/cangen.c?revision=787&amp;view=markup</A>
+</I>&gt;&gt;<i> nope, there isn't
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> There's the option &quot;-i&quot; to ignore ENOBUFS, which is....we don't want to
+</I>&gt;&gt;<i> do that....
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Better improbe the source: (from the pengutronix' canutils...)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> again:
+</I>&gt;&gt;<i>         len = write(s, &amp;frame, sizeof(frame));
+</I>&gt;&gt;<i>         if (len == -1) {
+</I>&gt;&gt;<i>                 switch (errno) {
+</I>&gt;&gt;<i>                 case ENOBUFS: {
+</I>&gt;&gt;<i>                         int err;
+</I>&gt;&gt;<i>                         struct pollfd fds[] = {
+</I>&gt;&gt;<i>                                 {
+</I>&gt;&gt;<i>                                         .fd     = s,
+</I>&gt;&gt;<i>                                         .events = POLLOUT,
+</I>&gt;&gt;<i>                                 },
+</I>&gt;&gt;<i>                         };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>                         err = poll(fds, 1, 1000);
+</I>&gt;&gt;<i>                         if (err == -1 &amp;&amp; errno != -EINTR) {
+</I>&gt;&gt;<i>                                 perror(&quot;poll()&quot;);
+</I>&gt;&gt;<i>                                 exit(EXIT_FAILURE);
+</I>&gt;&gt;<i>                         } else if (err == 0) {
+</I>&gt;&gt;<i> 				printf(&quot;a timeout occured\n&quot;);
+</I>&gt;&gt;<i> 				exit(EXIT_FAILURE);
+</I>&gt;&gt;<i> 			}
+</I>&gt;&gt;<i>                 }
+</I>&gt;&gt;<i>                 case EINTR:     /* fallthrough */
+</I>&gt;&gt;<i>                         goto again;
+</I>&gt;&gt;<i>                 default:
+</I>&gt;&gt;<i>                         perror(&quot;write&quot;);
+</I>&gt;&gt;<i>                         exit(EXIT_FAILURE);
+</I>&gt;&gt;<i>                 }
+</I>&gt;&gt;<i>         }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If you hit a timeout, which means you cannot send packages for 1000 ms,
+</I>&gt;&gt;<i> your send queue probably didn't wake up...
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Is there any chance you can send me the pengutronix version of
+</I>&gt;<i> cangen/canutils? I can't find it on their website.
+</I>
+
+<A HREF="http://www.pengutronix.de/software/socket-can/download/canutils/v4.0/">http://www.pengutronix.de/software/socket-can/download/canutils/v4.0/</A>
+<A HREF="http://www.pengutronix.de/software/libsocketcan/download/">http://www.pengutronix.de/software/libsocketcan/download/</A>
+
+you need the libsocketcan, too
+
+&gt;<i> 
+</I>&gt;&gt;&gt;<i> Here is the output of ifconfig:
+</I>&gt;&gt;&gt;<i> can0      Link encap:UNSPEC  HWaddr 00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00  
+</I>&gt;&gt;&gt;<i>           UP RUNNING NOARP  MTU:16  Metric:1
+</I>&gt;&gt;&gt;<i>           RX packets:1902 errors:0 dropped:0 overruns:0 frame:0
+</I>&gt;&gt;&gt;<i>           TX packets:1902 errors:0 dropped:0 overruns:0 carrier:0
+</I>&gt;&gt;&gt;<i>           collisions:0 txqueuelen:10 
+</I>&gt;&gt;&gt;<i>           RX bytes:10767 (10.5 KiB)  TX bytes:10767 (10.5 KiB)
+</I>&gt;&gt;&gt;<i>           Interrupt:22 
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> can1      Link encap:UNSPEC  HWaddr 00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00  
+</I>&gt;&gt;&gt;<i>           UP RUNNING NOARP  MTU:16  Metric:1
+</I>&gt;&gt;&gt;<i>           RX packets:1902 errors:0 dropped:0 overruns:0 frame:0
+</I>&gt;&gt;&gt;<i>           TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+</I>&gt;&gt;&gt;<i>           collisions:0 txqueuelen:10 
+</I>&gt;&gt;&gt;<i>           RX bytes:10767 (10.5 KiB)  TX bytes:0 (0.0 b)
+</I>&gt;&gt;&gt;<i>           Interrupt:22 
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I'm stopping the queue correctly: the xmit() routine never complains that it
+</I>&gt;&gt;&gt;<i> tried to transmit but had no buffer space. You'll see that we didn't drop any
+</I>&gt;&gt;&gt;<i> packets in this run. In another run, we did drop packets. It is like the
+</I>&gt;&gt;&gt;<i> firmware didn't echo the packets back to me. Also note that the TX of
+</I>&gt;&gt;&gt;<i> can0 always matches the RX of can1. They're cabled together, so this is
+</I>&gt;&gt;&gt;<i> expected.
+</I>&gt;&gt;<i> Hmm...it looks like this.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Double check your RX path, so that you don't loose any frames in
+</I>&gt;&gt;<i> software. Is it possible that the RX and TX collide in your driver
+</I>&gt;&gt;<i> and/or in hardware?
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> I'm pretty sure that I do not lose RX frames in my driver. When I do,
+</I>&gt;<i> stats-&gt;rx_dropped is always incremented. I do get the following warning
+</I>
+I mean loosing RX frames due to an programming error...
+
+&gt;<i> from lockdep, though. Sorry about the length. The best I can get from
+</I>&gt;<i> the output is that something in the networking open() code is broken (or
+</I>&gt;<i> needs a special lockdep annotation).
+</I>
+Puhh...I havn't read this before.
+
+The problem is a from within a HARDIRQ-safe a HARDIRQ-unsafe lock is
+aquired.
+
+the HARDIRQ-safe seems to be the spin lock in your interrupt handler,
+the unsafe one is in the close path on a socket.
+
+&gt;<i> [  134.540375] janz-cmodio 0000:01:0e.0: PCI-&gt;APIC IRQ transform: INT A -&gt; IRQ 22
+</I>&gt;<i> [  134.547629] janz-cmodio 0000:01:0e.0: setting latency timer to 64
+</I>&gt;<i> [  134.684269] janz-ican3 janz-ican3.0: module 0: registered CAN device
+</I>&gt;<i> [  134.807929] janz-ican3 janz-ican3.1: module 1: registered CAN device
+</I>&gt;<i> [  175.361588] janz-ican3 janz-ican3.0: ican3_xmit: stopping queue
+</I>&gt;<i> [  175.373104] janz-ican3 janz-ican3.0: ican3_recv_skb: waking queue
+</I>&gt;<i> [  175.379556] 
+</I>&gt;<i> [  175.379559] ======================================================
+</I>&gt;<i> [  175.383277] [ INFO: HARDIRQ-safe -&gt; HARDIRQ-unsafe lock order detected ]
+</I>&gt;<i> [  175.383277] 2.6.33-rc7-00000-rc7 #3
+</I>&gt;<i> [  175.383277] ------------------------------------------------------
+</I>&gt;<i> [  175.383277] events/0/5 [HC0[0]:SC1[1]:HE0:SE0] is trying to acquire:
+</I>&gt;<i> [  175.383277]  (clock-AF_CAN){++.-..}, at: [&lt;c11920e7&gt;] sock_def_write_space+0x15/0x8d
+</I>&gt;<i> [  175.383277] 
+</I>&gt;<i> [  175.383277] and this task is already holding:
+</I>&gt;<i> [  175.383277]  (&amp;(&amp;mod-&gt;lock)-&gt;rlock){-.-...}, at: [&lt;f898df29&gt;] ican3_xmit+0x48/0x277 [janz_ican3]
+</I>&gt;<i> [  175.383277] which would create a new lock dependency:
+</I>&gt;<i> [  175.383277]  (&amp;(&amp;mod-&gt;lock)-&gt;rlock){-.-...} -&gt; (clock-AF_CAN){++.-..}
+</I>&gt;<i> [  175.383277] 
+</I>&gt;<i> [  175.383277] but this new dependency connects a HARDIRQ-irq-safe lock:
+</I>&gt;<i> [  175.383277]  (&amp;(&amp;mod-&gt;lock)-&gt;rlock){-.-...}
+</I>&gt;<i> [  175.383277] ... which became HARDIRQ-irq-safe at:
+</I>&gt;<i> [  175.383277]   [&lt;c103d47f&gt;] __lock_acquire+0x4ce/0x756
+</I>&gt;<i> [  175.383277]   [&lt;c103e209&gt;] lock_acquire+0x45/0x5c
+</I>&gt;<i> [  175.383277]   [&lt;c12037a7&gt;] _raw_spin_lock_irqsave+0x24/0x34
+</I>
+from your interrupt handler you aquire a spin_lock
+
+&gt;<i> [  175.383277]   [&lt;f898d3c9&gt;] ican3_irq+0x41/0x164 [janz_ican3]
+</I>&gt;<i> [  175.383277]   [&lt;c10463ab&gt;] handle_IRQ_event+0x1d/0x9a
+</I>&gt;<i> [  175.383277]   [&lt;c1047872&gt;] handle_fasteoi_irq+0x9a/0xa7
+</I>&gt;<i> [  175.383277] 
+</I>&gt;<i> [  175.383277] to a HARDIRQ-irq-unsafe lock:
+</I>&gt;<i> [  175.383277]  (clock-AF_CAN){++.-..}
+</I>&gt;<i> [  175.383277] ... which became HARDIRQ-irq-unsafe at:
+</I>&gt;<i> [  175.383277] ...  [&lt;c103d500&gt;] __lock_acquire+0x54f/0x756
+</I>&gt;<i> [  175.383277]   [&lt;c103e209&gt;] lock_acquire+0x45/0x5c
+</I>&gt;<i> [  175.383277]   [&lt;c12038da&gt;] _raw_write_lock_bh+0x20/0x2f
+</I>&gt;<i> [  175.383277]   [&lt;c11e3be7&gt;] raw_release+0xf9/0x14c
+</I>&gt;<i> [  175.383277]   [&lt;c118f55c&gt;] sock_release+0x14/0x58
+</I>&gt;<i> [  175.383277]   [&lt;c118fc4c&gt;] sock_close+0x1c/0x20
+</I>&gt;<i> [  175.383277]   [&lt;c106fc41&gt;] __fput+0xeb/0x187
+</I>&gt;<i> [  175.383277]   [&lt;c106fe8d&gt;] fput+0x16/0x18
+</I>&gt;<i> [  175.383277]   [&lt;c106d873&gt;] filp_close+0x51/0x5b
+</I>&gt;<i> [  175.383277]   [&lt;c106e9c3&gt;] sys_close+0x67/0xa0
+</I>&gt;<i> [  175.383277]   [&lt;c1002657&gt;] sysenter_do_call+0x12/0x36
+</I>
+soneone calls a &quot;close&quot; ^^^
+
+&gt;<i> [  175.383277] 
+</I>&gt;<i> [  175.383277] other info that might help us debug this:
+</I>&gt;<i> [  175.383277] 
+</I>&gt;<i> [  175.383277] 4 locks held by events/0/5:
+</I>&gt;<i> [  175.383277]  #0:  (events){+.+.+.}, at: [&lt;c102ce51&gt;] worker_thread+0xc9/0x1c9
+</I>&gt;<i> [  175.383277]  #1:  ((&amp;mod-&gt;work)){+.+...}, at: [&lt;c102ce51&gt;] worker_thread+0xc9/0x1c9
+</I>&gt;<i> [  175.383277]  #2:  (_xmit_NONE#2){+.-...}, at: [&lt;c11a693a&gt;] sch_direct_xmit+0x2d/0x113
+</I>&gt;<i> [  175.383277]  #3:  (&amp;(&amp;mod-&gt;lock)-&gt;rlock){-.-...}, at: [&lt;f898df29&gt;] ican3_xmit+0x48/0x277 [janz_ican3]
+</I>&gt;<i> [  175.383277] 
+</I>&gt;<i> [  175.383277] the dependencies between HARDIRQ-irq-safe lock and the holding lock:
+</I>&gt;<i> [  175.383277] -&gt; (&amp;(&amp;mod-&gt;lock)-&gt;rlock){-.-...} ops: 0 {
+</I>&gt;<i> [  175.383277]    IN-HARDIRQ-W at:
+</I>&gt;<i> [  175.383277]                                        [&lt;c103d47f&gt;] __lock_acquire+0x4ce/0x756
+</I>&gt;<i> [  175.383277]                                        [&lt;c103e209&gt;] lock_acquire+0x45/0x5c
+</I>&gt;<i> [  175.383277]                                        [&lt;c12037a7&gt;] _raw_spin_lock_irqsave+0x24/0x34
+</I>&gt;<i> [  175.383277]                                        [&lt;f898d3c9&gt;] ican3_irq+0x41/0x164 [janz_ican3]
+</I>&gt;<i> [  175.383277]                                        [&lt;c10463ab&gt;] handle_IRQ_event+0x1d/0x9a
+</I>&gt;<i> [  175.383277]                                        [&lt;c1047872&gt;] handle_fasteoi_irq+0x9a/0xa7
+</I>&gt;<i> [  175.383277]    IN-SOFTIRQ-W at:
+</I>&gt;<i> [  175.383277]                                        [&lt;c103d4a3&gt;] __lock_acquire+0x4f2/0x756
+</I>&gt;<i> [  175.383277]                                        [&lt;c103e209&gt;] lock_acquire+0x45/0x5c
+</I>&gt;<i> [  175.383277]                                        [&lt;c12037a7&gt;] _raw_spin_lock_irqsave+0x24/0x34
+</I>&gt;<i> [  175.383277]                                        [&lt;f898d3c9&gt;] ican3_irq+0x41/0x164 [janz_ican3]
+</I>&gt;<i> [  175.383277]                                        [&lt;c10463ab&gt;] handle_IRQ_event+0x1d/0x9a
+</I>&gt;<i> [  175.383277]                                        [&lt;c1047872&gt;] handle_fasteoi_irq+0x9a/0xa7
+</I>&gt;<i> [  175.383277]    INITIAL USE at:
+</I>&gt;<i> [  175.383277]                                       [&lt;c103d571&gt;] __lock_acquire+0x5c0/0x756
+</I>&gt;<i> [  175.383277]                                       [&lt;c103e209&gt;] lock_acquire+0x45/0x5c
+</I>&gt;<i> [  175.383277]                                       [&lt;c12037a7&gt;] _raw_spin_lock_irqsave+0x24/0x34
+</I>&gt;<i> [  175.383277]                                       [&lt;f898d06e&gt;] ican3_send_msg+0x1c/0x1e6 [janz_ican3]
+</I>&gt;<i> [  175.383277]                                       [&lt;f898e64d&gt;] ican3_probe+0x421/0xc91 [janz_ican3]
+</I>&gt;<i> [  175.383277]                                       [&lt;c1140dcd&gt;] platform_drv_probe+0xc/0xe
+</I>&gt;<i> [  175.383277]                                       [&lt;c114022c&gt;] driver_probe_device+0x7d/0xf0
+</I>&gt;<i> [  175.383277]                                       [&lt;c1140421&gt;] __device_attach+0x28/0x30
+</I>&gt;<i> [  175.383277]                                       [&lt;c113f721&gt;] bus_for_each_drv+0x39/0x62
+</I>&gt;<i> [  175.383277]                                       [&lt;c1140362&gt;] device_attach+0x45/0x59
+</I>&gt;<i> [  175.383277]                                       [&lt;c113f6d3&gt;] bus_probe_device+0x1f/0x34
+</I>&gt;<i> [  175.383277]                                       [&lt;c113e618&gt;] device_add+0x2f5/0x43b
+</I>&gt;<i> [  175.383277]                                       [&lt;c11410d1&gt;] platform_device_add+0xd9/0x119
+</I>&gt;<i> [  175.383277]                                       [&lt;c1141126&gt;] platform_device_register+0x15/0x18
+</I>&gt;<i> [  175.383277]                                       [&lt;f89a92df&gt;] cmodio_pci_probe+0x228/0x2cd [janz_cmodio]
+</I>&gt;<i> [  175.383277]                                       [&lt;c10f5100&gt;] local_pci_probe+0xe/0x10
+</I>&gt;<i> [  175.383277]                                       [&lt;c10f52cf&gt;] pci_device_probe+0x48/0x66
+</I>&gt;<i> [  175.383277]                                       [&lt;c114022c&gt;] driver_probe_device+0x7d/0xf0
+</I>&gt;<i> [  175.383277]                                       [&lt;c11402e2&gt;] __driver_attach+0x43/0x5f
+</I>&gt;<i> [  175.383277]                                       [&lt;c113f950&gt;] bus_for_each_dev+0x39/0x5a
+</I>&gt;<i> [  175.383277]                                       [&lt;c11400ff&gt;] driver_attach+0x14/0x16
+</I>&gt;<i> [  175.383277]                                       [&lt;c113fdd7&gt;] bus_add_driver+0xa2/0x1c8
+</I>&gt;<i> [  175.383277]                                       [&lt;c11405ab&gt;] driver_register+0x7b/0xd7
+</I>&gt;<i> [  175.383277]                                       [&lt;c10f54c5&gt;] __pci_register_driver+0x4d/0xa0
+</I>&gt;<i> [  175.383277]                                       [&lt;f89ac017&gt;] 0xf89ac017
+</I>&gt;<i> [  175.383277]                                       [&lt;c100104b&gt;] do_one_initcall+0x4b/0x135
+</I>&gt;<i> [  175.383277]                                       [&lt;c104475e&gt;] sys_init_module+0xa9/0x1e3
+</I>&gt;<i> [  175.383277]                                       [&lt;c1002657&gt;] sysenter_do_call+0x12/0x36
+</I>&gt;<i> [  175.383277]  }
+</I>&gt;<i> [  175.383277]  ... key      at: [&lt;f898f61c&gt;] __key.26093+0x0/0xfffff8a1 [janz_ican3]
+</I>&gt;<i> [  175.383277]  ... acquired at:
+</I>&gt;<i> [  175.383277]    [&lt;c103c497&gt;] check_irq_usage+0x50/0xad
+</I>&gt;<i> [  175.383277]    [&lt;c103caf8&gt;] validate_chain+0x604/0xabd
+</I>&gt;<i> [  175.383277]    [&lt;c103d69c&gt;] __lock_acquire+0x6eb/0x756
+</I>&gt;<i> [  175.383277]    [&lt;c103e209&gt;] lock_acquire+0x45/0x5c
+</I>&gt;<i> [  175.383277]    [&lt;c1203adb&gt;] _raw_read_lock+0x1b/0x2a
+</I>&gt;<i> [  175.383277]    [&lt;c11920e7&gt;] sock_def_write_space+0x15/0x8d
+</I>&gt;<i> [  175.383277]    [&lt;c11918d3&gt;] sock_wfree+0x25/0x41
+</I>&gt;<i> [  175.383277]    [&lt;c1193503&gt;] skb_release_head_state+0x43/0x46
+</I>&gt;<i> [  175.383277]    [&lt;c11945c0&gt;] skb_release_all+0xb/0x15
+</I>&gt;<i> [  175.383277]    [&lt;c1193e41&gt;] __kfree_skb+0xb/0x69
+</I>&gt;<i> [  175.383277]    [&lt;c1193ef1&gt;] kfree_skb+0x28/0x2a
+</I>&gt;<i> [  175.383277]    [&lt;f898e0ef&gt;] ican3_xmit+0x20e/0x277 [janz_ican3]
+</I>&gt;<i> [  175.383277]    [&lt;c119a597&gt;] dev_hard_start_xmit+0x1c7/0x25d
+</I>&gt;<i> [  175.383277]    [&lt;c11a695a&gt;] sch_direct_xmit+0x4d/0x113
+</I>&gt;<i> [  175.383277]    [&lt;c11a6ab0&gt;] __qdisc_run+0x90/0xa2
+</I>&gt;<i> [  175.383277]    [&lt;c119c90d&gt;] net_tx_action+0xa7/0xff
+</I>&gt;<i> [  175.383277]    [&lt;c102384e&gt;] __do_softirq+0x75/0xf3
+</I>&gt;<i> [  175.383277] 
+</I>&gt;<i> [  175.383277] 
+</I>&gt;<i> [  175.383277] the dependencies between the lock to be acquired and HARDIRQ-irq-unsafe lock:
+</I>&gt;<i> [  175.383277] -&gt; (clock-AF_CAN){++.-..} ops: 0 {
+</I>&gt;<i> [  175.383277]    HARDIRQ-ON-W at:
+</I>&gt;<i> [  175.383277]                                        [&lt;c103d500&gt;] __lock_acquire+0x54f/0x756
+</I>&gt;<i> [  175.383277]                                        [&lt;c103e209&gt;] lock_acquire+0x45/0x5c
+</I>&gt;<i> [  175.383277]                                        [&lt;c12038da&gt;] _raw_write_lock_bh+0x20/0x2f
+</I>&gt;<i> [  175.383277]                                        [&lt;c11e3be7&gt;] raw_release+0xf9/0x14c
+</I>&gt;<i> [  175.383277]                                        [&lt;c118f55c&gt;] sock_release+0x14/0x58
+</I>&gt;<i> [  175.383277]                                        [&lt;c118fc4c&gt;] sock_close+0x1c/0x20
+</I>&gt;<i> [  175.383277]                                        [&lt;c106fc41&gt;] __fput+0xeb/0x187
+</I>&gt;<i> [  175.383277]                                        [&lt;c106fe8d&gt;] fput+0x16/0x18
+</I>&gt;<i> [  175.383277]                                        [&lt;c106d873&gt;] filp_close+0x51/0x5b
+</I>&gt;<i> [  175.383277]                                        [&lt;c106e9c3&gt;] sys_close+0x67/0xa0
+</I>&gt;<i> [  175.383277]                                        [&lt;c1002657&gt;] sysenter_do_call+0x12/0x36
+</I>&gt;<i> [  175.383277]    HARDIRQ-ON-R at:
+</I>&gt;<i> [  175.383277]                                        [&lt;c103d4d0&gt;] __lock_acquire+0x51f/0x756
+</I>&gt;<i> [  175.383277]                                        [&lt;c103e209&gt;] lock_acquire+0x45/0x5c
+</I>&gt;<i> [  175.383277]                                        [&lt;c1203adb&gt;] _raw_read_lock+0x1b/0x2a
+</I>&gt;<i> [  175.383277]                                        [&lt;c119207c&gt;] sock_def_readable+0x15/0x6b
+</I>&gt;<i> [  175.383277]                                        [&lt;c119149d&gt;] sock_queue_rcv_skb+0xfc/0x115
+</I>&gt;<i> [  175.383277]                                        [&lt;c11e3901&gt;] raw_rcv+0x4a/0x5a
+</I>&gt;<i> [  175.383277]                                        [&lt;c11e2491&gt;] can_rcv_filter+0x7a/0x147
+</I>&gt;<i> [  175.383277]                                        [&lt;c11e2765&gt;] can_rcv+0xa8/0xed
+</I>&gt;<i> [  175.383277]                                        [&lt;c1199aec&gt;] netif_receive_skb+0x288/0x2bb
+</I>&gt;<i> [  175.383277]                                        [&lt;c119c1b5&gt;] process_backlog+0x63/0x8c
+</I>&gt;<i> [  175.383277]                                        [&lt;c119c5e1&gt;] net_rx_action+0x4b/0x104
+</I>&gt;<i> [  175.383277]                                        [&lt;c102384e&gt;] __do_softirq+0x75/0xf3
+</I>&gt;<i> [  175.383277]    IN-SOFTIRQ-R at:
+</I>&gt;<i> [  175.383277]                                        [&lt;c103d4a3&gt;] __lock_acquire+0x4f2/0x756
+</I>&gt;<i> [  175.383277]                                        [&lt;c103e209&gt;] lock_acquire+0x45/0x5c
+</I>&gt;<i> [  175.383277]                                        [&lt;c1203adb&gt;] _raw_read_lock+0x1b/0x2a
+</I>&gt;<i> [  175.383277]                                        [&lt;c119207c&gt;] sock_def_readable+0x15/0x6b
+</I>&gt;<i> [  175.383277]                                        [&lt;c119149d&gt;] sock_queue_rcv_skb+0xfc/0x115
+</I>&gt;<i> [  175.383277]                                        [&lt;c11e3901&gt;] raw_rcv+0x4a/0x5a
+</I>&gt;<i> [  175.383277]                                        [&lt;c11e2491&gt;] can_rcv_filter+0x7a/0x147
+</I>&gt;<i> [  175.383277]                                        [&lt;c11e2765&gt;] can_rcv+0xa8/0xed
+</I>&gt;<i> [  175.383277]                                        [&lt;c1199aec&gt;] netif_receive_skb+0x288/0x2bb
+</I>&gt;<i> [  175.383277]                                        [&lt;c119c1b5&gt;] process_backlog+0x63/0x8c
+</I>&gt;<i> [  175.383277]                                        [&lt;c119c5e1&gt;] net_rx_action+0x4b/0x104
+</I>&gt;<i> [  175.383277]                                        [&lt;c102384e&gt;] __do_softirq+0x75/0xf3
+</I>&gt;<i> [  175.383277]    INITIAL USE at:
+</I>&gt;<i> [  175.383277]                                       [&lt;c103d571&gt;] __lock_acquire+0x5c0/0x756
+</I>&gt;<i> [  175.383277]                                       [&lt;c103e209&gt;] lock_acquire+0x45/0x5c
+</I>&gt;<i> [  175.383277]                                       [&lt;c1203adb&gt;] _raw_read_lock+0x1b/0x2a
+</I>&gt;<i> [  175.383277]                                       [&lt;c11920e7&gt;] sock_def_write_space+0x15/0x8d
+</I>&gt;<i> [  175.383277]                                       [&lt;c11918d3&gt;] sock_wfree+0x25/0x41
+</I>&gt;<i> [  175.383277]                                       [&lt;c1193503&gt;] skb_release_head_state+0x43/0x46
+</I>&gt;<i> [  175.383277]                                       [&lt;c11945c0&gt;] skb_release_all+0xb/0x15
+</I>&gt;<i> [  175.383277]                                       [&lt;c1193e41&gt;] __kfree_skb+0xb/0x69
+</I>&gt;<i> [  175.383277]                                       [&lt;c1193ef1&gt;] kfree_skb+0x28/0x2a
+</I>&gt;<i> [  175.383277]                                       [&lt;f898e0ef&gt;] ican3_xmit+0x20e/0x277 [janz_ican3]
+</I>&gt;<i> [  175.383277]                                       [&lt;c119a597&gt;] dev_hard_start_xmit+0x1c7/0x25d
+</I>&gt;<i> [  175.383277]                                       [&lt;c11a695a&gt;] sch_direct_xmit+0x4d/0x113
+</I>&gt;<i> [  175.383277]                                       [&lt;c119d15d&gt;] dev_queue_xmit+0x22c/0x397
+</I>&gt;<i> [  175.383277]                                       [&lt;c11e267e&gt;] can_send+0xd0/0x10f
+</I>&gt;<i> [  175.383277]                                       [&lt;c11e3882&gt;] raw_sendmsg+0xc3/0xf8
+</I>&gt;<i> [  175.383277]                                       [&lt;c118df5f&gt;] sock_aio_write+0xc5/0xce
+</I>&gt;<i> [  175.383277]                                       [&lt;c106edf8&gt;] do_sync_write+0x88/0xca
+</I>&gt;<i> [  175.383277]                                       [&lt;c106f49d&gt;] vfs_write+0x9d/0x116
+</I>&gt;<i> [  175.383277]                                       [&lt;c106f86a&gt;] sys_write+0x3b/0x60
+</I>&gt;<i> [  175.383277]                                       [&lt;c1002657&gt;] sysenter_do_call+0x12/0x36
+</I>&gt;<i> [  175.383277]  }
+</I>&gt;<i> [  175.383277]  ... key      at: [&lt;c186ba04&gt;] af_callback_keys+0xe8/0x128
+</I>&gt;<i> [  175.383277]  ... acquired at:
+</I>&gt;<i> [  175.383277]    [&lt;c103c497&gt;] check_irq_usage+0x50/0xad
+</I>&gt;<i> [  175.383277]    [&lt;c103caf8&gt;] validate_chain+0x604/0xabd
+</I>&gt;<i> [  175.383277]    [&lt;c103d69c&gt;] __lock_acquire+0x6eb/0x756
+</I>&gt;<i> [  175.383277]    [&lt;c103e209&gt;] lock_acquire+0x45/0x5c
+</I>&gt;<i> [  175.383277]    [&lt;c1203adb&gt;] _raw_read_lock+0x1b/0x2a
+</I>&gt;<i> [  175.383277]    [&lt;c11920e7&gt;] sock_def_write_space+0x15/0x8d
+</I>&gt;<i> [  175.383277]    [&lt;c11918d3&gt;] sock_wfree+0x25/0x41
+</I>&gt;<i> [  175.383277]    [&lt;c1193503&gt;] skb_release_head_state+0x43/0x46
+</I>&gt;<i> [  175.383277]    [&lt;c11945c0&gt;] skb_release_all+0xb/0x15
+</I>&gt;<i> [  175.383277]    [&lt;c1193e41&gt;] __kfree_skb+0xb/0x69
+</I>&gt;<i> [  175.383277]    [&lt;c1193ef1&gt;] kfree_skb+0x28/0x2a
+</I>&gt;<i> [  175.383277]    [&lt;f898e0ef&gt;] ican3_xmit+0x20e/0x277 [janz_ican3]
+</I>&gt;<i> [  175.383277]    [&lt;c119a597&gt;] dev_hard_start_xmit+0x1c7/0x25d
+</I>&gt;<i> [  175.383277]    [&lt;c11a695a&gt;] sch_direct_xmit+0x4d/0x113
+</I>&gt;<i> [  175.383277]    [&lt;c11a6ab0&gt;] __qdisc_run+0x90/0xa2
+</I>&gt;<i> [  175.383277]    [&lt;c119c90d&gt;] net_tx_action+0xa7/0xff
+</I>&gt;<i> [  175.383277]    [&lt;c102384e&gt;] __do_softirq+0x75/0xf3
+</I>&gt;<i> [  175.383277] 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;&gt;<i> Another improvement for the cangen utility is to exit after a certain
+</I>&gt;&gt;<i> number of messages. So you can match the number of generated frames with
+</I>&gt;&gt;<i> the rx/tx counters of the CAN cards and interrupts (cat /proc/interrupts)
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Yeah, that would be a good improvement too.
+</I>
+try cansequence from pengutronix' canutils
+
+&gt;<i> 
+</I>&gt;&gt;&gt;<i> can0      Link encap:UNSPEC  HWaddr 00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00  
+</I>&gt;&gt;&gt;<i>           UP RUNNING NOARP  MTU:16  Metric:1
+</I>&gt;&gt;&gt;<i>           RX packets:461 errors:0 dropped:0 overruns:0 frame:0
+</I>&gt;&gt;&gt;<i>           TX packets:608 errors:0 dropped:0 overruns:0 carrier:0
+</I>&gt;&gt;&gt;<i>           collisions:0 txqueuelen:10 
+</I>&gt;&gt;&gt;<i>           RX bytes:2616 (2.5 KiB)  TX bytes:3434 (3.3 KiB)
+</I>&gt;&gt;&gt;<i>           Interrupt:22 
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> can1      Link encap:UNSPEC  HWaddr 00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00  
+</I>&gt;&gt;&gt;<i>           UP RUNNING NOARP  MTU:16  Metric:1
+</I>&gt;&gt;&gt;<i>           RX packets:608 errors:0 dropped:0 overruns:0 frame:0
+</I>&gt;&gt;&gt;<i>           TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+</I>&gt;&gt;&gt;<i>           collisions:0 txqueuelen:10 
+</I>&gt;&gt;&gt;<i>           RX bytes:3434 (3.3 KiB)  TX bytes:0 (0.0 b)
+</I>&gt;&gt;&gt;<i>           Interrupt:22 
+</I>
+Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 260 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20100224/9bc6cae1/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20100224/9bc6cae1/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004107.html">[PATCH 0/2] add support for Janz MODULbus devices
+</A></li>
+	<LI>Next message: <A HREF="004109.html">[PATCH 0/2] add support for Janz MODULbus devices
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4108">[ date ]</a>
+              <a href="thread.html#4108">[ thread ]</a>
+              <a href="subject.html#4108">[ subject ]</a>
+              <a href="author.html#4108">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,150 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> merging branches/netlink: please test
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20merging%20branches/netlink%3A%20please%20test&In-Reply-To=%3C4A643B07.5030604%40visionsystems.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002786.html">
+   <LINK REL="Next"  HREF="002790.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>merging branches/netlink: please test</H1>
+    <B>Yegor Yefremov</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20merging%20branches/netlink%3A%20please%20test&In-Reply-To=%3C4A643B07.5030604%40visionsystems.de%3E"
+       TITLE="merging branches/netlink: please test">yegor_sub1 at visionsystems.de
+       </A><BR>
+    <I>Mon Jul 20 11:38:15 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002786.html">merging branches/netlink: please test
+</A></li>
+        <LI>Next message: <A HREF="002790.html">[PATCH 0/3] can: various fixes to the device driver interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2787">[ date ]</a>
+              <a href="thread.html#2787">[ thread ]</a>
+              <a href="subject.html#2787">[ subject ]</a>
+              <a href="author.html#2787">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Wolfgang,
+
+&gt;&gt;<i> What should be done for &quot;review non-standard error counting and statistics&quot;? I compared the sja1000.c with at91_can.c and found out that the latter lacks net_device_stats. So I should introduce this counting along with the priv-&gt;can.can_state one.
+</I>&gt;<i> 
+</I>&gt;<i> The function at91_get_stats() should be removed. It does:
+</I>&gt;<i> 
+</I>&gt;<i> 	u32 reg_ecr = at91_read(dev, AT91_ECR);
+</I>&gt;<i> 
+</I>&gt;<i> 	dev-&gt;stats.rx_errors = reg_ecr &amp; 0xff;
+</I>&gt;<i> 	dev-&gt;stats.tx_errors = reg_ecr &gt;&gt; 16;
+</I>&gt;<i> 
+</I>&gt;<i> It copies the value of the hardware TX and RX error counter of the CAN
+</I>&gt;<i> controller, which is non-standard. It has already been discussed, that
+</I>&gt;<i> it would make sense to have access to these error counters from user
+</I>&gt;<i> space, but so far it's not supported.
+</I>
+Remove non-standard error counting and statistics
+
+- remove at91_get_stats()
+- fix typos
+
+Signed-off-by: Yegor Yefremov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">yegorslists at googlemail.com</A>&gt;
+
+Index: kernel/2.6/drivers/net/can/at91_can.c
+===================================================================
+--- kernel/2.6/drivers/net/can/at91_can.c	(Revision 1031)
++++ kernel/2.6/drivers/net/can/at91_can.c	(Arbeitskopie)
+@@ -534,8 +534,8 @@
+ 		at91_write(dev, AT91_IDR, 1 &lt;&lt; mb);
+ 
+ 		/*
+-		 * only echo if mailbox signals us an transfer
+-		 * complete (MSR_MRDY). Otherwise it's an tansfer
++		 * only echo if mailbox signals us a transfer
++		 * complete (MSR_MRDY). Otherwise it's a tansfer
+ 		 * abort. &quot;can_bus_off()&quot; takes care about the skbs
+ 		 * parked in the echo queue.
+ 		 */
+@@ -548,7 +548,7 @@
+ 
+ 	/*
+ 	 * restart queue if we don't have a wrap around but restart if
+-	 * we get an TX int for the last can frame directly before a
++	 * we get a TX int for the last can frame directly before a
+ 	 * wrap around.
+ 	 */
+ 	if ((priv-&gt;tx_next &amp; AT91_NEXT_MASK) != 0 ||
+@@ -837,32 +837,6 @@
+ 	priv-&gt;tx_next = priv-&gt;tx_echo = priv-&gt;rx_bank = 0;
+ }
+ 
+-
+-static struct net_device_stats *at91_get_stats(struct net_device *dev)
+-{
+-	struct at91_priv *priv = netdev_priv(dev);
+-	u32 reg_ecr = at91_read(dev, AT91_ECR);
+-
+-	dev-&gt;stats.rx_errors = reg_ecr &amp; 0xff;
+-	dev-&gt;stats.tx_errors = reg_ecr &gt;&gt; 16;
+-
+-	/*
+-	 * here comes another one:
+-	 *
+-	 * the transmit error counter (TEC) has only a width of 8
+-	 * bits, so when the devices goes into BUS OFF (which is
+-	 * defined by a TEC &gt; 255), the TEC in the chip shows &quot;0&quot;. Not
+-	 * only that, it keeps accumulating errors, so they can vary
+-	 * between 0 and 255. We set TEC to 256 (hard) in BUS_OFF.
+-	 *
+-	 */
+-	if (unlikely(priv-&gt;can.state == CAN_STATE_BUS_OFF))
+-		dev-&gt;stats.tx_errors = 256;
+-
+-	return &amp;dev-&gt;stats;
+-}
+-
+-
+ static int at91_set_bittiming(struct net_device *dev)
+ {
+ 	struct at91_priv *priv = netdev_priv(dev);
+@@ -1064,7 +1038,6 @@
+ 	dev-&gt;stop		= at91_close;
+ 	dev-&gt;hard_start_xmit	= at91_start_xmit;
+ #endif
+-	dev-&gt;get_stats		= at91_get_stats;
+ 	dev-&gt;irq		= irq;
+ 	dev-&gt;flags		|= IFF_ECHO;
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002786.html">merging branches/netlink: please test
+</A></li>
+	<LI>Next message: <A HREF="002790.html">[PATCH 0/3] can: various fixes to the device driver interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2787">[ date ]</a>
+              <a href="thread.html#2787">[ thread ]</a>
+              <a href="subject.html#2787">[ subject ]</a>
+              <a href="author.html#2787">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

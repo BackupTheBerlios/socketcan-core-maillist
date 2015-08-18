@@ -1,0 +1,284 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] net-next:can: add TI CAN (HECC) driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20net-next%3Acan%3A%20add%20TI%20CAN%20%28HECC%29%20driver&In-Reply-To=%3C4A9B90FD.3000301%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002938.html">
+   <LINK REL="Next"  HREF="002940.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] net-next:can: add TI CAN (HECC) driver</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20net-next%3Acan%3A%20add%20TI%20CAN%20%28HECC%29%20driver&In-Reply-To=%3C4A9B90FD.3000301%40grandegger.com%3E"
+       TITLE="[PATCH] net-next:can: add TI CAN (HECC) driver">wg at grandegger.com
+       </A><BR>
+    <I>Mon Aug 31 10:59:41 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002938.html">[PATCH] net-next:can: add TI CAN (HECC) driver
+</A></li>
+        <LI>Next message: <A HREF="002940.html">[PATCH] net-next:can: add TI CAN (HECC) driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2939">[ date ]</a>
+              <a href="thread.html#2939">[ thread ]</a>
+              <a href="subject.html#2939">[ subject ]</a>
+              <a href="author.html#2939">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Gole, Anant wrote:
+&gt;&gt;<i> -----Original Message-----
+</I>&gt;&gt;<i> From: Wolfgang Grandegger [mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>]
+</I>&gt;&gt;<i> Sent: Saturday, August 29, 2009 12:36 PM
+</I>&gt;&gt;<i> To: Gole, Anant
+</I>&gt;&gt;<i> Cc: Linux Netdev List; <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;&gt;<i> Subject: Re: [PATCH] net-next:can: add TI CAN (HECC) driver
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> TI HECC (High End CAN Controller) module is found on many TI devices. It
+</I>&gt;&gt;<i> has
+</I>&gt;&gt;&gt;<i> 32 harwdare mailboxes with full implementation of CAN protocol version
+</I>&gt;&gt;<i> 2.0B
+</I>&gt;&gt;&gt;<i> and bus speeds up to 1Mbps. The module specifications are available at TI
+</I>&gt;&gt;<i> web
+</I>&gt;&gt;&gt;<i> &lt;<A HREF="http://www.ti.com">http://www.ti.com</A>&gt;.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> This driver is tested on OMAP3517 EVM. Suspend/Resume not tested as yet.
+</I>&gt;&gt;<i> Nice driver, even using the NAPI interface. First some general comments.
+</I>&gt;&gt;<i> Please remove debugging code mainly useful for development, e.g. the
+</I>&gt;&gt;<i> CONFIG_DEBUG_FS block, many dev_info calls and special statistics
+</I>&gt;&gt;<i> counters. Also use dev_dbg for the remaining debug messages useful for
+</I>&gt;&gt;<i> the normal user, like state changes. More comments inline.
+</I>&gt;<i> 
+</I>&gt;<i> Ack on most comments you gave - some good bugs uncovered with this review. Thanks. I am answering those which I have some comment on.
+</I>&gt;<i> 
+</I>&gt;<i> [snip]
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +#define HECC_MODULE_VERSION     &quot;0.2&quot;
+</I>&gt;&gt;<i> A version number is will usually not maintained. May drivers have it but
+</I>&gt;&gt;<i> it's never changed.
+</I>&gt;<i> 
+</I>&gt;<i> I understand but unless this is a strong objection I would like to keep it as it would be nice to update it when any major change happens.
+</I>
+It's *not* a strong objection but I personally believe that git is doing
+a much better job.
+
+&gt;<i> [snip]
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +/* CAN Bittiming constants as per HECC specs */
+</I>&gt;&gt;&gt;<i> +static struct can_bittiming_const ti_hecc_bittiming_const = {
+</I>&gt;&gt;&gt;<i> +       .name = DRV_NAME,
+</I>&gt;&gt;&gt;<i> +       .tseg1_min = 1,
+</I>&gt;&gt;&gt;<i> +       .tseg1_max = 16,
+</I>&gt;&gt;&gt;<i> +       .tseg2_min = 1,
+</I>&gt;&gt;<i> Please check if tseg2_min is a valid value. Usually it's larger.
+</I>&gt;&gt;<i>
+</I>&gt;<i> Yes I did. This controller allows tseg2_min = 1
+</I>
+OK.
+&gt;<i> 
+</I>&gt;<i> [snip]
+</I>&gt;&gt;&gt;<i> +       struct napi_struct napi;
+</I>&gt;&gt;&gt;<i> +       struct net_device *ndev;
+</I>&gt;&gt;&gt;<i> +       struct clk *clk;
+</I>&gt;&gt;&gt;<i> +       void __iomem *base;
+</I>&gt;&gt;&gt;<i> +       unsigned int scc_ram_offset;
+</I>&gt;&gt;&gt;<i> +       unsigned int hecc_ram_offset;
+</I>&gt;&gt;&gt;<i> +       unsigned int mbox_offset;
+</I>&gt;&gt;&gt;<i> +       unsigned int int_line;
+</I>&gt;&gt;&gt;<i> +       DECLARE_BITMAP(tx_free_mbx, TI_HECC_MAX_TX_MBOX);
+</I>&gt;&gt;&gt;<i> +       spinlock_t tx_lock;
+</I>&gt;&gt;<i> Please document the spinlock tx_lock. What is it used for.
+</I>&gt;<i> 
+</I>&gt;<i> It is to protect the tx_free_mbx bitmap above - will document.
+</I>
+I know, but for kernel inclusion it should be documented.
+
+&gt;<i> [snip]
+</I>&gt;<i> 
+</I>&gt;&gt;<i> Right, automatic bus-off recovery should be disabled. To make that clear:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>           hecc_clear_bit(priv, HECC_CANMC, HECC_CANMC_ABO);
+</I>&gt;<i> 
+</I>&gt;<i> Since CANMC register is set to 0 and ABO bit is part of it I did not make this statement explicitly (it will be redundant). I will update the comment above to state that if it changes in future then enable auto bus off with that statement
+</I>
+OK.
+
+&gt;<i> [snip]
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static int ti_hecc_do_set_mode(struct net_device *ndev, enum can_mode
+</I>&gt;&gt;<i> mode)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +       struct ti_hecc_priv *priv = netdev_priv(ndev);
+</I>&gt;&gt;&gt;<i> +       int ret = 0;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +       switch (mode) {
+</I>&gt;&gt;&gt;<i> +       case CAN_MODE_SLEEP:
+</I>&gt;&gt;&gt;<i> +               dev_info(priv-&gt;ndev-&gt;dev.parent, &quot;device going to
+</I>&gt;&gt;<i> sleep\n&quot;);
+</I>&gt;&gt;&gt;<i> +               if (netif_running(ndev)) {
+</I>&gt;&gt;&gt;<i> +                       netif_stop_queue(ndev);
+</I>&gt;&gt;&gt;<i> +                       netif_device_detach(ndev);
+</I>&gt;&gt;&gt;<i> +                       /* Put HECC in low power mode */
+</I>&gt;&gt;&gt;<i> +                       hecc_set_bit(priv, HECC_CANMC, HECC_CANMC_PDR);
+</I>&gt;&gt;&gt;<i> +               }
+</I>&gt;&gt;&gt;<i> +               priv-&gt;can.state = CAN_STATE_SLEEPING;
+</I>&gt;&gt;&gt;<i> +               break;
+</I>&gt;&gt;<i> Has sleeping been tested? Actually, we do not have an interface yet to
+</I>&gt;&gt;<i> enter sleep mode. Please remove. If there is a need for it, we should
+</I>&gt;&gt;<i> work togehter to refine the interface and to provide a solution.
+</I>&gt;&gt;<i>
+</I>&gt;<i> No I have not yet tested sleep/suspend/resume. Will remove based upon response to CAN_MODE_STOP comment below
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +       case CAN_MODE_STOP:
+</I>&gt;&gt;&gt;<i> +               dev_info(priv-&gt;ndev-&gt;dev.parent, &quot;device stopping\n&quot;);
+</I>&gt;&gt;&gt;<i> +               ti_hecc_stop(ndev);
+</I>&gt;&gt;&gt;<i> +               break;
+</I>&gt;&gt;<i> Only CAN_MODE_START is used by the CAN devicde interface for bus-off
+</I>&gt;&gt;<i> recovery.
+</I>&gt;&gt;<i>
+</I>&gt;<i> I saw other drivers (like mscan) also have the code for sleep/stop. Agreed that I have not tested it as you mentioned that the CAN infrastructure does not call it right now. Do you want me to remove it?
+</I>
+Yes, for kernel inclusion it should be removed. We are more relaxed to
+keep that &quot;preliminary&quot; and &quot;un-tested&quot; code in the BerliOS SVN
+repository. Note that the MSCAN driver is not yet mainline
+
+&gt;<i> [snip]
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +       }
+</I>&gt;&gt;&gt;<i> +       set_bit(mbxno, priv-&gt;tx_free_mbx);
+</I>&gt;&gt;&gt;<i> +       spin_unlock_irqrestore(&amp;priv-&gt;tx_lock, flags);
+</I>&gt;&gt;<i> Hm, I wonder how the driver ensures that packages go out in order. How
+</I>&gt;&gt;<i> does the CAN hardware schedule pending TX message objects? Vladislav
+</I>&gt;&gt;<i> posted a test programs recently to check message ordering. See:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> <A HREF="https://lists.berlios.de/pipermail/socketcan-core/2009-August/002871.html">https://lists.berlios.de/pipermail/socketcan-core/2009-August/002871.html</A>
+</I>&gt;<i> 
+</I>&gt;<i> TI HECC hardware has mailbox priority field and higher mailbox number will transmit if two mailboxes have same priority level. But the code does not use that feature as yet. Let me think of how I can ensure out of order issue.
+</I>
+Have a look to the AT91 driver, it seems to be quite similar.
+
+&gt;<i> [snip]
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +       pending_pkts = hecc_read(priv, HECC_CANRMP);
+</I>&gt;&gt;&gt;<i> +       while (pending_pkts &amp;&amp; (num_pkts &lt; quota)) {
+</I>&gt;&gt;&gt;<i> +               mbxno = find_first_bit(&amp;pending_pkts,
+</I>&gt;&gt;<i> HECC_MAX_MAILBOXES);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Here I also wonder if the messages are handled in the correct order.
+</I>&gt;<i> 
+</I>&gt;<i> No I have not taken care of that. Let me look into the pkt handling to see how I can do it based upon hardware capability.
+</I>&gt;<i> 
+</I>&gt;<i> [snip]
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +       ti_hecc_error(ndev, int_status, hecc_read(priv, HECC_CANES));
+</I>&gt;&gt;<i> Hm, you create an error frame for each interrupt!? What do you see with:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> # candump any,0:0,#FFFFFFFF
+</I>&gt;&gt;<i>
+</I>&gt;<i> Good catch. I did not observe unnecessary error frames via candump (or I really missed them). But I will correct this anyway.
+</I>
+I see. That's because the error code of can_id is 0 and the mask does
+not trigger.
+
+&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +       /* Handle Abort acknowledge interrupt */
+</I>&gt;&gt;&gt;<i> +       if (int_status &amp; HECC_CANGIF_AAIF) {
+</I>&gt;&gt;&gt;<i> +               ack = hecc_read(priv, HECC_CANAA);
+</I>&gt;&gt;&gt;<i> +               while (ack) {
+</I>&gt;&gt;&gt;<i> +                       mbxno = find_first_bit(&amp;ack, HECC_MAX_MAILBOXES);
+</I>&gt;&gt;&gt;<i> +                       if (mbxno == HECC_MAX_MAILBOXES) {
+</I>&gt;&gt;&gt;<i> +                               break;
+</I>&gt;&gt;&gt;<i> +                       } else {
+</I>&gt;&gt;&gt;<i> +                               clear_bit(mbxno, &amp;ack);
+</I>&gt;&gt;&gt;<i> +                               /* release echo pkt &amp; update counters */
+</I>&gt;&gt;&gt;<i> +                               hecc_set_bit(priv, HECC_CANAA, (1 &lt;&lt;
+</I>&gt;&gt;<i> mbxno));
+</I>&gt;&gt;&gt;<i> +                               hecc_clear_bit(priv, HECC_CANME, (1 &lt;&lt;
+</I>&gt;&gt;<i> mbxno));
+</I>&gt;&gt;&gt;<i> +                               /* FIXME: since net-next tree's dev.h
+</I>&gt;&gt;<i> does not
+</I>&gt;&gt;&gt;<i> +                                * include can_free_echo_skb() doing
+</I>&gt;&gt;<i> equivalent
+</I>&gt;&gt;&gt;<i> +                                * of can_free_echo_skb(ndev, mbxno);
+</I>&gt;&gt;&gt;<i> +                                */
+</I>&gt;&gt;&gt;<i> +                               if (priv-&gt;can.echo_skb[mbxno]) {
+</I>&gt;&gt;&gt;<i> +                                       kfree_skb(priv-
+</I>&gt;&gt;&gt;<i> can.echo_skb[mbxno]);
+</I>&gt;&gt;&gt;<i> +                                       priv-&gt;can.echo_skb[mbxno] = NULL;
+</I>&gt;&gt;&gt;<i> +                               }
+</I>&gt;&gt;&gt;<i> +                               if (netif_queue_stopped(ndev))
+</I>&gt;&gt;&gt;<i> +                                       netif_wake_queue(ndev);
+</I>&gt;&gt;&gt;<i> +                               spin_lock_irqsave(&amp;priv-&gt;tx_lock, flags);
+</I>&gt;&gt;&gt;<i> +                               clear_bit(mbxno, priv-&gt;tx_free_mbx);
+</I>&gt;&gt;&gt;<i> +                               spin_unlock_irqrestore(&amp;priv-&gt;tx_lock,
+</I>&gt;&gt;<i> flags);
+</I>&gt;&gt;&gt;<i> +                       }
+</I>&gt;&gt;&gt;<i> +               }
+</I>&gt;&gt;&gt;<i> +       }
+</I>&gt;&gt;<i> Can that interrupt happen? I have not found any code aborting messages.
+</I>&gt;<i> 
+</I>&gt;<i> It can happen only if a tx mailbox is told to abort. This interrupt is an ack for the same. I am not using the tx abort feature so will remove this.
+</I>&gt;<i> 
+</I>&gt;<i> [snip]
+</I>&gt;&gt;&gt;<i> +       }
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +       /* Open common can device */
+</I>&gt;&gt;&gt;<i> +       err = open_candev(ndev);
+</I>&gt;&gt;&gt;<i> +       if (err) {
+</I>&gt;&gt;&gt;<i> +               dev_err(ndev-&gt;dev.parent, &quot;open_candev() failed %08X\n&quot;,
+</I>&gt;&gt;<i> err);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> free_irq?
+</I>&gt;<i> 
+</I>&gt;<i> Good catch. Will fix it.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +               return err;
+</I>&gt;&gt;&gt;<i> +       }
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;<i> Thanks for your contribution.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Wolfgang.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Appreciate the review. I will send v2 of patch. Not sure still if the original patch reached the socketcan mailing list due to size.
+</I>
+v2 will fit but I'm wondering who is moderating the ML. Oliver?
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002938.html">[PATCH] net-next:can: add TI CAN (HECC) driver
+</A></li>
+	<LI>Next message: <A HREF="002940.html">[PATCH] net-next:can: add TI CAN (HECC) driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2939">[ date ]</a>
+              <a href="thread.html#2939">[ thread ]</a>
+              <a href="subject.html#2939">[ subject ]</a>
+              <a href="author.html#2939">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

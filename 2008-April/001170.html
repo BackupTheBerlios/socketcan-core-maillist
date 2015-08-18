@@ -1,0 +1,150 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH][CAN]: Fix copy_from_user() results interpretation
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%5BCAN%5D%3A%20Fix%20copy_from_user%28%29%20results%20interpretation&In-Reply-To=%3C20080426095923.GA22836%40uranus.ravnborg.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001168.html">
+   <LINK REL="Next"  HREF="001171.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH][CAN]: Fix copy_from_user() results interpretation</H1>
+    <B>Sam Ravnborg</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%5BCAN%5D%3A%20Fix%20copy_from_user%28%29%20results%20interpretation&In-Reply-To=%3C20080426095923.GA22836%40uranus.ravnborg.org%3E"
+       TITLE="[PATCH][CAN]: Fix copy_from_user() results interpretation">sam at ravnborg.org
+       </A><BR>
+    <I>Sat Apr 26 11:59:23 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001168.html">[PATCH][CAN]: Fix copy_from_user() results interpretation.
+</A></li>
+        <LI>Next message: <A HREF="001171.html">[PATCH][CAN]: Fix copy_from_user() results interpretation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1170">[ date ]</a>
+              <a href="thread.html#1170">[ thread ]</a>
+              <a href="subject.html#1170">[ subject ]</a>
+              <a href="author.html#1170">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Both copy_to_ and _from_user return the number of bytes, that failed to
+reach their destination, not the 0/-EXXX values.
+
+Based on patch from Pavel Emelyanov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">xemul at openvz.org</A>&gt;
+
+Signed-off-by: Sam Ravnborg &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">sam at ravnborg.org</A>&gt;
+Acked-by: Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">oliver.hartkopp at volkswagen.de</A>&gt;
+Cc: Pavel Emelyanov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">xemul at openvz.org</A>&gt;
+Cc: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+
+Hi David.
+
+&gt;<i> Right, I also have no problem with Sam's patch at all and plan to
+</I>&gt;<i> apply it.
+</I>OK - here is a proper patch.
+Actual patch is the same - I just added a proper changelog.
+
+	Sam
+
+diff --git a/net/can/raw.c b/net/can/raw.c
+index 201cbfc..69877b8 100644
+--- a/net/can/raw.c
++++ b/net/can/raw.c
+@@ -435,15 +435,13 @@ static int raw_setsockopt(struct socket *sock, int level, int optname,
+ 			if (!filter)
+ 				return -ENOMEM;
+ 
+-			err = copy_from_user(filter, optval, optlen);
+-			if (err) {
++			if (copy_from_user(filter, optval, optlen)) {
+ 				kfree(filter);
+-				return err;
++				return -EFAULT;
+ 			}
+ 		} else if (count == 1) {
+-			err = copy_from_user(&amp;sfilter, optval, optlen);
+-			if (err)
+-				return err;
++			if (copy_from_user(&amp;sfilter, optval, optlen))
++				return -EFAULT;
+ 		}
+ 
+ 		lock_sock(sk);
+@@ -493,9 +491,8 @@ static int raw_setsockopt(struct socket *sock, int level, int optname,
+ 		if (optlen != sizeof(err_mask))
+ 			return -EINVAL;
+ 
+-		err = copy_from_user(&amp;err_mask, optval, optlen);
+-		if (err)
+-			return err;
++		if (copy_from_user(&amp;err_mask, optval, optlen))
++			return -EFAULT;
+ 
+ 		err_mask &amp;= CAN_ERR_MASK;
+ 
+@@ -531,7 +528,8 @@ static int raw_setsockopt(struct socket *sock, int level, int optname,
+ 		if (optlen != sizeof(ro-&gt;loopback))
+ 			return -EINVAL;
+ 
+-		err = copy_from_user(&amp;ro-&gt;loopback, optval, optlen);
++		if (copy_from_user(&amp;ro-&gt;loopback, optval, optlen))
++			return -EFAULT;
+ 
+ 		break;
+ 
+@@ -539,7 +537,8 @@ static int raw_setsockopt(struct socket *sock, int level, int optname,
+ 		if (optlen != sizeof(ro-&gt;recv_own_msgs))
+ 			return -EINVAL;
+ 
+-		err = copy_from_user(&amp;ro-&gt;recv_own_msgs, optval, optlen);
++		if (copy_from_user(&amp;ro-&gt;recv_own_msgs, optval, optlen))
++			return -EFAULT;
+ 
+ 		break;
+ 
+diff --git a/scripts/Makefile.build b/scripts/Makefile.build
+index 277cfe0..4a7327b 100644
+--- a/scripts/Makefile.build
++++ b/scripts/Makefile.build
+@@ -105,7 +105,7 @@ endif
+ 
+ # Do section mismatch analysis for each module/built-in.o
+ ifdef CONFIG_DEBUG_SECTION_MISMATCH
+-  cmd_secanalysis = ; scripts/mod/modpost $@
++  #cmd_secanalysis = ; scripts/mod/modpost $@
+ endif
+ 
+ # Compile C sources (.c)
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001168.html">[PATCH][CAN]: Fix copy_from_user() results interpretation.
+</A></li>
+	<LI>Next message: <A HREF="001171.html">[PATCH][CAN]: Fix copy_from_user() results interpretation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1170">[ date ]</a>
+              <a href="thread.html#1170">[ thread ]</a>
+              <a href="subject.html#1170">[ subject ]</a>
+              <a href="author.html#1170">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

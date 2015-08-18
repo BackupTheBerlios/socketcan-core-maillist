@@ -1,0 +1,223 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 5/6] J1939: add the protocol stack
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%205/6%5D%20J1939%3A%20add%20the%20protocol%20stack&In-Reply-To=%3C4D52EA3E.3040404%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005461.html">
+   <LINK REL="Next"  HREF="005511.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 5/6] J1939: add the protocol stack</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%205/6%5D%20J1939%3A%20add%20the%20protocol%20stack&In-Reply-To=%3C4D52EA3E.3040404%40hartkopp.net%3E"
+       TITLE="[PATCH v2 5/6] J1939: add the protocol stack">socketcan at hartkopp.net
+       </A><BR>
+    <I>Wed Feb  9 20:25:50 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005461.html">[PATCH v2 5/6] J1939: add the protocol stack
+</A></li>
+        <LI>Next message: <A HREF="005511.html">[PATCH v2 5/6] J1939: add the protocol stack
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5503">[ date ]</a>
+              <a href="thread.html#5503">[ thread ]</a>
+              <a href="subject.html#5503">[ subject ]</a>
+              <a href="author.html#5503">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 03.02.2011 10:40, Kurt Van Dijck wrote:
+&gt;<i> This is the main j1939 protocol stack.
+</I>
+Hello Kurt,
+
+sorry for the delay ...
+
+In the last week i tried to become more familiar with j1939 by reading
+multiple documents from the net - and your source code.
+
+First some general remarks inside the text:
+
+&gt;<i>  net/can/j1939/j1939-ac.c      |  554 ++++++++++++++++
+</I>&gt;<i>  net/can/j1939/j1939-bus.c     |  600 +++++++++++++++++
+</I>&gt;<i>  net/can/j1939/j1939-filter.c  |  230 +++++++
+</I>&gt;<i>  net/can/j1939/j1939-loop.c    |   74 ++
+</I>&gt;<i>  net/can/j1939/j1939-priv.h    |  298 +++++++++
+</I>&gt;<i>  net/can/j1939/j1939-proc.c    |  102 +++
+</I>&gt;<i>  net/can/j1939/j1939-promisc.c |   90 +++
+</I>&gt;<i>  net/can/j1939/j1939-rtnl.c    |  316 +++++++++
+</I>&gt;<i>  net/can/j1939/j1939-socket.c  |  927 ++++++++++++++++++++++++++
+</I>&gt;<i>  net/can/j1939/j1939-stack.c   |  183 +++++
+</I>&gt;<i>  net/can/j1939/j1939-tp.c      | 1465 +++++++++++++++++++++++++++++++++++++++++
+</I>
+s/j1939-//g
+
+&gt;<i>  net/can/j1939/j1939.c         |  438 ++++++++++++
+</I>
+net/can/j1939/main.c
+
+
+
+&gt;<i> +
+</I>&gt;<i> +static int j1939sk_bind(struct socket *sock, struct sockaddr *uaddr, int len)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct sockaddr_can *addr = (struct sockaddr_can *)uaddr;
+</I>&gt;<i> +	struct j1939_sock *jsk = j1939_sk(sock-&gt;sk);
+</I>&gt;<i> +	struct j1939_ecu *ecu = NULL;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (len &lt; required_size(can_addr.j1939, *addr))
+</I>&gt;<i> +		return -EINVAL;
+</I>&gt;<i> +	if (addr-&gt;can_family != AF_CAN)
+</I>&gt;<i> +		return -EINVAL;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* lock s.lock first, to avoid circular lock dependancy */
+</I>&gt;<i> +	mutex_lock(&amp;s.lock);
+</I>&gt;<i> +	lock_sock(sock-&gt;sk);
+</I>&gt;<i> +	if (jsk-&gt;state &amp; JSK_BOUND) {
+</I>&gt;<i> +		ret = -EBUSY;
+</I>&gt;<i> +		if (addr-&gt;can_ifindex != jsk-&gt;sk.sk_bound_dev_if)
+</I>&gt;<i> +			goto fail_locked;
+</I>&gt;<i> +		/*
+</I>&gt;<i> +		 * do not allow to change addres after first bind(),
+</I>&gt;<i> +		 * (it would require updating the j1939_ecu list)
+</I>&gt;<i> +		 * but allow the change SA when using dynaddr,
+</I>&gt;<i> +		 * and allow to change PGN
+</I>&gt;<i> +		 */
+</I>&gt;<i> +		if (!jsk-&gt;addr.src ||
+</I>&gt;<i> +			(jsk-&gt;addr.src != addr-&gt;can_addr.j1939.name) ||
+</I>&gt;<i> +			(jsk-&gt;addr.pgn != addr-&gt;can_addr.j1939.pgn))
+</I>&gt;<i> +			goto fail_locked;
+</I>&gt;<i> +		/* set to be able to send address claims */
+</I>&gt;<i> +		jsk-&gt;addr.sa = addr-&gt;can_addr.j1939.addr;
+</I>&gt;<i> +		/* since this socket is bound already, we can skip a lot */
+</I>&gt;<i> +		release_sock(sock-&gt;sk);
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +	}
+</I>
+mutex_unlock??
+
+&gt;<i> +/* lowest layer */
+</I>&gt;<i> +static void j1939_can_recv(struct sk_buff *skb, void *data)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int orig_len;
+</I>&gt;<i> +	struct j1939_sk_buff_cb *sk_addr;
+</I>&gt;<i> +	struct can_frame *can;
+</I>
+please name it 'cf' or 'msg'
+
+
+&gt;<i> +
+</I>&gt;<i> +static int j1939_can_send(struct sk_buff *skb)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int ret, dlc;
+</I>&gt;<i> +	canid_t canid;
+</I>&gt;<i> +	struct j1939_sk_buff_cb *sk_addr;
+</I>&gt;<i> +	struct net_device *netdev = NULL;
+</I>&gt;<i> +	struct can_frame *can;
+</I>&gt;<i> +
+</I>&gt;<i> +	dlc = skb-&gt;len;
+</I>&gt;<i> +	if (dlc &gt; 8)
+</I>&gt;<i> +		return -EMSGSIZE;
+</I>&gt;<i> +	ret = pskb_expand_head(skb, SKB_DATA_ALIGN(CAN_HDR),
+</I>&gt;<i> +			CAN_FTR + (8-dlc), GFP_ATOMIC);
+</I>&gt;<i> +	if (ret &lt; 0)
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	can = (void *)skb_push(skb, CAN_HDR);
+</I>&gt;<i> +	BUG_ON(!can);
+</I>&gt;<i> +	/* make it a full can frame */
+</I>&gt;<i> +	skb_put(skb, CAN_FTR + (8 - dlc));
+</I>
+why (8 - dlc) ???
+
+
+&gt;<i> +
+</I>&gt;<i> +	/* fix the 'always free' policy of can_send */
+</I>&gt;<i> +	skb = skb_get(skb);
+</I>&gt;<i> +	ret = can_send(skb, 1);
+</I>&gt;<i> +	if (!ret)
+</I>&gt;<i> +		/* free when can_send succeedded */
+</I>&gt;<i> +		kfree_skb(skb);
+</I>&gt;<i> +failed:
+</I>&gt;<i> +	if (netdev)
+</I>&gt;<i> +		dev_put(netdev);
+</I>&gt;<i> +	return ret;
+</I>
+Does 'fix' mean: Make use of the return value??
+
+
+&gt;<i> +static inline struct j1939_ecu *find_ecu(int ifindex, name_t name, int sa)
+</I>&gt;<i> +{
+</I>&gt;<i> +	if (name)
+</I>&gt;<i> +		return j1939_ecu_find_by_name(name, ifindex);
+</I>&gt;<i> +	else if (sa &lt; 0xfe)
+</I>&gt;<i> +		return j1939_ecu_find_by_addr(sa, ifindex);
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>
+There are many occurrences of 0xfe or something similar byte values.
+
+Please use #defines for these j1939 values.
+
+&gt;<i> +static __exit void j1939_module_exit(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	j1939flt_module_exit();
+</I>&gt;<i> +	j1939lp_module_exit();
+</I>&gt;<i> +	j1939_promisc_module_exit();
+</I>&gt;<i> +	j1939tp_module_exit();
+</I>&gt;<i> +	j1939ac_module_exit();
+</I>&gt;<i> +	j1939sk_module_exit();
+</I>&gt;<i> +	j1939bus_module_exit();
+</I>&gt;<i> +
+</I>&gt;<i> +	j1939_stack_unregister(&amp;j1939_tx_end);
+</I>&gt;<i> +	unregister_netdevice_notifier(&amp;s.notifier);
+</I>&gt;<i> +
+</I>&gt;<i> +	j1939_stack_module_exit();
+</I>&gt;<i> +	j1939_proc_module_exit();
+</I>&gt;<i> +}
+</I>
+
+In general all your j1939 implementation adds 5000+ LOC
+
+box:~/net-2.6/net/can/j1939$ cat *.c | wc -l
+5000
+
+not counting the .h files.
+
+I'll continue my general remarks in the patch adding the documentation.
+
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005461.html">[PATCH v2 5/6] J1939: add the protocol stack
+</A></li>
+	<LI>Next message: <A HREF="005511.html">[PATCH v2 5/6] J1939: add the protocol stack
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5503">[ date ]</a>
+              <a href="thread.html#5503">[ thread ]</a>
+              <a href="subject.html#5503">[ subject ]</a>
+              <a href="author.html#5503">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

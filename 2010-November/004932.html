@@ -1,0 +1,159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Fix%20build%0A%09warnings&In-Reply-To=%3C4CD945B4.4060408%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004931.html">
+   <LINK REL="Next"  HREF="004935.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Fix%20build%0A%09warnings&In-Reply-To=%3C4CD945B4.4060408%40pengutronix.de%3E"
+       TITLE="[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings">mkl at pengutronix.de
+       </A><BR>
+    <I>Tue Nov  9 13:59:32 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004931.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+        <LI>Next message: <A HREF="004935.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4932">[ date ]</a>
+              <a href="thread.html#4932">[ thread ]</a>
+              <a href="subject.html#4932">[ subject ]</a>
+              <a href="author.html#4932">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 11/09/2010 01:26 PM, Tomoya MORINAGA wrote:
+&gt;&gt;&gt;&gt;<i> Can you please explain me your locking sheme? If I understand the
+</I>&gt;&gt;&gt;&gt;<i> documenation correctly the two message interfaces can be used mutual.
+</I>&gt;&gt;&gt;&gt;<i> And you use one for rx the other one for tx.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I show our locking scheme.
+</I>&gt;&gt;&gt;<i> When CPU accesses MessageRAM via IF1, CPU protect until read-modify-write
+</I>&gt;&gt;&gt;<i> so that IF2 access not occurred, vice versa.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Why is that needed?
+</I>&gt;<i> 
+</I>&gt;<i> For MessageRAM data consistency.
+</I>
+As far as I understand the datasheet the access to IF1 and IF2 is
+completely independent. Why do you lock here?
+
+[...]
+
+&gt;&gt;&gt;&gt;<i> Please use just &quot;debug&quot; level not warning here. Consider to use
+</I>&gt;&gt;&gt;&gt;<i> netdev_dbg() instead. IMHO the __func__ can be dropped and the
+</I>&gt;&gt;&gt;&gt;<i> &quot;official&quot; name for the error is &quot;Error Warning&quot;.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I want to know the reason.
+</I>&gt;&gt;&gt;<i> Why is it not dev_warn but netdev_dbg ?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If you use warning level it would end up on the console or and in the
+</I>&gt;&gt;<i> syslog. It's quite complicated (for programs) to get information from
+</I>&gt;&gt;<i> there. This is why we send CAN error frames. They hold the same
+</I>&gt;&gt;<i> information but int a binary form, thus it's easier to process.
+</I>&gt;<i> 
+</I>&gt;<i> I understand the reason.
+</I>&gt;<i> BTW, Why do you say not dev_dbg but netdev_dbg ?
+</I>
+Sorry - netdev_dbg() is easier to use, its first argument is the
+netdevice, while dev_dbg needs a device and that's deeply hidden in the
+netdevice.
+
+[...]
+
+&gt;&gt;&gt;&gt;&gt;<i> +static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+</I>&gt;&gt;&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;&gt;&gt;<i> + unsigned long flags;
+</I>&gt;&gt;&gt;&gt;&gt;<i> + struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;&gt;&gt;&gt;&gt;<i> + struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;&gt;&gt;&gt;&gt;<i> + int tx_buffer_avail = 0;
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> What I'm totally missing is the TX flow controll. Your driver has to
+</I>&gt;&gt;&gt;&gt;<i> ensure that the package leave the controller in the order that come
+</I>&gt;&gt;&gt;&gt;<i> into the xmit function. Further you have to stop your xmit queue if
+</I>&gt;&gt;&gt;&gt;<i> you're out of tx objects and reenable if you have a object free.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> Use netif_stop_queue() and netif_wake_queue() for this.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> In this code, I think &quot;out of tx objects&quot; cannot be  occurred.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> It's not a matter of code it's the hardware. You cannot put more than a
+</I>&gt;&gt;<i> certain number of CAN frames into the hardware. If you have a CAN bus at
+</I>&gt;&gt;<i> a certain speed, you can only send a certain number of CAN frames in a
+</I>&gt;&gt;<i> second. So you cannot push more than this amount of frames/s into the
+</I>&gt;&gt;<i> hardware.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Nevertheless, are netif_stop_queue() and netif_wake_queue() is necessary ?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Yes.
+</I>&gt;<i> 
+</I>&gt;<i> I can' understand your issue.
+</I>&gt;<i> Please can you hear my opinion?
+</I>&gt;<i> 
+</I>&gt;<i> Please see the head of pch_xmit.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> + if (priv-&gt;tx_obj == (PCH_OBJ_NUM + 1)) { /* Point tail Obj + 1 */
+</I>&gt;&gt;&gt;<i> +  while (ioread32(&amp;priv-&gt;regs-&gt;treq2) &amp; 0xfc00)
+</I>&gt;&gt;&gt;<i> +   udelay(1);
+</I>&gt;<i> 
+</I>&gt;<i> When points tail of Tx message object,
+</I>&gt;<i> this driver waits until completion of all tx messaeg objects.
+</I>
+Looping busy it not an option here.
+
+&gt;<i> Thus, application/driver ought not to be able to put Tx object exceed the number of tx message object.
+</I>&gt;<i> Thus I think these code(netif_stop_queue/netif_wake_queue) are completely redundant.
+</I>
+Nope - please remove the waiting completely and convert your flow
+control to netif_stop_queue/netif_wake_queue.
+
+cheers, Marc
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101109/8dba0f3d/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101109/8dba0f3d/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004931.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+	<LI>Next message: <A HREF="004935.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4932">[ date ]</a>
+              <a href="thread.html#4932">[ thread ]</a>
+              <a href="subject.html#4932">[ subject ]</a>
+              <a href="author.html#4932">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

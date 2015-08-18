@@ -1,0 +1,1562 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] net/can: add driver for mscan family &amp; mpc52xx_mscan
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20net/can%3A%20add%20driver%20for%20mscan%20family%20%26%20mpc52xx_mscan&In-Reply-To=%3C4B0110D5.6010405%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003489.html">
+   <LINK REL="Next"  HREF="003495.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] net/can: add driver for mscan family &amp; mpc52xx_mscan</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20net/can%3A%20add%20driver%20for%20mscan%20family%20%26%20mpc52xx_mscan&In-Reply-To=%3C4B0110D5.6010405%40grandegger.com%3E"
+       TITLE="[PATCH] net/can: add driver for mscan family &amp; mpc52xx_mscan">wg at grandegger.com
+       </A><BR>
+    <I>Mon Nov 16 09:44:05 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003489.html">[PATCH] net/can: add driver for mscan family &amp; mpc52xx_mscan
+</A></li>
+        <LI>Next message: <A HREF="003495.html">[PATCH] net/can: add driver for mscan family &amp; mpc52xx_mscan
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3493">[ date ]</a>
+              <a href="thread.html#3493">[ thread ]</a>
+              <a href="subject.html#3493">[ subject ]</a>
+              <a href="author.html#3493">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Wolfram,
+
+thanks for pushing this driver to mainline. I think you should also add
+a CC to the Devicetree-discuss ML.
+
+Wolfram Sang wrote:
+&gt;<i> Taken from socketcan-svn, fixed remaining todos, cleaned up, tested with a
+</I>&gt;<i> phyCORE-MPC5200B-IO and a custom board.
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Wolfram Sang &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">w.sang at pengutronix.de</A>&gt;
+</I>&gt;<i> Cc: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+</I>&gt;<i> Cc: Grant Likely &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">grant.likely at secretlab.ca</A>&gt;
+</I>&gt;<i> Cc: David Miller &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">davem at davemloft.net</A>&gt;
+</I>&gt;<i> ---
+</I>&gt;<i> 
+</I>&gt;<i> This patch is based on net-next as of yesterday.
+</I>&gt;<i> 
+</I>&gt;<i> To make the review easier for those who are already familiar with earlier
+</I>&gt;<i> versions of this driver (especially for Wolfgang), I put my development branch
+</I>&gt;<i> online, so you can check my changes incrementally:
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://git.pengutronix.de/?p=wsa/linux-2.6.git;a=summary">http://git.pengutronix.de/?p=wsa/linux-2.6.git;a=summary</A>
+</I>&gt;<i> 
+</I>&gt;<i>  Documentation/powerpc/dts-bindings/fsl/mpc5200.txt |    9 +
+</I>&gt;<i>  drivers/net/can/Kconfig                            |   19 +
+</I>&gt;<i>  drivers/net/can/Makefile                           |    1 +
+</I>&gt;<i>  drivers/net/can/mscan/Makefile                     |    5 +
+</I>&gt;<i>  drivers/net/can/mscan/mpc52xx_can.c                |  279 ++++++++
+</I>
+With the mpc521x in mind, please change the name to mpc5xxx_can.c. In
+this file, you already use mpc5xxx_* functions.
+
+&gt;<i>  drivers/net/can/mscan/mscan.c                      |  699 ++++++++++++++++++++
+</I>&gt;<i>  drivers/net/can/mscan/mscan.h                      |  262 ++++++++
+</I>&gt;<i>  7 files changed, 1274 insertions(+), 0 deletions(-)
+</I>&gt;<i>  create mode 100644 drivers/net/can/mscan/Makefile
+</I>&gt;<i>  create mode 100644 drivers/net/can/mscan/mpc52xx_can.c
+</I>&gt;<i>  create mode 100644 drivers/net/can/mscan/mscan.c
+</I>&gt;<i>  create mode 100644 drivers/net/can/mscan/mscan.h
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/Documentation/powerpc/dts-bindings/fsl/mpc5200.txt b/Documentation/powerpc/dts-bindings/fsl/mpc5200.txt
+</I>&gt;<i> index 8447fd7..b151fb1 100644
+</I>&gt;<i> --- a/Documentation/powerpc/dts-bindings/fsl/mpc5200.txt
+</I>&gt;<i> +++ b/Documentation/powerpc/dts-bindings/fsl/mpc5200.txt
+</I>&gt;<i> @@ -178,3 +178,12 @@ External interrupts:
+</I>&gt;<i>  	external irq3:	interrupts = &lt;1 3 n&gt;;
+</I>&gt;<i>  'n' is sense (0: level high, 1: edge rising, 2: edge falling 3: level low)
+</I>&gt;<i>  
+</I>&gt;<i> +fsl,mpc5200-mscan nodes
+</I>&gt;<i> +-----------------------
+</I>&gt;<i> +In addition to the required compatible-, reg- and interrupt-properites, you can
+</I>&gt;<i> +also specify which clock shall be used for the bus:
+</I>
+I think &quot;which clock source shall be used for the MSCAN controller&quot; is
+more appropriate. It's not the clock for the CAN bus.
+
+&gt;<i> +
+</I>&gt;<i> +- fsl,mscan-clk-src	- a string describing the clock source. Valid values
+</I>&gt;<i> +			  are &quot;ip&quot; for IP_CLK and &quot;sys&quot; for SYS_XTAL.
+</I>&gt;<i> +			  &quot;sys&quot; is the default in case the property is not
+</I>&gt;<i> +			  present.
+</I>
+I think it's common to use long names, e.g. fsl,mscan-clock-source. Also
+the &quot;system&quot; clock is normally not equal to the XTAL clock. &quot;ref&quot; for
+reference clock would be more appropriate. Anyhow, in the code you only
+check for &quot;ip&quot;. If it's not defined, the other clock will be used.
+
+&gt;<i> diff --git a/drivers/net/can/Kconfig b/drivers/net/can/Kconfig
+</I>&gt;<i> index b819cc2..c16e6ff 100644
+</I>&gt;<i> --- a/drivers/net/can/Kconfig
+</I>&gt;<i> +++ b/drivers/net/can/Kconfig
+</I>
+As the mscan driver is in a sub-directory, we should move the Kconfig
+file into it. Oliver has sent a patch recently to do so for the sja1000
+and usb sub-directory.
+
+&gt;<i> @@ -108,6 +108,25 @@ config CAN_MCP251X
+</I>&gt;<i>  	---help---
+</I>&gt;<i>  	  Driver for the Microchip MCP251x SPI CAN controllers.
+</I>&gt;<i>  
+</I>&gt;<i> +config CAN_MSCAN
+</I>&gt;<i> +	depends on CAN_DEV &amp;&amp; (PPC || M68K || M68KNOMMU)
+</I>&gt;<i> +	tristate &quot;Support for Freescale MSCAN based chips&quot;
+</I>&gt;<i> +	---help---
+</I>&gt;<i> +	  The Motorola Scalable Controller Area Network (MSCAN) definition
+</I>&gt;<i> +	  is based on the MSCAN12 definition which is the specific
+</I>&gt;<i> +	  implementation of the Motorola Scalable CAN concept targeted for
+</I>&gt;<i> +	  the Motorola MC68HC12 Microcontroller Family.
+</I>&gt;<i> +
+</I>&gt;<i> +config CAN_MPC52XX
+</I>
+s/CAN_MPC52XX/CAN_MPC5XXX/, (or CAN_MPC5xxx) see above.
+
+&gt;<i> +	tristate &quot;Freescale MPC5xxx onboard CAN controller&quot;
+</I>&gt;<i> +	depends on CAN_MSCAN &amp;&amp; PPC_MPC52xx
+</I>&gt;<i> +	---help---
+</I>&gt;<i> +	  If you say yes here you get support for Freescale's MPC52xx
+</I>&gt;<i> +	  onboard dualCAN controller.
+</I>&gt;<i> +
+</I>&gt;<i> +	  This driver can also be built as a module.  If so, the module
+</I>&gt;<i> +	  will be called mpc5xxx_can.
+</I>
+Also here you already speak about mpc5xxx. And the name of the module is
+mscan-mpc52xx.ko, IIRC.
+
+&gt;<i> +
+</I>&gt;<i>  config CAN_DEBUG_DEVICES
+</I>&gt;<i>  	bool &quot;CAN devices debugging messages&quot;
+</I>&gt;<i>  	depends on CAN
+</I>&gt;<i> diff --git a/drivers/net/can/Makefile b/drivers/net/can/Makefile
+</I>&gt;<i> index 1489181..56899fe 100644
+</I>&gt;<i> --- a/drivers/net/can/Makefile
+</I>&gt;<i> +++ b/drivers/net/can/Makefile
+</I>&gt;<i> @@ -10,6 +10,7 @@ can-dev-y			:= dev.o
+</I>&gt;<i>  obj-y				+= usb/
+</I>&gt;<i>  
+</I>&gt;<i>  obj-$(CONFIG_CAN_SJA1000)	+= sja1000/
+</I>&gt;<i> +obj-$(CONFIG_CAN_MSCAN)		+= mscan/
+</I>&gt;<i>  obj-$(CONFIG_CAN_AT91)		+= at91_can.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_TI_HECC)	+= ti_hecc.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_MCP251X)	+= mcp251x.o
+</I>&gt;<i> diff --git a/drivers/net/can/mscan/Makefile b/drivers/net/can/mscan/Makefile
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..2bd9f04
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/mscan/Makefile
+</I>&gt;<i> @@ -0,0 +1,5 @@
+</I>&gt;<i> +
+</I>&gt;<i> +obj-$(CONFIG_CAN_MPC52XX)	+= mscan-mpc52xx.o
+</I>&gt;<i> +mscan-mpc52xx-objs		:= mscan.o mpc52xx_can.o
+</I>&gt;<i> +
+</I>&gt;<i> +ccflags-$(CONFIG_CAN_DEBUG_DEVICES) := -DDEBUG
+</I>&gt;<i> diff --git a/drivers/net/can/mscan/mpc52xx_can.c b/drivers/net/can/mscan/mpc52xx_can.c
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..4707a82
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/mscan/mpc52xx_can.c
+</I>&gt;<i> @@ -0,0 +1,279 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * CAN bus driver for the Freescale MPC5xxx embedded CPU.
+</I>&gt;<i> + *
+</I>&gt;<i> + * Copyright (C) 2004-2005 Andrey Volkov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">avolkov at varma-el.com</A>&gt;,
+</I>&gt;<i> + *                         Varma Electronics Oy
+</I>&gt;<i> + * Copyright (C) 2008-2009 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+</I>&gt;<i> + * Copyright (C) 2009 Wolfram Sang, Pengutronix &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">w.sang at pengutronix.de</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is free software; you can redistribute it and/or modify
+</I>&gt;<i> + * it under the terms of the version 2 of the GNU General Public License
+</I>&gt;<i> + * as published by the Free Software Foundation
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is distributed in the hope that it will be useful, but
+</I>&gt;<i> + * WITHOUT ANY WARRANTY; without even the implied warranty of
+</I>&gt;<i> + * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+</I>&gt;<i> + * GNU General Public License for more details.
+</I>&gt;<i> + *
+</I>&gt;<i> + * You should have received a copy of the GNU General Public License
+</I>&gt;<i> + * along with this program; if not, write to the Free Software
+</I>&gt;<i> + * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;linux/kernel.h&gt;
+</I>&gt;<i> +#include &lt;linux/module.h&gt;
+</I>&gt;<i> +#include &lt;linux/interrupt.h&gt;
+</I>&gt;<i> +#include &lt;linux/platform_device.h&gt;
+</I>&gt;<i> +#include &lt;linux/netdevice.h&gt;
+</I>&gt;<i> +#include &lt;linux/can.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/dev.h&gt;
+</I>&gt;<i> +#include &lt;linux/of_platform.h&gt;
+</I>&gt;<i> +#include &lt;sysdev/fsl_soc.h&gt;
+</I>&gt;<i> +#include &lt;linux/io.h&gt;
+</I>&gt;<i> +#include &lt;asm/mpc52xx.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &quot;mscan.h&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +
+</I>
+Remove one line, please.
+
+&gt;<i> +#define DRV_NAME &quot;mpc5xxx_can&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +static struct of_device_id mpc52xx_cdm_ids[] __devinitdata = {
+</I>&gt;<i> +	{ .compatible = &quot;fsl,mpc5200-cdm&quot;, },
+</I>&gt;<i> +	{ .compatible = &quot;fsl,mpc5200b-cdm&quot;, },
+</I>&gt;<i> +	{}
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Get the frequency of the external oscillator clock connected
+</I>&gt;<i> + * to the SYS_XTAL_IN pin, or return 0 if it cannot be determined.
+</I>&gt;<i> + */
+</I>&gt;<i> +static unsigned int  __devinit mpc52xx_can_xtal_freq(struct of_device *of)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mpc52xx_cdm  __iomem *cdm;
+</I>&gt;<i> +	struct device_node *np_cdm;
+</I>&gt;<i> +	unsigned int freq;
+</I>&gt;<i> +	u32 val;
+</I>&gt;<i> +
+</I>&gt;<i> +	freq = mpc5xxx_get_bus_frequency(of-&gt;node);
+</I>&gt;<i> +	if (!freq)
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	/*
+</I>&gt;<i> +	 * Determine SYS_XTAL_IN frequency from the clock domain settings
+</I>&gt;<i> +	 */
+</I>&gt;<i> +	np_cdm = of_find_matching_node(NULL, mpc52xx_cdm_ids);
+</I>&gt;<i> +	if (!np_cdm) {
+</I>&gt;<i> +		dev_err(&amp;of-&gt;dev, &quot;can't get clock node!\n&quot;);
+</I>&gt;<i> +		return 0;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	cdm = of_iomap(np_cdm, 0);
+</I>&gt;<i> +	of_node_put(np_cdm);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (in_8(&amp;cdm-&gt;ipb_clk_sel) &amp; 0x1)
+</I>&gt;<i> +		freq *= 2;
+</I>&gt;<i> +	val  = in_be32(&amp;cdm-&gt;rstcfg);
+</I>&gt;<i> +	if (val &amp; (1 &lt;&lt; 5))
+</I>&gt;<i> +		freq *= 8;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		freq *= 4;
+</I>&gt;<i> +	if (val &amp; (1 &lt;&lt; 6))
+</I>&gt;<i> +		freq /= 12;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		freq /= 16;
+</I>&gt;<i> +
+</I>&gt;<i> +	iounmap(cdm);
+</I>&gt;<i> +
+</I>&gt;<i> +	return freq;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Get frequency of the MSCAN clock source
+</I>&gt;<i> + *
+</I>&gt;<i> + * Either the oscillator clock (SYS_XTAL_IN) or the IP bus clock (IP_CLK)
+</I>&gt;<i> + * can be selected. According to the MPC5200 user's manual, the oscillator
+</I>&gt;<i> + * clock is the better choice as it has less jitter but due to a hardware
+</I>&gt;<i> + * bug, it can not be selected for the old MPC5200 Rev. A chips.
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +static unsigned int  __devinit mpc52xx_can_clock_freq(struct of_device *of,
+</I>&gt;<i> +						      int clock_src)
+</I>&gt;<i> +{
+</I>&gt;<i> +	unsigned int pvr;
+</I>&gt;<i> +
+</I>&gt;<i> +	pvr = mfspr(SPRN_PVR);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (clock_src == MSCAN_CLKSRC_BUS || pvr == 0x80822011)
+</I>&gt;<i> +		return mpc5xxx_get_bus_frequency(of-&gt;node);
+</I>&gt;<i> +
+</I>&gt;<i> +	return mpc52xx_can_xtal_freq(of);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int __devinit mpc5xxx_can_probe(struct of_device *ofdev,
+</I>&gt;<i> +				       const struct of_device_id *id)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct device_node *np = ofdev-&gt;node;
+</I>&gt;<i> +	struct net_device *dev;
+</I>&gt;<i> +	struct mscan_priv *priv;
+</I>&gt;<i> +	void __iomem *base;
+</I>&gt;<i> +	const char *clk_src;
+</I>&gt;<i> +	int err, irq, clock_src;
+</I>&gt;<i> +
+</I>&gt;<i> +	base = of_iomap(ofdev-&gt;node, 0);
+</I>&gt;<i> +	if (!base) {
+</I>&gt;<i> +		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't ioremap\n&quot;);
+</I>&gt;<i> +		err = -ENOMEM;
+</I>&gt;<i> +		goto exit_release_mem;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	irq = irq_of_parse_and_map(np, 0);
+</I>&gt;<i> +	if (!irq) {
+</I>&gt;<i> +		dev_err(&amp;ofdev-&gt;dev, &quot;no irq found\n&quot;);
+</I>&gt;<i> +		err = -ENODEV;
+</I>&gt;<i> +		goto exit_unmap_mem;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	dev = alloc_mscandev();
+</I>&gt;<i> +	if (!dev) {
+</I>&gt;<i> +		err = -ENOMEM;
+</I>&gt;<i> +		goto exit_dispose_irq;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	priv = netdev_priv(dev);
+</I>&gt;<i> +	priv-&gt;reg_base = base;
+</I>&gt;<i> +	dev-&gt;irq = irq;
+</I>&gt;<i> +
+</I>&gt;<i> +	/*
+</I>&gt;<i> +	 * Either the oscillator clock (SYS_XTAL_IN) or the IP bus clock
+</I>&gt;<i> +	 * (IP_CLK) can be selected as MSCAN clock source. According to
+</I>&gt;<i> +	 * the MPC5200 user's manual, the oscillator clock is the better
+</I>&gt;<i> +	 * choice as it has less jitter. For this reason, it is selected
+</I>&gt;<i> +	 * by default.
+</I>&gt;<i> +	 */
+</I>&gt;<i> +	clk_src = of_get_property(np, &quot;fsl,mscan-clk-src&quot;, NULL);
+</I>&gt;<i> +	if (clk_src &amp;&amp; strcmp(clk_src, &quot;ip&quot;) == 0)
+</I>&gt;<i> +		clock_src = MSCAN_CLKSRC_BUS;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		clock_src = MSCAN_CLKSRC_XTAL;
+</I>&gt;<i> +	priv-&gt;can.clock.freq = mpc52xx_can_clock_freq(ofdev, clock_src);
+</I>&gt;<i> +	if (!priv-&gt;can.clock.freq) {
+</I>&gt;<i> +		dev_err(&amp;ofdev-&gt;dev, &quot;couldn't get MSCAN clock frequency\n&quot;);
+</I>&gt;<i> +		err = -ENODEV;
+</I>&gt;<i> +		goto exit_free_mscan;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	SET_NETDEV_DEV(dev, &amp;ofdev-&gt;dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	err = register_mscandev(dev, clock_src);
+</I>&gt;<i> +	if (err) {
+</I>&gt;<i> +		dev_err(&amp;ofdev-&gt;dev, &quot;registering %s failed (err=%d)\n&quot;,
+</I>&gt;<i> +			DRV_NAME, err);
+</I>&gt;<i> +		goto exit_free_mscan;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_set_drvdata(&amp;ofdev-&gt;dev, dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_info(&amp;ofdev-&gt;dev, &quot;MSCAN at 0x%p, irq %d, clock %d Hz\n&quot;,
+</I>&gt;<i> +		 priv-&gt;reg_base, dev-&gt;irq, priv-&gt;can.clock.freq);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +
+</I>&gt;<i> +exit_free_mscan:
+</I>&gt;<i> +	free_candev(dev);
+</I>&gt;<i> +exit_dispose_irq:
+</I>&gt;<i> +	irq_dispose_mapping(irq);
+</I>&gt;<i> +exit_unmap_mem:
+</I>&gt;<i> +	iounmap(base);
+</I>&gt;<i> +exit_release_mem:
+</I>&gt;<i> +	return err;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int __devexit mpc5xxx_can_remove(struct of_device *ofdev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *dev = dev_get_drvdata(&amp;ofdev-&gt;dev);
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_set_drvdata(&amp;ofdev-&gt;dev, NULL);
+</I>&gt;<i> +
+</I>&gt;<i> +	unregister_mscandev(dev);
+</I>&gt;<i> +	iounmap(priv-&gt;reg_base);
+</I>&gt;<i> +	irq_dispose_mapping(dev-&gt;irq);
+</I>&gt;<i> +	free_candev(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +#ifdef CONFIG_PM
+</I>&gt;<i> +static struct mscan_regs saved_regs;
+</I>&gt;<i> +static int mpc5xxx_can_suspend(struct of_device *ofdev, pm_message_t state)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *dev = dev_get_drvdata(&amp;ofdev-&gt;dev);
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +
+</I>&gt;<i> +	_memcpy_fromio(&amp;saved_regs, regs, sizeof(*regs));
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int mpc5xxx_can_resume(struct of_device *ofdev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *dev = dev_get_drvdata(&amp;ofdev-&gt;dev);
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +
+</I>&gt;<i> +	regs-&gt;canctl0 |= MSCAN_INITRQ;
+</I>&gt;<i> +	while ((regs-&gt;canctl1 &amp; MSCAN_INITAK) == 0)
+</I>&gt;<i> +		udelay(10);
+</I>&gt;<i> +
+</I>&gt;<i> +	regs-&gt;canctl1 = saved_regs.canctl1;
+</I>&gt;<i> +	regs-&gt;canbtr0 = saved_regs.canbtr0;
+</I>&gt;<i> +	regs-&gt;canbtr1 = saved_regs.canbtr1;
+</I>&gt;<i> +	regs-&gt;canidac = saved_regs.canidac;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* restore masks, buffers etc. */
+</I>&gt;<i> +	_memcpy_toio(&amp;regs-&gt;canidar1_0, (void *)&amp;saved_regs.canidar1_0,
+</I>&gt;<i> +		     sizeof(*regs) - offsetof(struct mscan_regs, canidar1_0));
+</I>&gt;<i> +
+</I>&gt;<i> +	regs-&gt;canctl0 &amp;= ~MSCAN_INITRQ;
+</I>&gt;<i> +	regs-&gt;cantbsel = saved_regs.cantbsel;
+</I>&gt;<i> +	regs-&gt;canrier = saved_regs.canrier;
+</I>&gt;<i> +	regs-&gt;cantier = saved_regs.cantier;
+</I>&gt;<i> +	regs-&gt;canctl0 = saved_regs.canctl0;
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +#endif
+</I>
+I wonder if suspend/resume is working. Does the software shutdown the
+device before suspending? Did you or anybody else have a chance to test
+suspend/resume?
+
+&gt;<i> +static struct of_device_id __devinitdata mpc5xxx_can_table[] = {
+</I>&gt;<i> +	{.compatible = &quot;fsl,mpc5200-mscan&quot;},
+</I>&gt;<i> +	{.compatible = &quot;fsl,mpc5200b-mscan&quot;},
+</I>&gt;<i> +	{},
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static struct of_platform_driver mpc5xxx_can_driver = {
+</I>&gt;<i> +	.owner = THIS_MODULE,
+</I>&gt;<i> +	.name = &quot;mpc5xxx_can&quot;,
+</I>&gt;<i> +	.probe = mpc5xxx_can_probe,
+</I>&gt;<i> +	.remove = __devexit_p(mpc5xxx_can_remove),
+</I>&gt;<i> +#ifdef CONFIG_PM
+</I>&gt;<i> +	.suspend = mpc5xxx_can_suspend,
+</I>&gt;<i> +	.resume = mpc5xxx_can_resume,
+</I>&gt;<i> +#endif
+</I>&gt;<i> +	.match_table = mpc5xxx_can_table,
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static int __init mpc5xxx_can_init(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return of_register_platform_driver(&amp;mpc5xxx_can_driver);
+</I>&gt;<i> +}
+</I>&gt;<i> +module_init(mpc5xxx_can_init);
+</I>&gt;<i> +
+</I>&gt;<i> +static void __exit mpc5xxx_can_exit(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return of_unregister_platform_driver(&amp;mpc5xxx_can_driver);
+</I>&gt;<i> +};
+</I>&gt;<i> +module_exit(mpc5xxx_can_exit);
+</I>&gt;<i> +
+</I>&gt;<i> +MODULE_AUTHOR(&quot;Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;&quot;);
+</I>&gt;<i> +MODULE_DESCRIPTION(&quot;Freescale MPC5200 CAN driver&quot;);
+</I>&gt;<i> +MODULE_LICENSE(&quot;GPL v2&quot;);
+</I>&gt;<i> diff --git a/drivers/net/can/mscan/mscan.c b/drivers/net/can/mscan/mscan.c
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..49542ca
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/mscan/mscan.c
+</I>&gt;<i> @@ -0,0 +1,699 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * CAN bus driver for the alone generic (as possible as) MSCAN controller.
+</I>&gt;<i> + *
+</I>&gt;<i> + * Copyright (C) 2005-2006 Andrey Volkov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">avolkov at varma-el.com</A>&gt;,
+</I>&gt;<i> + *                         Varma Electronics Oy
+</I>&gt;<i> + * Copyright (C) 2008-2009 Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+</I>&gt;<i> + * Copytight (C) 2008-2009 Pengutronix &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kernel at pengutronix.de</A>&gt;
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is free software; you can redistribute it and/or modify
+</I>&gt;<i> + * it under the terms of the version 2 of the GNU General Public License
+</I>&gt;<i> + * as published by the Free Software Foundation
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is distributed in the hope that it will be useful,
+</I>&gt;<i> + * but WITHOUT ANY WARRANTY; without even the implied warranty of
+</I>&gt;<i> + * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+</I>&gt;<i> + * GNU General Public License for more details.
+</I>&gt;<i> + *
+</I>&gt;<i> + * You should have received a copy of the GNU General Public License
+</I>&gt;<i> + * along with this program; if not, write to the Free Software
+</I>&gt;<i> + * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;linux/kernel.h&gt;
+</I>&gt;<i> +#include &lt;linux/module.h&gt;
+</I>&gt;<i> +#include &lt;linux/interrupt.h&gt;
+</I>&gt;<i> +#include &lt;linux/delay.h&gt;
+</I>&gt;<i> +#include &lt;linux/netdevice.h&gt;
+</I>&gt;<i> +#include &lt;linux/if_arp.h&gt;
+</I>&gt;<i> +#include &lt;linux/if_ether.h&gt;
+</I>&gt;<i> +#include &lt;linux/list.h&gt;
+</I>&gt;<i> +#include &lt;linux/can.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/dev.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/error.h&gt;
+</I>&gt;<i> +#include &lt;linux/io.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +#include &quot;mscan.h&quot;
+</I>&gt;<i> +
+</I>&gt;<i> +#define MSCAN_NORMAL_MODE	0
+</I>&gt;<i> +#define MSCAN_SLEEP_MODE	MSCAN_SLPRQ
+</I>&gt;<i> +#define MSCAN_INIT_MODE		(MSCAN_INITRQ | MSCAN_SLPRQ)
+</I>&gt;<i> +#define MSCAN_POWEROFF_MODE	(MSCAN_CSWAI | MSCAN_SLPRQ)
+</I>&gt;<i> +#define MSCAN_SET_MODE_RETRIES	255
+</I>&gt;<i> +#define MSCAN_ECHO_SKB_MAX	3
+</I>&gt;<i> +
+</I>&gt;<i> +#define BTR0_BRP_MASK		0x3f
+</I>&gt;<i> +#define BTR0_SJW_SHIFT		6
+</I>&gt;<i> +#define BTR0_SJW_MASK		(0x3 &lt;&lt; BTR0_SJW_SHIFT)
+</I>&gt;<i> +
+</I>&gt;<i> +#define BTR1_TSEG1_MASK 	0xf
+</I>&gt;<i> +#define BTR1_TSEG2_SHIFT	4
+</I>&gt;<i> +#define BTR1_TSEG2_MASK 	(0x7 &lt;&lt; BTR1_TSEG2_SHIFT)
+</I>&gt;<i> +#define BTR1_SAM_SHIFT  	7
+</I>&gt;<i> +
+</I>&gt;<i> +#define BTR0_SET_BRP(brp)	(((brp) - 1) &amp; BTR0_BRP_MASK)
+</I>&gt;<i> +#define BTR0_SET_SJW(sjw)	((((sjw) - 1) &lt;&lt; BTR0_SJW_SHIFT) &amp; \
+</I>&gt;<i> +				 BTR0_SJW_MASK)
+</I>&gt;<i> +
+</I>&gt;<i> +#define BTR1_SET_TSEG1(tseg1)	(((tseg1) - 1) &amp;  BTR1_TSEG1_MASK)
+</I>&gt;<i> +#define BTR1_SET_TSEG2(tseg2)	((((tseg2) - 1) &lt;&lt; BTR1_TSEG2_SHIFT) &amp; \
+</I>&gt;<i> +				 BTR1_TSEG2_MASK)
+</I>&gt;<i> +#define BTR1_SET_SAM(sam)	((sam) ? 1 &lt;&lt; BTR1_SAM_SHIFT : 0)
+</I>
+These definitions should probably be moved to mscan.h.
+
+&gt;<i> +static struct can_bittiming_const mscan_bittiming_const = {
+</I>&gt;<i> +	.name = &quot;mscan&quot;,
+</I>&gt;<i> +	.tseg1_min = 4,
+</I>&gt;<i> +	.tseg1_max = 16,
+</I>&gt;<i> +	.tseg2_min = 2,
+</I>&gt;<i> +	.tseg2_max = 8,
+</I>&gt;<i> +	.sjw_max = 4,
+</I>&gt;<i> +	.brp_min = 1,
+</I>&gt;<i> +	.brp_max = 64,
+</I>&gt;<i> +	.brp_inc = 1,
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +struct mscan_state {
+</I>&gt;<i> +	u8 mode;
+</I>&gt;<i> +	u8 canrier;
+</I>&gt;<i> +	u8 cantier;
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +#define F_RX_PROGRESS	0
+</I>&gt;<i> +#define F_TX_PROGRESS	1
+</I>&gt;<i> +#define F_TX_WAIT_ALL	2
+</I>
+Ditto.
+
+&gt;<i> +static enum can_state state_map[] = {
+</I>&gt;<i> +	CAN_STATE_ERROR_ACTIVE,
+</I>&gt;<i> +	CAN_STATE_ERROR_WARNING,
+</I>&gt;<i> +	CAN_STATE_ERROR_PASSIVE,
+</I>&gt;<i> +	CAN_STATE_BUS_OFF
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static int mscan_set_mode(struct net_device *dev, u8 mode)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +	int ret = 0;
+</I>&gt;<i> +	int i;
+</I>&gt;<i> +	u8 canctl1;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (mode != MSCAN_NORMAL_MODE) {
+</I>&gt;<i> +
+</I>
+Please remove the empty line above.
+
+&gt;<i> +		if (priv-&gt;tx_active) {
+</I>&gt;<i> +			/* Abort transfers before going to sleep */#
+</I>&gt;<i> +			out_8(&amp;regs-&gt;cantarq, priv-&gt;tx_active);
+</I>&gt;<i> +			/* Suppress TX done interrupts */
+</I>&gt;<i> +			out_8(&amp;regs-&gt;cantier, 0);
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		canctl1 = in_8(&amp;regs-&gt;canctl1);
+</I>&gt;<i> +		if ((mode &amp; MSCAN_SLPRQ) &amp;&amp; (canctl1 &amp; MSCAN_SLPAK) == 0) {
+</I>&gt;<i> +			out_8(&amp;regs-&gt;canctl0,
+</I>&gt;<i> +			      in_8(&amp;regs-&gt;canctl0) | MSCAN_SLPRQ);
+</I>
+We better use setbits8(&amp;regs-&gt;canctl0, MSCAN_SLPRQ);
+
+&gt;<i> +			for (i = 0; i &lt; MSCAN_SET_MODE_RETRIES; i++) {
+</I>&gt;<i> +				if (in_8(&amp;regs-&gt;canctl1) &amp; MSCAN_SLPAK)
+</I>&gt;<i> +					break;
+</I>&gt;<i> +				udelay(100);
+</I>&gt;<i> +			}
+</I>&gt;<i> +			/*
+</I>&gt;<i> +			 * The mscan controller will fail to enter sleep mode,
+</I>&gt;<i> +			 * while there are irregular activities on bus, like
+</I>&gt;<i> +			 * somebody keeps retransmitting. This behavior is
+</I>&gt;<i> +			 * undocumented and seems to differ between mscan built
+</I>&gt;<i> +			 * in mpc5200b and mpc5200. We proceed in that case,
+</I>&gt;<i> +			 * since otherwise the slprq will be kept set and the
+</I>&gt;<i> +			 * controller will get stuck. NOTE: INITRQ or CSWAI
+</I>&gt;<i> +			 * will abort all active transmit actions, if still
+</I>&gt;<i> +			 * any, at once.
+</I>&gt;<i> +			 */
+</I>&gt;<i> +			if (i &gt;= MSCAN_SET_MODE_RETRIES)
+</I>&gt;<i> +				dev_dbg(dev-&gt;dev.parent,
+</I>&gt;<i> +					&quot;device failed to enter sleep mode. &quot;
+</I>&gt;<i> +					&quot;We proceed anyhow.\n&quot;);
+</I>&gt;<i> +			else
+</I>&gt;<i> +				priv-&gt;can.state = CAN_STATE_SLEEPING;
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		if ((mode &amp; MSCAN_INITRQ) &amp;&amp; (canctl1 &amp; MSCAN_INITAK) == 0) {
+</I>
+	if ((mode &amp; MSCAN_INITRQ) &amp;&amp; !(canctl1 &amp; MSCAN_INITAK)) ?
+
+&gt;<i> +			out_8(&amp;regs-&gt;canctl0,
+</I>&gt;<i> +			      in_8(&amp;regs-&gt;canctl0) | MSCAN_INITRQ);
+</I>
+setbits8?
+
+&gt;<i> +			for (i = 0; i &lt; MSCAN_SET_MODE_RETRIES; i++) {
+</I>&gt;<i> +				if (in_8(&amp;regs-&gt;canctl1) &amp; MSCAN_INITAK)
+</I>&gt;<i> +					break;
+</I>&gt;<i> +			}
+</I>&gt;<i> +			if (i &gt;= MSCAN_SET_MODE_RETRIES)
+</I>&gt;<i> +				ret = -ENODEV;
+</I>&gt;<i> +		}
+</I>&gt;<i> +		if (!ret)
+</I>&gt;<i> +			priv-&gt;can.state = CAN_STATE_STOPPED;
+</I>&gt;<i> +
+</I>&gt;<i> +		if (mode &amp; MSCAN_CSWAI)
+</I>&gt;<i> +			out_8(&amp;regs-&gt;canctl0,
+</I>&gt;<i> +			      in_8(&amp;regs-&gt;canctl0) | MSCAN_CSWAI);
+</I>
+setbits8?
+
+&gt;<i> +
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		canctl1 = in_8(&amp;regs-&gt;canctl1);
+</I>&gt;<i> +		if (canctl1 &amp; (MSCAN_SLPAK | MSCAN_INITAK)) {
+</I>&gt;<i> +			out_8(&amp;regs-&gt;canctl0, in_8(&amp;regs-&gt;canctl0) &amp;
+</I>&gt;<i> +			      ~(MSCAN_SLPRQ | MSCAN_INITRQ));
+</I>
+clrbits8?
+
+&gt;<i> +			for (i = 0; i &lt; MSCAN_SET_MODE_RETRIES; i++) {
+</I>&gt;<i> +				canctl1 = in_8(&amp;regs-&gt;canctl1);
+</I>&gt;<i> +				if (!(canctl1 &amp; (MSCAN_INITAK | MSCAN_SLPAK)))
+</I>&gt;<i> +					break;
+</I>&gt;<i> +			}
+</I>&gt;<i> +			if (i &gt;= MSCAN_SET_MODE_RETRIES)
+</I>&gt;<i> +				ret = -ENODEV;
+</I>&gt;<i> +			else
+</I>&gt;<i> +				priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +	return ret;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int mscan_start(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +	u8 canrflg;
+</I>&gt;<i> +	int err;
+</I>&gt;<i> +
+</I>&gt;<i> +	out_8(&amp;regs-&gt;canrier, 0);
+</I>&gt;<i> +
+</I>&gt;<i> +	INIT_LIST_HEAD(&amp;priv-&gt;tx_head);
+</I>&gt;<i> +	priv-&gt;prev_buf_id = 0;
+</I>&gt;<i> +	priv-&gt;cur_pri = 0;
+</I>&gt;<i> +	priv-&gt;tx_active = 0;
+</I>&gt;<i> +	priv-&gt;shadow_canrier = 0;
+</I>&gt;<i> +	priv-&gt;flags = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	err = mscan_set_mode(dev, MSCAN_NORMAL_MODE);
+</I>&gt;<i> +	if (err)
+</I>&gt;<i> +		return err;
+</I>&gt;<i> +
+</I>&gt;<i> +	canrflg = in_8(&amp;regs-&gt;canrflg);
+</I>&gt;<i> +	priv-&gt;shadow_statflg = canrflg &amp; MSCAN_STAT_MSK;
+</I>&gt;<i> +	priv-&gt;can.state = state_map[max(MSCAN_STATE_RX(canrflg),
+</I>&gt;<i> +				    MSCAN_STATE_TX(canrflg))];
+</I>&gt;<i> +	out_8(&amp;regs-&gt;cantier, 0);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Enable receive interrupts. */
+</I>&gt;<i> +	out_8(&amp;regs-&gt;canrier, MSCAN_OVRIE | MSCAN_RXFIE | MSCAN_CSCIE |
+</I>&gt;<i> +	      MSCAN_RSTATE1 | MSCAN_RSTATE0 | MSCAN_TSTATE1 | MSCAN_TSTATE0);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static netdev_tx_t mscan_start_xmit(struct sk_buff *skb, struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct can_frame *frame = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +	int i, rtr, buf_id;
+</I>&gt;<i> +	u32 can_id;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (frame-&gt;can_dlc &gt; 8)
+</I>&gt;<i> +		return -EINVAL;
+</I>&gt;<i> +
+</I>&gt;<i> +	out_8(&amp;regs-&gt;cantier, 0);
+</I>&gt;<i> +
+</I>&gt;<i> +	i = ~priv-&gt;tx_active &amp; MSCAN_TXE;
+</I>&gt;<i> +	buf_id = ffs(i) - 1;
+</I>&gt;<i> +	switch (hweight8(i)) {
+</I>&gt;<i> +	case 0:
+</I>&gt;<i> +		netif_stop_queue(dev);
+</I>&gt;<i> +		dev_err(dev-&gt;dev.parent, &quot;Tx Ring full when queue awake!\n&quot;);
+</I>&gt;<i> +		return NETDEV_TX_BUSY;
+</I>&gt;<i> +	case 1:
+</I>&gt;<i> +		/*
+</I>&gt;<i> +		 * if buf_id &lt; 3, then current frame will be send out of order,
+</I>&gt;<i> +		 * since buffer with lower id have higher priority (hell..)
+</I>&gt;<i> +		 */
+</I>&gt;<i> +		netif_stop_queue(dev);
+</I>&gt;<i> +	case 2:
+</I>&gt;<i> +		if (buf_id &lt; priv-&gt;prev_buf_id) {
+</I>&gt;<i> +			priv-&gt;cur_pri++;
+</I>&gt;<i> +			if (priv-&gt;cur_pri == 0xff) {
+</I>&gt;<i> +				set_bit(F_TX_WAIT_ALL, &amp;priv-&gt;flags);
+</I>&gt;<i> +				netif_stop_queue(dev);
+</I>&gt;<i> +			}
+</I>&gt;<i> +		}
+</I>&gt;<i> +		set_bit(F_TX_PROGRESS, &amp;priv-&gt;flags);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	priv-&gt;prev_buf_id = buf_id;
+</I>&gt;<i> +	out_8(&amp;regs-&gt;cantbsel, i);
+</I>&gt;<i> +
+</I>&gt;<i> +	rtr = frame-&gt;can_id &amp; CAN_RTR_FLAG;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (frame-&gt;can_id &amp; CAN_EFF_FLAG) {
+</I>&gt;<i> +		can_id = (frame-&gt;can_id &amp; CAN_EFF_MASK) &lt;&lt; 1;
+</I>&gt;<i> +		if (rtr)
+</I>&gt;<i> +			can_id |= 1;
+</I>
+Would be nice to have some definitions for this bit and other bits and
+shifts as well (in general).
+
+&gt;<i> +		out_be16(&amp;regs-&gt;tx.idr3_2, can_id);
+</I>&gt;<i> +
+</I>&gt;<i> +		can_id &gt;&gt;= 16;
+</I>&gt;<i> +		can_id = (can_id &amp; 0x7) | ((can_id &lt;&lt; 2) &amp; 0xffe0) | (3 &lt;&lt; 3);
+</I>
+Ditto
+
+&gt;<i> +	} else {
+</I>&gt;<i> +		can_id = (frame-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 5;
+</I>&gt;<i> +		if (rtr)
+</I>&gt;<i> +			can_id |= 1 &lt;&lt; 4;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	out_be16(&amp;regs-&gt;tx.idr1_0, can_id);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!rtr) {
+</I>&gt;<i> +		void __iomem *data = &amp;regs-&gt;tx.dsr1_0;
+</I>&gt;<i> +		u16 *payload = (u16 *) frame-&gt;data;
+</I>
+Please add one empty line and remove the space before frame.
+
+&gt;<i> +		/* It is safe to write into dsr[dlc+1] */
+</I>&gt;<i> +		for (i = 0; i &lt; (frame-&gt;can_dlc + 1) / 2; i++) {
+</I>&gt;<i> +			out_be16(data, *payload++);
+</I>&gt;<i> +			data += 2 + _MSCAN_RESERVED_DSR_SIZE;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	out_8(&amp;regs-&gt;tx.dlr, frame-&gt;can_dlc);
+</I>&gt;<i> +	out_8(&amp;regs-&gt;tx.tbpr, priv-&gt;cur_pri);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Start transmission. */
+</I>&gt;<i> +	out_8(&amp;regs-&gt;cantflg, 1 &lt;&lt; buf_id);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!test_bit(F_TX_PROGRESS, &amp;priv-&gt;flags))
+</I>&gt;<i> +		dev-&gt;trans_start = jiffies;
+</I>&gt;<i> +
+</I>&gt;<i> +	list_add_tail(&amp;priv-&gt;tx_queue[buf_id].list, &amp;priv-&gt;tx_head);
+</I>&gt;<i> +
+</I>&gt;<i> +	can_put_echo_skb(skb, dev, buf_id);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Enable interrupt. */
+</I>&gt;<i> +	priv-&gt;tx_active |= 1 &lt;&lt; buf_id;
+</I>&gt;<i> +	out_8(&amp;regs-&gt;cantier, priv-&gt;tx_active);
+</I>&gt;<i> +
+</I>&gt;<i> +	return NETDEV_TX_OK;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/* This function returns the old state to see where we came from */
+</I>&gt;<i> +static enum can_state check_set_state(struct net_device *dev, u8 canrflg)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	enum can_state state, old_state = priv-&gt;can.state;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (canrflg &amp; MSCAN_CSCIF &amp;&amp; old_state &lt;= CAN_STATE_BUS_OFF) {
+</I>&gt;<i> +		state = state_map[max(MSCAN_STATE_RX(canrflg),
+</I>&gt;<i> +				      MSCAN_STATE_TX(canrflg))];
+</I>&gt;<i> +		priv-&gt;can.state = state;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	return old_state;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void mscan_get_rx_frame(struct net_device *dev, struct can_frame *frame)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +	u32 can_id;
+</I>&gt;<i> +	int i;
+</I>&gt;<i> +
+</I>&gt;<i> +	can_id = in_be16(&amp;regs-&gt;rx.idr1_0);
+</I>&gt;<i> +	if (can_id &amp; (1 &lt;&lt; 3)) {
+</I>&gt;<i> +		frame-&gt;can_id = CAN_EFF_FLAG;
+</I>&gt;<i> +		can_id = ((can_id &lt;&lt; 16) | in_be16(&amp;regs-&gt;rx.idr3_2));
+</I>&gt;<i> +		can_id = ((can_id &amp; 0xffe00000) |
+</I>&gt;<i> +			  ((can_id &amp; 0x7ffff) &lt;&lt; 2)) &gt;&gt; 2;
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		can_id &gt;&gt;= 4;
+</I>&gt;<i> +		frame-&gt;can_id = 0;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	frame-&gt;can_id |= can_id &gt;&gt; 1;
+</I>&gt;<i> +	if (can_id &amp; 1)
+</I>&gt;<i> +		frame-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;<i> +	frame-&gt;can_dlc = in_8(&amp;regs-&gt;rx.dlr) &amp; 0xf;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!(frame-&gt;can_id &amp; CAN_RTR_FLAG)) {
+</I>&gt;<i> +		void __iomem *data = &amp;regs-&gt;rx.dsr1_0;
+</I>&gt;<i> +		u16 *payload = (u16 *) frame-&gt;data;
+</I>
+Please add one empty line and remove the space before frame.
+
+&gt;<i> +		for (i = 0; i &lt; (frame-&gt;can_dlc + 1) / 2; i++) {
+</I>&gt;<i> +			*payload++ = in_be16(data);
+</I>&gt;<i> +			data += 2 + _MSCAN_RESERVED_DSR_SIZE;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	out_8(&amp;regs-&gt;canrflg, MSCAN_RXF);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static void mscan_get_err_frame(struct net_device *dev, struct can_frame *frame,
+</I>&gt;<i> +				u8 canrflg)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +	struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;<i> +	enum can_state old_state;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_dbg(dev-&gt;dev.parent, &quot;error interrupt (canrflg=%#x)\n&quot;, canrflg);
+</I>&gt;<i> +	frame-&gt;can_id = CAN_ERR_FLAG;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (canrflg &amp; MSCAN_OVRIF) {
+</I>&gt;<i> +		frame-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;<i> +		frame-&gt;data[1] = CAN_ERR_CRTL_RX_OVERFLOW;
+</I>&gt;<i> +		stats-&gt;rx_over_errors++;
+</I>&gt;<i> +		stats-&gt;rx_errors++;
+</I>&gt;<i> +	} else
+</I>&gt;<i> +		frame-&gt;data[1] = 0;
+</I>
+Add {} here as well.
+
+&gt;<i> +
+</I>&gt;<i> +	old_state = check_set_state(dev, canrflg);
+</I>&gt;<i> +	/* State changed */
+</I>&gt;<i> +	if (old_state != priv-&gt;can.state) {
+</I>&gt;<i> +		switch (priv-&gt;can.state) {
+</I>&gt;<i> +		case CAN_STATE_ERROR_WARNING:
+</I>&gt;<i> +			frame-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;<i> +			priv-&gt;can.can_stats.error_warning++;
+</I>&gt;<i> +			if ((priv-&gt;shadow_statflg &amp; MSCAN_RSTAT_MSK) &lt;
+</I>&gt;<i> +			    (canrflg &amp; MSCAN_RSTAT_MSK))
+</I>&gt;<i> +				frame-&gt;data[1] |= CAN_ERR_CRTL_RX_WARNING;
+</I>&gt;<i> +
+</I>
+Remove this line please.
+
+&gt;<i> +			if ((priv-&gt;shadow_statflg &amp; MSCAN_TSTAT_MSK) &lt;
+</I>&gt;<i> +			    (canrflg &amp; MSCAN_TSTAT_MSK))
+</I>&gt;<i> +				frame-&gt;data[1] |= CAN_ERR_CRTL_TX_WARNING;
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		case CAN_STATE_ERROR_PASSIVE:
+</I>&gt;<i> +			frame-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;<i> +			priv-&gt;can.can_stats.error_passive++;
+</I>&gt;<i> +			frame-&gt;data[1] |= CAN_ERR_CRTL_RX_PASSIVE;
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		case CAN_STATE_BUS_OFF:
+</I>&gt;<i> +			frame-&gt;can_id |= CAN_ERR_BUSOFF;
+</I>&gt;<i> +			/*
+</I>&gt;<i> +			 * The MSCAN on the MPC5200 does recover from bus-off
+</I>&gt;<i> +			 * automatically. To avoid that we stop the chip doing
+</I>&gt;<i> +			 * a light-weight stop (we are in irq-context).
+</I>&gt;<i> +			 */
+</I>&gt;<i> +			out_8(&amp;regs-&gt;cantier, 0);
+</I>&gt;<i> +			out_8(&amp;regs-&gt;canrier, 0);
+</I>&gt;<i> +			out_8(&amp;regs-&gt;canctl0, in_8(&amp;regs-&gt;canctl0) |
+</I>&gt;<i> +				MSCAN_SLPRQ | MSCAN_INITRQ);
+</I>&gt;<i> +			can_bus_off(dev);
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		default:
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +	priv-&gt;shadow_statflg = canrflg &amp; MSCAN_STAT_MSK;
+</I>&gt;<i> +	frame-&gt;can_dlc = CAN_ERR_DLC;
+</I>&gt;<i> +	out_8(&amp;regs-&gt;canrflg, MSCAN_ERR_IF);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int mscan_rx_poll(struct napi_struct *napi, int quota)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mscan_priv *priv = container_of(napi, struct mscan_priv, napi);
+</I>&gt;<i> +	struct net_device *dev = napi-&gt;dev;
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +	struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;<i> +	int npackets = 0;
+</I>&gt;<i> +	int ret = 1;
+</I>&gt;<i> +	struct sk_buff *skb;
+</I>&gt;<i> +	struct can_frame *frame;
+</I>&gt;<i> +	u8 canrflg;
+</I>&gt;<i> +
+</I>&gt;<i> +	while (npackets &lt; quota &amp;&amp; ((canrflg = in_8(&amp;regs-&gt;canrflg)) &amp;
+</I>&gt;<i> +				    (MSCAN_RXF | MSCAN_ERR_IF))) {
+</I>
+To avoid the expression inside &quot;while&quot; I woud suggest:
+
+	while (npackets &lt; quota) {
+		canrflg = in_8(&amp;regs-&gt;canrflg);
+		if (!(canrflg &amp; (MSCAN_RXF | MSCAN_ERR_IF)))
+			break;
+
+&gt;<i> +
+</I>&gt;<i> +		skb = alloc_can_skb(dev, &amp;frame);
+</I>&gt;<i> +		if (!skb) {
+</I>&gt;<i> +			if (printk_ratelimit())
+</I>&gt;<i> +				dev_notice(dev-&gt;dev.parent, &quot;packet dropped\n&quot;);
+</I>&gt;<i> +			stats-&gt;rx_dropped++;
+</I>&gt;<i> +			out_8(&amp;regs-&gt;canrflg, canrflg);
+</I>&gt;<i> +			continue;
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		if (canrflg &amp; MSCAN_RXF)
+</I>&gt;<i> +			mscan_get_rx_frame(dev, frame);
+</I>&gt;<i> +		 else if (canrflg &amp; MSCAN_ERR_IF)
+</I>
+Remove space in front of &quot;else&quot;.
+
+&gt;<i> +			mscan_get_err_frame(dev, frame, canrflg);
+</I>&gt;<i> +
+</I>&gt;<i> +		stats-&gt;rx_packets++;
+</I>&gt;<i> +		stats-&gt;rx_bytes += frame-&gt;can_dlc;
+</I>&gt;<i> +		npackets++;
+</I>&gt;<i> +		netif_receive_skb(skb);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!(in_8(&amp;regs-&gt;canrflg) &amp; (MSCAN_RXF | MSCAN_ERR_IF))) {
+</I>&gt;<i> +		napi_complete(&amp;priv-&gt;napi);
+</I>&gt;<i> +		clear_bit(F_RX_PROGRESS, &amp;priv-&gt;flags);
+</I>&gt;<i> +		if (priv-&gt;can.state &lt; CAN_STATE_BUS_OFF)
+</I>&gt;<i> +			out_8(&amp;regs-&gt;canrier, priv-&gt;shadow_canrier);
+</I>&gt;<i> +		ret = 0;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	return ret;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static irqreturn_t mscan_isr(int irq, void *dev_id)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *dev = (struct net_device *)dev_id;
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +	struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;<i> +	u8 cantier, cantflg, canrflg;
+</I>&gt;<i> +	irqreturn_t ret = IRQ_NONE;
+</I>&gt;<i> +
+</I>&gt;<i> +	cantier = in_8(&amp;regs-&gt;cantier) &amp; MSCAN_TXE;
+</I>&gt;<i> +	cantflg = in_8(&amp;regs-&gt;cantflg) &amp; cantier;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (cantier &amp;&amp; cantflg) {
+</I>&gt;<i> +
+</I>
+Please remove empty line above.
+
+&gt;<i> +		struct list_head *tmp, *pos;
+</I>&gt;<i> +
+</I>&gt;<i> +		list_for_each_safe(pos, tmp, &amp;priv-&gt;tx_head) {
+</I>&gt;<i> +			struct tx_queue_entry *entry =
+</I>&gt;<i> +			    list_entry(pos, struct tx_queue_entry, list);
+</I>&gt;<i> +			u8 mask = entry-&gt;mask;
+</I>&gt;<i> +
+</I>&gt;<i> +			if (!(cantflg &amp; mask))
+</I>&gt;<i> +				continue;
+</I>&gt;<i> +
+</I>&gt;<i> +			out_8(&amp;regs-&gt;cantbsel, mask);
+</I>&gt;<i> +			stats-&gt;tx_bytes += in_8(&amp;regs-&gt;tx.dlr);
+</I>&gt;<i> +			stats-&gt;tx_packets++;
+</I>&gt;<i> +			can_get_echo_skb(dev, entry-&gt;id);
+</I>&gt;<i> +			priv-&gt;tx_active &amp;= ~mask;
+</I>&gt;<i> +			list_del(pos);
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		if (list_empty(&amp;priv-&gt;tx_head)) {
+</I>&gt;<i> +			clear_bit(F_TX_WAIT_ALL, &amp;priv-&gt;flags);
+</I>&gt;<i> +			clear_bit(F_TX_PROGRESS, &amp;priv-&gt;flags);
+</I>&gt;<i> +			priv-&gt;cur_pri = 0;
+</I>&gt;<i> +		} else
+</I>&gt;<i> +			dev-&gt;trans_start = jiffies;
+</I>
+Add {} here as well.
+
+&gt;<i> +
+</I>&gt;<i> +		if (!test_bit(F_TX_WAIT_ALL, &amp;priv-&gt;flags))
+</I>&gt;<i> +			netif_wake_queue(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +		out_8(&amp;regs-&gt;cantier, priv-&gt;tx_active);
+</I>&gt;<i> +		ret = IRQ_HANDLED;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	canrflg = in_8(&amp;regs-&gt;canrflg);
+</I>&gt;<i> +	if ((canrflg &amp; ~MSCAN_STAT_MSK) &amp;&amp;
+</I>&gt;<i> +	    !test_and_set_bit(F_RX_PROGRESS, &amp;priv-&gt;flags)) {
+</I>&gt;<i> +		if (canrflg &amp; ~MSCAN_STAT_MSK) {
+</I>&gt;<i> +			priv-&gt;shadow_canrier = in_8(&amp;regs-&gt;canrier);
+</I>&gt;<i> +			out_8(&amp;regs-&gt;canrier, 0);
+</I>&gt;<i> +			napi_schedule(&amp;priv-&gt;napi);
+</I>&gt;<i> +			ret = IRQ_HANDLED;
+</I>&gt;<i> +		} else
+</I>&gt;<i> +			clear_bit(F_RX_PROGRESS, &amp;priv-&gt;flags);
+</I>
+Add {} here as well.
+
+&gt;<i> +	}
+</I>&gt;<i> +	return ret;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int mscan_do_set_mode(struct net_device *dev, enum can_mode mode)
+</I>&gt;<i> +{
+</I>&gt;<i> +
+</I>
+Please remove empty line above.
+
+&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	int ret = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!priv-&gt;open_time)
+</I>&gt;<i> +		return -EINVAL;
+</I>&gt;<i> +
+</I>&gt;<i> +	switch (mode) {
+</I>&gt;<i> +	case CAN_MODE_SLEEP:
+</I>&gt;<i> +	case CAN_MODE_STOP:
+</I>&gt;<i> +		netif_stop_queue(dev);
+</I>&gt;<i> +		mscan_set_mode(dev,
+</I>&gt;<i> +			       (mode ==
+</I>&gt;<i> +				CAN_MODE_STOP) ? MSCAN_INIT_MODE :
+</I>&gt;<i> +			       MSCAN_SLEEP_MODE);
+</I>&gt;<i> +		break;
+</I>
+We should remove the block above. There is no way to request these modes.
+
+&gt;<i> +	case CAN_MODE_START:
+</I>&gt;<i> +		if (priv-&gt;can.state &lt;= CAN_STATE_BUS_OFF)
+</I>&gt;<i> +			mscan_set_mode(dev, MSCAN_INIT_MODE);
+</I>&gt;<i> +		ret = mscan_start(dev);
+</I>&gt;<i> +		if (ret)
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		if (netif_queue_stopped(dev))
+</I>&gt;<i> +			netif_wake_queue(dev);
+</I>&gt;<i> +		break;
+</I>&gt;<i> +
+</I>&gt;<i> +	default:
+</I>&gt;<i> +		ret = -EOPNOTSUPP;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	return ret;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int mscan_do_set_bittiming(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +	struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
+</I>&gt;<i> +	u8 btr0, btr1;
+</I>&gt;<i> +
+</I>&gt;<i> +	btr0 = BTR0_SET_BRP(bt-&gt;brp) | BTR0_SET_SJW(bt-&gt;sjw);
+</I>&gt;<i> +	btr1 = (BTR1_SET_TSEG1(bt-&gt;prop_seg + bt-&gt;phase_seg1) |
+</I>&gt;<i> +		BTR1_SET_TSEG2(bt-&gt;phase_seg2) |
+</I>&gt;<i> +		BTR1_SET_SAM(priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES));
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_info(dev-&gt;dev.parent, &quot;setting BTR0=0x%02x BTR1=0x%02x\n&quot;,
+</I>&gt;<i> +		btr0, btr1);
+</I>&gt;<i> +
+</I>&gt;<i> +	out_8(&amp;regs-&gt;canbtr0, btr0);
+</I>&gt;<i> +	out_8(&amp;regs-&gt;canbtr1, btr1);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int mscan_open(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* common open */
+</I>&gt;<i> +	ret = open_candev(dev);
+</I>&gt;<i> +	if (ret)
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	napi_enable(&amp;priv-&gt;napi);
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = request_irq(dev-&gt;irq, mscan_isr, 0, dev-&gt;name, dev);
+</I>&gt;<i> +	if (ret &lt; 0) {
+</I>&gt;<i> +		napi_disable(&amp;priv-&gt;napi);
+</I>&gt;<i> +		printk(KERN_ERR &quot;%s - failed to attach interrupt\n&quot;,
+</I>&gt;<i> +		       dev-&gt;name);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	priv-&gt;open_time = jiffies;
+</I>&gt;<i> +
+</I>&gt;<i> +	out_8(&amp;regs-&gt;canctl1, in_8(&amp;regs-&gt;canctl1) &amp; ~MSCAN_LISTEN);
+</I>
+clrbits8?
+
+&gt;<i> +
+</I>&gt;<i> +	ret = mscan_start(dev);
+</I>&gt;<i> +	if (ret)
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	netif_start_queue(dev);
+</I>
+The cleanup of this function is not OK. We need
+
+  exit_free_irq:
+	priv-&gt;open_time = 0; (Could be done later as well).
+	free_irq()
+  exit_napi_disable:
+	napi_disable();
+  	close_candev();
+
+&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int mscan_close(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +
+</I>&gt;<i> +	netif_stop_queue(dev);
+</I>&gt;<i> +	napi_disable(&amp;priv-&gt;napi);
+</I>&gt;<i> +
+</I>&gt;<i> +	out_8(&amp;regs-&gt;cantier, 0);
+</I>&gt;<i> +	out_8(&amp;regs-&gt;canrier, 0);
+</I>&gt;<i> +	mscan_set_mode(dev, MSCAN_INIT_MODE);
+</I>&gt;<i> +	close_candev(dev);
+</I>&gt;<i> +	free_irq(dev-&gt;irq, dev);
+</I>&gt;<i> +	priv-&gt;open_time = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static const struct net_device_ops mscan_netdev_ops = {
+</I>&gt;<i> +       .ndo_open               = mscan_open,
+</I>&gt;<i> +       .ndo_stop               = mscan_close,
+</I>&gt;<i> +       .ndo_start_xmit         = mscan_start_xmit,
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +int register_mscandev(struct net_device *dev, int clock_src)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +	u8 ctl1;
+</I>&gt;<i> +
+</I>&gt;<i> +	ctl1 = in_8(&amp;regs-&gt;canctl1);
+</I>&gt;<i> +	if (clock_src)
+</I>&gt;<i> +		ctl1 |= MSCAN_CLKSRC;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		ctl1 &amp;= ~MSCAN_CLKSRC;
+</I>&gt;<i> +
+</I>&gt;<i> +	ctl1 |= MSCAN_CANE;
+</I>&gt;<i> +	out_8(&amp;regs-&gt;canctl1, ctl1);
+</I>&gt;<i> +	udelay(100);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* acceptance mask/acceptance code (accept everything) */
+</I>&gt;<i> +	out_be16(&amp;regs-&gt;canidar1_0, 0);
+</I>&gt;<i> +	out_be16(&amp;regs-&gt;canidar3_2, 0);
+</I>&gt;<i> +	out_be16(&amp;regs-&gt;canidar5_4, 0);
+</I>&gt;<i> +	out_be16(&amp;regs-&gt;canidar7_6, 0);
+</I>&gt;<i> +
+</I>&gt;<i> +	out_be16(&amp;regs-&gt;canidmr1_0, 0xffff);
+</I>&gt;<i> +	out_be16(&amp;regs-&gt;canidmr3_2, 0xffff);
+</I>&gt;<i> +	out_be16(&amp;regs-&gt;canidmr5_4, 0xffff);
+</I>&gt;<i> +	out_be16(&amp;regs-&gt;canidmr7_6, 0xffff);
+</I>&gt;<i> +	/* Two 32 bit Acceptance Filters */
+</I>&gt;<i> +	out_8(&amp;regs-&gt;canidac, MSCAN_AF_32BIT);
+</I>&gt;<i> +
+</I>&gt;<i> +	mscan_set_mode(dev, MSCAN_INIT_MODE);
+</I>&gt;<i> +
+</I>&gt;<i> +	return register_candev(dev);
+</I>&gt;<i> +}
+</I>&gt;<i> +EXPORT_SYMBOL_GPL(register_mscandev);
+</I>
+There is no need to export this and all other functions below.
+
+&gt;<i> +
+</I>&gt;<i> +void unregister_mscandev(struct net_device *dev)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;<i> +	mscan_set_mode(dev, MSCAN_INIT_MODE);
+</I>&gt;<i> +	out_8(&amp;regs-&gt;canctl1, in_8(&amp;regs-&gt;canctl1) &amp; ~MSCAN_CANE);
+</I>
+clrbits8?
+
+&gt;<i> +	unregister_candev(dev);
+</I>&gt;<i> +}
+</I>&gt;<i> +EXPORT_SYMBOL_GPL(unregister_mscandev);
+</I>
+See above.
+
+&gt;<i> +
+</I>&gt;<i> +struct net_device *alloc_mscandev(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *dev;
+</I>&gt;<i> +	struct mscan_priv *priv;
+</I>&gt;<i> +	int i;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev = alloc_candev(sizeof(struct mscan_priv), MSCAN_ECHO_SKB_MAX);
+</I>&gt;<i> +	if (!dev)
+</I>&gt;<i> +		return NULL;
+</I>&gt;<i> +	priv = netdev_priv(dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	dev-&gt;netdev_ops = &amp;mscan_netdev_ops;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev-&gt;flags |= IFF_ECHO;	/* we support local echo */
+</I>&gt;<i> +
+</I>&gt;<i> +	netif_napi_add(dev, &amp;priv-&gt;napi, mscan_rx_poll, 8);
+</I>&gt;<i> +
+</I>&gt;<i> +	priv-&gt;can.bittiming_const = &amp;mscan_bittiming_const;
+</I>&gt;<i> +	priv-&gt;can.do_set_bittiming = mscan_do_set_bittiming;
+</I>&gt;<i> +	priv-&gt;can.do_set_mode = mscan_do_set_mode;
+</I>&gt;<i> +
+</I>&gt;<i> +	for (i = 0; i &lt; TX_QUEUE_SIZE; i++) {
+</I>&gt;<i> +		priv-&gt;tx_queue[i].id = i;
+</I>&gt;<i> +		priv-&gt;tx_queue[i].mask = 1 &lt;&lt; i;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	return dev;
+</I>&gt;<i> +}
+</I>&gt;<i> +EXPORT_SYMBOL_GPL(alloc_mscandev);
+</I>
+See above.
+
+&gt;<i> +MODULE_AUTHOR(&quot;Andrey Volkov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">avolkov at varma-el.com</A>&gt;&quot;);
+</I>&gt;<i> +MODULE_LICENSE(&quot;GPL v2&quot;);
+</I>&gt;<i> +MODULE_DESCRIPTION(&quot;CAN port driver for a MSCAN based chips&quot;);
+</I>
+As this is not a standalone module, the definitions above make little sense.
+
+&gt;<i> diff --git a/drivers/net/can/mscan/mscan.h b/drivers/net/can/mscan/mscan.h
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..57820f5
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/mscan/mscan.h
+</I>&gt;<i> @@ -0,0 +1,262 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Definitions of consts/structs to drive the Freescale MSCAN.
+</I>&gt;<i> + *
+</I>&gt;<i> + * Copyright (C) 2005-2006 Andrey Volkov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">avolkov at varma-el.com</A>&gt;,
+</I>&gt;<i> + *                         Varma Electronics Oy
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is free software; you can redistribute it and/or modify
+</I>&gt;<i> + * it under the terms of the version 2 of the GNU General Public License
+</I>&gt;<i> + * as published by the Free Software Foundation
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is distributed in the hope that it will be useful,
+</I>&gt;<i> + * but WITHOUT ANY WARRANTY; without even the implied warranty of
+</I>&gt;<i> + * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+</I>&gt;<i> + * GNU General Public License for more details.
+</I>&gt;<i> + *
+</I>&gt;<i> + * You should have received a copy of the GNU General Public License
+</I>&gt;<i> + * along with this program; if not, write to the Free Software
+</I>&gt;<i> + * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +#ifndef __MSCAN_H__
+</I>&gt;<i> +#define __MSCAN_H__
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;linux/types.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +/* MSCAN control register 0 (CANCTL0) bits */
+</I>&gt;<i> +#define MSCAN_RXFRM		0x80
+</I>&gt;<i> +#define MSCAN_RXACT		0x40
+</I>&gt;<i> +#define MSCAN_CSWAI		0x20
+</I>&gt;<i> +#define MSCAN_SYNCH		0x10
+</I>&gt;<i> +#define MSCAN_TIME		0x08
+</I>&gt;<i> +#define MSCAN_WUPE		0x04
+</I>&gt;<i> +#define MSCAN_SLPRQ		0x02
+</I>&gt;<i> +#define MSCAN_INITRQ		0x01
+</I>&gt;<i> +
+</I>&gt;<i> +/* MSCAN control register 1 (CANCTL1) bits */
+</I>&gt;<i> +#define MSCAN_CANE		0x80
+</I>&gt;<i> +#define MSCAN_CLKSRC		0x40
+</I>&gt;<i> +#define MSCAN_LOOPB		0x20
+</I>&gt;<i> +#define MSCAN_LISTEN		0x10
+</I>&gt;<i> +#define MSCAN_WUPM		0x04
+</I>&gt;<i> +#define MSCAN_SLPAK		0x02
+</I>&gt;<i> +#define MSCAN_INITAK		0x01
+</I>&gt;<i> +
+</I>&gt;<i> +/* Use the MPC5200 MSCAN variant? */
+</I>&gt;<i> +#ifdef CONFIG_PPC
+</I>&gt;<i> +#define MSCAN_FOR_MPC5200
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +#ifdef MSCAN_FOR_MPC5200
+</I>&gt;<i> +#define MSCAN_CLKSRC_BUS	0
+</I>&gt;<i> +#define MSCAN_CLKSRC_XTAL	MSCAN_CLKSRC
+</I>&gt;<i> +#else
+</I>&gt;<i> +#define MSCAN_CLKSRC_BUS	MSCAN_CLKSRC
+</I>&gt;<i> +#define MSCAN_CLKSRC_XTAL	0
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +/* MSCAN receiver flag register (CANRFLG) bits */
+</I>&gt;<i> +#define MSCAN_WUPIF		0x80
+</I>&gt;<i> +#define MSCAN_CSCIF		0x40
+</I>&gt;<i> +#define MSCAN_RSTAT1		0x20
+</I>&gt;<i> +#define MSCAN_RSTAT0		0x10
+</I>&gt;<i> +#define MSCAN_TSTAT1		0x08
+</I>&gt;<i> +#define MSCAN_TSTAT0		0x04
+</I>&gt;<i> +#define MSCAN_OVRIF		0x02
+</I>&gt;<i> +#define MSCAN_RXF		0x01
+</I>&gt;<i> +#define MSCAN_ERR_IF 		(MSCAN_OVRIF | MSCAN_CSCIF)
+</I>&gt;<i> +#define MSCAN_RSTAT_MSK		(MSCAN_RSTAT1 | MSCAN_RSTAT0)
+</I>&gt;<i> +#define MSCAN_TSTAT_MSK		(MSCAN_TSTAT1 | MSCAN_TSTAT0)
+</I>&gt;<i> +#define MSCAN_STAT_MSK		(MSCAN_RSTAT_MSK | MSCAN_TSTAT_MSK)
+</I>&gt;<i> +
+</I>&gt;<i> +#define MSCAN_STATE_BUS_OFF	(MSCAN_RSTAT1 | MSCAN_RSTAT0 | \
+</I>&gt;<i> +				 MSCAN_TSTAT1 | MSCAN_TSTAT0)
+</I>&gt;<i> +#define MSCAN_STATE_TX(canrflg)	(((canrflg)&amp;MSCAN_TSTAT_MSK)&gt;&gt;2)
+</I>&gt;<i> +#define MSCAN_STATE_RX(canrflg)	(((canrflg)&amp;MSCAN_RSTAT_MSK)&gt;&gt;4)
+</I>&gt;<i> +#define MSCAN_STATE_ACTIVE	0
+</I>&gt;<i> +#define MSCAN_STATE_WARNING	1
+</I>&gt;<i> +#define MSCAN_STATE_PASSIVE	2
+</I>&gt;<i> +#define MSCAN_STATE_BUSOFF	3
+</I>&gt;<i> +
+</I>&gt;<i> +/* MSCAN receiver interrupt enable register (CANRIER) bits */
+</I>&gt;<i> +#define MSCAN_WUPIE		0x80
+</I>&gt;<i> +#define MSCAN_CSCIE		0x40
+</I>&gt;<i> +#define MSCAN_RSTATE1		0x20
+</I>&gt;<i> +#define MSCAN_RSTATE0		0x10
+</I>&gt;<i> +#define MSCAN_TSTATE1		0x08
+</I>&gt;<i> +#define MSCAN_TSTATE0		0x04
+</I>&gt;<i> +#define MSCAN_OVRIE		0x02
+</I>&gt;<i> +#define MSCAN_RXFIE		0x01
+</I>&gt;<i> +
+</I>&gt;<i> +/* MSCAN transmitter flag register (CANTFLG) bits */
+</I>&gt;<i> +#define MSCAN_TXE2		0x04
+</I>&gt;<i> +#define MSCAN_TXE1		0x02
+</I>&gt;<i> +#define MSCAN_TXE0		0x01
+</I>&gt;<i> +#define MSCAN_TXE		(MSCAN_TXE2 | MSCAN_TXE1 | MSCAN_TXE0)
+</I>&gt;<i> +
+</I>&gt;<i> +/* MSCAN transmitter interrupt enable register (CANTIER) bits */
+</I>&gt;<i> +#define MSCAN_TXIE2		0x04
+</I>&gt;<i> +#define MSCAN_TXIE1		0x02
+</I>&gt;<i> +#define MSCAN_TXIE0		0x01
+</I>&gt;<i> +#define MSCAN_TXIE		(MSCAN_TXIE2 | MSCAN_TXIE1 | MSCAN_TXIE0)
+</I>&gt;<i> +
+</I>&gt;<i> +/* MSCAN transmitter message abort request (CANTARQ) bits */
+</I>&gt;<i> +#define MSCAN_ABTRQ2		0x04
+</I>&gt;<i> +#define MSCAN_ABTRQ1		0x02
+</I>&gt;<i> +#define MSCAN_ABTRQ0		0x01
+</I>&gt;<i> +
+</I>&gt;<i> +/* MSCAN transmitter message abort ack (CANTAAK) bits */
+</I>&gt;<i> +#define MSCAN_ABTAK2		0x04
+</I>&gt;<i> +#define MSCAN_ABTAK1		0x02
+</I>&gt;<i> +#define MSCAN_ABTAK0		0x01
+</I>&gt;<i> +
+</I>&gt;<i> +/* MSCAN transmit buffer selection (CANTBSEL) bits */
+</I>&gt;<i> +#define MSCAN_TX2		0x04
+</I>&gt;<i> +#define MSCAN_TX1		0x02
+</I>&gt;<i> +#define MSCAN_TX0		0x01
+</I>&gt;<i> +
+</I>&gt;<i> +/* MSCAN ID acceptance control register (CANIDAC) bits */
+</I>&gt;<i> +#define MSCAN_IDAM1		0x20
+</I>&gt;<i> +#define MSCAN_IDAM0		0x10
+</I>&gt;<i> +#define MSCAN_IDHIT2		0x04
+</I>&gt;<i> +#define MSCAN_IDHIT1		0x02
+</I>&gt;<i> +#define MSCAN_IDHIT0		0x01
+</I>&gt;<i> +
+</I>&gt;<i> +#define MSCAN_AF_32BIT		0x00
+</I>&gt;<i> +#define MSCAN_AF_16BIT		MSCAN_IDAM0
+</I>&gt;<i> +#define MSCAN_AF_8BIT		MSCAN_IDAM1
+</I>&gt;<i> +#define MSCAN_AF_CLOSED		(MSCAN_IDAM0|MSCAN_IDAM1)
+</I>&gt;<i> +#define MSCAN_AF_MASK		(~(MSCAN_IDAM0|MSCAN_IDAM1))
+</I>&gt;<i> +
+</I>&gt;<i> +/* MSCAN Miscellaneous Register (CANMISC) bits */
+</I>&gt;<i> +#define MSCAN_BOHOLD		0x01
+</I>&gt;<i> +
+</I>&gt;<i> +#ifdef MSCAN_FOR_MPC5200
+</I>&gt;<i> +#define _MSCAN_RESERVED_(n, num) u8 _res##n[num]
+</I>&gt;<i> +#define _MSCAN_RESERVED_DSR_SIZE	2
+</I>&gt;<i> +#else
+</I>&gt;<i> +#define _MSCAN_RESERVED_(n, num)
+</I>&gt;<i> +#define _MSCAN_RESERVED_DSR_SIZE	0
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i> +/* Structure of the hardware registers */
+</I>&gt;<i> +struct mscan_regs {
+</I>&gt;<i> +	/* (see doc S12MSCANV3/D)		  MPC5200    MSCAN */
+</I>&gt;<i> +	u8 canctl0;				/* + 0x00     0x00 */
+</I>&gt;<i> +	u8 canctl1;				/* + 0x01     0x01 */
+</I>&gt;<i> +	_MSCAN_RESERVED_(1, 2);			/* + 0x02          */
+</I>&gt;<i> +	u8 canbtr0;				/* + 0x04     0x02 */
+</I>&gt;<i> +	u8 canbtr1;				/* + 0x05     0x03 */
+</I>&gt;<i> +	_MSCAN_RESERVED_(2, 2);			/* + 0x06          */
+</I>&gt;<i> +	u8 canrflg;				/* + 0x08     0x04 */
+</I>&gt;<i> +	u8 canrier;				/* + 0x09     0x05 */
+</I>&gt;<i> +	_MSCAN_RESERVED_(3, 2);			/* + 0x0a          */
+</I>&gt;<i> +	u8 cantflg;				/* + 0x0c     0x06 */
+</I>&gt;<i> +	u8 cantier;				/* + 0x0d     0x07 */
+</I>&gt;<i> +	_MSCAN_RESERVED_(4, 2);			/* + 0x0e          */
+</I>&gt;<i> +	u8 cantarq;				/* + 0x10     0x08 */
+</I>&gt;<i> +	u8 cantaak;				/* + 0x11     0x09 */
+</I>&gt;<i> +	_MSCAN_RESERVED_(5, 2);			/* + 0x12          */
+</I>&gt;<i> +	u8 cantbsel;				/* + 0x14     0x0a */
+</I>&gt;<i> +	u8 canidac;				/* + 0x15     0x0b */
+</I>&gt;<i> +	u8 reserved;				/* + 0x16     0x0c */
+</I>&gt;<i> +	_MSCAN_RESERVED_(6, 5);			/* + 0x17          */
+</I>&gt;<i> +#ifndef MSCAN_FOR_MPC5200
+</I>&gt;<i> +	u8 canmisc;				/*            0x0d */
+</I>&gt;<i> +#endif
+</I>&gt;<i> +	u8 canrxerr;				/* + 0x1c     0x0e */
+</I>&gt;<i> +	u8 cantxerr;				/* + 0x1d     0x0f */
+</I>&gt;<i> +	_MSCAN_RESERVED_(7, 2);			/* + 0x1e          */
+</I>&gt;<i> +	u16 canidar1_0;				/* + 0x20     0x10 */
+</I>&gt;<i> +	_MSCAN_RESERVED_(8, 2);			/* + 0x22          */
+</I>&gt;<i> +	u16 canidar3_2;				/* + 0x24     0x12 */
+</I>&gt;<i> +	_MSCAN_RESERVED_(9, 2);			/* + 0x26          */
+</I>&gt;<i> +	u16 canidmr1_0;				/* + 0x28     0x14 */
+</I>&gt;<i> +	_MSCAN_RESERVED_(10, 2);		/* + 0x2a          */
+</I>&gt;<i> +	u16 canidmr3_2;				/* + 0x2c     0x16 */
+</I>&gt;<i> +	_MSCAN_RESERVED_(11, 2);		/* + 0x2e          */
+</I>&gt;<i> +	u16 canidar5_4;				/* + 0x30     0x18 */
+</I>&gt;<i> +	_MSCAN_RESERVED_(12, 2);		/* + 0x32          */
+</I>&gt;<i> +	u16 canidar7_6;				/* + 0x34     0x1a */
+</I>&gt;<i> +	_MSCAN_RESERVED_(13, 2);		/* + 0x36          */
+</I>&gt;<i> +	u16 canidmr5_4;				/* + 0x38     0x1c */
+</I>&gt;<i> +	_MSCAN_RESERVED_(14, 2);		/* + 0x3a          */
+</I>&gt;<i> +	u16 canidmr7_6;				/* + 0x3c     0x1e */
+</I>&gt;<i> +	_MSCAN_RESERVED_(15, 2);		/* + 0x3e          */
+</I>&gt;<i> +	struct {
+</I>&gt;<i> +		u16 idr1_0;			/* + 0x40     0x20 */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(16, 2);	/* + 0x42          */
+</I>&gt;<i> +		u16 idr3_2;			/* + 0x44     0x22 */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(17, 2);	/* + 0x46          */
+</I>&gt;<i> +		u16 dsr1_0;			/* + 0x48     0x24 */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(18, 2);	/* + 0x4a          */
+</I>&gt;<i> +		u16 dsr3_2;			/* + 0x4c     0x26 */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(19, 2);	/* + 0x4e          */
+</I>&gt;<i> +		u16 dsr5_4;			/* + 0x50     0x28 */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(20, 2);	/* + 0x52          */
+</I>&gt;<i> +		u16 dsr7_6;			/* + 0x54     0x2a */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(21, 2);	/* + 0x56          */
+</I>&gt;<i> +		u8 dlr;				/* + 0x58     0x2c */
+</I>&gt;<i> +		 u8:8;				/* + 0x59     0x2d */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(22, 2);	/* + 0x5a          */
+</I>&gt;<i> +		u16 time;			/* + 0x5c     0x2e */
+</I>&gt;<i> +	} rx;
+</I>&gt;<i> +	 _MSCAN_RESERVED_(23, 2);		/* + 0x5e          */
+</I>&gt;<i> +	struct {
+</I>&gt;<i> +		u16 idr1_0;			/* + 0x60     0x30 */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(24, 2);	/* + 0x62          */
+</I>&gt;<i> +		u16 idr3_2;			/* + 0x64     0x32 */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(25, 2);	/* + 0x66          */
+</I>&gt;<i> +		u16 dsr1_0;			/* + 0x68     0x34 */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(26, 2);	/* + 0x6a          */
+</I>&gt;<i> +		u16 dsr3_2;			/* + 0x6c     0x36 */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(27, 2);	/* + 0x6e          */
+</I>&gt;<i> +		u16 dsr5_4;			/* + 0x70     0x38 */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(28, 2);	/* + 0x72          */
+</I>&gt;<i> +		u16 dsr7_6;			/* + 0x74     0x3a */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(29, 2);	/* + 0x76          */
+</I>&gt;<i> +		u8 dlr;				/* + 0x78     0x3c */
+</I>&gt;<i> +		u8 tbpr;			/* + 0x79     0x3d */
+</I>&gt;<i> +		 _MSCAN_RESERVED_(30, 2);	/* + 0x7a          */
+</I>&gt;<i> +		u16 time;			/* + 0x7c     0x3e */
+</I>&gt;<i> +	} tx;
+</I>&gt;<i> +	 _MSCAN_RESERVED_(31, 2);		/* + 0x7e          */
+</I>&gt;<i> +} __attribute__ ((packed));
+</I>&gt;<i> +
+</I>&gt;<i> +#undef _MSCAN_RESERVED_
+</I>&gt;<i> +#define MSCAN_REGION 	sizeof(struct mscan)
+</I>&gt;<i> +
+</I>&gt;<i> +#define TX_QUEUE_SIZE	3
+</I>&gt;<i> +
+</I>&gt;<i> +struct tx_queue_entry {
+</I>&gt;<i> +	struct list_head list;
+</I>&gt;<i> +	u8 mask;
+</I>&gt;<i> +	u8 id;
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +struct mscan_priv {
+</I>&gt;<i> +	struct can_priv can;	/* must be the first member */
+</I>&gt;<i> +	long open_time;
+</I>&gt;<i> +	unsigned long flags;
+</I>&gt;<i> +	void __iomem *reg_base;	/* ioremap'ed address to registers */
+</I>&gt;<i> +	u8 shadow_statflg;
+</I>&gt;<i> +	u8 shadow_canrier;
+</I>&gt;<i> +	u8 cur_pri;
+</I>&gt;<i> +	u8 prev_buf_id;
+</I>&gt;<i> +	u8 tx_active;
+</I>&gt;<i> +
+</I>&gt;<i> +	struct list_head tx_head;
+</I>&gt;<i> +	struct tx_queue_entry tx_queue[TX_QUEUE_SIZE];
+</I>&gt;<i> +	struct napi_struct napi;
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +struct net_device *alloc_mscandev(void);
+</I>
+Either add &quot;extern&quot; above or remove it below.
+
+&gt;<i> +/*
+</I>&gt;<i> + * clock_src:
+</I>&gt;<i> + *	1 = The MSCAN clock source is the onchip Bus Clock.
+</I>&gt;<i> + *	0 = The MSCAN clock source is the chip Oscillator Clock.
+</I>&gt;<i> + */
+</I>&gt;<i> +extern int register_mscandev(struct net_device *dev, int clock_src);
+</I>&gt;<i> +extern void unregister_mscandev(struct net_device *dev);
+</I>&gt;<i> +
+</I>&gt;<i> +#endif /* __MSCAN_H__ */
+</I>
+Wolfgang.
+
+
+
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003489.html">[PATCH] net/can: add driver for mscan family &amp; mpc52xx_mscan
+</A></li>
+	<LI>Next message: <A HREF="003495.html">[PATCH] net/can: add driver for mscan family &amp; mpc52xx_mscan
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3493">[ date ]</a>
+              <a href="thread.html#3493">[ thread ]</a>
+              <a href="subject.html#3493">[ subject ]</a>
+              <a href="author.html#3493">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

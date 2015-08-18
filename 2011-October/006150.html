@@ -1,0 +1,111 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] mscan: too much data copied to CAN frame due to 16 bit	accesses
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20mscan%3A%20too%20much%20data%20copied%20to%20CAN%20frame%20due%20to%2016%20bit%0A%09accesses&In-Reply-To=%3C4E8F52CE.1000204%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006190.html">
+   <LINK REL="Next"  HREF="006151.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] mscan: too much data copied to CAN frame due to 16 bit	accesses</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20mscan%3A%20too%20much%20data%20copied%20to%20CAN%20frame%20due%20to%2016%20bit%0A%09accesses&In-Reply-To=%3C4E8F52CE.1000204%40grandegger.com%3E"
+       TITLE="[PATCH] mscan: too much data copied to CAN frame due to 16 bit	accesses">wg at grandegger.com
+       </A><BR>
+    <I>Fri Oct  7 21:28:14 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006190.html">import svn to git
+</A></li>
+        <LI>Next message: <A HREF="006151.html">[PATCH] mscan: too much data copied to CAN frame due to 16 bit	accesses
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6150">[ date ]</a>
+              <a href="thread.html#6150">[ thread ]</a>
+              <a href="subject.html#6150">[ subject ]</a>
+              <a href="author.html#6150">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Due to the 16 bit access to mscan registers there's too much data copied to
+the zero initialized CAN frame when having an odd number of bytes to copy.
+This patch ensures that only the requested bytes are copied by using an
+8 bit access for the remaining byte.
+
+Reported-by: Andre Naujoks &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">nautsch at gmail.com</A>&gt;
+Signed-off-by: Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan at hartkopp.net</A>&gt;
+Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+ drivers/net/can/mscan/mscan.c |   11 ++++++++---
+ 1 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/can/mscan/mscan.c b/drivers/net/can/mscan/mscan.c
+index ac42f5d..ec4a311 100644
+--- a/drivers/net/can/mscan/mscan.c
++++ b/drivers/net/can/mscan/mscan.c
+@@ -261,11 +261,13 @@ static netdev_tx_t mscan_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 		void __iomem *data = &amp;regs-&gt;tx.dsr1_0;
+ 		u16 *payload = (u16 *)frame-&gt;data;
+ 
+-		/* It is safe to write into dsr[dlc+1] */
+-		for (i = 0; i &lt; (frame-&gt;can_dlc + 1) / 2; i++) {
++		for (i = 0; i &lt; frame-&gt;can_dlc / 2; i++) {
+ 			out_be16(data, *payload++);
+ 			data += 2 + _MSCAN_RESERVED_DSR_SIZE;
+ 		}
++		/* write remaining byte if necessary */
++		if (frame-&gt;can_dlc &amp; 1)
++			out_8(data, frame-&gt;data[frame-&gt;can_dlc - 1]);
+ 	}
+ 
+ 	out_8(&amp;regs-&gt;tx.dlr, frame-&gt;can_dlc);
+@@ -330,10 +332,13 @@ static void mscan_get_rx_frame(struct net_device *dev, struct can_frame *frame)
+ 		void __iomem *data = &amp;regs-&gt;rx.dsr1_0;
+ 		u16 *payload = (u16 *)frame-&gt;data;
+ 
+-		for (i = 0; i &lt; (frame-&gt;can_dlc + 1) / 2; i++) {
++		for (i = 0; i &lt; frame-&gt;can_dlc / 2; i++) {
+ 			*payload++ = in_be16(data);
+ 			data += 2 + _MSCAN_RESERVED_DSR_SIZE;
+ 		}
++		/* read remaining byte if necessary */
++		if (frame-&gt;can_dlc &amp; 1)
++			frame-&gt;data[frame-&gt;can_dlc - 1] = in_8(data);
+ 	}
+ 
+ 	out_8(&amp;regs-&gt;canrflg, MSCAN_RXF);
+-- 
+1.7.4.1
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006190.html">import svn to git
+</A></li>
+	<LI>Next message: <A HREF="006151.html">[PATCH] mscan: too much data copied to CAN frame due to 16 bit	accesses
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6150">[ date ]</a>
+              <a href="thread.html#6150">[ thread ]</a>
+              <a href="subject.html#6150">[ subject ]</a>
+              <a href="author.html#6150">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

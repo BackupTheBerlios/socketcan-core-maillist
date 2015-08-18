@@ -1,0 +1,166 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 4/17 v3] can: EG20T PCH: Add Tx Flow Control
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%204/17%20v3%5D%20can%3A%20EG20T%20PCH%3A%20Add%20Tx%20Flow%20Control&In-Reply-To=%3C4CED01C7.10304%40dsn.okisemi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005059.html">
+   <LINK REL="Next"  HREF="005042.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 4/17 v3] can: EG20T PCH: Add Tx Flow Control</H1>
+    <B>Tomoya MORINAGA</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%204/17%20v3%5D%20can%3A%20EG20T%20PCH%3A%20Add%20Tx%20Flow%20Control&In-Reply-To=%3C4CED01C7.10304%40dsn.okisemi.com%3E"
+       TITLE="[PATCH net-next-2.6 4/17 v3] can: EG20T PCH: Add Tx Flow Control">tomoya-linux at dsn.okisemi.com
+       </A><BR>
+    <I>Wed Nov 24 13:15:03 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005059.html">[PATCH net-next-2.6 3/17 v3] can: EG20T PCH: Enumerate some macros
+</A></li>
+        <LI>Next message: <A HREF="005042.html">[PATCH net-next-2.6 5/17 v3] can: EG20T PCH: Delete unnecessary	spin_lock
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5041">[ date ]</a>
+              <a href="thread.html#5041">[ thread ]</a>
+              <a href="subject.html#5041">[ subject ]</a>
+              <a href="author.html#5041">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Add flow control processing.
+Currently, there is no flow control processing.
+Thus, Add flow control processing as
+when there is no empty of tx buffer,
+netif_stop_queue is called.
+When there is empty buffer, netif_wake_queue is called.
+
+Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+---
+ drivers/net/can/pch_can.c |   37 +++++++++++++------------------------
+ 1 files changed, 13 insertions(+), 24 deletions(-)
+
+diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+index 5c21f5c..7c182b8 100644
+--- a/drivers/net/can/pch_can.c
++++ b/drivers/net/can/pch_can.c
+@@ -900,6 +900,8 @@ MSG_OBJ:
+ 			dlc = 8;
+ 		stats-&gt;tx_bytes += dlc;
+ 		stats-&gt;tx_packets++;
++		if (int_stat == PCH_TX_OBJ_END)
++			netif_wake_queue(ndev);
+ 	}
+
+ 	int_stat = pch_can_int_pending(priv);
+@@ -1038,47 +1040,34 @@ static int pch_close(struct net_device *ndev)
+ 	return 0;
+ }
+
+-static int pch_get_msg_obj_sts(struct net_device *ndev, u32 obj_id)
+-{
+-	u32 buffer_status = 0;
+-	struct pch_can_priv *priv = netdev_priv(ndev);
+-
+-	/* Getting the message object status. */
+-	buffer_status = (u32) pch_can_get_buffer_status(priv);
+-
+-	return buffer_status &amp; obj_id;
+-}
+-
+-
+ static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+ {
+ 	int i, j;
+ 	unsigned long flags;
+ 	struct pch_can_priv *priv = netdev_priv(ndev);
+ 	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+-	int tx_buffer_avail = 0;
++	int tx_obj_no = 0;
+
+ 	if (can_dropped_invalid_skb(ndev, skb))
+ 		return NETDEV_TX_OK;
+
+-	if (priv-&gt;tx_obj == PCH_TX_OBJ_END) { /* Point tail Obj */
+-		while (pch_get_msg_obj_sts(ndev, (((1 &lt;&lt; PCH_TX_OBJ_NUM)-1) &lt;&lt;
+-					   PCH_RX_OBJ_NUM)))
+-			udelay(500);
++	if (priv-&gt;tx_obj == PCH_TX_OBJ_END) {
++		if (ioread32(&amp;priv-&gt;regs-&gt;treq2) &amp; 0xfc00)
++			netif_stop_queue(ndev);
+
+-		priv-&gt;tx_obj = PCH_TX_OBJ_START; /* Point head of Tx Obj ID */
+-		tx_buffer_avail = priv-&gt;tx_obj; /* Point Tail of Tx Obj */
++		tx_obj_no = priv-&gt;tx_obj;
++		priv-&gt;tx_obj = PCH_TX_OBJ_START;
+ 	} else {
+-		tx_buffer_avail = priv-&gt;tx_obj;
++		tx_obj_no = priv-&gt;tx_obj;
++		priv-&gt;tx_obj++;
+ 	}
+-	priv-&gt;tx_obj++;
+
+ 	/* Attaining the lock. */
+ 	spin_lock_irqsave(&amp;priv-&gt;msgif_reg_lock, flags);
+
+ 	/* Reading the Msg Obj from the Msg RAM to the Interface register. */
+ 	iowrite32(PCH_CMASK_RX_TX_GET, &amp;priv-&gt;regs-&gt;ifregs[1].cmask);
+-	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[1].creq, tx_buffer_avail);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[1].creq, tx_obj_no);
+
+ 	/* Setting the CMASK register. */
+ 	pch_can_bit_set(&amp;priv-&gt;regs-&gt;ifregs[1].cmask, PCH_CMASK_ALL);
+@@ -1110,7 +1099,7 @@ static netdev_tx_t pch_xmit(struct sk_buff *skb,
+struct net_device *ndev)
+ 			 (&amp;priv-&gt;regs-&gt;ifregs[1].dataa1) + j*4);
+ 	}
+
+-	can_put_echo_skb(skb, ndev, tx_buffer_avail - PCH_RX_OBJ_END - 1);
++	can_put_echo_skb(skb, ndev, tx_obj_no - PCH_RX_OBJ_END - 1);
+
+ 	/* Updating the size of the data. */
+ 	pch_can_bit_clear(&amp;priv-&gt;regs-&gt;ifregs[1].mcont, 0x0f);
+@@ -1125,7 +1114,7 @@ static netdev_tx_t pch_xmit(struct sk_buff *skb,
+struct net_device *ndev)
+ 	pch_can_bit_set(&amp;priv-&gt;regs-&gt;ifregs[1].mcont,
+ 			PCH_IF_MCONT_NEWDAT | PCH_IF_MCONT_TXRQXT);
+
+-	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[1].creq, tx_buffer_avail);
++	pch_can_check_if_busy(&amp;priv-&gt;regs-&gt;ifregs[1].creq, tx_obj_no);
+
+ 	spin_unlock_irqrestore(&amp;priv-&gt;msgif_reg_lock, flags);
+
+-- 
+1.6.0.6
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005059.html">[PATCH net-next-2.6 3/17 v3] can: EG20T PCH: Enumerate some macros
+</A></li>
+	<LI>Next message: <A HREF="005042.html">[PATCH net-next-2.6 5/17 v3] can: EG20T PCH: Delete unnecessary	spin_lock
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5041">[ date ]</a>
+              <a href="thread.html#5041">[ thread ]</a>
+              <a href="subject.html#5041">[ subject ]</a>
+              <a href="author.html#5041">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

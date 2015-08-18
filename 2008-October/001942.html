@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> MCP251x driver against SVN-835
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20MCP251x%20driver%20against%20SVN-835&In-Reply-To=%3Ccabda6420810072319w678f6fffx9840aa23ec0a03b8%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001941.html">
+   <LINK REL="Next"  HREF="001953.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>MCP251x driver against SVN-835</H1>
+    <B>chri</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20MCP251x%20driver%20against%20SVN-835&In-Reply-To=%3Ccabda6420810072319w678f6fffx9840aa23ec0a03b8%40mail.gmail.com%3E"
+       TITLE="MCP251x driver against SVN-835">chripell at gmail.com
+       </A><BR>
+    <I>Wed Oct  8 08:19:47 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001941.html">MCP251x driver against SVN-835
+</A></li>
+        <LI>Next message: <A HREF="001953.html">MCP251x driver against SVN-835
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1942">[ date ]</a>
+              <a href="thread.html#1942">[ thread ]</a>
+              <a href="subject.html#1942">[ subject ]</a>
+              <a href="author.html#1942">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tue, Oct 7, 2008 at 8:51 PM, Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt; wrote:
+
+&gt;&gt;<i> + * 3. Neither the name of Volkswagen nor the names of its contributors
+</I>&gt;&gt;<i> + *    may be used to endorse or promote products derived from this software
+</I>&gt;&gt;<i> + *    without specific prior written permission.
+</I>&gt;<i>
+</I>&gt;<i> Why do you add Volkswagen specific copyright notes?
+</I>&gt;<i>
+</I>
+to say the truth I just copied the license I found in other source
+code files around the socketcan project. I really didn't write all the
+code, so I feel unfair to remove the long list of people. On the other
+hand the most challenging part of open-source licensing is its
+enforcing. For this reason it's ok for me to assign the copyright to
+the core developers of a project if I am asked so. I will be happy to
+just use a standard header the core developers agreed on.
+
+&gt;&gt;<i>
+</I>&gt;&gt;<i> +#define DEBUG 1
+</I>&gt;<i>
+</I>&gt;<i> Please remove or undef the DEBUG above.
+</I>
+sorry, just left in in while debugging bit timings :-(
+
+&gt;<i>
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i>  #include &lt;linux/device.h&gt;
+</I>&gt;&gt;<i>  #include &lt;linux/kernel.h&gt;
+</I>&gt;&gt;<i>  #include &lt;linux/module.h&gt;
+</I>&gt;&gt;<i> @@ -167,18 +158,18 @@
+</I>&gt;&gt;<i>  module_param(loopback, int, S_IRUGO);
+</I>&gt;&gt;<i>  MODULE_PARM_DESC(loopback, &quot;Loop back frames (for testing). Default: 0 (Off)&quot;);
+</I>&gt;<i>
+</I>&gt;<i> There is a CAN controller setting for that purpose:
+</I>&gt;<i>
+</I>&gt;<i>  /*
+</I>&gt;<i>   * CAN controller mode
+</I>&gt;<i>   */
+</I>&gt;<i>  #define CAN_CTRLMODE_LOOPBACK   0x1
+</I>&gt;<i>
+</I>&gt;<i> Please check priv-&gt;can.ctrlmode when starting the device. I can be
+</I>&gt;<i> enabled via SYSFS file can_ctrlmode.
+</I>&gt;<i>
+</I>
+ack
+
+&gt;&gt;<i> -static int speed = 100; /* Default bit-rate */
+</I>&gt;&gt;<i> +static int speed = 100; /* Default bitrate */
+</I>&gt;&gt;<i>  module_param(speed, int, S_IRUGO);
+</I>&gt;&gt;<i> -MODULE_PARM_DESC(speed, &quot;Default bit-rate in kbit/s&quot;);
+</I>&gt;&gt;<i> +MODULE_PARM_DESC(speed, &quot;Default bitrate in kbit/s&quot;);
+</I>&gt;<i>
+</I>&gt;<i> No default bit-timing please. It is the user responsibility to set a
+</I>&gt;<i> proper bit-timing before starting the device. Please remove all related
+</I>&gt;<i> code.
+</I>&gt;<i>
+</I>
+I'll do it but isn't this a bit dangerous to trust users to do the right thing?
+
+&gt;&gt;<i>  static struct can_bittiming_const mcp251x_bittiming_const = {
+</I>&gt;&gt;<i> -     .tseg1_min = 1,
+</I>&gt;&gt;<i> +     .tseg1_min = 4,
+</I>&gt;<i>
+</I>&gt;<i> Why 4. Marc also used 4 but I did not understand why?
+</I>&gt;<i>
+</I>
+The idea is to have a bit length &gt;= 6 Tq (as is stated in the data
+sheet). Now I read carefully the documentation and perhaps 3 is enough
+since the minimum length will be: 1 sync Tq + 3 tseg1 Tq + 2 tseg2 Tq.
+Right?
+
+&gt;<i>
+</I>&gt;<i> 65 is wrong for sure.
+</I>&gt;<i>
+</I>
+I followed table 5-1 and it seems to me that the available BRP are
+between 1 and 65. Anyway it wouldn't hurt no one if we put 64 as a
+maximum: I don't think people will operate CAN at the same speed as a
+teletype :-).
+
+&gt;<i>
+</I>&gt;<i> With my recent patch this is no longer necessary.
+</I>&gt;<i>
+</I>
+It takes in account that both tprop &lt;= 8 and tphase1 &lt;= 8 ?
+
+Thanks for the review. I will resubmit shortly.
+
+-- 
+Christian Pellegrin, see <A HREF="http://www.evolware.org/chri/">http://www.evolware.org/chri/</A>
+&quot;Real Programmers don't play tennis, or any other sport which requires
+you to change clothes. Mountain climbing is OK, and Real Programmers
+wear their climbing boots to work in case a mountain should suddenly
+spring up in the middle of the computer room.&quot;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001941.html">MCP251x driver against SVN-835
+</A></li>
+	<LI>Next message: <A HREF="001953.html">MCP251x driver against SVN-835
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1942">[ date ]</a>
+              <a href="thread.html#1942">[ thread ]</a>
+              <a href="subject.html#1942">[ subject ]</a>
+              <a href="author.html#1942">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

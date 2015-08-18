@@ -1,0 +1,168 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> SocketCAN with MSCAN on BOA MPC5200 based card
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SocketCAN%20with%20MSCAN%20on%20BOA%20MPC5200%20based%20card&In-Reply-To=%3C200704050323.53647.pisa%40cmp.felk.cvut.cz%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000471.html">
+   <LINK REL="Next"  HREF="000473.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>SocketCAN with MSCAN on BOA MPC5200 based card</H1>
+    <B>Pavel Pisa</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SocketCAN%20with%20MSCAN%20on%20BOA%20MPC5200%20based%20card&In-Reply-To=%3C200704050323.53647.pisa%40cmp.felk.cvut.cz%3E"
+       TITLE="SocketCAN with MSCAN on BOA MPC5200 based card">pisa at cmp.felk.cvut.cz
+       </A><BR>
+    <I>Thu Apr  5 03:23:52 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000471.html">[Xenomai-core] Re: RT-Socket-CAN bus error rate and latencies
+</A></li>
+        <LI>Next message: <A HREF="000473.html">SocketCAN with MSCAN on BOA MPC5200 based card
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#472">[ date ]</a>
+              <a href="thread.html#472">[ thread ]</a>
+              <a href="subject.html#472">[ subject ]</a>
+              <a href="author.html#472">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello all,
+
+we have decided to give try to the SocketCAN on the
+BOA5200 board
+  <A HREF="http://dce.felk.cvut.cz/nms/?p=hardware#boa5200">http://dce.felk.cvut.cz/nms/?p=hardware#boa5200</A>
+
+We have managed to make it work, but there are some
+minor issues. We have started from the SocketCAN
+SVN trunk code taken about moth ago. May it be, that
+something has already been solved or that there
+is more actual version for MSCAN somewhere else.
+
+Our actual patch series for 2.6.18 kernel can be taken from
+  <A HREF="http://rtime.felk.cvut.cz/repos/boa5200-linux/">http://rtime.felk.cvut.cz/repos/boa5200-linux/</A>
+or can be accessed as Darcs repository
+  <A HREF="http://rtime.felk.cvut.cz/darcs/darcsweb.cgi?r=boa5200-linux">http://rtime.felk.cvut.cz/darcs/darcsweb.cgi?r=boa5200-linux</A>
+
+ - linux-2.6.18-1_AM-ws.diff
+      the A&amp;M kindly provided BOA5200 board patches
+
+      The diff between Vanilla 2.6.18 and official A&amp;M
+      BOA5200 kernel tree. The whitespace, indentation
+      unintentional changes and garbage removed to keep patch
+      at reasonable size. 
+ - socketcan-core.patch
+      unmodified SocketCAN core part
+ - socketcan-drivers.patch
+      driver related SocketCAN code
+ - socketcan-glue.patch
+      glue to integrate SocketCAN into kernel build
+ - socketcan-fixes.patch
+      some minor corrections in the socketcan and MSCAN sources.
+      Included GPL license to allow module loading, correction
+      of the header file and source file names. Object file cannot have
+      same name as the linked module if module is composed of more files,
+      else Kbuild is unhappy.
+ - socketcan-mpc52xx-clock.patch
+      there is problem, that most boards included in the vanilla kernel
+      provides mscan platform device resources, but do not provide clock
+      information as platform_data. We have decided to allow MSCAN code
+      to select XTAL base (suggested by manual anyway) automatically
+      for such case. The clock is hardcoded to 33MHz in this patch.
+      This is not nice, but I have not found any function or definition
+      in PPC kernel providing information about chip reference clock
+      oscillator frequency. It is shame and should be solved better
+      way.
+ - socketcan-baudrate-in-sys.patch
+      We have problem to select baudrate of the interface. There is no module
+      parameter and I have not found the tool sources or some clean reference
+      to this in the manual. This patch adds ability to read and control
+      baudrate over SYS filesystem
+         cat /sys/class/net/can0/can_baudrate
+         echo 660000 &gt;/sys/class/net/can0/can_baudrate
+         ifconfig can0 up
+      It would be nice to include this solution into SocketCAN generally.
+      The best way would be to add this support into SocketCAN core,
+      but it would need to replace
+            ret = register_netdev(CAN2ND(can));
+      in the chip drivers by
+            ret = register_candev(can);
+      and provide register_candev() by core same way as alloc_candev()
+      is provided. Advantage - API would be more consistent then.
+
+      Actual code adds this sys baudrate attribute only to the MSCAN
+      driver code.
+
+We have still problem with baudrate configuration.
+
+Even, that we are sure, that 33MHz oscillator is used,
+the computation gives incorrectly scaled results.
+We have to select 660000 Baud to achieve 1 MBaud in result.
+Is there some corrected version of the code or is mistake on our side?
+
+May it be, that the code computing time segments should have
+some definition of the actual chip capabilities as additional input.
+The allowed ranges of the TSEG1, TSEG2, prescaller etc. Else code
+cannot be used in generic manner for all chips
+
+The example of such code can be found in or code at
+<A HREF="http://rtime.felk.cvut.cz/darcs/darcsweb.cgi?r=students/mareks1-canfestival;a=headblob;f=/libs4c/canfestival/driver/canOpenDriver.c#l304">http://rtime.felk.cvut.cz/darcs/darcsweb.cgi?r=students/mareks1-canfestival;a=headblob;f=/libs4c/canfestival/driver/canOpenDriver.c#l304</A>
+
+The function
+  int can_auto_baud(long baud_rate, int *pbrp, int *ptseg1, int *ptseg2, int sampl_pt, can_calc_const_t *c)
+and structure
+  typedef struct {
+    int sync;
+    int tseg1_min;
+    int tseg1_max;
+    int tseg2_min;
+    int tseg2_max;
+    int brp_min;
+    int brp_max;
+    int brp_inc;
+    int fix_div;
+  } can_calc_const_t;
+
+I have not inlined all material into this e-mail,because it would
+make it too big. All code can be taken from our Web or repositories.
+If there would be discussion about some specific parts, I would include
+code to comments in followup e-mails.
+
+Thanks for any suggestions or comments in advance
+
+                Pavel Pisa
+        e-mail: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">pisa at cmp.felk.cvut.cz</A>
+        www:    <A HREF="http://cmp.felk.cvut.cz/~pisa">http://cmp.felk.cvut.cz/~pisa</A>
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000471.html">[Xenomai-core] Re: RT-Socket-CAN bus error rate and latencies
+</A></li>
+	<LI>Next message: <A HREF="000473.html">SocketCAN with MSCAN on BOA MPC5200 based card
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#472">[ date ]</a>
+              <a href="thread.html#472">[ thread ]</a>
+              <a href="subject.html#472">[ subject ]</a>
+              <a href="author.html#472">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

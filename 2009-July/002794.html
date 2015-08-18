@@ -1,0 +1,813 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] Add Flexcan CAN driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Add%20Flexcan%20CAN%20driver&In-Reply-To=%3Cmailman.19.1331738145.11849.socketcan-core%40lists.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002788.html">
+   <LINK REL="Next"  HREF="002810.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] Add Flexcan CAN driver</H1>
+    <B>Sascha Hauer</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Add%20Flexcan%20CAN%20driver&In-Reply-To=%3Cmailman.19.1331738145.11849.socketcan-core%40lists.berlios.de%3E"
+       TITLE="[PATCH] Add Flexcan CAN driver">s.hauer at pengutronix.de
+       </A><BR>
+    <I>Tue Jul 21 10:47:19 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002788.html">[PATCH 2/3] can: restart device even if dev_alloc_skb() fails
+</A></li>
+        <LI>Next message: <A HREF="002810.html">[PATCH] CAN: Add Flexcan CAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2794">[ date ]</a>
+              <a href="thread.html#2794">[ thread ]</a>
+              <a href="subject.html#2794">[ subject ]</a>
+              <a href="author.html#2794">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This core is found on some Freescale SoCs and also some Coldfire
+SoCs. Support for Coldfire is missing though at the moment as
+they have an older revision of the core which does not have RX FIFO
+support.
+
+Signed-off-by: Sascha Hauer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;
+---
+ drivers/net/can/Kconfig   |    6 +
+ drivers/net/can/Makefile  |    1 +
+ drivers/net/can/flexcan.c |  696 +++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 703 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/net/can/flexcan.c
+
+diff --git a/drivers/net/can/Kconfig b/drivers/net/can/Kconfig
+index 33821a8..99c6da4 100644
+--- a/drivers/net/can/Kconfig
++++ b/drivers/net/can/Kconfig
+@@ -74,6 +74,12 @@ config CAN_KVASER_PCI
+ 	  This driver is for the the PCIcanx and PCIcan cards (1, 2 or
+ 	  4 channel) from Kvaser (<A HREF="http://www.kvaser.com">http://www.kvaser.com</A>).
+ 
++config CAN_FLEXCAN
++	tristate &quot;Support for Freescale FLEXCAN based chips&quot;
++	depends on CAN_DEV
++	---help---
++	  Say Y here if you want to support for Freescale FlexCAN.
++
+ config CAN_DEBUG_DEVICES
+ 	bool &quot;CAN devices debugging messages&quot;
+ 	depends on CAN
+diff --git a/drivers/net/can/Makefile b/drivers/net/can/Makefile
+index 523a941..25f2032 100644
+--- a/drivers/net/can/Makefile
++++ b/drivers/net/can/Makefile
+@@ -8,5 +8,6 @@ obj-$(CONFIG_CAN_DEV)		+= can-dev.o
+ can-dev-y			:= dev.o
+ 
+ obj-$(CONFIG_CAN_SJA1000)	+= sja1000/
++obj-$(CONFIG_CAN_FLEXCAN)	+= flexcan.o
+ 
+ ccflags-$(CONFIG_CAN_DEBUG_DEVICES) := -DDEBUG
+diff --git a/drivers/net/can/flexcan.c b/drivers/net/can/flexcan.c
+new file mode 100644
+index 0000000..3738898
+--- /dev/null
++++ b/drivers/net/can/flexcan.c
+@@ -0,0 +1,696 @@
++/*
++ * flexcan.c - FLEXCAN CAN controller driver
++ *
++ * Copyright (c) 2005-2006 Varma Electronics Oy
++ * Copyright (c) 2009 Sascha Hauer, Pengutronix
++ *
++ * Based on code originally by Andrey Volkov &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">avolkov at varma-el.com</A>&gt;
++ *
++ * LICENCE:
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU General Public License for more details.
++ *
++ *  You should have received a copy of the GNU General Public License
++ *  along with this program; if not, write to the Free Software
++ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ */
++
++#include &lt;linux/platform_device.h&gt;
++#include &lt;linux/can/netlink.h&gt;
++#include &lt;linux/can/error.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/if_ether.h&gt;
++#include &lt;linux/can/dev.h&gt;
++#include &lt;linux/if_arp.h&gt;
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/delay.h&gt;
++#include &lt;linux/list.h&gt;
++#include &lt;linux/can.h&gt;
++#include &lt;linux/clk.h&gt;
++#include &lt;linux/io.h&gt;
++
++#define DRIVER_NAME &quot;flexcan&quot;
++
++/* FLEXCAN module configuration register (CANMCR) bits */
++#define CANMCR_MDIS				(1 &lt;&lt; 31)
++#define CANMCR_FRZ				(1 &lt;&lt; 30)
++#define CANMCR_FEN				(1 &lt;&lt; 29)
++#define CANMCR_HALT				(1 &lt;&lt; 28)
++#define CANMCR_SOFTRST				(1 &lt;&lt; 25)
++#define CANMCR_FRZACK				(1 &lt;&lt; 24)
++#define CANMCR_SUPV				(1 &lt;&lt; 23)
++#define CANMCR_SRX_DIS				(1 &lt;&lt; 17)
++#define CANMCR_MAXMB(x)				((x) &amp; 0x0f)
++#define CANMCR_IDAM_A				(0 &lt;&lt; 8)
++#define CANMCR_IDAM_B				(1 &lt;&lt; 8)
++#define CANMCR_IDAM_C				(2 &lt;&lt; 8)
++
++/* FLEXCAN control register (CANCTRL) bits */
++#define CANCTRL_PRESDIV(x)			(((x) &amp; 0xff) &lt;&lt; 24)
++#define CANCTRL_RJW(x)				(((x) &amp; 0x03) &lt;&lt; 22)
++#define CANCTRL_PSEG1(x)			(((x) &amp; 0x07) &lt;&lt; 19)
++#define CANCTRL_PSEG2(x)			(((x) &amp; 0x07) &lt;&lt; 16)
++#define CANCTRL_BOFFMSK				(1 &lt;&lt; 15)
++#define CANCTRL_ERRMSK				(1 &lt;&lt; 14)
++#define CANCTRL_CLKSRC				(1 &lt;&lt; 13)
++#define CANCTRL_LPB				(1 &lt;&lt; 12)
++#define CANCTRL_TWRN_MSK			(1 &lt;&lt; 11)
++#define CANCTRL_RWRN_MSK			(1 &lt;&lt; 10)
++#define CANCTRL_SAMP				(1 &lt;&lt; 7)
++#define CANCTRL_BOFFREC				(1 &lt;&lt; 6)
++#define CANCTRL_TSYNC				(1 &lt;&lt; 5)
++#define CANCTRL_LBUF				(1 &lt;&lt; 4)
++#define CANCTRL_LOM				(1 &lt;&lt; 3)
++#define CANCTRL_PROPSEG(x)			((x) &amp; 0x07)
++
++/* FLEXCAN error counter register (ERRCNT) bits */
++#define ERRCNT_REXECTR(x)			(((x) &amp; 0xff) &lt;&lt; 8)
++#define ERRCNT_TXECTR(x)			((x) &amp; 0xff)
++
++/* FLEXCAN error and status register (ERRSTAT) bits */
++#define ERRSTAT_TWRNINT				(1 &lt;&lt; 17)
++#define ERRSTAT_RWRNINT				(1 &lt;&lt; 16)
++#define ERRSTAT_BIT1ERR				(1 &lt;&lt; 15)
++#define ERRSTAT_BIT0ERR				(1 &lt;&lt; 14)
++#define ERRSTAT_ACKERR				(1 &lt;&lt; 13)
++#define ERRSTAT_CRCERR				(1 &lt;&lt; 12)
++#define ERRSTAT_FRMERR				(1 &lt;&lt; 11)
++#define ERRSTAT_STFERR				(1 &lt;&lt; 10)
++#define ERRSTAT_TXWRN				(1 &lt;&lt; 9)
++#define ERRSTAT_RXWRN				(1 &lt;&lt; 8)
++#define ERRSTAT_IDLE 				(1 &lt;&lt; 7)
++#define ERRSTAT_TXRX				(1 &lt;&lt; 6)
++#define ERRSTAT_FLTCONF_MASK			(3 &lt;&lt; 4)
++#define ERRSTAT_FLTCONF_ERROR_ACTIVE		(0 &lt;&lt; 4)
++#define ERRSTAT_FLTCONF_ERROR_PASSIVE		(1 &lt;&lt; 4)
++#define ERRSTAT_FLTCONF_ERROR_BUS_OFF		(2 &lt;&lt; 4)
++#define ERRSTAT_BOFFINT				(1 &lt;&lt; 2)
++#define ERRSTAT_ERRINT          		(1 &lt;&lt; 1)
++#define ERRSTAT_WAKINT				(1 &lt;&lt; 0)
++#define ERRSTAT_INT	(ERRSTAT_BOFFINT | ERRSTAT_ERRINT | ERRSTAT_TWRNINT | \
++		ERRSTAT_RWRNINT)
++
++/* FLEXCAN interrupt flag register (IFLAG) bits */
++#define IFLAG_BUF(x)				(1 &lt;&lt; (x))
++#define IFLAG_RX_FIFO_OVERFLOW			(1 &lt;&lt; 7)
++#define IFLAG_RX_FIFO_WARN			(1 &lt;&lt; 6)
++#define IFLAG_RX_FIFO_AVAILABLE			(1 &lt;&lt; 5)
++
++/* FLEXCAN message buffers */
++#define MB_CNT_CODE(x)				(((x) &amp; 0xf) &lt;&lt; 24)
++#define MB_CNT_SRR				(1 &lt;&lt; 22)
++#define MB_CNT_IDE				(1 &lt;&lt; 21)
++#define MB_CNT_RTR				(1 &lt;&lt; 20)
++#define MB_CNT_LENGTH(x)			(((x) &amp; 0xf) &lt;&lt; 16)
++#define MB_CNT_TIMESTAMP(x)			((x) &amp; 0xffff)
++
++#define MB_ID_STD				(0x7ff &lt;&lt; 18)
++#define MB_ID_EXT				0x1fffffff
++#define MB_CODE_MASK				0xf0ffffff
++
++/* Structure of the message buffer */
++struct flexcan_mb {
++	u32	can_dlc;
++	u32	can_id;
++	u32	data[2];
++};
++
++/* Structure of the hardware registers */
++struct flexcan_regs {
++	u32	canmcr;		/* 0x00 */
++	u32	canctrl;	/* 0x04 */
++	u32	timer;		/* 0x08 */
++	u32	reserved1;	/* 0x0c */
++	u32 	rxgmask;	/* 0x10 */
++	u32 	rx14mask;	/* 0x14 */
++	u32 	rx15mask;	/* 0x18 */
++	u32	errcnt;		/* 0x1c */
++	u32 	errstat;	/* 0x20 */
++	u32	imask2;		/* 0x24 */
++	u32	imask1;		/* 0x28 */
++	u32	iflag2;		/* 0x2c */
++	u32 	iflag1;		/* 0x30 */
++	u32	reserved4[19];
++	struct	flexcan_mb cantxfg[64];
++};
++
++struct flexcan_priv {
++	struct can_priv can;
++	void __iomem *base;
++
++	struct net_device *dev;
++	struct clk *clk;
++};
++
++static struct can_bittiming_const flexcan_bittiming_const = {
++	.name = DRIVER_NAME,
++	.tseg1_min = 1,
++	.tseg1_max = 16,
++	.tseg2_min = 2,
++	.tseg2_max = 8,
++	.sjw_max = 4,
++	.brp_min = 1,
++	.brp_max = 256,
++	.brp_inc = 1,
++};
++
++#define TX_BUF_ID	8
++
++static int flexcan_start_xmit(struct sk_buff *skb, struct net_device *dev)
++{
++	struct can_frame *frame = (struct can_frame *)skb-&gt;data;
++	struct flexcan_priv *priv = netdev_priv(dev);
++	struct flexcan_regs __iomem *regs = priv-&gt;base;
++	u32 can_id;
++	u32 dlc = MB_CNT_CODE(0xc) | (frame-&gt;can_dlc &lt;&lt; 16);
++	u32 *can_data;
++
++	netif_stop_queue(dev);
++
++	if (frame-&gt;can_id &amp; CAN_EFF_FLAG) {
++		can_id = frame-&gt;can_id &amp; MB_ID_EXT;
++		dlc |= MB_CNT_IDE | MB_CNT_SRR;
++	} else {
++		can_id = (frame-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 18;
++	}
++
++	if (frame-&gt;can_id &amp; CAN_RTR_FLAG)
++		dlc |= MB_CNT_RTR;
++
++	writel(dlc, &amp;regs-&gt;cantxfg[TX_BUF_ID].can_dlc);
++	writel(can_id, &amp;regs-&gt;cantxfg[TX_BUF_ID].can_id);
++
++	can_data = (u32 *)frame-&gt;data;
++	writel(cpu_to_be32(*can_data), &amp;regs-&gt;cantxfg[TX_BUF_ID].data[0]);
++	writel(cpu_to_be32(*(can_data + 1)), &amp;regs-&gt;cantxfg[TX_BUF_ID].data[1]);
++
++	writel(dlc, &amp;regs-&gt;cantxfg[TX_BUF_ID].can_dlc);
++
++	kfree_skb(skb);
++
++	return NETDEV_TX_OK;
++}
++
++static void flexcan_rx_frame(struct net_device *ndev,
++		struct flexcan_mb __iomem *mb)
++{
++	struct net_device_stats *stats = &amp;ndev-&gt;stats;
++	struct sk_buff *skb;
++	struct can_frame *frame;
++	int ctrl = readl(&amp;mb-&gt;can_dlc);
++	int length = (ctrl &gt;&gt; 16) &amp; 0x0f;
++	u32 id;
++
++	skb = dev_alloc_skb(sizeof(struct can_frame));
++	if (!skb) {
++		stats-&gt;rx_dropped++;
++		return;
++	}
++
++	frame = (struct can_frame *)skb_put(skb,
++			sizeof(struct can_frame));
++
++	frame-&gt;can_dlc = length;
++	id = readl(&amp;mb-&gt;can_id) &amp; MB_ID_EXT;
++
++	if (ctrl &amp; MB_CNT_IDE) {
++		frame-&gt;can_id = id &amp; CAN_EFF_MASK;
++		frame-&gt;can_id |= CAN_EFF_FLAG;
++		if (ctrl &amp; MB_CNT_RTR)
++			frame-&gt;can_id |= CAN_RTR_FLAG;
++	} else {
++		frame-&gt;can_id  = id &gt;&gt; 18;
++		if (ctrl &amp; MB_CNT_RTR)
++			frame-&gt;can_id |= CAN_RTR_FLAG;
++	}
++
++	*(u32 *)frame-&gt;data = be32_to_cpu(readl(&amp;mb-&gt;data[0]));
++	*((u32 *)frame-&gt;data + 1) = be32_to_cpu(readl(&amp;mb-&gt;data[1]));
++
++	stats-&gt;rx_packets++;
++	stats-&gt;rx_bytes += frame-&gt;can_dlc;
++	skb-&gt;dev = ndev;
++	skb-&gt;protocol = __constant_htons(ETH_P_CAN);
++	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
++
++	netif_rx(skb);
++}
++
++static void flexcan_error(struct net_device *ndev, u32 stat)
++{
++	struct can_frame *cf;
++	struct sk_buff *skb;
++	struct flexcan_priv *priv = netdev_priv(ndev);
++	struct net_device_stats *stats = &amp;ndev-&gt;stats;
++	enum can_state state = priv-&gt;can.state;
++	int error_warning = 0, rx_errors = 0;
++
++	skb = dev_alloc_skb(sizeof(struct can_frame));
++	if (!skb)
++		return;
++
++	skb-&gt;dev = ndev;
++	skb-&gt;protocol = htons(ETH_P_CAN);
++
++	cf = (struct can_frame *)skb_put(skb, sizeof(*cf));
++	memset(cf, 0, sizeof(*cf));
++
++	cf-&gt;can_id = CAN_ERR_FLAG;
++	cf-&gt;can_dlc = CAN_ERR_DLC;
++
++	if (stat &amp; ERRSTAT_RWRNINT) {
++		error_warning = 1;
++		state = CAN_STATE_ERROR_WARNING;
++		cf-&gt;data[1] |= CAN_ERR_CRTL_RX_WARNING;
++	}
++
++	if (stat &amp; ERRSTAT_TWRNINT) {
++		error_warning = 1;
++		state = CAN_STATE_ERROR_WARNING;
++		cf-&gt;data[1] |= CAN_ERR_CRTL_TX_WARNING;
++	}
++
++	switch ((stat &gt;&gt; 4) &amp; 0x3) {
++	case 0:
++		state = CAN_STATE_ERROR_ACTIVE;
++		break;
++	case 1:
++		state = CAN_STATE_ERROR_PASSIVE;
++		break;
++	default:
++		state = CAN_STATE_BUS_OFF;
++		break;
++	}
++
++	if (stat &amp; ERRSTAT_BOFFINT) {
++		cf-&gt;can_id |= CAN_ERR_BUSOFF;
++		can_bus_off(ndev);
++	}
++
++	if (stat &amp; ERRSTAT_BIT1ERR) {
++		cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
++		cf-&gt;data[2] |= CAN_ERR_PROT_BIT1;
++	}
++
++	if (stat &amp; ERRSTAT_BIT0ERR) {
++		cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
++		cf-&gt;data[2] |= CAN_ERR_PROT_BIT0;
++	}
++
++	if (stat &amp; ERRSTAT_FRMERR) {
++		rx_errors = 1;
++		cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
++		cf-&gt;data[2] |= CAN_ERR_PROT_FORM;
++	}
++
++	if (stat &amp; ERRSTAT_STFERR) {
++		rx_errors = 1;
++		cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
++		cf-&gt;data[2] |= CAN_ERR_PROT_STUFF;
++	}
++
++
++	if (stat &amp; ERRSTAT_ACKERR) {
++		rx_errors = 1;
++		cf-&gt;can_id |= CAN_ERR_ACK;
++	}
++
++	if (error_warning)
++		priv-&gt;can.can_stats.error_warning++;
++	if (rx_errors)
++		stats-&gt;rx_errors++;
++	if (cf-&gt;can_id &amp; CAN_ERR_BUSERROR)
++		priv-&gt;can.can_stats.bus_error++;
++
++	priv-&gt;can.state = state;
++
++	netif_rx(skb);
++
++	ndev-&gt;last_rx = jiffies;
++	stats-&gt;rx_packets++;
++	stats-&gt;rx_bytes += cf-&gt;can_dlc;
++}
++
++static irqreturn_t flexcan_isr(int irq, void *dev_id)
++{
++	struct net_device *ndev = dev_id;
++	struct net_device_stats *stats = &amp;ndev-&gt;stats;
++	struct flexcan_priv *priv = netdev_priv(ndev);
++	struct flexcan_regs __iomem *regs = priv-&gt;base;
++	u32 iflags, errstat;
++
++	errstat = readl(&amp;regs-&gt;errstat);
++	if (errstat &amp; ERRSTAT_INT) {
++		flexcan_error(ndev, errstat);
++		writel(errstat &amp; ERRSTAT_INT, &amp;regs-&gt;errstat);
++	}
++
++	iflags = readl(&amp;regs-&gt;iflag1);
++
++	if (iflags &amp; IFLAG_RX_FIFO_OVERFLOW) {
++		writel(IFLAG_RX_FIFO_OVERFLOW, &amp;regs-&gt;iflag1);
++		stats-&gt;rx_over_errors++;
++	}
++
++	while (iflags &amp; IFLAG_RX_FIFO_AVAILABLE) {
++		struct flexcan_mb __iomem *mb = &amp;regs-&gt;cantxfg[0];
++
++		flexcan_rx_frame(ndev, mb);
++		writel(IFLAG_RX_FIFO_AVAILABLE, &amp;regs-&gt;iflag1);
++		readl(&amp;regs-&gt;timer);
++		iflags = readl(&amp;regs-&gt;iflag1);
++	}
++
++	if (iflags &amp; (1 &lt;&lt; TX_BUF_ID)) {
++		stats-&gt;tx_packets++;
++		writel((1 &lt;&lt; TX_BUF_ID), &amp;regs-&gt;iflag1);
++		netif_wake_queue(ndev);
++	}
++
++	return IRQ_HANDLED;
++}
++
++static int flexcan_set_bittiming(struct net_device *ndev)
++{
++	struct flexcan_priv *priv = netdev_priv(ndev);
++	struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
++	struct flexcan_regs __iomem *regs = priv-&gt;base;
++	int ret = 0;
++	u32 reg;
++
++	dev_dbg(&amp;ndev-&gt;dev, &quot;%s: infreq: %ld brp: %d p1: %d p2: %d sample: %d&quot;
++			&quot; sjw: %d prop: %d\n&quot;,
++			__func__, clk_get_rate(priv-&gt;clk), bt-&gt;brp,
++			bt-&gt;phase_seg1, bt-&gt;phase_seg2, bt-&gt;sample_point,
++			bt-&gt;sjw, bt-&gt;prop_seg);
++
++	reg = readl(&amp;regs-&gt;canctrl);
++	reg &amp;= ~(CANCTRL_SAMP | CANCTRL_PRESDIV(0xff) |
++			CANCTRL_PSEG1(7) | CANCTRL_PSEG2(7));
++	reg |= CANCTRL_PRESDIV(bt-&gt;brp - 1) |
++		CANCTRL_PSEG1(bt-&gt;phase_seg1 - 1) |
++		CANCTRL_PSEG2(bt-&gt;phase_seg2 - 1) |
++		CANCTRL_RJW(3) |
++		CANCTRL_PROPSEG(bt-&gt;prop_seg - 1);
++	if (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES)
++		reg |= CANCTRL_SAMP;
++	writel(reg, &amp;regs-&gt;canctrl);
++
++	return ret;
++}
++
++
++static int flexcan_open(struct net_device *ndev)
++{
++	int ret, i;
++	struct flexcan_priv *priv = netdev_priv(ndev);
++	struct flexcan_regs __iomem *regs = priv-&gt;base;
++	u32 reg;
++
++	ret = open_candev(ndev);
++	if (ret)
++		return ret;
++
++	ret = request_irq(ndev-&gt;irq, flexcan_isr, IRQF_DISABLED,
++			DRIVER_NAME, ndev);
++	if (ret)
++		goto err_irq;
++
++	clk_enable(priv-&gt;clk);
++
++	reg = CANMCR_SOFTRST | CANMCR_HALT;
++	writel(CANMCR_SOFTRST, &amp;regs-&gt;canmcr);
++	udelay(10);
++
++	if (readl(&amp;regs-&gt;canmcr) &amp; CANMCR_SOFTRST) {
++		dev_err(&amp;ndev-&gt;dev, &quot;Failed to softreset can module.\n&quot;);
++		ret = -ENODEV;
++		goto err_reset;
++	}
++
++	/* Enable error and bus off interrupt */
++	reg = readl(&amp;regs-&gt;canctrl);
++	reg |= CANCTRL_CLKSRC | CANCTRL_ERRMSK | CANCTRL_BOFFMSK |
++		CANCTRL_BOFFREC | CANCTRL_TWRN_MSK | CANCTRL_TWRN_MSK;
++	writel(reg, &amp;regs-&gt;canctrl);
++
++	/* Set lowest buffer transmitted first */
++	reg |= CANCTRL_LBUF;
++	writel(reg, &amp;regs-&gt;canctrl);
++
++	for (i = 0; i &lt; 64; i++) {
++		writel(0, &amp;regs-&gt;cantxfg[i].can_dlc);
++		writel(0, &amp;regs-&gt;cantxfg[i].can_id);
++		writel(0, &amp;regs-&gt;cantxfg[i].data[0]);
++		writel(0, &amp;regs-&gt;cantxfg[i].data[1]);
++
++		/* Put MB into rx queue */
++		writel(MB_CNT_CODE(0x04), &amp;regs-&gt;cantxfg[i].can_dlc);
++	}
++
++	/* acceptance mask/acceptance code (accept everything) */
++	writel(0x0, &amp;regs-&gt;rxgmask);
++	writel(0x0, &amp;regs-&gt;rx14mask);
++	writel(0x0, &amp;regs-&gt;rx15mask);
++
++	/* Enable flexcan module */
++	reg = readl(&amp;regs-&gt;canmcr);
++	reg &amp;= ~(CANMCR_MDIS | CANMCR_FRZ);
++	reg |= CANMCR_IDAM_C | CANMCR_FEN;
++	writel(reg, &amp;regs-&gt;canmcr);
++
++	/* Synchronize with the can bus */
++	reg &amp;= ~CANMCR_HALT;
++	writel(reg, &amp;regs-&gt;canmcr);
++
++	/* Enable interrupts */
++	writel(IFLAG_RX_FIFO_OVERFLOW | IFLAG_RX_FIFO_AVAILABLE |
++			IFLAG_BUF(TX_BUF_ID),
++			&amp;regs-&gt;imask1);
++
++	netif_start_queue(ndev);
++
++	return 0;
++
++err_reset:
++	free_irq(ndev-&gt;irq, ndev);
++err_irq:
++	close_candev(ndev);
++
++	return ret;
++}
++
++static int flexcan_close(struct net_device *ndev)
++{
++	struct flexcan_priv *priv = netdev_priv(ndev);
++	struct flexcan_regs __iomem *regs = priv-&gt;base;
++
++	netif_stop_queue(ndev);
++
++	/* Disable all interrupts */
++	writel(0, &amp;regs-&gt;imask1);
++	free_irq(ndev-&gt;irq, ndev);
++
++	close_candev(ndev);
++
++	/* Disable module */
++	writel(CANMCR_MDIS, &amp;regs-&gt;canmcr);
++	clk_disable(priv-&gt;clk);
++	return 0;
++}
++
++static int flexcan_set_mode(struct net_device *ndev, enum can_mode mode)
++{
++	struct flexcan_priv *priv = netdev_priv(ndev);
++	struct flexcan_regs __iomem *regs = priv-&gt;base;
++	u32 reg;
++
++	switch (mode) {
++	case CAN_MODE_START:
++		reg = readl(&amp;regs-&gt;canctrl);
++		reg &amp;= ~CANCTRL_BOFFREC;
++		writel(reg, &amp;regs-&gt;canctrl);
++		reg |= CANCTRL_BOFFREC;
++		writel(reg, &amp;regs-&gt;canctrl);
++		priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
++
++		if (netif_queue_stopped(ndev))
++			netif_wake_queue(ndev);
++		break;
++
++	default:
++		return -EOPNOTSUPP;
++	}
++
++	return 0;
++}
++
++static const struct net_device_ops flexcan_netdev_ops = {
++       .ndo_open		= flexcan_open,
++       .ndo_stop		= flexcan_close,
++       .ndo_start_xmit		= flexcan_start_xmit,
++};
++
++static int register_flexcandev(struct net_device *ndev)
++{
++	struct flexcan_priv *priv = netdev_priv(ndev);
++	struct flexcan_regs __iomem *regs = priv-&gt;base;
++	u32 reg;
++
++	reg = readl(&amp;regs-&gt;canmcr);
++	reg &amp;= ~CANMCR_MDIS;
++	writel(reg, &amp;regs-&gt;canmcr);
++	udelay(100);
++	reg |= CANMCR_FRZ | CANMCR_HALT | CANMCR_FEN;
++	writel(reg, &amp;regs-&gt;canmcr);
++
++	reg = readl(&amp;regs-&gt;canmcr);
++
++	/* Currently we only support newer versions of this core featuring
++	 * a RX FIFO. Older cores found on some Coldfire derivates are not
++	 * yet supported.
++	 */
++	if (!(reg &amp; CANMCR_FEN)) {
++		dev_err(&amp;ndev-&gt;dev, &quot;Could not enable RX FIFO, unsupported core&quot;);
++		return -ENODEV;
++	}
++
++	ndev-&gt;flags |= IFF_ECHO; /* we support local echo in hardware */
++	ndev-&gt;netdev_ops = &amp;flexcan_netdev_ops;
++
++	return register_candev(ndev);
++}
++
++static void unregister_flexcandev(struct net_device *ndev)
++{
++	struct flexcan_priv *priv = netdev_priv(ndev);
++	struct flexcan_regs __iomem *regs = priv-&gt;base;
++	u32 reg;
++
++	reg = readl(&amp;regs-&gt;canmcr);
++	reg |= CANMCR_FRZ | CANMCR_HALT | CANMCR_MDIS;
++	writel(reg, &amp;regs-&gt;canmcr);
++
++	unregister_candev(ndev);
++}
++
++static int __devinit flexcan_probe(struct platform_device *pdev)
++{
++	struct resource *mem;
++	struct net_device *ndev;
++	struct flexcan_priv *priv;
++	u32 mem_size;
++	int ret;
++
++	ndev = alloc_candev(sizeof(struct flexcan_priv));
++	if (!ndev)
++		return -ENOMEM;
++
++	priv = netdev_priv(ndev);
++
++	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++
++	ndev-&gt;irq = platform_get_irq(pdev, 0);
++	if (!mem || !ndev-&gt;irq) {
++		ret = -ENODEV;
++		goto failed_req;
++	}
++
++	mem_size = resource_size(mem);
++
++	if (!request_mem_region(mem-&gt;start, mem_size, DRIVER_NAME)) {
++		ret = -EBUSY;
++		goto failed_req;
++	}
++
++	SET_NETDEV_DEV(ndev, &amp;pdev-&gt;dev);
++
++	priv-&gt;base = ioremap(mem-&gt;start, mem_size);
++	if (!priv-&gt;base) {
++		ret = -ENOMEM;
++		goto failed_map;
++	}
++
++	priv-&gt;clk = clk_get(&amp;pdev-&gt;dev, NULL);
++	if (IS_ERR(priv-&gt;clk)) {
++		ret = PTR_ERR(priv-&gt;clk);
++		goto failed_clock;
++	}
++	priv-&gt;can.clock.freq = clk_get_rate(priv-&gt;clk);
++
++	platform_set_drvdata(pdev, ndev);
++
++	priv-&gt;can.do_set_bittiming = flexcan_set_bittiming;
++	priv-&gt;can.bittiming_const = &amp;flexcan_bittiming_const;
++	priv-&gt;can.do_set_mode = flexcan_set_mode;
++
++	ret = register_flexcandev(ndev);
++	if (ret)
++		goto failed_register;
++
++	return 0;
++
++failed_register:
++	clk_put(priv-&gt;clk);
++failed_clock:
++	iounmap(priv-&gt;base);
++failed_map:
++	release_mem_region(mem-&gt;start, mem_size);
++failed_req:
++	free_candev(ndev);
++
++	return ret;
++}
++
++static int __devexit flexcan_remove(struct platform_device *pdev)
++{
++	struct net_device *ndev = platform_get_drvdata(pdev);
++	struct flexcan_priv *priv = netdev_priv(ndev);
++	struct resource *mem;
++
++	unregister_flexcandev(ndev);
++	platform_set_drvdata(pdev, NULL);
++	iounmap(priv-&gt;base);
++	clk_put(priv-&gt;clk);
++
++	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	release_mem_region(mem-&gt;start, resource_size(mem));
++	free_candev(ndev);
++
++	return 0;
++}
++
++static struct platform_driver flexcan_driver = {
++	.driver = {
++		   .name = DRIVER_NAME,
++		   },
++	.probe = flexcan_probe,
++	.remove = __devexit_p(flexcan_remove),
++};
++
++static int __init flexcan_init(void)
++{
++	return platform_driver_register(&amp;flexcan_driver);
++}
++
++static void __exit flexcan_exit(void)
++{
++	platform_driver_unregister(&amp;flexcan_driver);
++}
++
++module_init(flexcan_init);
++module_exit(flexcan_exit);
++
++MODULE_AUTHOR(&quot;Sascha Hauer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;&quot;);
++MODULE_LICENSE(&quot;GPL v2&quot;);
++MODULE_DESCRIPTION(&quot;CAN port driver for flexcan based chip&quot;);
+-- 
+1.6.3.3
+
+
+-- 
+Pengutronix e.K.                           |                             |
+Industrial Linux Solutions                 | <A HREF="http://www.pengutronix.de/">http://www.pengutronix.de/</A>  |
+Peiner Str. 6-8, 31137 Hildesheim, Germany | Phone: +49-5121-206917-0    |
+Amtsgericht Hildesheim, HRA 2686           | Fax:   +49-5121-206917-5555 |
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002788.html">[PATCH 2/3] can: restart device even if dev_alloc_skb() fails
+</A></li>
+	<LI>Next message: <A HREF="002810.html">[PATCH] CAN: Add Flexcan CAN driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2794">[ date ]</a>
+              <a href="thread.html#2794">[ thread ]</a>
+              <a href="subject.html#2794">[ subject ]</a>
+              <a href="author.html#2794">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

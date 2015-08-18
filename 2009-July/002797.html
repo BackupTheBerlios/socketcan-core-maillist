@@ -1,0 +1,367 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] Add Support for Freescale FlexCAN CAN controller
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Add%20Support%20for%20Freescale%20FlexCAN%20CAN%20controller&In-Reply-To=%3C4A6D65A7.4080805%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002796.html">
+   <LINK REL="Next"  HREF="002798.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] Add Support for Freescale FlexCAN CAN controller</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20Add%20Support%20for%20Freescale%20FlexCAN%20CAN%20controller&In-Reply-To=%3C4A6D65A7.4080805%40grandegger.com%3E"
+       TITLE="[PATCH] Add Support for Freescale FlexCAN CAN controller">wg at grandegger.com
+       </A><BR>
+    <I>Mon Jul 27 10:30:31 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002796.html">[PATCH] Add Support for Freescale FlexCAN CAN controller
+</A></li>
+        <LI>Next message: <A HREF="002798.html">[PATCH] Add Support for Freescale FlexCAN CAN controller
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2797">[ date ]</a>
+              <a href="thread.html#2797">[ thread ]</a>
+              <a href="subject.html#2797">[ subject ]</a>
+              <a href="author.html#2797">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Sascha Hauer wrote:
+&gt;<i> On Fri, Jul 24, 2009 at 04:55:02PM +0200, Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> Hi Sascha,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Sascha Hauer wrote:
+</I>&gt;&gt;&gt;<i> Hi,
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> This patch adds support for the Freescale FlexCAN CAN controller.
+</I>&gt;&gt;&gt;<i> The driver has been tested on an i.MX25 SoC with bitrates up to
+</I>&gt;&gt;&gt;<i> 1Mbit, remote frames and standard and extenden frames.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Please review and consider for inclusion.
+</I>&gt;&gt;<i> See below...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Sascha
+</I>[snip]
+&gt;&gt;&gt;<i> +static int flexcan_start_xmit(struct sk_buff *skb, struct net_device *dev)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct can_frame *frame = (struct can_frame *)skb-&gt;data;
+</I>&gt;&gt;&gt;<i> +	struct flexcan_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;&gt;<i> +	struct flexcan_regs __iomem *regs = priv-&gt;base;
+</I>&gt;&gt;&gt;<i> +	u32 can_id;
+</I>&gt;&gt;&gt;<i> +	u32 dlc = MB_CNT_CODE(0xc) | (frame-&gt;can_dlc &lt;&lt; 16);
+</I>&gt;&gt;&gt;<i> +	u32 *can_data;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	netif_stop_queue(dev);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (frame-&gt;can_id &amp; CAN_EFF_FLAG) {
+</I>&gt;&gt;&gt;<i> +		can_id = frame-&gt;can_id &amp; MB_ID_EXT;
+</I>&gt;&gt;&gt;<i> +		dlc |= MB_CNT_IDE | MB_CNT_SRR;
+</I>&gt;&gt;&gt;<i> +	} else {
+</I>&gt;&gt;&gt;<i> +		can_id = (frame-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 18;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (frame-&gt;can_id &amp; CAN_RTR_FLAG)
+</I>&gt;&gt;&gt;<i> +		dlc |= MB_CNT_RTR;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	writel(dlc, &amp;regs-&gt;cantxfg[TX_BUF_ID].can_dlc);
+</I>&gt;&gt;&gt;<i> +	writel(can_id, &amp;regs-&gt;cantxfg[TX_BUF_ID].can_id);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	can_data = (u32 *)frame-&gt;data;
+</I>&gt;&gt;&gt;<i> +	writel(cpu_to_be32(*can_data), &amp;regs-&gt;cantxfg[TX_BUF_ID].data[0]);
+</I>&gt;&gt;&gt;<i> +	writel(cpu_to_be32(*(can_data + 1)), &amp;regs-&gt;cantxfg[TX_BUF_ID].data[1]);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	writel(dlc, &amp;regs-&gt;cantxfg[TX_BUF_ID].can_dlc);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	kfree_skb(skb);
+</I>&gt;&gt;<i> Support for echo skb using can_put/get_echo_skb() is missing. It should
+</I>&gt;&gt;<i> not be a big deal to add it.
+</I>&gt;<i> 
+</I>&gt;<i> In fact it's not missing, but the hardware is configured to receive its
+</I>&gt;<i> own packets, so this isn't needed.
+</I>
+Ah, OK, I assume that the message is looped back not before it went out
+to the bus to ensure proper time ordering.
+
+&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	return NETDEV_TX_OK;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static void flexcan_rx_frame(struct net_device *ndev,
+</I>&gt;&gt;&gt;<i> +		struct flexcan_mb __iomem *mb)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct net_device_stats *stats = &amp;ndev-&gt;stats;
+</I>&gt;&gt;&gt;<i> +	struct sk_buff *skb;
+</I>&gt;&gt;&gt;<i> +	struct can_frame *frame;
+</I>&gt;&gt;&gt;<i> +	int ctrl = readl(&amp;mb-&gt;can_dlc);
+</I>&gt;&gt;&gt;<i> +	int length = (ctrl &gt;&gt; 16) &amp; 0x0f;
+</I>&gt;&gt;&gt;<i> +	u32 id;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	skb = dev_alloc_skb(sizeof(struct can_frame));
+</I>&gt;&gt;&gt;<i> +	if (!skb) {
+</I>&gt;&gt;&gt;<i> +		stats-&gt;rx_dropped++;
+</I>&gt;&gt;&gt;<i> +		return;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	frame = (struct can_frame *)skb_put(skb,
+</I>&gt;&gt;&gt;<i> +			sizeof(struct can_frame));
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	frame-&gt;can_dlc = length;
+</I>&gt;&gt;&gt;<i> +	id = readl(&amp;mb-&gt;can_id) &amp; MB_ID_EXT;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (ctrl &amp; MB_CNT_IDE) {
+</I>&gt;&gt;&gt;<i> +		frame-&gt;can_id = id &amp; CAN_EFF_MASK;
+</I>&gt;&gt;&gt;<i> +		frame-&gt;can_id |= CAN_EFF_FLAG;
+</I>&gt;&gt;&gt;<i> +		if (ctrl &amp; MB_CNT_RTR)
+</I>&gt;&gt;&gt;<i> +			frame-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;&gt;&gt;<i> +	} else {
+</I>&gt;&gt;&gt;<i> +		frame-&gt;can_id  = id &gt;&gt; 18;
+</I>&gt;&gt;&gt;<i> +		if (ctrl &amp; MB_CNT_RTR)
+</I>&gt;&gt;&gt;<i> +			frame-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	*(u32 *)frame-&gt;data = be32_to_cpu(readl(&amp;mb-&gt;data[0]));
+</I>&gt;&gt;&gt;<i> +	*((u32 *)frame-&gt;data + 1) = be32_to_cpu(readl(&amp;mb-&gt;data[1]));
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	stats-&gt;rx_packets++;
+</I>&gt;&gt;&gt;<i> +	stats-&gt;rx_bytes += frame-&gt;can_dlc;
+</I>&gt;&gt;&gt;<i> +	skb-&gt;dev = ndev;
+</I>&gt;&gt;&gt;<i> +	skb-&gt;protocol = __constant_htons(ETH_P_CAN);
+</I>&gt;&gt;&gt;<i> +	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	netif_rx(skb);
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static void flexcan_error(struct net_device *ndev, u32 stat)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct can_frame *cf;
+</I>&gt;&gt;&gt;<i> +	struct sk_buff *skb;
+</I>&gt;&gt;&gt;<i> +	struct flexcan_priv *priv = netdev_priv(ndev);
+</I>&gt;&gt;&gt;<i> +	struct net_device_stats *stats = &amp;ndev-&gt;stats;
+</I>&gt;&gt;&gt;<i> +	enum can_state state = priv-&gt;can.state;
+</I>&gt;&gt;&gt;<i> +	int error_warning = 0, rx_errors = 0;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	skb = dev_alloc_skb(sizeof(struct can_frame));
+</I>&gt;&gt;&gt;<i> +	if (!skb)
+</I>&gt;&gt;&gt;<i> +		return;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	skb-&gt;dev = ndev;
+</I>&gt;&gt;&gt;<i> +	skb-&gt;protocol = htons(ETH_P_CAN);
+</I>&gt;&gt;<i> 	skb-&gt;protocol = __constant_htons(ETH_P_CAN);
+</I>&gt;&gt;<i> 	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> as above?!
+</I>&gt;<i> 
+</I>&gt;<i> Ok
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	cf = (struct can_frame *)skb_put(skb, sizeof(*cf));
+</I>&gt;&gt;&gt;<i> +	memset(cf, 0, sizeof(*cf));
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	cf-&gt;can_id = CAN_ERR_FLAG;
+</I>&gt;&gt;&gt;<i> +	cf-&gt;can_dlc = CAN_ERR_DLC;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (stat &amp; ERRSTAT_RWRNINT) {
+</I>&gt;&gt;&gt;<i> +		error_warning = 1;
+</I>&gt;&gt;&gt;<i> +		state = CAN_STATE_ERROR_WARNING;
+</I>&gt;&gt;&gt;<i> +		cf-&gt;data[1] |= CAN_ERR_CRTL_RX_WARNING;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (stat &amp; ERRSTAT_TWRNINT) {
+</I>&gt;&gt;&gt;<i> +		error_warning = 1;
+</I>&gt;&gt;&gt;<i> +		state = CAN_STATE_ERROR_WARNING;
+</I>&gt;&gt;&gt;<i> +		cf-&gt;data[1] |= CAN_ERR_CRTL_TX_WARNING;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	switch ((stat &gt;&gt; 4) &amp; 0x3) {
+</I>&gt;&gt;&gt;<i> +	case 0:
+</I>&gt;&gt;&gt;<i> +		state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;&gt;&gt;<i> +		break;
+</I>&gt;&gt;<i> Does the device recover autmatically from the bus-off state? Can
+</I>&gt;&gt;<i> automatic recovery be configured (switched off?).
+</I>&gt;<i> 
+</I>&gt;<i> The device *can* be configured to automatically recover from bus off,
+</I>&gt;<i> but I didn't use this feature to be more conform to the Linux CAN API.
+</I>
+Good.
+
+&gt;&gt;&gt;<i> +	case 1:
+</I>&gt;&gt;&gt;<i> +		state = CAN_STATE_ERROR_PASSIVE;
+</I>&gt;&gt;&gt;<i> +		break;
+</I>&gt;&gt;&gt;<i> +	default:
+</I>&gt;&gt;&gt;<i> +		state = CAN_STATE_BUS_OFF;
+</I>&gt;&gt;&gt;<i> +		break;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> You seem to handle a state change to error passive like a change to
+</I>&gt;&gt;<i> error warning.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +	if (stat &amp; ERRSTAT_BOFFINT) {
+</I>&gt;&gt;&gt;<i> +		cf-&gt;can_id |= CAN_ERR_BUSOFF;
+</I>&gt;&gt;&gt;<i> +		can_bus_off(ndev);
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (stat &amp; ERRSTAT_BIT1ERR) {
+</I>&gt;&gt;<i> 		rx_error = 1; ???
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +		cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
+</I>&gt;&gt;&gt;<i> +		cf-&gt;data[2] |= CAN_ERR_PROT_BIT1;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (stat &amp; ERRSTAT_BIT0ERR) {
+</I>&gt;&gt;<i> 		rx_error = 1; ???
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +		cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
+</I>&gt;&gt;&gt;<i> +		cf-&gt;data[2] |= CAN_ERR_PROT_BIT0;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (stat &amp; ERRSTAT_FRMERR) {
+</I>&gt;&gt;&gt;<i> +		rx_errors = 1;
+</I>&gt;&gt;&gt;<i> +		cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
+</I>&gt;&gt;&gt;<i> +		cf-&gt;data[2] |= CAN_ERR_PROT_FORM;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (stat &amp; ERRSTAT_STFERR) {
+</I>&gt;&gt;&gt;<i> +		rx_errors = 1;
+</I>&gt;&gt;&gt;<i> +		cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
+</I>&gt;&gt;&gt;<i> +		cf-&gt;data[2] |= CAN_ERR_PROT_STUFF;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (stat &amp; ERRSTAT_ACKERR) {
+</I>&gt;&gt;&gt;<i> +		rx_errors = 1;
+</I>&gt;&gt;&gt;<i> +		cf-&gt;can_id |= CAN_ERR_ACK;
+</I>&gt;&gt;<i> Is ACK error a RX error?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (error_warning)
+</I>&gt;&gt;&gt;<i> +		priv-&gt;can.can_stats.error_warning++;
+</I>&gt;&gt;<i> What about priv-&gt;can.can_stats.error_passive;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +	if (rx_errors)
+</I>&gt;&gt;&gt;<i> +		stats-&gt;rx_errors++;
+</I>&gt;&gt;&gt;<i> +	if (cf-&gt;can_id &amp; CAN_ERR_BUSERROR)
+</I>&gt;&gt;&gt;<i> +		priv-&gt;can.can_stats.bus_error++;
+</I>&gt;&gt;<i> It gets incremented in can_bus_off() already!
+</I>&gt;<i> 
+</I>&gt;<i> ok, I will rework the error handling.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +	priv-&gt;can.state = state;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	netif_rx(skb);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	ndev-&gt;last_rx = jiffies;
+</I>&gt;&gt;&gt;<i> +	stats-&gt;rx_packets++;
+</I>&gt;&gt;&gt;<i> +	stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static irqreturn_t flexcan_isr(int irq, void *dev_id)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct net_device *ndev = dev_id;
+</I>&gt;&gt;&gt;<i> +	struct net_device_stats *stats = &amp;ndev-&gt;stats;
+</I>&gt;&gt;&gt;<i> +	struct flexcan_priv *priv = netdev_priv(ndev);
+</I>&gt;&gt;&gt;<i> +	struct flexcan_regs __iomem *regs = priv-&gt;base;
+</I>&gt;&gt;&gt;<i> +	u32 iflags, errstat;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	errstat = readl(&amp;regs-&gt;errstat);
+</I>&gt;&gt;&gt;<i> +	if (errstat &amp; ERRSTAT_INT) {
+</I>&gt;&gt;&gt;<i> +		flexcan_error(ndev, errstat);
+</I>&gt;&gt;&gt;<i> +		writel(errstat &amp; ERRSTAT_INT, &amp;regs-&gt;errstat);
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	iflags = readl(&amp;regs-&gt;iflag1);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (iflags &amp; IFLAG_RX_FIFO_OVERFLOW) {
+</I>&gt;&gt;&gt;<i> +		writel(IFLAG_RX_FIFO_OVERFLOW, &amp;regs-&gt;iflag1);
+</I>&gt;&gt;&gt;<i> +		stats-&gt;rx_over_errors++;
+</I>&gt;&gt;<i> 		stats-&gt;rx_errors++; ???
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	while (iflags &amp; IFLAG_RX_FIFO_AVAILABLE) {
+</I>&gt;&gt;&gt;<i> +		struct flexcan_mb __iomem *mb = &amp;regs-&gt;cantxfg[0];
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +		flexcan_rx_frame(ndev, mb);
+</I>&gt;&gt;&gt;<i> +		writel(IFLAG_RX_FIFO_AVAILABLE, &amp;regs-&gt;iflag1);
+</I>&gt;&gt;&gt;<i> +		readl(&amp;regs-&gt;timer);
+</I>&gt;&gt;&gt;<i> +		iflags = readl(&amp;regs-&gt;iflag1);
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (iflags &amp; (1 &lt;&lt; TX_BUF_ID)) {
+</I>&gt;&gt;&gt;<i> +		stats-&gt;tx_packets++;
+</I>&gt;&gt;&gt;<i> +		writel((1 &lt;&lt; TX_BUF_ID), &amp;regs-&gt;iflag1);
+</I>&gt;&gt;&gt;<i> +		netif_wake_queue(ndev);
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	return IRQ_HANDLED;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static int flexcan_set_bittiming(struct net_device *ndev)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct flexcan_priv *priv = netdev_priv(ndev);
+</I>&gt;&gt;&gt;<i> +	struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
+</I>&gt;&gt;&gt;<i> +	struct flexcan_regs __iomem *regs = priv-&gt;base;
+</I>&gt;&gt;&gt;<i> +	int ret = 0;
+</I>&gt;&gt;&gt;<i> +	u32 reg;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	dev_dbg(&amp;ndev-&gt;dev, &quot;%s: infreq: %ld brp: %d p1: %d p2: %d sample: %d&quot;
+</I>&gt;&gt;&gt;<i> +			&quot; sjw: %d prop: %d\n&quot;,
+</I>&gt;&gt;&gt;<i> +			__func__, clk_get_rate(priv-&gt;clk), bt-&gt;brp,
+</I>&gt;&gt;&gt;<i> +			bt-&gt;phase_seg1, bt-&gt;phase_seg2, bt-&gt;sample_point,
+</I>&gt;&gt;&gt;<i> +			bt-&gt;sjw, bt-&gt;prop_seg);
+</I>&gt;&gt;<i> Could you replace this dev_dbg() in favor of a
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>         dev_info(dev-&gt;dev.parent, &quot;setting CANCTRL=0x%x\n&quot;, reg);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> before returning.
+</I>&gt;<i> 
+</I>&gt;<i> The dev_dbg is redundant as the output of 'ip' already shows this
+</I>&gt;<i> information. But shouldn't this be a dev_dbg, too?
+</I>
+For SJA1000 and MSCAN we currently use dev_info() here. I found it
+useful to show the bittiming registers as there is no other method to
+retrieve them, but that's debatable.
+
+[...]
+&gt;&gt;&gt;<i> +MODULE_AUTHOR(&quot;Sascha Hauer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;&quot;);
+</I>&gt;&gt;&gt;<i> +MODULE_LICENSE(&quot;GPL v2&quot;);
+</I>&gt;&gt;&gt;<i> +MODULE_DESCRIPTION(&quot;CAN port driver for flexcan based chip&quot;);
+</I>&gt;&gt;<i> Apart from that, it already looks quite good.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Thanks for your contribution.
+</I>&gt;<i> 
+</I>&gt;<i> Thanks for review, I will send an updated version soon.
+</I>
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002796.html">[PATCH] Add Support for Freescale FlexCAN CAN controller
+</A></li>
+	<LI>Next message: <A HREF="002798.html">[PATCH] Add Support for Freescale FlexCAN CAN controller
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2797">[ date ]</a>
+              <a href="thread.html#2797">[ thread ]</a>
+              <a href="subject.html#2797">[ subject ]</a>
+              <a href="author.html#2797">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

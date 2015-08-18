@@ -1,0 +1,124 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 6/8] can: ti_hecc: don't copy data to rx'ed RTR frames
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%206/8%5D%20can%3A%20ti_hecc%3A%20don%27t%20copy%20data%20to%20rx%27ed%20RTR%20frames&In-Reply-To=%3C4CC090FB.3000500%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004849.html">
+   <LINK REL="Next"  HREF="004846.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 6/8] can: ti_hecc: don't copy data to rx'ed RTR frames</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%206/8%5D%20can%3A%20ti_hecc%3A%20don%27t%20copy%20data%20to%20rx%27ed%20RTR%20frames&In-Reply-To=%3C4CC090FB.3000500%40pengutronix.de%3E"
+       TITLE="[PATCH 6/8] can: ti_hecc: don't copy data to rx'ed RTR frames">mkl at pengutronix.de
+       </A><BR>
+    <I>Thu Oct 21 21:14:03 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004849.html">[PATCH 6/8] can: ti_hecc: don't copy data to rx'ed RTR frames
+</A></li>
+        <LI>Next message: <A HREF="004846.html">[PATCH 7/8] can: janz-ican3: cleanup of ican3_to_can_frame
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4852">[ date ]</a>
+              <a href="thread.html#4852">[ thread ]</a>
+              <a href="subject.html#4852">[ subject ]</a>
+              <a href="author.html#4852">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 10/21/2010 08:43 PM, Oliver Hartkopp wrote:
+&gt;<i> On 21.10.2010 19:53, Marc Kleine-Budde wrote:
+</I>&gt;&gt;<i> While there, remove clearing of data if the dlc isn't longer as 4.
+</I>&gt;&gt;<i> can frames have data initializes to zero.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Signed-off-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+</I>&gt;&gt;<i> Cc:Anant Gole &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">anantgole at ti.com</A>&gt;
+</I>&gt;&gt;<i> ---
+</I>&gt;&gt;<i>  drivers/net/can/ti_hecc.c |   19 ++++++++++---------
+</I>&gt;&gt;<i>  1 files changed, 10 insertions(+), 9 deletions(-)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> diff --git a/drivers/net/can/ti_hecc.c b/drivers/net/can/ti_hecc.c
+</I>&gt;&gt;<i> index 4d07f1e..a640fd8 100644
+</I>&gt;&gt;<i> --- a/drivers/net/can/ti_hecc.c
+</I>&gt;&gt;<i> +++ b/drivers/net/can/ti_hecc.c
+</I>&gt;&gt;<i> @@ -560,18 +560,19 @@ static int ti_hecc_rx_pkt(struct ti_hecc_priv *priv, int mbxno)
+</I>&gt;&gt;<i>  		cf-&gt;can_id = (data &amp; CAN_EFF_MASK) | CAN_EFF_FLAG;
+</I>&gt;&gt;<i>  	else
+</I>&gt;&gt;<i>  		cf-&gt;can_id = (data &gt;&gt; 18) &amp; CAN_SFF_MASK;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i>  	data = hecc_read_mbx(priv, mbxno, HECC_CANMCF);
+</I>&gt;&gt;<i> -	if (data &amp; HECC_CANMCF_RTR)
+</I>&gt;&gt;<i> -		cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;&gt;<i>  	cf-&gt;can_dlc = get_can_dlc(data &amp; 0xF);
+</I>&gt;&gt;<i> -	data = hecc_read_mbx(priv, mbxno, HECC_CANMDL);
+</I>&gt;&gt;<i> -	*(u32 *)(cf-&gt;data) = cpu_to_be32(data);
+</I>&gt;&gt;<i> -	if (cf-&gt;can_dlc &gt; 4) {
+</I>&gt;&gt;<i> -		data = hecc_read_mbx(priv, mbxno, HECC_CANMDH);
+</I>&gt;&gt;<i> -		*(u32 *)(cf-&gt;data + 4) = cpu_to_be32(data);
+</I>&gt;&gt;<i> -	} else {
+</I>&gt;&gt;<i> -		*(u32 *)(cf-&gt;data + 4) = 0;
+</I>&gt;&gt;<i> +	if (data &amp; HECC_CANMCF_RTR) {
+</I>&gt;&gt;<i> +		cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;&gt;<i> +		data = hecc_read_mbx(priv, mbxno, HECC_CANMDL);
+</I>&gt;&gt;<i> +		*(u32 *)(cf-&gt;data) = cpu_to_be32(data);
+</I>&gt;&gt;<i> +		if (cf-&gt;can_dlc &gt; 4) {
+</I>&gt;&gt;<i> +			data = hecc_read_mbx(priv, mbxno, HECC_CANMDH);
+</I>&gt;&gt;<i> +			*(u32 *)(cf-&gt;data + 4) = cpu_to_be32(data);
+</I>&gt;&gt;<i> +		}
+</I>&gt;&gt;<i>  	}
+</I>&gt;&gt;<i> +
+</I>&gt;<i> 
+</I>&gt;<i> Are you sure?
+</I>&gt;<i> 
+</I>&gt;<i> For me it looks like only RTR frames copy CAN data[] which would be inverse to
+</I>&gt;<i> the original idea.
+</I>
+DOH!
+
+Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101021/bb03dbcc/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101021/bb03dbcc/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004849.html">[PATCH 6/8] can: ti_hecc: don't copy data to rx'ed RTR frames
+</A></li>
+	<LI>Next message: <A HREF="004846.html">[PATCH 7/8] can: janz-ican3: cleanup of ican3_to_can_frame
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4852">[ date ]</a>
+              <a href="thread.html#4852">[ thread ]</a>
+              <a href="subject.html#4852">[ subject ]</a>
+              <a href="author.html#4852">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

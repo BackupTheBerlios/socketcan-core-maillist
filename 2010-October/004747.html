@@ -1,0 +1,123 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 3/7] can: mcp251x: allow to read two registers in one spi	transfer
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/7%5D%20can%3A%20mcp251x%3A%20allow%20to%20read%20two%20registers%20in%20one%20spi%0A%09transfer&In-Reply-To=%3C1287139762-23356-4-git-send-email-mkl%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004746.html">
+   <LINK REL="Next"  HREF="004748.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 3/7] can: mcp251x: allow to read two registers in one spi	transfer</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/7%5D%20can%3A%20mcp251x%3A%20allow%20to%20read%20two%20registers%20in%20one%20spi%0A%09transfer&In-Reply-To=%3C1287139762-23356-4-git-send-email-mkl%40pengutronix.de%3E"
+       TITLE="[PATCH 3/7] can: mcp251x: allow to read two registers in one spi	transfer">mkl at pengutronix.de
+       </A><BR>
+    <I>Fri Oct 15 12:49:18 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004746.html">[PATCH 2/7] can: mcp251x: increase rx_errors on overflow,	not only rx_over_errors
+</A></li>
+        <LI>Next message: <A HREF="004748.html">[PATCH 4/7] can: mcp251x: read-modify-write eflag only when needed
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4747">[ date ]</a>
+              <a href="thread.html#4747">[ thread ]</a>
+              <a href="subject.html#4747">[ subject ]</a>
+              <a href="author.html#4747">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>From: Sascha Hauer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;
+
+This patch bases on work done earlier by David Jander.
+
+Signed-off-by: Sascha Hauer &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;
+Acked-by: David Jander &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">david at protonic.nl</A>&gt;
+Signed-off-by: Uwe Kleine-K&#246;nig &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">u.kleine-koenig at pengutronix.de</A>&gt;
+Signed-off-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+---
+ drivers/net/can/mcp251x.c |   20 +++++++++++++++++---
+ 1 files changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/can/mcp251x.c b/drivers/net/can/mcp251x.c
+index fdea752..9b3466a 100644
+--- a/drivers/net/can/mcp251x.c
++++ b/drivers/net/can/mcp251x.c
+@@ -319,6 +319,20 @@ static u8 mcp251x_read_reg(struct spi_device *spi, uint8_t reg)
+ 	return val;
+ }
+ 
++static void mcp251x_read_2regs(struct spi_device *spi, uint8_t reg,
++		uint8_t *v1, uint8_t *v2)
++{
++	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
++
++	priv-&gt;spi_tx_buf[0] = INSTRUCTION_READ;
++	priv-&gt;spi_tx_buf[1] = reg;
++
++	mcp251x_spi_trans(spi, 4);
++
++	*v1 = priv-&gt;spi_rx_buf[2];
++	*v2 = priv-&gt;spi_rx_buf[3];
++}
++
+ static void mcp251x_write_reg(struct spi_device *spi, u8 reg, uint8_t val)
+ {
+ 	struct mcp251x_priv *priv = dev_get_drvdata(&amp;spi-&gt;dev);
+@@ -754,10 +768,11 @@ static irqreturn_t mcp251x_can_ist(int irq, void *dev_id)
+ 	mutex_lock(&amp;priv-&gt;mcp_lock);
+ 	while (!priv-&gt;force_quit) {
+ 		enum can_state new_state;
+-		u8 intf = mcp251x_read_reg(spi, CANINTF);
+-		u8 eflag;
++		u8 intf, eflag;
+ 		int can_id = 0, data1 = 0;
+ 
++		mcp251x_read_2regs(spi, CANINTF, &amp;intf, &amp;eflag);
++
+ 		if (intf &amp; CANINTF_RX0IF) {
+ 			mcp251x_hw_rx(spi, 0);
+ 			/* Free one buffer ASAP */
+@@ -770,7 +785,6 @@ static irqreturn_t mcp251x_can_ist(int irq, void *dev_id)
+ 
+ 		mcp251x_write_bits(spi, CANINTF, intf, 0x00);
+ 
+-		eflag = mcp251x_read_reg(spi, EFLG);
+ 		mcp251x_write_reg(spi, EFLG, 0x00);
+ 
+ 		/* Update can state */
+-- 
+1.7.0.4
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004746.html">[PATCH 2/7] can: mcp251x: increase rx_errors on overflow,	not only rx_over_errors
+</A></li>
+	<LI>Next message: <A HREF="004748.html">[PATCH 4/7] can: mcp251x: read-modify-write eflag only when needed
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4747">[ date ]</a>
+              <a href="thread.html#4747">[ thread ]</a>
+              <a href="subject.html#4747">[ subject ]</a>
+              <a href="author.html#4747">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,154 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-core] Re: Error handling
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Re%3A%20Error%20handling&In-Reply-To=%3C7316945.20060420203736%40varma-el.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000015.html">
+   <LINK REL="Next"  HREF="000018.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-core] Re: Error handling</H1>
+    <B>Andrey Volkov</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Re%3A%20Error%20handling&In-Reply-To=%3C7316945.20060420203736%40varma-el.com%3E"
+       TITLE="[Socketcan-core] Re: Error handling">avolkov at varma-el.com
+       </A><BR>
+    <I>Thu Apr 20 18:37:36 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000015.html">[Socketcan-core] AW: [Socket-can] Error handling
+</A></li>
+        <LI>Next message: <A HREF="000018.html">[Socketcan-core] Re: Error handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16">[ date ]</a>
+              <a href="thread.html#16">[ thread ]</a>
+              <a href="subject.html#16">[ subject ]</a>
+              <a href="author.html#16">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Oliver.
+
+On Thursday, April 20, 2006, Hartkopp, Oliver (K-GEFE/E) wrote:
+
+&gt;<i> Hi Andrey,
+</I>
+&gt;<i> to your question
+</I>
+&gt;&gt;<i>But we skipped CAN error problem, which Wolfgang raised a week ago,
+</I>&gt;&gt;<i>so content of can_frame is _already_ modified.
+</I>&gt;&gt;<i>Also I changed behaviour of the baudrate-related stuff, and I want to
+</I>&gt;&gt;<i>publish it, but to _which_ source I should make the patch :)?
+</I>
+&gt;<i> Urs' last state:
+</I>
+&gt;&gt;&gt;<i> For those errors to be reported to sockets, I think the best solution
+</I>&gt;&gt;&gt;<i> is to simply return with an appropriate error code from the sendmsg()
+</I>&gt;&gt;&gt;<i> or recvmsg() system call. Detailed error info could be given in the
+</I>&gt;&gt;&gt;<i> control message in the struct msghdr when reading the error queue.
+</I>
+This is not always useful, especially in case when you want to know
+after _which_ frame error occurred.
+
+&gt;<i> We ended with Wolfgangs summary on this topic on April 12th:
+</I>
+&gt;&gt;<i>You could use a RX socket with a &quot;no-match&quot; filter to handle errors 
+</I>&gt;&gt;<i>messages only. I would implement it like that (as already discussed):
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>- A dedicated error message could be send to the RX sockets in case of
+</I>&gt;&gt;<i>   an error.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>- An error message could either be recognized by the return code of
+</I>&gt;&gt;<i>   recvfrom() or send() or by a bit in the message length field (or a
+</I>&gt;&gt;<i>   message flag).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>- If error messages are sent to the socket could be defined when the
+</I>&gt;&gt;<i>   socket is setup (in the filter definition).
+</I>
+&gt;&gt;<i>This would allow tasks waiting on RX sockets to handle error conditions
+</I>&gt;&gt;<i>but also a central error handler (task/server) could do so.
+</I>
+&gt;<i> In our PF_CAN-core there is a notifier list that handles problems with the
+</I>&gt;<i> underlying device. So if you shutdown a CAN-networkdevice with ifconfig
+</I>&gt;<i> the read()-call returns the error '-ENETDOWN' so that the user can react
+</I>&gt;<i> as he wants.
+</I>Ok, I assume that workflow will be next:
+ 1) On any CAN error condition driver allocate special error frame in
+ addition to a received frame (in case of overrun) and pushed it to
+ a socket layer.
+
+ 2a) If application open CAN raw socket, then it receive this error frame,
+     unless it filtered out (by socket option). And read-syscall return
+     error codes related _only_ with user actions (if-down as ex.),
+     but for all CAN errors, syscall always return 0 (for rx/tx-timeouts too).
+     This behavior will useful mainly for development.
+
+ 2b) If some higher level protocol over CAN exist, then syscall should
+     return appropriated -E&lt;something&gt; on CAN errors too, and filtered out
+     all error-frames at protocol-driver level.
+     As ex., on bus-off state read should return -ENOMEDIUM.
+
+Comments?
+
+&gt;<i> The idea is to add potential problems to this notification mechanic
+</I>&gt;<i> that need to be given to the userspace. From my opinion this
+</I>&gt;<i> functionality should be enabled with a socket-option and any socket
+</I>&gt;<i> gets informed over its underlying interface(s) and gives theses
+</I>&gt;<i> errors to the user-space, if wanted by the user.
+</I>Indeed.
+
+&gt;<i> Maybe you can look into the current llcf-src on www.llcf.de how the
+</I>&gt;<i> notification is currently implemented.
+</I>
+As I understand, only additional check for a nonzero error should be
+added to bcm_* (and BCM_MASK must be fixed).
+
+&gt;<i> I think this is the clean way bringing the CAN-network to standard-IT
+</I>&gt;<i> interfaces. So we should integrate this mechanic on the base of the
+</I>&gt;<i> notifier from my opinion.
+</I>
+&gt;<i> Best regards,
+</I>
+&gt;<i> Oliver
+</I>
+P.S. About can_frame: some controllers, all mscan based in particular,
+could generate timestamp for any received frame (currently I don't use
+it), any ideas what to do with this info?
+May be add something like u16 timestamp in can_frame?
+
+-- 
+Regards,
+Andrey Volkov
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000015.html">[Socketcan-core] AW: [Socket-can] Error handling
+</A></li>
+	<LI>Next message: <A HREF="000018.html">[Socketcan-core] Re: Error handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16">[ date ]</a>
+              <a href="thread.html#16">[ thread ]</a>
+              <a href="subject.html#16">[ subject ]</a>
+              <a href="author.html#16">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

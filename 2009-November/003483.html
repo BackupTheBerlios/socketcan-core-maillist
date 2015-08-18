@@ -1,0 +1,139 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] add MPC512x support to mscan
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20add%20MPC512x%20support%20to%20mscan&In-Reply-To=%3C4AFD559E.2090602%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003480.html">
+   <LINK REL="Next"  HREF="003484.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] add MPC512x support to mscan</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20add%20MPC512x%20support%20to%20mscan&In-Reply-To=%3C4AFD559E.2090602%40grandegger.com%3E"
+       TITLE="[PATCH] add MPC512x support to mscan">wg at grandegger.com
+       </A><BR>
+    <I>Fri Nov 13 13:48:30 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003480.html">[PATCH] add MPC512x support to mscan
+</A></li>
+        <LI>Next message: <A HREF="003484.html">[PATCH] add MPC512x support to mscan
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3483">[ date ]</a>
+              <a href="thread.html#3483">[ thread ]</a>
+              <a href="subject.html#3483">[ subject ]</a>
+              <a href="author.html#3483">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger wrote:
+&gt;<i> Wolfram Sang wrote:
+</I>&gt;&gt;<i> Hi Wolfgang,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I'm doing some test now, but the beast does not behave like expected :-(:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> restart-ms=0 works fine:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>   short-circuiting wires
+</I>&gt;&gt;&gt;<i>   can2   87  [4] 12 34 56 67
+</I>&gt;&gt;&gt;<i>   can2  20000004  [8] 00 08 00 00 00 00 00 00   ERRORFRAME
+</I>&gt;&gt;&gt;<i>   can2  20000040  [8] 00 00 00 00 00 00 00 00   ERRORFRAME
+</I>&gt;&gt;&gt;<i>               ^ bus-off
+</I>&gt;&gt;&gt;<i>   can2  20000100  [8] 00 00 00 00 00 00 00 00   ERRORFRAME
+</I>&gt;&gt;&gt;<i>              ^ manual restart
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> restart&gt;0 does not:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>   short-circuiting wires
+</I>&gt;&gt;&gt;<i>   can2   87  [4] 12 34 56 67
+</I>&gt;&gt;&gt;<i>   can2  20000004  [8] 00 08 00 00 00 00 00 00   ERRORFRAME
+</I>&gt;&gt;&gt;<i>   can2  20000040  [8] 00 00 00 00 00 00 00 00   ERRORFRAME
+</I>&gt;&gt;&gt;<i>   removing short-circuit
+</I>&gt;&gt;&gt;<i>   can2   87  [4] 12 34 56 67
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> As you can see, the message gets through after removing the
+</I>&gt;&gt;&gt;<i> short-circuit but no state change interrupt is triggered. This is
+</I>&gt;&gt;&gt;<i> confirmed by the dmesg lines below:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> [ 4290.511451] mpc52xx_can f0000900.can: error interrupt (canrflg=0x44)
+</I>&gt;&gt;&gt;<i> [ 4290.514611] mpc52xx_can f0000900.can: error interrupt (canrflg=0x7c)
+</I>&gt;&gt;&gt;<i> [ 4290.514671] mpc52xx_can f0000900.can: bus-off
+</I>&gt;&gt;&gt;<i> [ 4292.142115] mpc52xx_can f0000900.can: TX done (canrflg=0x8)
+</I>&gt;&gt;<i> Hmm, I've been checking the specs to see if there are special conditions for
+</I>&gt;&gt;<i> this kind of interrupt but didn't find any so far. What kind of test-program do
+</I>&gt;&gt;<i> you use? ... Oh, ehrm, mscan_stop disables all interrupts. Maybe we are missing
+</I>&gt;&gt;<i> the one because of this? (I am still not full into the state machine yet).
+</I>&gt;<i> 
+</I>&gt;<i> If &quot;restart-ms&gt;0&quot;, automatic recovery is allowed and we do *not* stop
+</I>&gt;<i> the MSCAN. Obviously it does recover, but it does not send a state
+</I>&gt;<i> change interrupt. We need that to send a RESTARTED message to the
+</I>&gt;<i> application.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> Either we capture the TX done after BUS-OFF and check the state (which
+</I>&gt;&gt;&gt;<i> is non-trivial) or we do not allow automatic recovery at all. Attached
+</I>&gt;&gt;&gt;<i> is my revised patch for this test.
+</I>&gt;&gt;<i> Is it okay if we disallow automatic recovery for now if we can't find a
+</I>&gt;&gt;<i> solution for this today? I'd like to post the patch to netdev today if somehow
+</I>&gt;&gt;<i> possible.
+</I>&gt;<i> 
+</I>&gt;<i> Yes, that's my proposal. On the MPC512x we will disable automatic
+</I>&gt;<i> recovery anyhow.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> I'm also not happy that we call mscan_stop() from the interrupt context.
+</I>&gt;&gt;<i> Would it be an idea to use a subset of mscan_set_mode() in the interrupt
+</I>&gt;&gt;<i> context?
+</I>&gt;<i> 
+</I>&gt;<i> Not sure due to the problems Fu discovered. I have prepared two patches
+</I>&gt;<i> for SVN trunk, which I will send in a minute.
+</I>
+This works as well:
+
+			/*
+			 * The MSCAN on the MPC5200 does recover from bus-off
+			 * automatically. To avoid that we stop the chip.
+			 */
+  #if 0
+			mscan_stop(dev);
+			priv-&gt;can.state = CAN_STATE_BUS_OFF;
+  #else
+			/* Light way stop */
+			out_8(&amp;regs-&gt;cantier, 0);
+			out_8(&amp;regs-&gt;canrier, 0);
+			out_8(&amp;regs-&gt;canctl0, in_8(&amp;regs-&gt;canctl0) |
+			      MSCAN_SLPRQ | MSCAN_INITRQ);
+  #endif
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003480.html">[PATCH] add MPC512x support to mscan
+</A></li>
+	<LI>Next message: <A HREF="003484.html">[PATCH] add MPC512x support to mscan
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3483">[ date ]</a>
+              <a href="thread.html#3483">[ thread ]</a>
+              <a href="subject.html#3483">[ subject ]</a>
+              <a href="author.html#3483">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

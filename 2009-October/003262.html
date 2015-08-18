@@ -1,0 +1,889 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 1/5] CAN transceiver subsystem core
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%201/5%5D%20CAN%20transceiver%20subsystem%20core&In-Reply-To=%3C20091014151959.GB313%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003261.html">
+   <LINK REL="Next"  HREF="003263.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 1/5] CAN transceiver subsystem core</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%201/5%5D%20CAN%20transceiver%20subsystem%20core&In-Reply-To=%3C20091014151959.GB313%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH 1/5] CAN transceiver subsystem core">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed Oct 14 17:19:59 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003261.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+        <LI>Next message: <A HREF="003263.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3262">[ date ]</a>
+              <a href="thread.html#3262">[ thread ]</a>
+              <a href="subject.html#3262">[ subject ]</a>
+              <a href="author.html#3262">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This adds the core for CAN transceivers
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+----
+Index: include/socketcan/can/dev.h
+===================================================================
+--- include/socketcan/can/dev.h	(revision 1069)
++++ include/socketcan/can/dev.h	(working copy)
+@@ -55,6 +55,7 @@
+ 
+   unsigned int echo_skb_max;
+   struct sk_buff **echo_skb;
++	struct can_transceiver *cantr;
+ };
+ 
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,21)
+Index: include/socketcan/can/error.h
+===================================================================
+--- include/socketcan/can/error.h	(revision 1069)
++++ include/socketcan/can/error.h	(working copy)
+@@ -28,6 +28,7 @@
+ #define CAN_ERR_BUSOFF       0x00000040U /* bus off */
+ #define CAN_ERR_BUSERROR     0x00000080U /* bus error (may flood!) */
+ #define CAN_ERR_RESTARTED    0x00000100U /* controller restarted */
++#define CAN_ERR_TRANSCEIVER  0x00000200U /* transceiver alert */
+ 
+ /* arbitration lost in bit ... / data[0] */
+ #define CAN_ERR_LOSTARB_UNSPEC   0x00 /* unspecified */
+@@ -78,18 +79,20 @@
+ #define CAN_ERR_PROT_LOC_INTERM  0x12 /* intermission */
+ 
+ /* error status of CAN-transceiver / data[4] */
+-/*                                             CANH CANL */
++/*                                             CANL CANH */
+ #define CAN_ERR_TRX_UNSPEC             0x00 /* 0000 0000 */
+ #define CAN_ERR_TRX_CANH_NO_WIRE       0x04 /* 0000 0100 */
+ #define CAN_ERR_TRX_CANH_SHORT_TO_BAT  0x05 /* 0000 0101 */
+ #define CAN_ERR_TRX_CANH_SHORT_TO_VCC  0x06 /* 0000 0110 */
+ #define CAN_ERR_TRX_CANH_SHORT_TO_GND  0x07 /* 0000 0111 */
++#define CAN_ERR_TRX_CANL_SHORT_TO_CANH 0x08 /* 0000 1000 */
+ #define CAN_ERR_TRX_CANL_NO_WIRE       0x40 /* 0100 0000 */
+ #define CAN_ERR_TRX_CANL_SHORT_TO_BAT  0x50 /* 0101 0000 */
+ #define CAN_ERR_TRX_CANL_SHORT_TO_VCC  0x60 /* 0110 0000 */
+ #define CAN_ERR_TRX_CANL_SHORT_TO_GND  0x70 /* 0111 0000 */
+-#define CAN_ERR_TRX_CANL_SHORT_TO_CANH 0x80 /* 1000 0000 */
+ 
++#define CAN_ERR_TRX_UNKNOWN_ERROR      0xF0
++
+ /* controller specific additional information / data[5..7] */
+ 
+ #endif /* CAN_ERROR_H */
+Index: include/socketcan/can/transceiver.h
+===================================================================
+--- include/socketcan/can/transceiver.h	(revision 0)
++++ include/socketcan/can/transceiver.h	(revision 0)
+@@ -0,0 +1,99 @@
++/*
++ * socketcan/can/transceiver.h
++ *
++ * Definitions for the CAN transceiver class device interface
++ *
++ * Copyright (C) 2009 Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ *
++ * Send feedback to &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-users at lists.berlios.de</A>&gt;
++ */
++
++#include &lt;linux/device.h&gt;
++#include &lt;linux/netdevice.h&gt;
++
++#ifndef CAN_TRANSCEIVER_H
++#define CAN_TRANSCEIVER_H
++
++/*
++ * CAN transceiver modes
++ */
++#define CANTR_MODE_OFF	0
++#define CANTR_MODE_ON	1
++
++/*
++ * CAN transceiver class device
++ */
++struct can_transceiver {
++	int id;
++	struct device dev;
++	int (*get_max_bitrate)(struct can_transceiver *);
++	/* returns any CAN_ERR_TRX_ constants, or 0 when OK */
++	int (*get_state)(struct can_transceiver *);
++	/* mode is any CANTR_MODE_... */
++	int (*set_mode)(struct can_transceiver *, int mode);
++	/* match_name &amp; netdev are protected by the global cantr_lock */
++	char *match_name;
++	struct net_device *netdev;
++	struct mutex lock; /* protects the next fields */
++	int mode;
++};
++#define to_can_transceiver(d) (container_of((d), struct can_transceiver, dev))
++
++static inline void cantr_set_drvdata(struct can_transceiver *cantr, void *p)
++{
++	dev_set_drvdata(&amp;cantr-&gt;dev, p);
++}
++static inline void *cantr_get_drvdata(struct can_transceiver *cantr)
++{
++	return dev_get_drvdata(&amp;cantr-&gt;dev);
++}
++
++/**
++ * can_transceiver_register - register w/ can_tranceiver class
++ * @cantr: the device to register
++ * @parent: the parent device
++ *
++ * Returns 0 on success
++ */
++extern int can_transceiver_register(struct can_transceiver *);
++
++/**
++ * can_transceiver_unregister - removes the can transceiver
++ *
++ * @cantr: the can transceiver class device to remove
++ */
++extern void can_transceiver_unregister(struct can_transceiver *);
++
++/**
++ * can_transceiver_set_match_name
++ * @cantr: the CAN transceiver to detach
++ * @name: the new name. may be 0.
++ *
++ * This function changes the name that the transceiver uses to match
++ * a net_device. Calling this function may change the associated
++ * net_device
++ */
++extern void can_transceiver_set_match_name(struct can_transceiver *,
++		const char *name);
++
++/*
++ * alert from can transceiver.
++ * the can transceiver core should do something with it
++ */
++extern void can_transceiver_alert(struct can_transceiver *cantr, int state);
++/*
++ * utility functions
++ */
++extern int can_transceiver_set_mode(struct can_transceiver *cantr, int mode);
++extern int can_transceiver_get_mode(struct can_transceiver *cantr);
++extern int can_transceiver_get_max_bitrate(struct can_transceiver *cantr);
++/**
++ * can_transceiver_get_state - get the current state of the transceiver
++ * @cantr: the can transceiver
++ *
++ * Returns: 0 for ready, -error for software failure, +num for hardware failure
++ */
++extern int can_transceiver_get_state(struct can_transceiver *cantr);
++
++#endif /* CAN_TRANSCEIVER_H */
++
+Index: Makefile
+===================================================================
+--- Makefile	(revision 1069)
++++ Makefile	(working copy)
+@@ -6,6 +6,9 @@
+ 
+ export CONFIG_CAN_VCAN=m
+ export CONFIG_CAN_SLCAN=m
++export CONFIG_CANTR_CORE=m
++export CONFIG_CANTR_PCA82C251=m
++export CONFIG_CANTR_TJA1041=m
+ export CONFIG_CAN_DEV=m
+ export CONFIG_CAN_CALC_BITTIMING=y
+ #export CONFIG_CAN_DEV_SYSFS=y
+Index: drivers/net/can/dev.c
+===================================================================
+--- drivers/net/can/dev.c	(revision 1069)
++++ drivers/net/can/dev.c	(working copy)
+@@ -38,6 +38,7 @@
+ #endif
+ #include &quot;sysfs.h&quot;
+ #endif
++#include &lt;socketcan/can/transceiver.h&gt;
+ 
+ #define MOD_DESC &quot;CAN device driver interface&quot;
+ 
+@@ -591,7 +592,12 @@
+ #ifdef CONFIG_CAN_DEV_SYSFS
+   int err;
+ #endif
++#ifdef CONFIG_CANTR_CORE
++	int ret;
++	int max_bitrate;
++#endif
+ 
++
+   if (!priv-&gt;bittiming.tq &amp;&amp; !priv-&gt;bittiming.bitrate) {
+      dev_err(ND2D(dev), &quot;bit-timing not yet defined\n&quot;);
+      return -EINVAL;
+@@ -609,6 +615,20 @@
+         return err;
+   }
+ #endif
++#ifdef CONFIG_CANTR_CORE
++	if (!priv-&gt;cantr)
++		goto no_transceiver;
++	max_bitrate = can_transceiver_get_max_bitrate(priv-&gt;cantr);
++	if (priv-&gt;bittiming.bitrate &lt;= max_bitrate)
++		goto transceiver_bitrate_ok;
++	dev_err(ND2D(dev), &quot;bitrate over transceiver's range\n&quot;);
++	return -EINVAL;
++transceiver_bitrate_ok:
++	ret = can_transceiver_set_mode(priv-&gt;cantr, CANTR_MODE_ON);
++	if (ret &lt; 0)
++		return ret;
++no_transceiver:
++#endif
+ 
+   /* Switch carrier on if device was stopped while in bus-off state */
+   if (!netif_carrier_ok(dev))
+@@ -633,6 +653,13 @@
+   if (del_timer_sync(&amp;priv-&gt;restart_timer))
+      dev_put(dev);
+   can_flush_echo_skb(dev);
++#ifdef CONFIG_CANTR_CORE
++	if (!priv-&gt;cantr)
++		goto no_transceiver;
++	can_transceiver_set_mode(priv-&gt;cantr, CANTR_MODE_OFF);
++no_transceiver:
++	; /* remove warning 'label at end of ...' */
++#endif
+ }
+ EXPORT_SYMBOL_GPL(close_candev);
+ 
+Index: drivers/net/can/Makefile
+===================================================================
+--- drivers/net/can/Makefile	(revision 1069)
++++ drivers/net/can/Makefile	(working copy)
+@@ -34,6 +34,8 @@
+ obj-$(CONFIG_CAN_VCAN)		+= vcan.o
+ obj-$(CONFIG_CAN_SLCAN)		+= slcan.o
+ 
++obj-$(CONFIG_CANTR_CORE)	+= transceiver/
++
+ obj-$(CONFIG_CAN_DEV)		+= can-dev.o
+ can-dev-y			:= dev.o
+ can-dev-$(CONFIG_CAN_DEV_SYSFS) += sysfs.o
+@@ -60,5 +62,8 @@
+ ifneq ($(CONFIG_CAN_CALC_BITTIMING),n)
+   EXTRA_CFLAGS += -DCONFIG_CAN_CALC_BITTIMING
+ endif
++ifneq ($(CONFIG_CANTR_CORE),n)
++	EXTRA_CFLAGS += -DCONFIG_CANTR_CORE
++endif
+ 
+ endif
+Index: drivers/net/can/Kconfig
+===================================================================
+--- drivers/net/can/Kconfig	(revision 1069)
++++ drivers/net/can/Kconfig	(working copy)
+@@ -37,6 +37,29 @@
+ source &quot;drivers/net/can/old/Kconfig&quot;
+ endif
+ 
++config CANTR_CORE
++	tristate &quot;CAN transceiver core&quot;
++	depends on CAN
++	default Y
++	---help---
++	  Say y to have support for extended functions of various CAN transceivers.
++
++config CANTR_PCA82C251
++	tristate &quot;NXP PCA82C251&quot;
++	depends on CANTR_CORE
++	default Y
++	---help---
++	  this is the most used CAN transceiver. Drivers can use it directly or via
++	  a platform device
++
++config CANTR_TJA1041
++	tristate &quot;NXP TJA1041&quot;
++	depends on CANTR_CORE
++	default Y
++	---help---
++	  This is an advanced CAN transceiver. It can detect short-circuits on the bus,
++	  has error indications, ...
++
+ config CAN_DEV
+   tristate &quot;Platform CAN drivers with Netlink support&quot;
+   depends on CAN
+Index: drivers/net/can/transceiver/Makefile
+===================================================================
+--- drivers/net/can/transceiver/Makefile	(revision 0)
++++ drivers/net/can/transceiver/Makefile	(revision 0)
+@@ -0,0 +1,22 @@
++ifeq ($(KERNELRELEASE),)
++
++KERNELDIR := /lib/modules/$(shell uname -r)/build
++PWD       := $(shell pwd)
++TOPDIR    := $(PWD)/../../../..
++
++modules modules_install clean:
++	$(MAKE) -C $(KERNELDIR) M=$(PWD) $@ TOPDIR=$(TOPDIR)
++
++else
++
++-include $(TOPDIR)/Makefile.common
++
++obj-$(CONFIG_CANTR_CORE)	+= can-transceiver.o
++obj-$(CONFIG_CANTR_PCA82C251)	+= pca82c251.o
++obj-$(CONFIG_CANTR_TJA1041)	+= tja1041.o
++
++ifeq ($(CONFIG_CAN_DEBUG_DEVICES),y)
++	EXTRA_CFLAGS += -DDEBUG
++endif
++
++endif
+Index: drivers/net/can/transceiver/can-transceiver.c
+===================================================================
+--- drivers/net/can/transceiver/can-transceiver.c	(revision 0)
++++ drivers/net/can/transceiver/can-transceiver.c	(revision 0)
+@@ -0,0 +1,511 @@
++/*
++ * CAN transceiver subsystem, base class
++ *
++ * Copyright (C) 2009 EIA Electronics
++ * Author: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++*/
++
++#include &lt;linux/module.h&gt;
++#include &lt;linux/errno.h&gt;
++#include &lt;linux/err.h&gt;
++#include &lt;linux/mutex.h&gt;
++#include &lt;linux/idr.h&gt;
++#include &lt;linux/sysfs.h&gt;
++#include &lt;linux/timer.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/if_arp.h&gt;
++#include &lt;socketcan/can.h&gt;
++#include &lt;socketcan/can/dev.h&gt;
++#include &lt;socketcan/can/error.h&gt;
++#include &lt;socketcan/can/transceiver.h&gt;
++#include &lt;net/rtnetlink.h&gt;
++
++static DEFINE_IDR(cantr_idr);
++static DEFINE_MUTEX(cantr_lock);
++static struct class *cantr_class;
++
++int can_transceiver_get_state(struct can_transceiver *cantr)
++{
++	if (!cantr-&gt;get_state)
++		return 0;
++	return cantr-&gt;get_state(cantr);
++}
++EXPORT_SYMBOL_GPL(can_transceiver_get_state);
++
++int can_transceiver_get_mode(struct can_transceiver *cantr)
++{
++	int ret;
++
++	ret = mutex_lock_interruptible(&amp;cantr-&gt;lock);
++	if (ret &lt; 0)
++		return ret;
++	ret = cantr-&gt;mode;
++	mutex_unlock(&amp;cantr-&gt;lock);
++	return ret;
++}
++EXPORT_SYMBOL_GPL(can_transceiver_get_mode);
++
++int can_transceiver_set_mode(struct can_transceiver *cantr, int mode)
++{
++	int ret;
++
++	ret = mutex_lock_interruptible(&amp;cantr-&gt;lock);
++	if (ret &lt; 0)
++		return ret;
++
++	if (cantr-&gt;mode == mode)
++		goto done;
++
++	if (cantr-&gt;set_mode) {
++		ret = cantr-&gt;set_mode(cantr, mode);
++		if (ret &lt; 0)
++			goto failed;
++	}
++	if (mode &amp;&amp; !cantr-&gt;mode)
++		get_device(&amp;cantr-&gt;dev);
++	else if (!mode &amp;&amp; cantr-&gt;mode)
++		put_device(&amp;cantr-&gt;dev);
++
++	cantr-&gt;mode = mode;
++done:
++	mutex_unlock(&amp;cantr-&gt;lock);
++	return mode;
++failed:
++	mutex_unlock(&amp;cantr-&gt;lock);
++	return ret;
++}
++EXPORT_SYMBOL_GPL(can_transceiver_set_mode);
++
++int can_transceiver_get_max_bitrate(struct can_transceiver *cantr)
++{
++	if (!cantr-&gt;get_max_bitrate)
++		/* must suppose it's ok, assume 1GBit as upper limit */
++		return 1000000000;
++	return cantr-&gt;get_max_bitrate(cantr);
++}
++EXPORT_SYMBOL_GPL(can_transceiver_get_max_bitrate);
++
++static void can_transceiver_notify(struct net_device *dev, int state)
++{
++	struct sk_buff *skb;
++	struct can_frame *cf;
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
++	struct net_device_stats *stats = can_get_stats(dev);
++#else
++	struct net_device_stats *stats = &amp;dev-&gt;stats;
++#endif
++	/* send message upstream */
++	skb = alloc_can_err_skb(dev, &amp;cf);
++	if (unlikely(!skb))
++		return;
++	cf-&gt;can_id |= CAN_ERR_TRANSCEIVER;
++	cf-&gt;data[4] = state;
++	netif_rx(skb);
++
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,32)
++	dev-&gt;last_rx = jiffies;
++#endif
++	stats-&gt;rx_packets++;
++	stats-&gt;rx_bytes += cf-&gt;can_dlc;
++}
++
++/*
++ * to be called from within can transceivers
++ * but not from interrupt context
++ * each transceiver should deal with that on his own way
++ * to avoid a lot of redundant work
++ */
++void can_transceiver_alert(struct can_transceiver *cantr, int state)
++{
++	if (!cantr-&gt;netdev)
++		return;
++	if (state &lt; 0)
++		return;
++
++	can_transceiver_notify(cantr-&gt;netdev, state);
++
++	rtnl_lock();
++	dev_alert(&amp;cantr-&gt;dev, &quot;bring %s down\n&quot;, cantr-&gt;netdev-&gt;name);
++	dev_close(cantr-&gt;netdev);
++	rtnl_unlock();
++}
++EXPORT_SYMBOL_GPL(can_transceiver_alert);
++
++static int _can_transceiver_attach(struct can_transceiver *cantr,
++		struct net_device *netdev)
++{
++	struct can_priv *priv = netdev_priv(netdev);
++	int ret;
++	int initial_mode = 0;
++
++	if (netdev-&gt;type != ARPHRD_CAN)
++		return -EBADF;
++
++	if (!cantr) {
++		/* special case: cantr is supplied in netdev during create */
++		cantr = priv-&gt;cantr;
++		if (!cantr)
++			return -EINVAL;
++		initial_mode = 1;
++	}
++	if (cantr-&gt;netdev) {
++		ret = -EBUSY;
++		goto failed;
++	}
++	if (!initial_mode &amp;&amp; priv-&gt;cantr &amp;&amp; (cantr != priv-&gt;cantr)) {
++		ret = -EBUSY;
++		goto failed;
++	}
++	cantr-&gt;netdev = netdev;
++	priv-&gt;cantr = cantr;
++	ret = sysfs_create_link(&amp;cantr-&gt;dev.kobj, &amp;netdev-&gt;dev.kobj,
++			&quot;netdev&quot;);
++	if (ret &lt; 0)
++		goto failed;
++	ret = sysfs_create_link(&amp;netdev-&gt;dev.kobj, &amp;cantr-&gt;dev.kobj,
++			&quot;can-transceiver&quot;);
++	if (ret &lt; 0)
++		goto failed;
++	dev_info(&amp;cantr-&gt;dev, &quot;attached to %s\n&quot;, netdev-&gt;name);
++
++	return 0;
++failed:
++	cantr-&gt;netdev = 0;
++	priv-&gt;cantr = 0;
++	sysfs_remove_link(&amp;netdev-&gt;dev.kobj, &quot;can-transceiver&quot;);
++	sysfs_remove_link(&amp;cantr-&gt;dev.kobj, &quot;netdev&quot;);
++	dev_err(&amp;cantr-&gt;dev, &quot;attach to %s failed\n&quot;, netdev-&gt;name);
++	return ret;
++}
++
++static void _can_transceiver_detach(struct can_transceiver *cantr)
++{
++	struct net_device *netdev;
++	struct can_priv *priv;
++
++	if (!cantr-&gt;netdev)
++		return;
++	netdev = cantr-&gt;netdev;
++	priv = netdev_priv(netdev);
++	priv-&gt;cantr = 0;
++	cantr-&gt;netdev = 0;
++	sysfs_remove_link(&amp;netdev-&gt;dev.kobj, &quot;can-transceiver&quot;);
++	sysfs_remove_link(&amp;cantr-&gt;dev.kobj, &quot;netdev&quot;);
++	dev_info(&amp;cantr-&gt;dev, &quot;detached from %s\n&quot;, netdev-&gt;name);
++}
++
++static int cantr_match_netdev(struct device *dev, void *p)
++{
++	struct can_transceiver *cantr = to_can_transceiver(dev);
++	struct net_device *netdev = p;
++	const char *name;
++
++	if (!cantr-&gt;match_name)
++		return 0;
++	if (!netdev-&gt;dev.parent)
++		return 0;
++	name = dev_name(netdev-&gt;dev.parent);
++	if (!name || !strlen(name))
++		return 0;
++	return !strcmp(name, cantr-&gt;match_name);
++}
++
++void can_transceiver_set_match_name(struct can_transceiver *cantr,
++		const char *name)
++{
++	struct net_device *netdev;
++	struct can_priv *priv;
++
++	if (name &amp;&amp; !name[0])
++		name = 0;
++	mutex_lock(&amp;cantr_lock);
++	/* remove current assignment (if there is one) */
++	netdev = cantr-&gt;netdev;
++	if (netdev) {
++		dev_hold(netdev);
++		_can_transceiver_detach(cantr);
++		dev_put(netdev);
++
++	}
++
++	kfree(cantr-&gt;match_name);
++	cantr-&gt;match_name = 0;
++	if (!name)
++		goto name_done;
++	cantr-&gt;match_name = kstrdup(name, GFP_KERNEL);
++
++	read_lock(&amp;dev_base_lock);
++	for_each_netdev(&amp;init_net, netdev) {
++		dev_hold(netdev);
++		if (!cantr_match_netdev(&amp;cantr-&gt;dev, netdev))
++			goto netdev_ignore;
++		if (netdev-&gt;type != ARPHRD_CAN)
++			goto netdev_ignore;
++		priv = netdev_priv(netdev);
++		if (priv-&gt;cantr)
++			goto netdev_ignore;
++		read_unlock(&amp;dev_base_lock);
++		_can_transceiver_attach(cantr, netdev);
++		if (netif_running(netdev))
++			can_transceiver_set_mode(cantr, CANTR_MODE_ON);
++		dev_put(netdev);
++		goto name_done;
++netdev_ignore:
++		dev_put(netdev);
++	}
++	read_unlock(&amp;dev_base_lock);
++name_done:
++	mutex_unlock(&amp;cantr_lock);
++	return;
++}
++EXPORT_SYMBOL_GPL(can_transceiver_set_match_name);
++
++/*
++ * notification callback
++ */
++static int can_transceiver_notifications(struct notifier_block *nb,
++		unsigned long msg, void *data)
++{
++	struct net_device *netdev = data;
++	struct can_priv *priv = netdev_priv(netdev);
++	struct device *dev;
++	struct can_transceiver *cantr;
++
++	if (netdev-&gt;type != ARPHRD_CAN)
++		return NOTIFY_DONE;
++
++	switch (msg) {
++	case NETDEV_REGISTER:
++		mutex_lock(&amp;cantr_lock);
++		if (priv-&gt;cantr) {
++			cantr = priv-&gt;cantr;
++			if (!get_device(&amp;cantr-&gt;dev))
++				goto register_done;
++			_can_transceiver_attach(0, netdev);
++			goto attached;
++		}
++		dev = class_find_device(cantr_class, 0,
++				netdev, cantr_match_netdev);
++		if (!dev)
++			goto register_done;
++		cantr = to_can_transceiver(dev);
++		_can_transceiver_attach(cantr, netdev);
++attached:
++		/* class_find_device did get_device() */
++		put_device(&amp;cantr-&gt;dev);
++register_done:
++		mutex_unlock(&amp;cantr_lock);
++		break;
++
++	case NETDEV_UNREGISTER:
++		mutex_lock(&amp;cantr_lock);
++		if (priv-&gt;cantr)
++			_can_transceiver_detach(priv-&gt;cantr);
++		priv-&gt;cantr = 0;
++		mutex_unlock(&amp;cantr_lock);
++		break;
++	}
++	return NOTIFY_DONE;
++}
++
++/* notifier block for netdevice event */
++static struct notifier_block can_transceiver_notifier __read_mostly = {
++	.notifier_call = can_transceiver_notifications,
++};
++
++/*
++ * sysfs
++ */
++static ssize_t show_max_bitrate(struct device *dev,
++			struct device_attribute *attr, char *buf)
++{
++	struct can_transceiver *cantr = to_can_transceiver(dev);
++
++	return sprintf(buf, &quot;%i\n&quot;, can_transceiver_get_max_bitrate(cantr));
++}
++
++static ssize_t show_mode(struct device *dev,
++			struct device_attribute *attr, char *buf)
++{
++	struct can_transceiver *cantr = to_can_transceiver(dev);
++
++	return sprintf(buf, &quot;%i\n&quot;, cantr-&gt;mode);
++}
++
++static ssize_t store_mode(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t len)
++{
++	struct can_transceiver *cantr = to_can_transceiver(dev);
++	unsigned long new;
++	int ret = -EINVAL;
++
++	if (!capable(CAP_NET_ADMIN))
++		return -EPERM;
++
++	ret = strict_strtoul(buf, 0, &amp;new);
++	if (ret &lt; 0)
++		return ret;
++
++	ret = can_transceiver_set_mode(cantr, new);
++	if (ret &lt; 0)
++		return ret;
++	return len;
++}
++
++static ssize_t show_cantr_state(struct device *dev,
++			struct device_attribute *attr, char *buf)
++{
++	struct can_transceiver *cantr = to_can_transceiver(dev);
++
++	return sprintf(buf, &quot;%i\n&quot;, can_transceiver_get_state(cantr));
++}
++
++static ssize_t show_match(struct device *dev,
++			struct device_attribute *attr, char *buf)
++{
++	struct can_transceiver *cantr = to_can_transceiver(dev);
++
++	return sprintf(buf, &quot;%s\n&quot;, cantr-&gt;match_name);
++}
++static ssize_t store_match(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t len)
++{
++	struct can_transceiver *cantr = to_can_transceiver(dev);
++	char *tmp, *p;
++
++	if (!capable(CAP_NET_ADMIN))
++		return -EPERM;
++
++	tmp = kstrdup(buf, GFP_KERNEL);
++	for (p = &amp;tmp[len-1]; (p &gt;= tmp) &amp;&amp; strchr(&quot; \t\r\n\v\f&quot;, *p); --p)
++		*p = 0;
++	can_transceiver_set_match_name(cantr, tmp);
++	kfree(tmp);
++	return len;
++}
++
++static struct device_attribute class_dev_attrs[] = {
++	__ATTR(max_bitrate, S_IRUGO, show_max_bitrate, 0),
++	__ATTR(mode, S_IRUGO | S_IWUSR | S_IWGRP, show_mode, store_mode),
++	__ATTR(state, S_IRUGO, show_cantr_state, 0),
++	__ATTR(match, S_IRUGO | S_IWUSR, show_match, store_match),
++	{ },
++};
++
++/*
++ * CLASS interface
++ */
++static void cantr_release(struct device *dev)
++{
++}
++
++int can_transceiver_register(struct can_transceiver *cantr)
++{
++	int id, ret;
++
++	if (idr_pre_get(&amp;cantr_idr, GFP_KERNEL) == 0) {
++		ret = -ENOMEM;
++		goto fail_idr;
++	}
++	mutex_lock(&amp;cantr_lock);
++	ret = idr_get_new(&amp;cantr_idr, cantr, &amp;id);
++	mutex_unlock(&amp;cantr_lock);
++	if (ret &lt; 0)
++		goto fail_idr;
++
++	id = id &amp; MAX_ID_MASK;
++	cantr-&gt;id = id;
++	cantr-&gt;dev.class = cantr_class;
++	cantr-&gt;dev.release = cantr_release;
++	dev_set_name(&amp;cantr-&gt;dev, &quot;cantr%d&quot;, id);
++	mutex_init(&amp;cantr-&gt;lock);
++	ret = device_register(&amp;cantr-&gt;dev);
++	if (ret &lt; 0)
++		goto fail_register;
++
++	dev_notice(&amp;cantr-&gt;dev, &quot;loaded [%s]\n&quot;,
++		cantr-&gt;dev.parent ? dev_name(cantr-&gt;dev.parent) : &quot;&lt;&gt;&quot;);
++	return 0;
++
++fail_register:
++	dev_err(cantr-&gt;dev.parent,
++		&quot;can transceiver core: unable to register, ret %i\n&quot;, ret);
++	mutex_lock(&amp;cantr_lock);
++	idr_remove(&amp;cantr_idr, id);
++	mutex_unlock(&amp;cantr_lock);
++fail_idr:
++	return ret;
++}
++EXPORT_SYMBOL_GPL(can_transceiver_register);
++
++void can_transceiver_unregister(struct can_transceiver *cantr)
++{
++	struct net_device *netdev;
++	/* unregister device with lock, so no other CAN netdev can attach. */
++	mutex_lock(&amp;cantr_lock);
++	netdev = cantr-&gt;netdev;
++	if (netdev) {
++		dev_hold(netdev);
++		_can_transceiver_detach(cantr);
++		dev_put(netdev);
++	}
++
++	device_unregister(&amp;cantr-&gt;dev);
++	idr_remove(&amp;cantr_idr, cantr-&gt;id);
++	mutex_unlock(&amp;cantr_lock);
++
++	kfree(cantr-&gt;match_name);
++	cantr-&gt;match_name = 0;
++
++	dev_notice(&amp;cantr-&gt;dev, &quot;unloaded\n&quot;);
++}
++EXPORT_SYMBOL_GPL(can_transceiver_unregister);
++
++/*
++ * can_transceiver_start_mod - initialize can transceiver subsystem
++ */
++static int __init can_transceiver_start_mod(void)
++{
++	int ret;
++
++	BUG_ON(cantr_class);
++	cantr_class = class_create(THIS_MODULE, &quot;can-transceiver&quot;);
++	if (IS_ERR(cantr_class)) {
++		printk(KERN_ERR &quot;%s: couldn't create class\n&quot;, __FILE__);
++		ret = PTR_ERR(cantr_class);
++		goto fail_class;
++	}
++	cantr_class-&gt;dev_attrs = class_dev_attrs;
++	ret = register_netdevice_notifier(&amp;can_transceiver_notifier);
++	if (ret &lt; 0)
++		goto fail_notifier;
++	/*cantr_class-&gt;suspend = cantr_suspend;*/
++	/*cantr_class-&gt;resume = cantr_resume;*/
++	return 0;
++
++fail_notifier:
++	class_destroy(cantr_class);
++fail_class:
++	return ret;
++}
++
++/*
++ * can_transceiver_stop_mod - stop can transceiver subsystem
++ */
++static void __exit can_transceiver_stop_mod(void)
++{
++	unregister_netdevice_notifier(&amp;can_transceiver_notifier);
++	class_destroy(cantr_class);
++}
++
++subsys_initcall(can_transceiver_start_mod);
++module_exit(can_transceiver_stop_mod);
++
++MODULE_AUTHOR(&quot;Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;&quot;);
++MODULE_DESCRIPTION(&quot;CAN transceiver class support&quot;);
++MODULE_LICENSE(&quot;GPL&quot;);
++
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003261.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+	<LI>Next message: <A HREF="003263.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3262">[ date ]</a>
+              <a href="thread.html#3262">[ thread ]</a>
+              <a href="subject.html#3262">[ subject ]</a>
+              <a href="author.html#3262">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

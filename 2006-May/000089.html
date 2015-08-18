@@ -1,0 +1,223 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-core] Error Frame Spec
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Error%20Frame%20Spec&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855D60%40vwagwox00010.vw.vwg%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000088.html">
+   <LINK REL="Next"  HREF="000090.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-core] Error Frame Spec</H1>
+    <B>Hartkopp, Oliver (K-GEFE/E)</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Error%20Frame%20Spec&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855D60%40vwagwox00010.vw.vwg%3E"
+       TITLE="[Socketcan-core] Error Frame Spec">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Tue May  2 14:05:16 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000088.html">[Socketcan-core] Error Frame Spec
+</A></li>
+        <LI>Next message: <A HREF="000090.html">[Socketcan-core] Error Frame Spec
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#89">[ date ]</a>
+              <a href="thread.html#89">[ thread ]</a>
+              <a href="subject.html#89">[ subject ]</a>
+              <a href="author.html#89">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core-admin at berlios.de</A> 
+</I>&gt;<i> [mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core-admin at berlios.de</A>] On Behalf Of 
+</I>&gt;<i> Wolfgang Grandegger
+</I>&gt;<i> Sent: Friday, April 28, 2006 10:06 AM
+</I>
+&gt;<i> I ask myself if we need such a detailed error description? Could the 
+</I>&gt;<i> application do something useful on reception of such errors, 
+</I>&gt;<i> apart from 
+</I>&gt;<i> logging and reporting?
+</I>
+In addition to Roberts remark:
+There are many diagnosis issues in the automotive world today (e.g.
+electrical problems which can be found only by fault-tolerant transceivers)
+that have to be saved in the ECU for later readout.
+
+
+&gt;<i> Is there a reason why you use the prefix CANERR instead of 
+</I>&gt;<i> CAN_ERR?
+</I>
+No - is CAN_ERR_* the common way to define these kind of prefixes? I can do
+it like this.
+
+
+&gt;<i> And 
+</I>&gt;<i> the MSCAN overrun error would be described as CANERR_CRTL, 
+</I>&gt;<i> CANERR_CRTL_RX_OVERFLOW!?
+</I>
+Exact!
+
+
+&gt;<i> I quickly browsed the i82527 and Twincan manual. They 
+</I>&gt;<i> describe Bit0 and Bit1 errors and ack errors.
+</I>&gt;<i> Are they covered by the above scheme?
+</I>
+Hm - not that detailed ...
+
+I made some changes to make it more usable - even if it doesn't look like
+this on the first view ;-]
+
+CAN_ERR_TX_TIMEOUT and CAN_ERR_ACK are new in the error class to switch them
+easily on and off by the bit-mask in setsockopt().
+
+The CAN_ERR_ACK status is also described as CAN_ERR_PROT,
+CAN_ERR_PROT_UNSPEC, CAN_ERR_PROT_LOC_ACK when CAN_ERR_PROT is enabled by
+mask. But this is for frame transmission only. When the controller can't set
+a dominant bit to acknowledge a received frame, it looks like this:
+
+CAN_ERR_PROT, CAN_ERR_PROT_BIT0, CAN_ERR_PROT_LOC_ACK
+
+In this case the CAN_ERR_ACK bit remains unset.
+
+
+If the controller recognizes a wrong CRC on receiption, it says:
+
+CAN_ERR_PROT, CAN_ERR_PROT_UNSPEC, CAN_ERR_PROT_LOC_CRC_SEQ
+
+or 
+
+CAN_ERR_PROT, (CAN_ERR_PROT_UNSPEC | CAN_ERR_PROT_ACTIVE),
+CAN_ERR_PROT_LOC_CRC_SEQ
+
+if he was sending 6 dominant bits to indicate the error on the bus. In the
+SJA1000 documentation (AN97076.pdf) the problems in the CRC are described as
+CAN_ERR_PROT, CAN_ERR_PROT_STUFF, CAN_ERR_PROT_LOC_CRC_SEQ. But i don't now
+if a wrong CRC leads automatically into a stuffing error. Looks like a
+SJA1000 specific error classification.
+
+At the end i added the comment for the usage of data[6..7].
+
+Any comments?
+
+Greetings,
+Oliver
+
+#ifndef CAN_ERROR_H
+#define CAN_ERROR_H
+
+#ifdef __KERNEL__
+#include &quot;version.h&quot;
+RCSID(&quot;$Id$&quot;);
+#endif
+
+#define CAN_ERR_DLC 8 /* dlc for error frames */
+
+/* error class (mask) / data[0] */
+#define CAN_ERR_BUSOFF           0x80 /* bus off */
+#define CAN_ERR_TX_TIMEOUT       0x40 /* TX timeout (netdevice driver) */
+#define CAN_ERR_ACK              0x20 /* received no ACK on transmission */
+#define CAN_ERR_LOSTARB          0x10 /* lost arbitration    / data[1]    */
+#define CAN_ERR_CRTL             0x08 /* controller problems / data[2]    */
+#define CAN_ERR_PROT             0x04 /* protocol violations / data[3..4] */
+#define CAN_ERR_TRX              0x02 /* transceiver status  / data[5]    */
+
+/* arbitration lost in bit ... / data[1] */
+#define CAN_ERR_LOSTARB_UNSPEC   0x00 /* unspecified */
+                                      /* else bit number in bitstream */
+
+/* error status of CAN-controller / data[2] */
+#define CAN_ERR_CRTL_UNSPEC      0x00 /* unspecified */
+#define CAN_ERR_CRTL_RX_OVERFLOW 0x01 /* RX buffer overflow */
+#define CAN_ERR_CRTL_TX_OVERFLOW 0x02 /* TX buffer overflow */
+#define CAN_ERR_CRTL_RX_WARNING  0x04 /* reached warning level for RX errors
+*/
+#define CAN_ERR_CRTL_TX_WARNING  0x08 /* reached warning level for TX errors
+*/
+
+/* error in CAN protocol (type) / data[3] */
+#define CAN_ERR_PROT_UNSPEC      0x00 /* unspecified */
+#define CAN_ERR_PROT_BIT         0x01 /* single bit error */
+#define CAN_ERR_PROT_FORM        0x02 /* frame format error */
+#define CAN_ERR_PROT_STUFF       0x04 /* bit stuffing error */
+#define CAN_ERR_PROT_BIT0        0x08 /* unable to send dominant bit */
+#define CAN_ERR_PROT_BIT1        0x10 /* unable to send recessive bit */
+#define CAN_ERR_PROT_OVERLOAD    0x20 /* bus overload */
+#define CAN_ERR_PROT_ACTIVE      0x40 /* active error announcement */
+#define CAN_ERR_PROT_TX          0x80 /* error occured on transmission */
+
+/* error in CAN protocol (location) / data[4] */
+#define CAN_ERR_PROT_LOC_UNSPEC  0x00 /* unspecified */
+#define CAN_ERR_PROT_LOC_SOF     0x03 /* start of frame */
+#define CAN_ERR_PROT_LOC_ID28_21 0x02 /* ID bits 28 - 21 (SFF: 10 - 3) */
+#define CAN_ERR_PROT_LOC_ID20_18 0x06 /* ID bits 20 - 18 (SFF: 2 - 0 )*/
+#define CAN_ERR_PROT_LOC_SRTR    0x04 /* substitute RTR (SFF: RTR) */
+#define CAN_ERR_PROT_LOC_IDE     0x05 /* identifier extension */
+#define CAN_ERR_PROT_LOC_ID17_13 0x07 /* ID bits 17-13 */
+#define CAN_ERR_PROT_LOC_ID12_05 0x0F /* ID bits 12-5 */
+#define CAN_ERR_PROT_LOC_ID04_00 0x0E /* ID bits 4-0 */
+#define CAN_ERR_PROT_LOC_RTR     0x0C /* RTR */
+#define CAN_ERR_PROT_LOC_RES1    0x0D /* reserved bit 1 */
+#define CAN_ERR_PROT_LOC_RES0    0x09 /* reserved bit 0 */
+#define CAN_ERR_PROT_LOC_DLC     0x0B /* data length code */
+#define CAN_ERR_PROT_LOC_DATA    0x0A /* data section */
+#define CAN_ERR_PROT_LOC_CRC_SEQ 0x08 /* CRC sequence */
+#define CAN_ERR_PROT_LOC_CRC_DEL 0x18 /* CRC delimiter */
+#define CAN_ERR_PROT_LOC_ACK     0x19 /* ACK slot */
+#define CAN_ERR_PROT_LOC_ACK_DEL 0x1B /* ACK delimiter */
+#define CAN_ERR_PROT_LOC_EOF     0x1A /* end of frame */
+#define CAN_ERR_PROT_LOC_INTERM  0x12 /* intermission */
+
+/* error status of CAN-transceiver / data[5] */
+/*                                             CANH CANL */
+#define CAN_ERR_TRX_UNSPEC             0x00 /* 0000 0000 */
+#define CAN_ERR_TRX_CANH_NO_WIRE       0x04 /* 0000 0100 */
+#define CAN_ERR_TRX_CANH_SHORT_TO_BAT  0x05 /* 0000 0101 */
+#define CAN_ERR_TRX_CANH_SHORT_TO_VCC  0x06 /* 0000 0110 */
+#define CAN_ERR_TRX_CANH_SHORT_TO_GND  0x07 /* 0000 0111 */
+#define CAN_ERR_TRX_CANL_NO_WIRE       0x40 /* 0100 0000 */
+#define CAN_ERR_TRX_CANL_SHORT_TO_BAT  0x50 /* 0101 0000 */
+#define CAN_ERR_TRX_CANL_SHORT_TO_VCC  0x60 /* 0110 0000 */
+#define CAN_ERR_TRX_CANL_SHORT_TO_GND  0x70 /* 0111 0000 */
+#define CAN_ERR_TRX_CANL_SHORT_TO_CANH 0x80 /* 1000 0000 */
+
+/* controller specific additional information / data[6..7] */
+
+#endif /* CAN_ERROR_H */
+
+
+Greetings,
+
+Oliver
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000088.html">[Socketcan-core] Error Frame Spec
+</A></li>
+	<LI>Next message: <A HREF="000090.html">[Socketcan-core] Error Frame Spec
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#89">[ date ]</a>
+              <a href="thread.html#89">[ thread ]</a>
+              <a href="subject.html#89">[ subject ]</a>
+              <a href="author.html#89">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

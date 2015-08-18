@@ -1,0 +1,145 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> More on bit time setting and calculation...
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20More%20on%20bit%20time%20setting%20and%20calculation...&In-Reply-To=%3C484CF325.1060204%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001327.html">
+   <LINK REL="Next"  HREF="001341.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>More on bit time setting and calculation...</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20More%20on%20bit%20time%20setting%20and%20calculation...&In-Reply-To=%3C484CF325.1060204%40grandegger.com%3E"
+       TITLE="More on bit time setting and calculation...">wg at grandegger.com
+       </A><BR>
+    <I>Mon Jun  9 11:08:53 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001327.html">More on bit time setting and calculation...
+</A></li>
+        <LI>Next message: <A HREF="001341.html">More on bit time setting and calculation...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1335">[ date ]</a>
+              <a href="thread.html#1335">[ thread ]</a>
+              <a href="subject.html#1335">[ subject ]</a>
+              <a href="author.html#1335">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Robert Schwebel wrote:
+&gt;<i> On Mon, Jun 09, 2008 at 08:56:34AM +0200, Wolfgang Grandegger wrote:
+</I>&gt;&gt;&gt;&gt;<i> 1. It turned out to be a very complex topic for different
+</I>&gt;&gt;&gt;&gt;<i> controllers with specific originalities and specific (broken) clock
+</I>&gt;&gt;&gt;&gt;<i> sources.
+</I>&gt;&gt;&gt;<i> True.
+</I>&gt;&gt;<i> And so far we failed to provide an algorithm for calculating &quot;good&quot;
+</I>&gt;&gt;<i> btregs. Be aware that most of us are not CAN hardware experts.
+</I>&gt;<i> 
+</I>&gt;<i> I suppose there will be no good heuristics - you would need an equation
+</I>&gt;<i> solver with minimum search, so nothing for the kernel :-)
+</I>&gt;<i> 
+</I>&gt;<i> CAN timing values are in no way different from for example memory
+</I>&gt;<i> controller timing values: the BSP developer *has* to be an expert and
+</I>&gt;<i> has to provide reasonable numbers for his hardware constellation (clocks
+</I>&gt;<i> etc). And it needs to be changable according to some field needs, like
+</I>&gt;<i> networks which require to change the values to &quot;measured&quot; ones.
+</I>
+We do want to provide &quot;good&quot; default settings by simply setting the
+bitrate. If that fails, which will happen rarely, or if exotic bitrates
+and clock frequencies are used, the user has at least to possibility to
+get it working through a hardware dependent setting.
+
+&gt;&gt;<i> Yes and the user can still set default btregs (CIA recommended if
+</I>&gt;&gt;<i> possible) by just selecting the bitrate. The driver must provide an
+</I>&gt;&gt;<i> appropriate table of btregs for the common bitrates. For most CAN
+</I>&gt;&gt;<i> controllers, this is easy to do.
+</I>&gt;<i> 
+</I>&gt;<i> What's the advantage of SJA-specific btregs vs. standard provided
+</I>&gt;<i> parameters?
+</I>
+The btregs are not SJA-specific. The 4 bytes can be used to setup the
+relevant hardware register. As I see it: handling standard provided
+parameters is too sophisticated for the kernel and may still fail.
+
+&gt;&gt;<i> But with that hardware independent way,we may fail calculating &quot;good&quot;
+</I>&gt;&gt;<i> values for all CAN controller and clock frequencies.
+</I>&gt;<i> 
+</I>&gt;<i> If the heuristics fails, we can use pre-calculated values. In our
+</I>&gt;<i> current implementation, /etc/network/interfaces looks like this:
+</I>&gt;<i> 
+</I>&gt;<i> 	# onboard CAN0
+</I>&gt;<i> 	iface can0 inet manual
+</I>&gt;<i> 		pre-up /etc/network/can-pre-up
+</I>&gt;<i> 		up /sbin/ifconfig $IFACE up
+</I>&gt;<i> 
+</I>&gt;<i> and /etc/network/can-pre-up:
+</I>&gt;<i> 
+</I>&gt;<i> 	#!/bin/sh
+</I>&gt;<i> 	#
+</I>&gt;<i> 	#
+</I>&gt;<i> 	CAN_CONFIG_PROG=/sbin/canconfig
+</I>&gt;<i> 	IFCONFIG_PROG=/sbin/ifconfig
+</I>&gt;<i> 	# bitrate to be used when running the interface
+</I>&gt;<i> 	BITRATE=250
+</I>&gt;<i> 
+</I>&gt;<i> 	# setup specific bit rate settings
+</I>&gt;<i> 	$CAN_CONFIG_PROG $IFACE setentry bitrate 125000 tq 421 err 3000 prop_seg 7 phase_seg1 8 phase_seg2 3 sjw 2 sam 0
+</I>&gt;<i> 	$CAN_CONFIG_PROG $IFACE setentry bitrate 250000 tq 211 err 3000 prop_seg 7 phase_seg1 8 phase_seg2 3 sjw 2 sam 0
+</I>&gt;<i> 	$CAN_CONFIG_PROG $IFACE setentry bitrate 500000 tq 105 err 3000 prop_seg 7 phase_seg1 8 phase_seg2 3 sjw 2 sam 0
+</I>&gt;<i> 	$CAN_CONFIG_PROG $IFACE setentry bitrate 1000000 tq 53 err 13000 prop_seg 6 phase_seg1 7 phase_seg2 5 sjw 2 sam 0
+</I>
+These values are already tweaked for a special hardware and not good for
+other CAN controllers like the SJA1000. You do a hardware specific
+setting in a hardware independent way. I know, it's needed for the
+MSCAN, at least but do we need all this in the kernel just because of a
+very few wired CAN controllers out there.
+
+&gt;<i> 	# $IFACE from &quot;ifup&quot; command
+</I>&gt;<i> 	$CAN_CONFIG_PROG $IFACE bitrate $BITRATE
+</I>&gt;<i> 
+</I>&gt;<i> 	# HACK-ALERT! (just like in the old canframework)
+</I>&gt;<i> 	$IFCONFIG_PROG $IFACE txqueuelen 10000
+</I>&gt;<i> 
+</I>&gt;<i> After that, you can simply change the bitrate with for example
+</I>&gt;<i> 
+</I>&gt;<i> 	canconfig can0 bitrate 125000
+</I>
+I still like the idea of having a table of btreg and select the entry
+when setting the bitrate. Setting proper btregs is then a pure
+management task. But SYSFS does not allow it :-(.
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001327.html">More on bit time setting and calculation...
+</A></li>
+	<LI>Next message: <A HREF="001341.html">More on bit time setting and calculation...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1335">[ date ]</a>
+              <a href="thread.html#1335">[ thread ]</a>
+              <a href="subject.html#1335">[ subject ]</a>
+              <a href="author.html#1335">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,164 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> SJA1000 SMP issue with command register
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SJA1000%20SMP%20issue%20with%20command%20register&In-Reply-To=%3C4BF04787.6010809%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004345.html">
+   <LINK REL="Next"  HREF="004350.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>SJA1000 SMP issue with command register</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SJA1000%20SMP%20issue%20with%20command%20register&In-Reply-To=%3C4BF04787.6010809%40grandegger.com%3E"
+       TITLE="SJA1000 SMP issue with command register">wg at grandegger.com
+       </A><BR>
+    <I>Sun May 16 21:29:11 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004345.html">SJA1000 SMP issue with command register
+</A></li>
+        <LI>Next message: <A HREF="004350.html">sja1000_platform clock setup
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4352">[ date ]</a>
+              <a href="thread.html#4352">[ thread ]</a>
+              <a href="subject.html#4352">[ subject ]</a>
+              <a href="author.html#4352">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 05/15/2010 07:26 PM, Oliver Hartkopp wrote:
+&gt;<i> On 14.05.2010 15:44, Marc Kleine-Budde wrote:
+</I>&gt;&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> It took a while to create a minimum invasive patch that doesn't touch all the
+</I>&gt;&gt;&gt;<i> drivers, but here it is:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Index: sja1000/sja1000.c
+</I>&gt;&gt;&gt;<i> ===================================================================
+</I>&gt;&gt;&gt;<i> --- sja1000/sja1000.c	(Revision 1177)
+</I>&gt;&gt;&gt;<i> +++ sja1000/sja1000.c	(Arbeitskopie)
+</I>&gt;&gt;&gt;<i> @@ -88,6 +88,29 @@
+</I>&gt;&gt;&gt;<i>  	.brp_inc = 1,
+</I>&gt;&gt;&gt;<i>  };
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static void sja1000_write_cmd_reg(struct sja1000_priv *priv, u8 val)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	/* the command register needs some locking in SMP systems */
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> nitpick:
+</I>&gt;&gt;<i> from my school english point of view: on SMP systems sounds better
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Indeed :-)
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +#ifdef CONFIG_SMP
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	unsigned long flags;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	spin_lock_irqsave(&amp;priv-&gt;wr_reg_lock, flags);
+</I>&gt;&gt;&gt;<i> +	priv-&gt;write_reg(priv, REG_CMR, val);
+</I>&gt;&gt;&gt;<i> +	priv-&gt;read_reg(priv, REG_SR);
+</I>&gt;&gt;&gt;<i> +	spin_unlock_irqrestore(&amp;priv-&gt;wr_reg_lock, flags);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +#else
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	/* write to the command register without locking */
+</I>&gt;&gt;&gt;<i> +	priv-&gt;write_reg(priv, REG_CMR, val);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +#endif
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i>  static int sja1000_probe_chip(struct net_device *dev)
+</I>&gt;&gt;&gt;<i>  {
+</I>&gt;&gt;&gt;<i>  	struct sja1000_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;&gt;<i> @@ -305,7 +328,7 @@
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>  	can_put_echo_skb(skb, dev, 0);
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> -	priv-&gt;write_reg(priv, REG_CMR, CMD_TR);
+</I>&gt;&gt;&gt;<i> +	sja1000_write_cmd_reg(priv, CMD_TR);
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>  	return NETDEV_TX_OK;
+</I>&gt;&gt;&gt;<i>  }
+</I>&gt;&gt;&gt;<i> @@ -358,7 +381,7 @@
+</I>&gt;&gt;&gt;<i>  	cf-&gt;can_id = id;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>  	/* release receive buffer */
+</I>&gt;&gt;&gt;<i> -	priv-&gt;write_reg(priv, REG_CMR, CMD_RRB);
+</I>&gt;&gt;&gt;<i> +	sja1000_write_cmd_reg(priv, CMD_RRB);
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>  	netif_rx(skb);
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> @@ -393,7 +416,7 @@
+</I>&gt;&gt;&gt;<i>  		cf-&gt;data[1] = CAN_ERR_CRTL_RX_OVERFLOW;
+</I>&gt;&gt;&gt;<i>  		stats-&gt;rx_over_errors++;
+</I>&gt;&gt;&gt;<i>  		stats-&gt;rx_errors++;
+</I>&gt;&gt;&gt;<i> -		priv-&gt;write_reg(priv, REG_CMR, CMD_CDO);	/* clear bit */
+</I>&gt;&gt;&gt;<i> +		sja1000_write_cmd_reg(priv, CMD_CDO);	/* clear bit */
+</I>&gt;&gt;&gt;<i>  	}
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>  	if (isrc &amp; IRQ_EI) {
+</I>&gt;&gt;&gt;<i> Index: sja1000/sja1000.h
+</I>&gt;&gt;&gt;<i> ===================================================================
+</I>&gt;&gt;&gt;<i> --- sja1000/sja1000.h	(Revision 1177)
+</I>&gt;&gt;&gt;<i> +++ sja1000/sja1000.h	(Arbeitskopie)
+</I>&gt;&gt;&gt;<i> @@ -168,6 +168,7 @@
+</I>&gt;&gt;&gt;<i>  	void __iomem *reg_base;	 /* ioremap'ed address to registers */
+</I>&gt;&gt;&gt;<i>  	unsigned long irq_flags; /* for request_irq() */
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +	spinlock_t wr_reg_lock; /* lock for concurrent register writes */
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> hmm...do we want to wrap this is ifdef CONFIG_SMP?
+</I>&gt;<i> 
+</I>&gt;<i> Would be ok for me.
+</I>&gt;<i> 
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>  	u16 flags;		/* custom mode flags */
+</I>&gt;&gt;&gt;<i>  	u8 ocr;			/* output control register */
+</I>&gt;&gt;&gt;<i>  	u8 cdr;			/* clock divider register */
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Any Acked-by or Signed-off-by out there?
+</I>&gt;<i> 
+</I>&gt;<i> Any other feedback?
+</I>
+You can add my &quot;Acked-by&quot;.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004345.html">SJA1000 SMP issue with command register
+</A></li>
+	<LI>Next message: <A HREF="004350.html">sja1000_platform clock setup
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4352">[ date ]</a>
+              <a href="thread.html#4352">[ thread ]</a>
+              <a href="subject.html#4352">[ subject ]</a>
+              <a href="author.html#4352">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

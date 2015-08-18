@@ -1,0 +1,220 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> mcp251x, bug : scheduling in atomic
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%2C%20bug%20%3A%20scheduling%20in%20atomic&In-Reply-To=%3Ccabda6420904290508m1eaf456do58c3e3ca80f703ae%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002432.html">
+   <LINK REL="Next"  HREF="002434.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>mcp251x, bug : scheduling in atomic</H1>
+    <B>christian pellegrin</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%2C%20bug%20%3A%20scheduling%20in%20atomic&In-Reply-To=%3Ccabda6420904290508m1eaf456do58c3e3ca80f703ae%40mail.gmail.com%3E"
+       TITLE="mcp251x, bug : scheduling in atomic">chripell at gmail.com
+       </A><BR>
+    <I>Wed Apr 29 14:08:36 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002432.html">mcp251x, bug : scheduling in atomic
+</A></li>
+        <LI>Next message: <A HREF="002434.html">[DRIVER] Port of slcan driver from kernel 2.6 to kernel 2.4.20
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2433">[ date ]</a>
+              <a href="thread.html#2433">[ thread ]</a>
+              <a href="subject.html#2433">[ subject ]</a>
+              <a href="author.html#2433">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>2009/4/29 Daniel Lewandowski &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">daniel at raciazek.eu</A>&gt;:
+&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> I have mcp2515 chip (socketcan revision 970) with at91sam9261 (olimex
+</I>&gt;<i> board) and when I want to get state of the interface by typing:
+</I>&gt;<i>
+</I>&gt;<i> cat /sys/devices/platform/atmel_spi.0/spi0.3/net/can0/can_state
+</I>&gt;<i>
+</I>&gt;<i> I get this:
+</I>&gt;<i>
+</I>&gt;<i> BUG: scheduling while atomic: cat/387/0x00000002
+</I>
+Hi,
+
+this is my conjecture: what happens here is that some function in the
+stack dump you posted calls mcp251x_do_get_state in an atomic context.
+After some grepping I found that one culprit (but I'm not sure it's
+alone) is can_dev_show doing a read_lock (I guess you have preemption
+on otherwise the spinlock should vanish ... you don't have a SMP ARM,
+do you?). The mcp251x works on a slow bus (SPI) which needs an
+interrupt to finish register read so it sleeps until it's delivered
+(we cannot busy loop since it would waste tons of CPU time). But in
+Linux you can't sleep (or better, you cannot reschedule) while holing
+a spinlock. To say the truth this is an unfortunate situation that is
+quite common when dealing with devices over such slow buses (I2C, SPI,
+etc.). So, we can:
+
+1) rewrite the function above lockless. It's not that easy.
+
+2) you can try the patch attached (but keep in mind I haven't tested
+it right now, I'm away from the hardware). But beware, the reading
+could become stale. What can happen is that the bus recovers but the
+entry is not updated (the other way is not possible because a bus
+error triggers an interrupt and the state is update). Unfortunately we
+don't have a reliable way to know if we are in an atomic context (see
+<A HREF="http://lwn.net/Articles/274695/">http://lwn.net/Articles/274695/</A> ) to make the guess more rightful.
+
+I don't see other ways for solving this problem right now. Perhaps
+some more skilled kernel hacker can give a better advice. I love to
+hear opinions on this since I met this problem myself a couple of
+times.
+
+ Index: mcp251x.c
+===================================================================
+--- mcp251x.c	(revision 970)
++++ mcp251x.c	(working copy)
+@@ -187,6 +187,7 @@
+ #define AFTER_SUSPEND_DOWN 2
+ #define AFTER_SUSPEND_POWER 4
+ 	int restart_tx;
++	u8 eflag;
+ };
+
+ static u8 mcp251x_read_reg(struct spi_device *spi, uint8_t reg)
+@@ -760,16 +761,12 @@
+ static int mcp251x_do_get_state(struct net_device *net, enum can_state	*state)
+ {
+ 	struct mcp251x_priv *priv = netdev_priv(net);
+-	struct spi_device *spi = priv-&gt;spi;
+-	u8 eflag;
+
+-	eflag = mcp251x_read_reg(spi, EFLG);
+-
+-	if (eflag &amp; EFLG_TXBO)
++	if (priv-&gt;eflag &amp; EFLG_TXBO)
+ 		*state = CAN_STATE_BUS_OFF;
+-	else if (eflag &amp; (EFLG_RXEP | EFLG_TXEP))
++	else if (priv-&gt;eflag &amp; (EFLG_RXEP | EFLG_TXEP))
+ 		*state = CAN_STATE_BUS_PASSIVE;
+-	else if (eflag &amp; EFLG_EWARN)
++	else if (priv-&gt;eflag &amp; EFLG_EWARN)
+ 		*state = CAN_STATE_BUS_WARNING;
+ 	else
+ 		*state = CAN_STATE_ACTIVE;
+@@ -786,6 +783,7 @@
+
+ 	dev_dbg(&amp;spi-&gt;dev, &quot;%s\n&quot;, __func__);
+
++	priv-&gt;eflag = mcp251x_read_reg(spi, EFLG);
+ 	if (priv-&gt;tx_skb) {
+ 		frame = (struct can_frame *)priv-&gt;tx_skb-&gt;data;
+ 		if (frame-&gt;can_dlc &gt; CAN_FRAME_MAX_DATA_LEN)
+@@ -800,8 +798,7 @@
+ 						 irq_work);
+ 	struct spi_device *spi = priv-&gt;spi;
+ 	struct net_device *net = priv-&gt;net;
+-	u8 intf;
+-	u8 txbnctrl;
++	u8 intf, txbnctrl;
+
+ 	if (priv-&gt;after_suspend) {
+ 		/* Wait whilst the device wakes up */
+@@ -844,6 +841,7 @@
+ 			priv-&gt;wake = 0;
+ 		}
+
++		priv-&gt;eflag = mcp251x_read_reg(spi, EFLG);
+ 		intf = mcp251x_read_reg(spi, CANINTF);
+ 		if (intf == 0x00)
+ 			break;
+@@ -878,9 +876,8 @@
+ 		if (intf &amp; CANINTF_ERRIF) {
+ 			struct sk_buff *skb;
+ 			struct can_frame *frame = NULL;
+-			u8 eflag = mcp251x_read_reg(spi, EFLG);
+
+-			dev_dbg(&amp;spi-&gt;dev, &quot;EFLG = 0x%02x\n&quot;, eflag);
++			dev_dbg(&amp;spi-&gt;dev, &quot;EFLG = 0x%02x\n&quot;, priv-&gt;eflag);
+
+ 			/* Create error frame */
+ 			skb = dev_alloc_skb(sizeof(struct can_frame));
+@@ -897,31 +894,31 @@
+ 				skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+
+ 				/* Set error frame flags based on bus state */
+-				if (eflag &amp; EFLG_TXBO) {
++				if (priv-&gt;eflag &amp; EFLG_TXBO) {
+ 					frame-&gt;can_id |= CAN_ERR_BUSOFF;
+-				} else if (eflag &amp; EFLG_TXEP) {
++				} else if (priv-&gt;eflag &amp; EFLG_TXEP) {
+ 					frame-&gt;can_id |= CAN_ERR_CRTL;
+ 					frame-&gt;data[1] |=
+ 					  CAN_ERR_CRTL_TX_PASSIVE;
+-				} else if (eflag &amp; EFLG_RXEP) {
++				} else if (priv-&gt;eflag &amp; EFLG_RXEP) {
+ 					frame-&gt;can_id |= CAN_ERR_CRTL;
+ 					frame-&gt;data[1] |=
+ 					  CAN_ERR_CRTL_RX_PASSIVE;
+-				} else if (eflag &amp; EFLG_TXWAR) {
++				} else if (priv-&gt;eflag &amp; EFLG_TXWAR) {
+ 					frame-&gt;can_id |= CAN_ERR_CRTL;
+ 					frame-&gt;data[1] |=
+ 					  CAN_ERR_CRTL_TX_WARNING;
+-				} else if (eflag &amp; EFLG_RXWAR) {
++				} else if (priv-&gt;eflag &amp; EFLG_RXWAR) {
+ 					frame-&gt;can_id |= CAN_ERR_CRTL;
+ 					frame-&gt;data[1] |=
+ 					  CAN_ERR_CRTL_RX_WARNING;
+ 				}
+ 			}
+
+-			if (eflag &amp; (EFLG_RX0OVR | EFLG_RX1OVR)) {
+-				if (eflag &amp; EFLG_RX0OVR)
++			if (priv-&gt;eflag &amp; (EFLG_RX0OVR | EFLG_RX1OVR)) {
++				if (priv-&gt;eflag &amp; EFLG_RX0OVR)
+ 					net-&gt;stats.rx_over_errors++;
+-				if (eflag &amp; EFLG_RX1OVR)
++				if (priv-&gt;eflag &amp; EFLG_RX1OVR)
+ 					net-&gt;stats.rx_over_errors++;
+ 				if (frame) {
+ 					frame-&gt;can_id |= CAN_ERR_CRTL;
+
+
+-- 
+Christian Pellegrin, see <A HREF="http://www.evolware.org/chri/">http://www.evolware.org/chri/</A>
+&quot;Real Programmers don't play tennis, or any other sport which requires
+you to change clothes. Mountain climbing is OK, and Real Programmers
+wear their climbing boots to work in case a mountain should suddenly
+spring up in the middle of the computer room.&quot;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002432.html">mcp251x, bug : scheduling in atomic
+</A></li>
+	<LI>Next message: <A HREF="002434.html">[DRIVER] Port of slcan driver from kernel 2.6 to kernel 2.4.20
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2433">[ date ]</a>
+              <a href="thread.html#2433">[ thread ]</a>
+              <a href="subject.html#2433">[ subject ]</a>
+              <a href="author.html#2433">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,179 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH/RFC 0/1] Preliminary SYSFS support
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH/RFC%200/1%5D%20Preliminary%20SYSFS%20support&In-Reply-To=%3C47501BDC.2040409%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000876.html">
+   <LINK REL="Next"  HREF="000880.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH/RFC 0/1] Preliminary SYSFS support</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH/RFC%200/1%5D%20Preliminary%20SYSFS%20support&In-Reply-To=%3C47501BDC.2040409%40grandegger.com%3E"
+       TITLE="[PATCH/RFC 0/1] Preliminary SYSFS support">wg at grandegger.com
+       </A><BR>
+    <I>Fri Nov 30 15:19:08 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000876.html">[PATCH/RFC 0/1] Preliminary SYSFS support
+</A></li>
+        <LI>Next message: <A HREF="000880.html">[PATCH/RFC 0/1] Preliminary SYSFS support
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#879">[ date ]</a>
+              <a href="thread.html#879">[ thread ]</a>
+              <a href="subject.html#879">[ subject ]</a>
+              <a href="author.html#879">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Robert Schwebel wrote:
+&gt;<i> Hi Wolfgang,
+</I>&gt;<i> 
+</I>&gt;<i> Thanks for the quick actions :-) I suppose the meeting at the SPS was a
+</I>&gt;<i> pretty good thing, it's usually boosting activities quite a bit if
+</I>&gt;<i> people sometimes meet personally.
+</I>
+Yes.
+
+&gt;&gt;<i> the following patch adds preliminary SYSFS support for CAN devices to
+</I>&gt;&gt;<i> &quot;dev.c&quot;.  It now supports setting and getting of device properties via
+</I>&gt;&gt;<i> both, SYSFS files and IOCTL requests by using common access functions.
+</I>&gt;&gt;<i> If we decide to abandon and remove IOCTL request, SYSFS support should
+</I>&gt;&gt;<i> be moved to a seperate file.
+</I>&gt;<i> 
+</I>&gt;<i> For that ones who havn't been in Nuernberg at the meeting, we discussed
+</I>&gt;<i> the fact that it might happen that the kernel maintainers don't want to
+</I>&gt;<i> include new ioctls in the kernel, so having both methods ready and do
+</I>&gt;<i> what's necessary for mainline then is a good starting point for the next
+</I>&gt;<i> round after the core inclusion in mainline.
+</I>&gt;<i> 
+</I>&gt;&gt;<i>   # cd /sys/class/net/can0
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   # echo &quot;start&quot; &gt; mode
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   # cat state
+</I>&gt;&gt;<i>   stopped
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   # echo &quot;125000&quot; &gt; baudrate
+</I>&gt;&gt;<i>   # cat baudrate
+</I>&gt;&gt;<i>   125000
+</I>&gt;<i> 
+</I>&gt;<i> bitrate :-)
+</I>
+I just raised the prio of naming issues on the TODO list.
+
+&gt;&gt;<i>   # cat custombittime
+</I>&gt;&gt;<i>   std 0x18 0x8 0x6 0x7 0x4 0x1
+</I>&gt;&gt;<i>   # echo &quot;std 0x6 0x8 0x6 0x7 0x4 0x1&quot; &gt; custombittime
+</I>&gt;&gt;<i>   # cat custombittime
+</I>&gt;&gt;<i>   std 0x6 0x8 0x6 0x7 0x4 0x1
+</I>&gt;<i> 
+</I>&gt;<i> Hmm, it is a little bit unintuitive, because one doesn't see which entry
+</I>&gt;<i> means what. But I don't have a better idea, because all values have to
+</I>&gt;<i> be set at one call (the interface also doesn't follow the
+</I>&gt;<i> one-value-per-file concept). Any better ideas?
+</I>
+We may use different file names for STD and BTR settings. Anyhow, using
+an array seems to be OK:
+
+  $ cat Documentation/filesystems/sysfs.txt
+  ...
+  Attributes should be ASCII text files, preferably with only one value
+  per file. It is noted that it may not be efficient to contain only one
+  value per file, so it is socially acceptable to express an array of
+  values of the same type.
+
+I have more belly ache with the storing/showing the list of bit time
+settings equivalent to the IOCTL request SIOCSCANDEDBITTIME.
+
+&gt;&gt;<i>   # cat baudrate
+</I>&gt;&gt;<i>   500000
+</I>&gt;<i> 
+</I>&gt;<i> bitrate, dito
+</I>&gt;<i> 
+</I>&gt;&gt;<i>   # echo &quot;btr 0x03 0xc0&quot; &gt; custombittime
+</I>&gt;&gt;<i>   # cat custombittime
+</I>&gt;&gt;<i>   btr 0x03 0xc0
+</I>&gt;<i> 
+</I>&gt;<i> I would prefer the generic timing model over the sja specific one here.
+</I>
+Currently, we have defined both.
+
+&gt;&gt;<i>   # cat can_sys_clock
+</I>&gt;&gt;<i>   66000000
+</I>&gt;<i> 
+</I>&gt;<i> Are there more than one clocks? If not, why not only can_clock? Or even
+</I>&gt;<i> better, use the &quot;timequantum&quot; abstraction.
+</I>
+This is the name of the field in struct can_priv. It holds the frequency
+of the CAN system clock, which is needed in any case. I would prefer a
+shorter name as well, e.g. clock or can_clock.
+
+&gt;&gt;<i>   # ls can_stats/
+</I>&gt;<i> 
+</I>&gt;<i> For network cards, it is &quot;statistics&quot;. We should keep things in sync
+</I>&gt;<i> with what's already there.
+</I>
+You prefer &quot;can_statistics&quot;? Fine for me.
+
+Note that this SYSFS interface supports the existing implementation.
+
+&gt;<i> 
+</I>&gt;&gt;<i> This is a RFC and it rises various questions:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> - do we abandon IOCTL requests because there is no chance to get them
+</I>&gt;&gt;<i>   into mainline? Already now or later?
+</I>&gt;<i> 
+</I>&gt;<i> We should discuss that with the netdev maintainers. There are things
+</I>&gt;<i> which have been ioctls for historical reasons and some can patterns
+</I>&gt;<i> match their correspondent equivalents.
+</I>
+That would be nice.
+
+&gt;&gt;<i> - Location of SYSFS files: Is &quot;/sys/class/net/can*&quot; OK or do we need
+</I>&gt;&gt;<i>   to define a separate SYSFS bus and class?
+</I>&gt;<i> 
+</I>&gt;<i> Sounds good.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> - Naming issues, e.g. a prefix &quot;can_&quot; for all CAN properties like
+</I>&gt;&gt;<i>   can_state.
+</I>&gt;<i> 
+</I>&gt;<i> See above.
+</I>
+I will bring up this issue next week in a separate thread.
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000876.html">[PATCH/RFC 0/1] Preliminary SYSFS support
+</A></li>
+	<LI>Next message: <A HREF="000880.html">[PATCH/RFC 0/1] Preliminary SYSFS support
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#879">[ date ]</a>
+              <a href="thread.html#879">[ thread ]</a>
+              <a href="subject.html#879">[ subject ]</a>
+              <a href="author.html#879">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

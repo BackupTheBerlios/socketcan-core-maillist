@@ -1,0 +1,1416 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Comments on at91_can.c
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Comments%20on%20at91_can.c&In-Reply-To=%3C4A8C4CFC.1090303%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002866.html">
+   <LINK REL="Next"  HREF="002911.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Comments on at91_can.c</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Comments%20on%20at91_can.c&In-Reply-To=%3C4A8C4CFC.1090303%40pengutronix.de%3E"
+       TITLE="Comments on at91_can.c">mkl at pengutronix.de
+       </A><BR>
+    <I>Wed Aug 19 21:05:32 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002866.html">Comments on at91_can.c
+</A></li>
+        <LI>Next message: <A HREF="002911.html">Comments on at91_can.c
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2910">[ date ]</a>
+              <a href="thread.html#2910">[ thread ]</a>
+              <a href="subject.html#2910">[ subject ]</a>
+              <a href="author.html#2910">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger wrote:
+&gt;<i> Hello,
+</I>&gt;<i> 
+</I>&gt;<i> it follows a quick review of the at91 driver from &quot;branches/netlink&quot;. I
+</I>&gt;<i> see various coding style issues. Please check with checkpatch.pl and
+</I>&gt;<i> fix. Note that you can use
+</I>&gt;<i> 
+</I>&gt;<i>  ./strip-src -m -i -v 2.6.31 kernel/2.6/drivers/net/can/at91_can.c
+</I>&gt;<i> 
+</I>&gt;<i> to get a reasonable file version for kernel inclusion. Also, dev_dbg's
+</I>&gt;<i> for development are not any more acceptable for kernel inclusion.
+</I>&gt;<i> Restrict them to a level userful for normal users, e.g. reporting state
+</I>&gt;<i> changes and error conditions.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> /*
+</I>&gt;&gt;<i>  * at91_can.c -  CAN network driver for AT91 SoC CAN controller
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * (C) 2007 by Hans J. Koch &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hjk at linutronix.de</A>&gt;
+</I>&gt;&gt;<i>  * (C) 2008 by Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kernel at pengutronix.de</A>&gt;
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * This software may be distributed under the terms of the GNU General
+</I>&gt;&gt;<i>  * Public License (&quot;GPL&quot;) version 2 as distributed in the 'COPYING'
+</I>&gt;&gt;<i>  * file from the main directory of the linux kernel source.
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * Send feedback to &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-users at lists.berlios.de</A>&gt;
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  */
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #include &lt;linux/platform_device.h&gt;
+</I>&gt;&gt;<i> #include &lt;linux/interrupt.h&gt;
+</I>&gt;&gt;<i> #include &lt;linux/netdevice.h&gt;
+</I>&gt;&gt;<i> #include &lt;linux/spinlock.h&gt;
+</I>&gt;&gt;<i> #include &lt;linux/module.h&gt;
+</I>&gt;&gt;<i> #include &lt;linux/kernel.h&gt;
+</I>&gt;&gt;<i> #include &lt;linux/string.h&gt;
+</I>&gt;&gt;<i> #include &lt;linux/if_arp.h&gt;
+</I>&gt;&gt;<i> #include &lt;linux/skbuff.h&gt;
+</I>&gt;&gt;<i> #include &lt;linux/types.h&gt;
+</I>&gt;&gt;<i> #include &lt;linux/errno.h&gt;
+</I>&gt;&gt;<i> #include &lt;linux/init.h&gt;
+</I>&gt;&gt;<i> #include &lt;linux/clk.h&gt;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #include &lt;socketcan/can.h&gt;
+</I>&gt;&gt;<i> #include &lt;socketcan/can/error.h&gt;
+</I>&gt;&gt;<i> #include &lt;socketcan/can/dev.h&gt;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #include &lt;mach/board.h&gt;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #define DRV_NAME		&quot;at91_can&quot;
+</I>&gt;&gt;<i> #define MAX_INTERRUPT_WORK	4
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /*
+</I>&gt;&gt;<i>  * RX/TX Mailbox split
+</I>&gt;&gt;<i>  * don't dare to touch
+</I>&gt;&gt;<i>  */
+</I>&gt;&gt;<i> #define AT91_MB_RX_NUM		12
+</I>&gt;&gt;<i> #define AT91_MB_TX_SHIFT	2
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #define AT91_MB_RX_FIRST	0
+</I>&gt;&gt;<i> #define AT91_MB_RX_LAST		(AT91_MB_RX_FIRST + AT91_MB_RX_NUM - 1)
+</I>&gt;&gt;<i> #define AT91_MB_RX_BANKS	3
+</I>&gt;&gt;<i> #define AT91_MB_RX_BANK_WIDTH	(AT91_MB_RX_NUM / AT91_MB_RX_BANKS)
+</I>&gt;&gt;<i> #define AT91_MB_RX_BANK_MASK(i)	(((1 &lt;&lt; AT91_MB_RX_BANK_WIDTH) - 1) &lt;&lt; \
+</I>&gt;&gt;<i> 				(AT91_MB_RX_BANK_WIDTH * (i)))
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #define AT91_MB_TX_NUM		(1 &lt;&lt; AT91_MB_TX_SHIFT)
+</I>&gt;&gt;<i> #define AT91_MB_TX_FIRST	(AT91_MB_RX_LAST + 1)
+</I>&gt;&gt;<i> #define AT91_MB_TX_LAST		(AT91_MB_TX_FIRST + AT91_MB_TX_NUM - 1)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /* Common registers */
+</I>&gt;&gt;<i> enum at91_reg {
+</I>&gt;&gt;<i> 	AT91_MR		= 0x000,
+</I>&gt;&gt;<i> 	AT91_IER	= 0x004,
+</I>&gt;&gt;<i> 	AT91_IDR	= 0x008,
+</I>&gt;&gt;<i> 	AT91_IMR	= 0x00C,
+</I>&gt;&gt;<i> 	AT91_SR		= 0x010,
+</I>&gt;&gt;<i> 	AT91_BR		= 0x014,
+</I>&gt;&gt;<i> 	AT91_TIM	= 0x018,
+</I>&gt;&gt;<i> 	AT91_TIMESTP	= 0x01C,
+</I>&gt;&gt;<i> 	AT91_ECR	= 0x020,
+</I>&gt;&gt;<i> 	AT91_TCR	= 0x024,
+</I>&gt;&gt;<i> 	AT91_ACR	= 0x028,
+</I>&gt;&gt;<i> };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /* Mailbox registers (0 &lt;= i &lt;= 15) */
+</I>&gt;&gt;<i> #define AT91_MMR(i)		(enum at91_reg)(0x200 + ((i) * 0x20))
+</I>&gt;&gt;<i> #define AT91_MAM(i)		(enum at91_reg)(0x204 + ((i) * 0x20))
+</I>&gt;&gt;<i> #define AT91_MID(i)		(enum at91_reg)(0x208 + ((i) * 0x20))
+</I>&gt;&gt;<i> #define AT91_MFID(i)		(enum at91_reg)(0x20C + ((i) * 0x20))
+</I>&gt;&gt;<i> #define AT91_MSR(i)		(enum at91_reg)(0x210 + ((i) * 0x20))
+</I>&gt;&gt;<i> #define AT91_MDL(i)		(enum at91_reg)(0x214 + ((i) * 0x20))
+</I>&gt;&gt;<i> #define AT91_MDH(i)		(enum at91_reg)(0x218 + ((i) * 0x20))
+</I>&gt;&gt;<i> #define AT91_MCR(i)		(enum at91_reg)(0x21C + ((i) * 0x20))
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /* Register bits */
+</I>&gt;&gt;<i> #define AT91_MR_AT91EN		(1 &lt;&lt; 0)
+</I>&gt;&gt;<i> #define AT91_MR_LPM		(1 &lt;&lt; 1)
+</I>&gt;&gt;<i> #define AT91_MR_ABM		(1 &lt;&lt; 2)
+</I>&gt;&gt;<i> #define AT91_MR_OVL		(1 &lt;&lt; 3)
+</I>&gt;&gt;<i> #define AT91_MR_TEOF		(1 &lt;&lt; 4)
+</I>&gt;&gt;<i> #define AT91_MR_TTM		(1 &lt;&lt; 5)
+</I>&gt;&gt;<i> #define AT91_MR_TIMFRZ		(1 &lt;&lt; 6)
+</I>&gt;&gt;<i> #define AT91_MR_DRPT		(1 &lt;&lt; 7)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #define AT91_SR_RBSY		(1 &lt;&lt; 29)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #define AT91_MMR_PRIO_SHIFT	16
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #define AT91_MID_MIDE		(1 &lt;&lt; 29)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #define AT91_MSR_MRTR		(1 &lt;&lt; 20)
+</I>&gt;&gt;<i> #define AT91_MSR_MABT		(1 &lt;&lt; 22)
+</I>&gt;&gt;<i> #define AT91_MSR_MRDY		(1 &lt;&lt; 23)
+</I>&gt;&gt;<i> #define AT91_MSR_MMI		(1 &lt;&lt; 24)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #define AT91_MCR_MRTR		(1 &lt;&lt; 20)
+</I>&gt;&gt;<i> #define AT91_MCR_MTCR		(1 &lt;&lt; 23)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /* Mailbox Modes */
+</I>&gt;&gt;<i> enum at91_mb_mode {
+</I>&gt;&gt;<i> 	AT91_MB_MODE_DISABLED	= 0,
+</I>&gt;&gt;<i> 	AT91_MB_MODE_RX		= 1,
+</I>&gt;&gt;<i> 	AT91_MB_MODE_RX_OVRWR	= 2,
+</I>&gt;&gt;<i> 	AT91_MB_MODE_TX		= 3,
+</I>&gt;&gt;<i> 	AT91_MB_MODE_CONSUMER	= 4,
+</I>&gt;&gt;<i> 	AT91_MB_MODE_PRODUCER	= 5,
+</I>&gt;&gt;<i> };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /* Interrupt mask bits */
+</I>&gt;&gt;<i> #define AT91_IRQ_MB_RX		((1 &lt;&lt; (AT91_MB_RX_LAST + 1)) \
+</I>&gt;&gt;<i> 				- (1 &lt;&lt; AT91_MB_RX_FIRST))
+</I>&gt;&gt;<i> #define AT91_IRQ_MB_TX		((1 &lt;&lt; (AT91_MB_TX_LAST + 1)) \
+</I>&gt;&gt;<i> 				- (1 &lt;&lt; AT91_MB_TX_FIRST))
+</I>&gt;&gt;<i> #define AT91_IRQ_MB_AL		(AT91_IRQ_MB_RX | AT91_IRQ_MB_TX)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #define AT91_IRQ_ERRA		(1 &lt;&lt; 16)
+</I>&gt;&gt;<i> #define AT91_IRQ_WARN		(1 &lt;&lt; 17)
+</I>&gt;&gt;<i> #define AT91_IRQ_ERRP		(1 &lt;&lt; 18)
+</I>&gt;&gt;<i> #define AT91_IRQ_BOFF		(1 &lt;&lt; 19)
+</I>&gt;&gt;<i> #define AT91_IRQ_SLEEP		(1 &lt;&lt; 20)
+</I>&gt;&gt;<i> #define AT91_IRQ_WAKEUP		(1 &lt;&lt; 21)
+</I>&gt;&gt;<i> #define AT91_IRQ_TOVF		(1 &lt;&lt; 22)
+</I>&gt;&gt;<i> #define AT91_IRQ_TSTP		(1 &lt;&lt; 23)
+</I>&gt;&gt;<i> #define AT91_IRQ_CERR		(1 &lt;&lt; 24)
+</I>&gt;&gt;<i> #define AT91_IRQ_SERR		(1 &lt;&lt; 25)
+</I>&gt;&gt;<i> #define AT91_IRQ_AERR		(1 &lt;&lt; 26)
+</I>&gt;&gt;<i> #define AT91_IRQ_FERR		(1 &lt;&lt; 27)
+</I>&gt;&gt;<i> #define AT91_IRQ_BERR		(1 &lt;&lt; 28)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #define	AT91_IRQ_ERR_ALL	0x1fff0000
+</I>&gt;&gt;<i> #define AT91_IRQ_ERR_CANFRAME	(AT91_IRQ_CERR | AT91_IRQ_SERR | \
+</I>&gt;&gt;<i> 				 AT91_IRQ_AERR | AT91_IRQ_FERR | AT91_IRQ_BERR)
+</I>&gt;&gt;<i> #define AT91_IRQ_ERR_LINE	(AT91_IRQ_ERRA | AT91_IRQ_WARN | \
+</I>&gt;&gt;<i> 				 AT91_IRQ_ERRP | AT91_IRQ_BOFF)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> struct at91_priv {
+</I>&gt;&gt;<i> 	struct can_priv		can;	/* must be the first member! */
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	struct clk		*clk;
+</I>&gt;&gt;<i> 	struct at91_can_data	*pdata;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #define AT91_NEXT_PRIO_SHIFT	(AT91_MB_TX_SHIFT)
+</I>&gt;&gt;<i> #define AT91_NEXT_PRIO_MASK	(0xf &lt;&lt; AT91_MB_TX_SHIFT)
+</I>&gt;&gt;<i> #define AT91_NEXT_MB_MASK	(AT91_MB_TX_NUM - 1)
+</I>&gt;&gt;<i> #define AT91_NEXT_MASK		((AT91_MB_TX_NUM - 1) | AT91_NEXT_PRIO_MASK)
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> I personally prefer having such definitions above the struct.
+</I>
+okay, will do
+
+&gt;&gt;<i> 	unsigned int		tx_next;
+</I>&gt;&gt;<i> 	unsigned int		tx_echo;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	unsigned int		rx_bank;
+</I>&gt;&gt;<i> 	void __iomem		*reg_base; /* ioremap'ed address to registers */
+</I>&gt;&gt;<i> };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static struct can_bittiming_const at91_bittiming_const = {
+</I>&gt;&gt;<i> 	.tseg1_min = 4,
+</I>&gt;&gt;<i> 	.tseg1_max = 16,
+</I>&gt;&gt;<i> 	.tseg2_min = 2,
+</I>&gt;&gt;<i> 	.tseg2_max = 8,
+</I>&gt;&gt;<i> 	.sjw_max = 4,
+</I>&gt;&gt;<i> 	.brp_min = 2,
+</I>&gt;&gt;<i> 	.brp_max = 128,
+</I>&gt;&gt;<i> 	.brp_inc = 1,
+</I>&gt;&gt;<i> };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static inline int get_tx_next_mb(struct at91_priv *priv)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	return (priv-&gt;tx_next &amp; AT91_NEXT_MB_MASK) + AT91_MB_TX_FIRST;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static inline int get_tx_next_prio(struct at91_priv *priv)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	return (priv-&gt;tx_next &gt;&gt; AT91_NEXT_PRIO_SHIFT) &amp; 0xf;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static inline int get_tx_echo_mb(struct at91_priv *priv)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	return (priv-&gt;tx_echo &amp; AT91_NEXT_MB_MASK) + AT91_MB_TX_FIRST;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static inline u32 at91_read(struct net_device *dev, enum at91_reg reg)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	return readl(priv-&gt;reg_base + reg);
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static inline void
+</I>&gt;&gt;<i> at91_write(struct net_device *dev, enum at91_reg reg, u32 value)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	writel(value, priv-&gt;reg_base + reg);
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static inline void
+</I>&gt;&gt;<i> set_mb_mode_prio(struct net_device *dev, int mb, enum at91_mb_mode mode,
+</I>&gt;&gt;<i> 		int prio)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_MMR(mb),
+</I>&gt;&gt;<i> 		   (mode &lt;&lt; 24) |
+</I>&gt;&gt;<i> 		   (prio &lt;&lt; 16));
+</I>&gt;&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> Does fit on one line!
+</I>
+fixed
+
+&gt;&gt;<i> static inline void
+</I>&gt;&gt;<i> set_mb_mode(struct net_device *dev, int mb, enum at91_mb_mode mode)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	set_mb_mode_prio(dev, mb, mode, 0);
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /*
+</I>&gt;&gt;<i>  * Enable or disable transceiver
+</I>&gt;&gt;<i>  */
+</I>&gt;&gt;<i> static void enable_can_transceiver(struct at91_priv *priv, int enable)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	if (priv-&gt;pdata &amp;&amp; priv-&gt;pdata-&gt;transceiver_enable)
+</I>&gt;&gt;<i> 		priv-&gt;pdata-&gt;transceiver_enable(enable);
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /*
+</I>&gt;&gt;<i>  * theory of operation:
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * Accoring to the datasheet priority 0 is the highest priority, 15 is
+</I>&gt;&gt;<i>  * the lowest. If two mailboxes have the same priority level the
+</I>&gt;&gt;<i>  * message of the mailbox with the lowest number is sent first.
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * We use the first TX mailbox mailbox (AT91_MB_TX_FIRST) with prio 0,
+</I>&gt;&gt;<i>  * then the next mailbox with prio 0, and so on, until all mailboxes
+</I>&gt;&gt;<i>  * are used. Then we start from the beginning with mailbox
+</I>&gt;&gt;<i>  * AT91_MB_TX_FIRST, but with prio 1, mailbox AT91_MB_TX_FIRST + 1
+</I>&gt;&gt;<i>  * prio 1. When we reach the last mailbox with prio 15, we have to
+</I>&gt;&gt;<i>  * stop sending, waiting for all messages to be delivered, than start
+</I>&gt;&gt;<i>  * again with mailbox AT91_MB_TX_FIRST prio 0.
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * We use the priv-&gt;tx_next as counter for the next transmission
+</I>&gt;&gt;<i>  * mailbox, but without the offset AT91_MB_TX_FIRST. The lower bits
+</I>&gt;&gt;<i>  * encode the mailbox number, the upper 4 bits the mailbox priority:
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * priv-&gt;tx_next = (prio &lt;&lt; AT91_NEXT_PRIO_SHIFT) ||
+</I>&gt;&gt;<i>  *                 (mb - AT91_MB_TX_FIRST);
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  */
+</I>&gt;&gt;<i> static int at91_start_xmit(struct sk_buff *skb, struct net_device *dev)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;&gt;<i> 	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;&gt;<i> 	u32 reg_mid, reg_mcr;
+</I>&gt;&gt;<i> 	int mb, prio;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	mb = get_tx_next_mb(priv);
+</I>&gt;&gt;<i> 	prio = get_tx_next_prio(priv);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	if (!(at91_read(dev, AT91_MSR(mb)) &amp; AT91_MSR_MRDY)) {
+</I>&gt;&gt;<i> 		BUG();
+</I>&gt;&gt;<i> 		/* FIXME: kfree? stats? */
+</I>&gt;&gt;<i> 		return -EBUSY;
+</I>&gt;&gt;<i> 	}
+</I>&gt;<i> 
+</I>&gt;<i> That's an invalid return value. I also think it's not good that a
+</I>&gt;<i> hardware error brings down the system. Fix the FIXME.
+</I>
+done
+
+&gt;&gt;<i> 	if (cf-&gt;can_id &amp; CAN_EFF_FLAG)
+</I>&gt;&gt;<i> 		reg_mid = (cf-&gt;can_id &amp; CAN_EFF_MASK) | AT91_MID_MIDE;
+</I>&gt;&gt;<i> 	else
+</I>&gt;&gt;<i> 		reg_mid = (cf-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 18;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	reg_mcr = ((cf-&gt;can_id &amp; CAN_RTR_FLAG) ? AT91_MCR_MRTR : 0 ) |
+</I>&gt;&gt;<i> 		(cf-&gt;can_dlc &lt;&lt; 16) |
+</I>&gt;&gt;<i> 		AT91_MCR_MTCR;
+</I>&gt;<i> 
+</I>&gt;<i> Fits well on two lines.
+</I>
+fixed
+
+&gt;&gt;<i> 	/* disable MB while writing ID (see datasheet) */
+</I>&gt;&gt;<i> 	set_mb_mode(dev, mb, AT91_MB_MODE_DISABLED);
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_MID(mb), reg_mid);
+</I>&gt;&gt;<i> 	set_mb_mode_prio(dev, mb, AT91_MB_MODE_TX, prio);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_MDL(mb), *(u32 *)(cf-&gt;data + 0));
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_MDH(mb), *(u32 *)(cf-&gt;data + 4));
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* This triggers transmission */
+</I>&gt;&gt;<i> 	wmb();
+</I>&gt;<i> 
+</I>&gt;<i> Do we need that wmb()?
+</I>
+In the next line, the sending of the can frame is triggered, thus all
+operations on the can core must be done here....does the arm core or the
+compiler reorder things here?
+
+&gt;&gt;<i> 	at91_write(dev, AT91_MCR(mb), reg_mcr);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	stats-&gt;tx_bytes += cf-&gt;can_dlc;
+</I>&gt;&gt;<i> 	dev-&gt;trans_start = jiffies;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* _NOTE_: substract AT91_MB_TX_FIRST offset from mb! */
+</I>&gt;&gt;<i> 	can_put_echo_skb(skb, dev, mb - AT91_MB_TX_FIRST);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/*
+</I>&gt;&gt;<i> 	 * we have to stop the queue and deliver all messages in case
+</I>&gt;&gt;<i> 	 * of a prio+mb counter wrap around. This is the case if
+</I>&gt;&gt;<i> 	 * tx_next buffer prio and mailbox equals 0.
+</I>&gt;&gt;<i> 	 *
+</I>&gt;&gt;<i> 	 * also stop the queue if next buffer is still in use
+</I>&gt;&gt;<i> 	 * (== not ready)
+</I>&gt;&gt;<i> 	 */
+</I>&gt;&gt;<i> 	priv-&gt;tx_next++;
+</I>&gt;&gt;<i> 	if (!(at91_read(dev, AT91_MSR(get_tx_next_mb(priv))) &amp;
+</I>&gt;&gt;<i> 	      AT91_MSR_MRDY) ||
+</I>&gt;&gt;<i> 	    (priv-&gt;tx_next &amp; AT91_NEXT_MASK) == 0) {
+</I>&gt;&gt;<i> 		netif_stop_queue(dev);
+</I>&gt;&gt;<i> 		dev_dbg(ND2D(dev),
+</I>&gt;&gt;<i> 			&quot;stopping netif_queue, priv-&gt;tx_next=%d, &quot;
+</I>&gt;&gt;<i> 			&quot;prio=%d, mb=%d\n&quot;,
+</I>&gt;&gt;<i> 			priv-&gt;tx_next,
+</I>&gt;&gt;<i> 			get_tx_next_prio(priv),
+</I>&gt;&gt;<i> 			get_tx_next_mb(priv));
+</I>&gt;&gt;<i> 	}
+</I>&gt;<i> 
+</I>&gt;<i> Devel debugging? Is it useful for the real users?
+</I>
+probably not, removed
+
+&gt;&gt;<i> 	/* Enable interrupt for this mailbox */
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_IER, 1 &lt;&lt; mb);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	return 0;
+</I>&gt;<i> 
+</I>&gt;<i> Please use &quot;return NETDEV_TX_OK&quot;.
+</I>
+fixed
+
+&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /**
+</I>&gt;&gt;<i>  * at91_clear_bank - clear and reactive bank
+</I>&gt;&gt;<i>  * @dev: net device
+</I>&gt;&gt;<i>  * @bank: bank to clear
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * Clears and reenables IRQs on given bank in order to enable
+</I>&gt;&gt;<i>  * reception of new CAN messages
+</I>&gt;&gt;<i>  */
+</I>&gt;&gt;<i> static void at91_clear_bank(struct net_device *dev, int bank)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	int last, i;
+</I>&gt;&gt;<i> 	u32 mask;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	last = AT91_MB_RX_BANK_WIDTH * (bank + 1);
+</I>&gt;&gt;<i> 	for (i = AT91_MB_RX_BANK_WIDTH * bank; i &lt; last; i++)
+</I>&gt;&gt;<i> 		at91_write(dev, AT91_MCR(i), AT91_MCR_MTCR);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	mask = AT91_MB_RX_BANK_MASK(bank);
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_IER, mask);
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /**
+</I>&gt;&gt;<i>  * at91_read_mb - read CAN msg from mailbox (lowlevel impl)
+</I>&gt;&gt;<i>  * @dev: net device
+</I>&gt;&gt;<i>  * @mb: mailbox number to read from
+</I>&gt;&gt;<i>  * @cf: can frame where to store message
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * Reads a CAN message from the given mailbox and stores data into
+</I>&gt;&gt;<i>  * given can frame. &quot;mb&quot; and &quot;cf&quot; must be valid.
+</I>&gt;&gt;<i>  */
+</I>&gt;&gt;<i> static void at91_read_mb(struct net_device *dev, int mb, struct can_frame *cf)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	u32 reg_msr, reg_mid, reg_mdl, reg_mdh;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	reg_mid = at91_read(dev, AT91_MID(mb));
+</I>&gt;&gt;<i> 	if (reg_mid &amp; AT91_MID_MIDE)
+</I>&gt;&gt;<i> 		cf-&gt;can_id = ((reg_mid &gt;&gt;  0) &amp; CAN_EFF_MASK) | CAN_EFF_FLAG;
+</I>&gt;&gt;<i> 	else
+</I>&gt;&gt;<i> 		cf-&gt;can_id =  (reg_mid &gt;&gt; 18) &amp; CAN_SFF_MASK;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	reg_msr = at91_read(dev, AT91_MSR(mb));
+</I>&gt;&gt;<i> 	if (reg_msr &amp; AT91_MSR_MRTR)
+</I>&gt;&gt;<i> 		cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;&gt;<i> 	cf-&gt;can_dlc = (reg_msr &gt;&gt; 16) &amp; 0xf;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	reg_mdl = at91_read(dev, AT91_MDL(mb));
+</I>&gt;&gt;<i> 	reg_mdh = at91_read(dev, AT91_MDH(mb));
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	*(u32 *)(cf-&gt;data + 0) = reg_mdl;
+</I>&gt;&gt;<i> 	*(u32 *)(cf-&gt;data + 4) = reg_mdh;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/*  FIXME: take care about AT91_MB_MODE_RX_OVRWR mb */
+</I>&gt;<i> 
+</I>&gt;<i> FIXME.
+</I>
+done
+
+&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /**
+</I>&gt;&gt;<i>  * at91_read_msg - read CAN message from mailbox
+</I>&gt;&gt;<i>  * @dev: net device
+</I>&gt;&gt;<i>  * @mb: mail box to read from
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * Reads a CAN message from given mailbox, and put into linux network
+</I>&gt;&gt;<i>  * RX queue, does all housekeeping chores (stats, ...)
+</I>&gt;&gt;<i>  */
+</I>&gt;&gt;<i> static void at91_read_msg(struct net_device *dev, int mb)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;&gt;<i> 	struct can_frame *cf;
+</I>&gt;&gt;<i> 	struct sk_buff *skb;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	skb = netdev_alloc_skb(dev, sizeof(struct can_frame));
+</I>&gt;&gt;<i> 	if (unlikely(!skb)) {
+</I>&gt;&gt;<i> 		if (net_ratelimit())
+</I>&gt;&gt;<i> 			dev_warn(ND2D(dev),
+</I>&gt;&gt;<i> 				 &quot;Memory squeeze, dropping packet.\n&quot;);
+</I>&gt;&gt;<i> 		stats-&gt;rx_dropped++;
+</I>&gt;&gt;<i> 		return;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i> 	skb-&gt;protocol = htons(ETH_P_CAN);
+</I>&gt;<i> 
+</I>&gt;<i> Please add
+</I>&gt;<i> 
+</I>&gt;<i> 	skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+</I>
+done
+
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;&gt;<i> 	cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	at91_read_mb(dev, mb, cf);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	netif_rx(skb);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	dev-&gt;last_rx = jiffies;
+</I>&gt;&gt;<i> 	stats-&gt;rx_packets++;
+</I>&gt;&gt;<i> 	stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /*
+</I>&gt;&gt;<i>  * theory of operation
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * 12 of the 16 mailboxes on the chip are reserved for RX. we split
+</I>&gt;&gt;<i>  * them into 3 groups (3 x 4 mbs) a.k.a banks.
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * like it or not, but the chip always saves a received CAN message
+</I>&gt;&gt;<i>  * into the first free mailbox it finds. This makes it very difficult
+</I>&gt;&gt;<i>  * to read the messages in the right order from the chip. This is how
+</I>&gt;&gt;<i>  * we work around that problem:
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * The first message goes into mb nr. 0 and issues an interrupt. We
+</I>&gt;&gt;<i>  * read it, do _not_ reenable the mb (to receive another message), but
+</I>&gt;&gt;<i>  * disable the interrupt though. This is done for the first bank
+</I>&gt;&gt;<i>  * (i.e. mailbox 0-3).
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  *   bank0    bank1    bank2
+</I>&gt;&gt;<i>  *   __^__    __^__    __^__
+</I>&gt;&gt;<i>  *  /     \  /     \  /     \
+</I>&gt;&gt;<i>  * +-+-+-+-++-+-+-+-++-+-+-+-+
+</I>&gt;&gt;<i>  * |x|x|x|x|| | | | || | | | |
+</I>&gt;&gt;<i>  * +-+-+-+-++-+-+-+-++-+-+-+-+
+</I>&gt;&gt;<i>  *  0 0 0 0  0 0 0 0  0 0 1 1  \ mail
+</I>&gt;&gt;<i>  *  0 1 2 3  4 5 6 7  8 9 0 1  / box
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * Then we switch to bank 1. If this bank is full, too, we reenable
+</I>&gt;&gt;<i>  * bank number 0, and switch to bank 2. Imagine bank 2 like an overflow
+</I>&gt;&gt;<i>  * bank, which takes CAN messages if bank 1 is full, but bank 0 not
+</I>&gt;&gt;<i>  * cleared yet. In other words: from the reception of a message into
+</I>&gt;&gt;<i>  * mb 7, we have the &quot;four mailboxes&quot; (of bank 2) time to enter the
+</I>&gt;&gt;<i>  * interrupt service routine and reenable bank 0.
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * Nevertheless, after reenabling bank 0, we look at bank 2 first, to
+</I>&gt;&gt;<i>  * see if there are some messages. Then we reactivate bank 1 and 2,
+</I>&gt;&gt;<i>  * and switch to bank 0.
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  */
+</I>&gt;&gt;<i> static void at91_irq_rx(struct net_device *dev, u32 reg_sr)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	unsigned long *addr = (unsigned long *)&amp;reg_sr;
+</I>&gt;&gt;<i> 	int mb;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* masking of reg_sr not needed, already done by at91_irq */
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	mb = find_next_bit(addr, AT91_MB_RX_NUM,
+</I>&gt;&gt;<i> 			   AT91_MB_RX_BANK_WIDTH * priv-&gt;rx_bank);
+</I>&gt;&gt;<i> 	while (mb &lt; AT91_MB_RX_NUM) {
+</I>&gt;&gt;<i> 		dev_dbg(ND2D(dev),
+</I>&gt;&gt;<i> 			&quot;%s: SR=0x%08x, mb=%d, mb_bit=0x%04x, rx_bank=%d\n&quot;,
+</I>&gt;&gt;<i> 			__func__, reg_sr, mb, 1 &lt;&lt; mb, priv-&gt;rx_bank);
+</I>&gt;<i> 
+</I>&gt;<i> Devel debugging?
+</I>
+removed
+
+&gt;&gt;<i> 		at91_read_msg(dev, mb);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		/* disable interrupt */
+</I>&gt;&gt;<i> 		at91_write(dev, AT91_IDR, 1 &lt;&lt; mb);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		/* find next pending mailbox */
+</I>&gt;&gt;<i> 		mb = find_next_bit(addr, AT91_MB_RX_NUM, mb + 1);
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	switch (priv-&gt;rx_bank) {
+</I>&gt;&gt;<i> 	case 0:
+</I>&gt;&gt;<i> 		if (!(at91_read(dev, AT91_IMR) &amp; AT91_MB_RX_BANK_MASK(0)))
+</I>&gt;&gt;<i> 			priv-&gt;rx_bank = 1;
+</I>&gt;&gt;<i> 		break;
+</I>&gt;&gt;<i> 	case 1:
+</I>&gt;&gt;<i> 		if (!(at91_read(dev, AT91_IMR) &amp; AT91_MB_RX_BANK_MASK(1))) {
+</I>&gt;&gt;<i> 			at91_clear_bank(dev, 0);
+</I>&gt;&gt;<i> 			priv-&gt;rx_bank = 2;
+</I>&gt;&gt;<i> 		}
+</I>&gt;&gt;<i> 		break;
+</I>&gt;&gt;<i> 	case 2:
+</I>&gt;&gt;<i> 		at91_clear_bank(dev, 1);
+</I>&gt;&gt;<i> 		at91_clear_bank(dev, 2);
+</I>&gt;&gt;<i> 		priv-&gt;rx_bank = 0;
+</I>&gt;&gt;<i> 		break;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /*
+</I>&gt;&gt;<i>  * theory of operation:
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * priv-&gt;tx_echo holds the number of the oldest can_frame put for
+</I>&gt;&gt;<i>  * transmission into the hardware, but not yet ACKed by the CAN tx
+</I>&gt;&gt;<i>  * complete IRQ.
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  * We iterate from priv-&gt;tx_echo to priv-&gt;tx_next and check if the
+</I>&gt;&gt;<i>  * packet has been transmitted, echo it back to the CAN framework. If
+</I>&gt;&gt;<i>  * we discover a not yet transmitted package, stop looking for more.
+</I>&gt;&gt;<i>  *
+</I>&gt;&gt;<i>  */
+</I>&gt;&gt;<i> static void at91_irq_tx(struct net_device *dev, u32 reg_sr)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	u32 reg_msr;
+</I>&gt;&gt;<i> 	int mb;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* masking of reg_sr not needed, already done by at91_irq */
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	for (/* nix */; priv-&gt;tx_echo &lt; priv-&gt;tx_next; priv-&gt;tx_echo++) {
+</I>&gt;&gt;<i> 		mb = get_tx_echo_mb(priv);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		/* no event in mailbox? */
+</I>&gt;&gt;<i> 		if (!(reg_sr &amp; (1 &lt;&lt; mb)))
+</I>&gt;&gt;<i> 			break;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		reg_msr = at91_read(dev, AT91_MSR(mb));
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		/* FIXME: BUGON no ready | abort */
+</I>&gt;<i> 
+</I>&gt;<i> Fix it. A BUG_ON might be to heavy, though.
+</I>
+was some leftovers, removed
+
+&gt;&gt;<i> 		dev_dbg(ND2D(dev),
+</I>&gt;&gt;<i> 			&quot;%s: SR=0x%08x, mb=%d, mb_bit=0x%04x, mb status: %s, &quot;
+</I>&gt;&gt;<i> 			&quot;tx_next=%d, tx_echo=%d\n&quot;,
+</I>&gt;&gt;<i> 			__func__, reg_sr, mb, 1 &lt;&lt; mb,
+</I>&gt;&gt;<i> 			reg_msr &amp; AT91_MSR_MRDY ? &quot;MRDY&quot; : &quot;MABT&quot;,
+</I>&gt;&gt;<i> 			priv-&gt;tx_next, priv-&gt;tx_echo);
+</I>&gt;<i> 
+</I>&gt;<i> Heavy devel debug output?
+</I>
+removed
+
+&gt;&gt;<i> 		/* Disable irq for this TX mailbox */
+</I>&gt;&gt;<i> 		at91_write(dev, AT91_IDR, 1 &lt;&lt; mb);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		/*
+</I>&gt;&gt;<i> 		 * only echo if mailbox signals us a transfer
+</I>&gt;&gt;<i> 		 * complete (MSR_MRDY). Otherwise it's a tansfer
+</I>&gt;&gt;<i> 		 * abort. &quot;can_bus_off()&quot; takes care about the skbs
+</I>&gt;&gt;<i> 		 * parked in the echo queue.
+</I>&gt;&gt;<i> 		 */
+</I>&gt;&gt;<i> 		if (likely(reg_msr &amp; AT91_MSR_MRDY)) {
+</I>&gt;&gt;<i> 			/* _NOTE_: substract AT91_MB_TX_FIRST offset from mb! */
+</I>&gt;&gt;<i> 			can_get_echo_skb(dev, mb - AT91_MB_TX_FIRST);
+</I>&gt;&gt;<i> 			dev-&gt;stats.tx_packets++;
+</I>&gt;&gt;<i> 		}
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/*
+</I>&gt;&gt;<i> 	 * restart queue if we don't have a wrap around but restart if
+</I>&gt;&gt;<i> 	 * we get a TX int for the last can frame directly before a
+</I>&gt;&gt;<i> 	 * wrap around.
+</I>&gt;&gt;<i> 	 */
+</I>&gt;&gt;<i> 	if ((priv-&gt;tx_next &amp; AT91_NEXT_MASK) != 0 ||
+</I>&gt;&gt;<i> 	    (priv-&gt;tx_echo &amp; AT91_NEXT_MASK) == 0)
+</I>&gt;&gt;<i> 		netif_wake_queue(dev);
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static void at91_irq_err_canframe(struct net_device *dev, u32 reg_sr)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	/* CRC error */
+</I>&gt;&gt;<i> 	if (reg_sr &amp; AT91_IRQ_CERR)
+</I>&gt;&gt;<i> 		dev_dbg(ND2D(dev), &quot;CERR irq\n&quot;);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* stuffing error */
+</I>&gt;&gt;<i> 	if (reg_sr &amp; AT91_IRQ_SERR)
+</I>&gt;&gt;<i> 		dev_dbg(ND2D(dev), &quot;SERR irq\n&quot;);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* Acknowledgement error */
+</I>&gt;&gt;<i> 	if (reg_sr &amp; AT91_IRQ_AERR)
+</I>&gt;&gt;<i> 		dev_dbg(ND2D(dev), &quot;AERR irq\n&quot;);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* form error */
+</I>&gt;&gt;<i> 	if (reg_sr &amp; AT91_IRQ_FERR)
+</I>&gt;&gt;<i> 		dev_dbg(ND2D(dev), &quot;FERR irq\n&quot;);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* bit error */
+</I>&gt;&gt;<i> 	if (reg_sr &amp; AT91_IRQ_BERR)
+</I>&gt;&gt;<i> 		dev_dbg(ND2D(dev), &quot;BERR irq\n&quot;);
+</I>&gt;&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> Hm, this function seems not to be used. The dev_dbg's are OK, but also
+</I>&gt;<i> error frames should be created for these errors and the netdev and CAN
+</I>&gt;<i> statistics incremented accordingly.
+</I>
+done
+
+&gt;<i> 
+</I>&gt;&gt;<i> static void at91_irq_err(struct net_device *dev, u32 reg_sr_masked)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	enum can_state new_state;
+</I>&gt;&gt;<i> 	u32 reg_sr, reg_ecr, reg_idr, reg_ier;
+</I>&gt;&gt;<i> 	u8 tec, rec;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	reg_sr = at91_read(dev, AT91_SR);
+</I>&gt;&gt;<i> 	reg_ecr = at91_read(dev, AT91_ECR);
+</I>&gt;&gt;<i> 	tec = reg_ecr &gt;&gt; 16;
+</I>&gt;&gt;<i> 	rec = reg_ecr &amp; 0xff;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	dev_dbg(ND2D(dev), &quot;%s: TEC=%3d%s, REC=%3d, bits set: %s%s%s%s\n&quot;,
+</I>&gt;&gt;<i> 		__func__,
+</I>&gt;&gt;<i> 		tec,
+</I>&gt;&gt;<i> 		reg_sr &amp; AT91_IRQ_BOFF ? &quot; (bus-off!)&quot; : &quot;&quot;,
+</I>&gt;&gt;<i> 		rec,
+</I>&gt;&gt;<i> 		reg_sr &amp; AT91_IRQ_ERRA ? &quot;ERRA &quot; : &quot;&quot;,
+</I>&gt;&gt;<i> 		reg_sr &amp; AT91_IRQ_WARN ? &quot;WARN &quot; : &quot;&quot;,
+</I>&gt;&gt;<i> 		reg_sr &amp; AT91_IRQ_ERRP ? &quot;ERRP &quot; : &quot;&quot;,
+</I>&gt;&gt;<i> 		reg_sr &amp; AT91_IRQ_BOFF ? &quot;BOFF &quot; : &quot;&quot;);
+</I>&gt;<i> 
+</I>&gt;<i> Already reported above.
+</I>
+removed
+
+&gt;<i> 
+</I>&gt;&gt;<i> 	/* we need to look at the unmasked reg_sr */
+</I>&gt;&gt;<i> 	if (unlikely(reg_sr &amp; AT91_IRQ_BOFF))
+</I>&gt;&gt;<i> 		new_state = CAN_STATE_BUS_OFF;
+</I>&gt;&gt;<i> 	else if (unlikely(reg_sr &amp; AT91_IRQ_ERRP))
+</I>&gt;&gt;<i> 		new_state = CAN_STATE_ERROR_PASSIVE;
+</I>&gt;&gt;<i> 	else if (unlikely(reg_sr &amp; AT91_IRQ_WARN))
+</I>&gt;&gt;<i> 		new_state = CAN_STATE_ERROR_WARNING;
+</I>&gt;&gt;<i> 	else if (likely(reg_sr &amp; AT91_IRQ_ERRA))
+</I>&gt;&gt;<i> 		new_state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;&gt;<i> 	else {
+</I>&gt;&gt;<i> 		BUG();	/* FIXME */
+</I>&gt;<i> 
+</I>&gt;<i> Hm, a dev_err would be enough, I believe.
+</I>
+fixed
+
+&gt;<i> 
+</I>&gt;&gt;<i> 		return;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* state hasn't changed, no error in canframe */
+</I>&gt;&gt;<i> 	if (new_state == priv-&gt;can.state &amp;&amp;
+</I>&gt;&gt;<i> 	    !(reg_sr_masked &amp; AT91_IRQ_ERR_CANFRAME))
+</I>&gt;&gt;<i> 		return;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	switch (priv-&gt;can.state) {
+</I>&gt;&gt;<i> 	case CAN_STATE_ERROR_ACTIVE:
+</I>&gt;&gt;<i> 		/*
+</I>&gt;&gt;<i> 		 * from: ACTIVE
+</I>&gt;&gt;<i> 		 * to  : BUS_WARNING, BUS_PASSIVE, BUS_OFF
+</I>&gt;&gt;<i> 		 * =&gt;  : there was a warning int
+</I>&gt;&gt;<i> 		 */
+</I>&gt;&gt;<i> 		if (new_state &gt;= CAN_STATE_ERROR_WARNING &amp;&amp;
+</I>&gt;&gt;<i> 		    new_state &lt;= CAN_STATE_BUS_OFF)
+</I>&gt;&gt;<i> 			priv-&gt;can.can_stats.error_warning++;
+</I>&gt;&gt;<i> 	case CAN_STATE_ERROR_WARNING:	/* fallthrough */
+</I>&gt;&gt;<i> 		/*
+</I>&gt;&gt;<i> 		 * from: ACTIVE, BUS_WARNING
+</I>&gt;&gt;<i> 		 * to  : BUS_PASSIVE, BUS_OFF
+</I>&gt;&gt;<i> 		 * =&gt;  : error passive int
+</I>&gt;&gt;<i> 		 */
+</I>&gt;&gt;<i> 		if (new_state &gt;= CAN_STATE_ERROR_PASSIVE &amp;&amp;
+</I>&gt;&gt;<i> 		    new_state &lt;= CAN_STATE_BUS_OFF)
+</I>&gt;&gt;<i> 			priv-&gt;can.can_stats.error_passive++;
+</I>&gt;&gt;<i> 		break;
+</I>&gt;&gt;<i> 	case CAN_STATE_BUS_OFF:
+</I>&gt;&gt;<i> 		/*
+</I>&gt;&gt;<i> 		 * this is a crude chip, happens very often that it is
+</I>&gt;&gt;<i> 		 * in BUS_OFF but still tries to send a package. on
+</I>&gt;&gt;<i> 		 * success it leaves bus off. so we have to reenable
+</I>&gt;&gt;<i> 		 * the carrier.
+</I>&gt;&gt;<i> 		 */
+</I>&gt;&gt;<i> 		if (new_state &lt;= CAN_STATE_ERROR_PASSIVE)
+</I>&gt;&gt;<i> 			netif_carrier_on(dev);
+</I>&gt;&gt;<i> 		break;
+</I>&gt;&gt;<i> 	default:
+</I>&gt;&gt;<i> 		break;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* process state changes depending on the new state */
+</I>&gt;&gt;<i> 	switch (new_state) {
+</I>&gt;&gt;<i> 	case CAN_STATE_ERROR_ACTIVE:
+</I>&gt;&gt;<i> 		/*
+</I>&gt;&gt;<i> 		 * actually we want to enable AT91_IRQ_WARN here, but
+</I>&gt;&gt;<i> 		 * it screws up the system under certain
+</I>&gt;&gt;<i> 		 * circumstances. so just enable AT91_IRQ_ERRP, thus
+</I>&gt;&gt;<i> 		 * the &quot;fallthrough&quot;
+</I>&gt;&gt;<i> 		 */
+</I>&gt;&gt;<i> 	case CAN_STATE_ERROR_WARNING:	/* fallthrough */
+</I>&gt;&gt;<i> 		reg_idr = AT91_IRQ_ERRA | AT91_IRQ_WARN | AT91_IRQ_BOFF;
+</I>&gt;&gt;<i> 		reg_ier = AT91_IRQ_ERRP;
+</I>&gt;&gt;<i> 		break;
+</I>&gt;&gt;<i> 	case CAN_STATE_ERROR_PASSIVE:
+</I>&gt;&gt;<i> 		reg_idr = AT91_IRQ_ERRA | AT91_IRQ_WARN | AT91_IRQ_ERRP;
+</I>&gt;&gt;<i> 		reg_ier = AT91_IRQ_BOFF;
+</I>&gt;&gt;<i> 		break;
+</I>&gt;&gt;<i> 	case CAN_STATE_BUS_OFF:
+</I>&gt;&gt;<i> 		reg_idr = AT91_IRQ_ERRA | AT91_IRQ_ERRP |
+</I>&gt;&gt;<i> 			AT91_IRQ_WARN | AT91_IRQ_BOFF;
+</I>&gt;&gt;<i> 		reg_ier = 0;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		/*
+</I>&gt;&gt;<i> 		 * FIXME: really abort?
+</I>&gt;&gt;<i> 		 *
+</I>&gt;&gt;<i> 		 * a somewhat &quot;special&quot; chip, even in BUS_OFF mode, it
+</I>&gt;&gt;<i> 		 * accesses the bus. this is a no-no. we try to abort
+</I>&gt;&gt;<i> 		 * transfers on all mailboxes. but the chip doesn't
+</I>&gt;&gt;<i> 		 * seem to handle this correctly. a stuck-in-transfer
+</I>&gt;&gt;<i> 		 * message isn't aborted. after bringing the CAN bus
+</I>&gt;&gt;<i> 		 * back xin shape again, the stuck-in-transfer message
+</I>&gt;&gt;<i> 		 * is tranferred and its MRDY bit is set. all other
+</I>&gt;&gt;<i> 		 * queued messages are aborted (not send) their MABT
+</I>&gt;&gt;<i> 		 * bit in MSR is _not_ set but the MRDY bit, too.
+</I>&gt;&gt;<i> 		 */
+</I>&gt;&gt;<i> 		dev_dbg(ND2D(dev), &quot;%s: aborting transfers, due to BUS OFF\n&quot;,
+</I>&gt;&gt;<i> 			__func__);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		at91_write(dev, AT91_ACR, AT91_IRQ_MB_TX);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		can_bus_off(dev);
+</I>&gt;&gt;<i> 		break;
+</I>&gt;&gt;<i> 	default:
+</I>&gt;&gt;<i> 		break;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	dev_dbg(ND2D(dev), &quot;%s: writing IDR=0x%08x, IER=0x%08x\n&quot;,
+</I>&gt;&gt;<i> 		__func__, reg_idr, reg_ier);
+</I>&gt;<i> 
+</I>&gt;<i> Devel debugging?
+</I>
+removed
+
+&gt;<i> 
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_IDR, reg_idr);
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_IER, reg_ier);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	{
+</I>&gt;&gt;<i> 		struct sk_buff *skb;
+</I>&gt;&gt;<i> 		struct can_frame *cf;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		skb = netdev_alloc_skb(dev, sizeof(struct can_frame));
+</I>&gt;&gt;<i> 		if (unlikely(!skb))
+</I>&gt;&gt;<i> 			goto out;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		skb-&gt;protocol = htons(ETH_P_CAN);
+</I>&gt;<i> 
+</I>&gt;<i> Please add
+</I>&gt;<i> 
+</I>&gt;<i> 		skb-&gt;ip_summed = CHECKSUM_UNNECESSARY;
+</I>
+done
+
+&gt;<i> 
+</I>&gt;&gt;<i> 		cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+</I>&gt;&gt;<i> 		memset(cf, 0, sizeof(struct can_frame));
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		cf-&gt;can_id  = CAN_ERR_FLAG;
+</I>&gt;&gt;<i> 		cf-&gt;can_dlc = CAN_ERR_DLC;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		switch (new_state) {
+</I>&gt;&gt;<i> 		case CAN_STATE_ERROR_WARNING:
+</I>&gt;&gt;<i> 		case CAN_STATE_ERROR_PASSIVE:
+</I>&gt;&gt;<i> 			cf-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 			if (new_state == CAN_STATE_ERROR_WARNING)
+</I>&gt;&gt;<i> 				cf-&gt;data[1] = (tec &gt; rec) ?
+</I>&gt;&gt;<i> 					CAN_ERR_CRTL_TX_WARNING :
+</I>&gt;&gt;<i> 					CAN_ERR_CRTL_RX_WARNING;
+</I>&gt;&gt;<i> 			else
+</I>&gt;&gt;<i> 				cf-&gt;data[1] = (tec &gt; rec) ?
+</I>&gt;&gt;<i> 					CAN_ERR_CRTL_TX_PASSIVE :
+</I>&gt;&gt;<i> 					CAN_ERR_CRTL_RX_PASSIVE;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 			break;
+</I>&gt;&gt;<i> 		case CAN_STATE_BUS_OFF:
+</I>&gt;&gt;<i> 			cf-&gt;can_id |= CAN_ERR_BUSOFF;
+</I>&gt;&gt;<i> 			break;
+</I>&gt;&gt;<i> 		default:
+</I>&gt;&gt;<i> 			break;
+</I>&gt;&gt;<i> 		}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		netif_rx(skb);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		dev-&gt;last_rx = jiffies;
+</I>&gt;&gt;<i> 		dev-&gt;stats.rx_packets++;
+</I>&gt;&gt;<i> 		dev-&gt;stats.rx_bytes += cf-&gt;can_dlc;
+</I>&gt;&gt;<i> 	}
+</I>&gt;<i> 
+</I>&gt;<i> Please consider putting this block in a separete function. Error frames
+</I>&gt;<i> are created for state changes, that's fine.
+</I>
+done
+
+&gt;<i> 
+</I>&gt;&gt;<i>  out:
+</I>&gt;&gt;<i> 	priv-&gt;can.state = new_state;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /*
+</I>&gt;&gt;<i>  * interrupt handler
+</I>&gt;&gt;<i>  */
+</I>&gt;&gt;<i> static irqreturn_t at91_irq(int irq, void *ndev_id)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct net_device *dev = ndev_id;
+</I>&gt;&gt;<i> 	irqreturn_t handled = IRQ_NONE;
+</I>&gt;&gt;<i> 	u32 reg_sr, reg_imr;
+</I>&gt;&gt;<i> 	int boguscnt = MAX_INTERRUPT_WORK;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	do {
+</I>&gt;&gt;<i> 		reg_sr = at91_read(dev, AT91_SR);
+</I>&gt;&gt;<i> 		reg_imr = at91_read(dev, AT91_IMR);
+</I>&gt;&gt;<i> 		dev_dbg(ND2D(dev), &quot;%s: SR=0x%08x, IMR=0x%08x, [0x%08x]\n&quot;,
+</I>&gt;&gt;<i> 			__func__,
+</I>&gt;&gt;<i> 			reg_sr, reg_imr, reg_sr &amp; reg_imr);
+</I>&gt;<i> 
+</I>&gt;<i> Heavy debug output!
+</I>
+removed
+
+&gt;<i> 
+</I>&gt;&gt;<i> 		/* Ignore masked interrupts */
+</I>&gt;&gt;<i> 		reg_sr &amp;= reg_imr;
+</I>&gt;&gt;<i> 		if (!reg_sr)
+</I>&gt;&gt;<i> 			goto exit;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		handled = IRQ_HANDLED;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		if (reg_sr &amp; AT91_IRQ_MB_RX) {
+</I>&gt;&gt;<i> 			/* receive interrupt */
+</I>&gt;&gt;<i> 			at91_irq_rx(dev, reg_sr);
+</I>&gt;&gt;<i> 		}
+</I>&gt;<i> 
+</I>&gt;<i> Coding style!
+</I>
+fixed
+
+&gt;<i> 
+</I>&gt;&gt;<i> 		if (reg_sr &amp; AT91_IRQ_MB_TX) {
+</I>&gt;&gt;<i> 			/* transmission complete interrupt */
+</I>&gt;&gt;<i> 			at91_irq_tx(dev, reg_sr);
+</I>&gt;&gt;<i> 		}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		at91_irq_err(dev, reg_sr);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	} while (--boguscnt &gt; 0);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	if (unlikely(boguscnt &lt;= 0)) {
+</I>&gt;&gt;<i> 		dev_warn(ND2D(dev), &quot;Too much work at interrupt, &quot;
+</I>&gt;&gt;<i> 			 &quot;status (at enter): 0x%08x, now: 0x%08x\n&quot;,
+</I>&gt;&gt;<i> 			 reg_sr,
+</I>&gt;&gt;<i> 			 at91_read(dev, AT91_SR) &amp; at91_read(dev, AT91_IMR));
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 		/* Clear all interrupt sources. */
+</I>&gt;&gt;<i> 		/* FIXME: do it? */
+</I>&gt;<i> 
+</I>&gt;<i> Fix it.
+</I>
+We can just ignore the pending interrupts and exit the interrupt handler.
+
+&gt;<i> 
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>  exit:
+</I>&gt;&gt;<i> 	return handled;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static void at91_setup_mailboxes(struct net_device *dev)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	int i;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/*
+</I>&gt;&gt;<i> 	 * The first 12 mailboxes are used as a reception FIFO. The
+</I>&gt;&gt;<i> 	 * last mailbox is configured with overwrite option. The
+</I>&gt;&gt;<i> 	 * overwrite flag indicates a FIFO overflow.
+</I>&gt;&gt;<i> 	 */
+</I>&gt;&gt;<i> 	/* FIXME: clear accept regs (MID/MAM) */
+</I>&gt;&gt;<i> 	for (i = AT91_MB_RX_FIRST; i &lt; AT91_MB_RX_LAST; i++)
+</I>&gt;&gt;<i> 		set_mb_mode(dev, i, AT91_MB_MODE_RX);
+</I>&gt;&gt;<i> 	set_mb_mode(dev, AT91_MB_RX_LAST, AT91_MB_MODE_RX_OVRWR);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* The last 4 mailboxes are used for transmitting. */
+</I>&gt;&gt;<i> 	for (i = AT91_MB_TX_FIRST; i &lt;= AT91_MB_TX_LAST; i++)
+</I>&gt;&gt;<i> 		set_mb_mode_prio(dev, i, AT91_MB_MODE_TX, 0);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> Two empty lines!
+</I>fixed
+&gt;<i> 
+</I>&gt;&gt;<i> 	/* reset both tx and rx helper pointers */
+</I>&gt;&gt;<i> 	priv-&gt;tx_next = priv-&gt;tx_echo = priv-&gt;rx_bank = 0;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static int at91_set_bittiming(struct net_device *dev)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
+</I>&gt;&gt;<i> 	u32 reg_br;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	reg_br = ((priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES) &lt;&lt; 24) |
+</I>&gt;&gt;<i> 		((bt-&gt;brp        - 1) &lt;&lt; 16) |
+</I>&gt;&gt;<i> 		((bt-&gt;sjw        - 1) &lt;&lt; 12) |
+</I>&gt;&gt;<i> 		((bt-&gt;prop_seg   - 1) &lt;&lt;  8) |
+</I>&gt;&gt;<i> 		((bt-&gt;phase_seg1 - 1) &lt;&lt;  4) |
+</I>&gt;&gt;<i> 		((bt-&gt;phase_seg2 - 1) &lt;&lt;  0);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	dev_dbg(ND2D(dev), &quot;writing AT91_BR: 0x%08x, can_sys_clock: %d\n&quot;,
+</I>&gt;&gt;<i> 		  reg_br, priv-&gt;can.clock.freq);
+</I>&gt;<i> 
+</I>&gt;<i> Could you please use dev_info() here like for the other drivers, but
+</I>&gt;<i> without printing the frequency.
+</I>
+fixed
+
+&gt;<i> 
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_BR, reg_br);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	return 0;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static void at91_chip_start(struct net_device *dev)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	u32 reg_mr, reg_ier;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* disable interrupts */
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_IDR, 0x1fffffff);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* disable chip */
+</I>&gt;&gt;<i> 	reg_mr = at91_read(dev, AT91_MR);
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_MR, reg_mr &amp; ~AT91_MR_AT91EN);
+</I>&gt;&gt;<i> 	wmb();
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	at91_setup_mailboxes(dev);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	enable_can_transceiver(priv, 1);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* enable chip */
+</I>&gt;&gt;<i> 	reg_mr = at91_read(dev, AT91_MR);
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_MR, reg_mr | AT91_MR_AT91EN);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* Enable interrupts */
+</I>&gt;&gt;<i> 	reg_ier =
+</I>&gt;&gt;<i> 		AT91_IRQ_MB_RX |
+</I>&gt;&gt;<i> 		AT91_IRQ_ERRP;	/* AT91_IRQ_WARN screws up system */
+</I>&gt;&gt;<i> /* 		AT91_IRQ_CERR | AT91_IRQ_SERR |	AT91_IRQ_AERR | */
+</I>&gt;&gt;<i> /* 		AT91_IRQ_FERR |	AT91_IRQ_BERR; */
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Remove comments, please. It fits also on one line.
+</I>
+fixed
+
+&gt;<i> 
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_IDR, 0x1fffffff);
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_IER, reg_ier);
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static void at91_chip_stop(struct net_device *dev)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	u32 reg_mr;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* disable interrupts */
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_IDR, 0x1fffffff);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	reg_mr = at91_read(dev, AT91_MR);
+</I>&gt;&gt;<i> 	at91_write(dev, AT91_MR, reg_mr &amp; ~AT91_MR_AT91EN);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	priv-&gt;can.state = CAN_STATE_STOPPED;
+</I>&gt;&gt;<i> 	enable_can_transceiver(priv, 0);
+</I>&gt;<i> 
+</I>&gt;<i> enable_can_transceiver() ???
+</I>
+yes, the signature is:
+static void enable_can_transceiver(struct at91_priv *priv, int enable)
+
+Maybe we should rename the function to at91_transceiver_switch?
+
+
+&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static int at91_open(struct net_device *dev)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	int err;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	clk_enable(priv-&gt;clk);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* check or determine and set bittime */
+</I>&gt;&gt;<i> 	err = open_candev(dev);
+</I>&gt;&gt;<i> 	if (err)
+</I>&gt;&gt;<i> 		goto out;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* register interrupt handler */
+</I>&gt;&gt;<i> 	if (request_irq(dev-&gt;irq, at91_irq, IRQF_SHARED,
+</I>&gt;&gt;<i> 			dev-&gt;name, dev)) {
+</I>&gt;&gt;<i> 		err = -EAGAIN;
+</I>&gt;&gt;<i> 		goto out_close;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	/* start chip and queuing */
+</I>&gt;&gt;<i> 	at91_chip_start(dev);
+</I>&gt;&gt;<i> 	netif_start_queue(dev);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	return 0;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>  out_close:
+</I>&gt;&gt;<i> 	close_candev(dev);
+</I>&gt;&gt;<i>  out:
+</I>&gt;&gt;<i> 	clk_disable(priv-&gt;clk);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	return err;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /*
+</I>&gt;&gt;<i>  * stop CAN bus activity
+</I>&gt;&gt;<i>  */
+</I>&gt;&gt;<i> static int at91_close(struct net_device *dev)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	netif_stop_queue(dev);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	at91_chip_stop(dev);
+</I>&gt;&gt;<i> 	free_irq(dev-&gt;irq, dev);
+</I>&gt;&gt;<i> 	clk_disable(priv-&gt;clk);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	close_candev(dev);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	return 0;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static int at91_set_mode(struct net_device *dev, u32 _mode)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	enum can_mode mode = _mode;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	switch (mode) {
+</I>&gt;&gt;<i> 	case CAN_MODE_START:
+</I>&gt;&gt;<i> 		dev_dbg(ND2D(dev), &quot;%s: CAN_MODE_START requested\n&quot;, __func__);
+</I>&gt;<i> 
+</I>&gt;<i> The calling function will already print a message.
+</I>
+removed
+
+&gt;&gt;<i> 		at91_chip_start(dev);
+</I>&gt;&gt;<i> 		netif_wake_queue(dev);
+</I>&gt;&gt;<i> 		break;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	default:
+</I>&gt;&gt;<i> 		return -EOPNOTSUPP;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	return 0;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
+</I>&gt;&gt;<i> static const struct net_device_ops at91_netdev_ops = {
+</I>&gt;&gt;<i> 	.ndo_open	= at91_open,
+</I>&gt;&gt;<i> 	.ndo_stop	= at91_close,
+</I>&gt;&gt;<i> 	.ndo_start_xmit	= at91_start_xmit,
+</I>&gt;&gt;<i> };
+</I>&gt;&gt;<i> #endif
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static int __init at91_can_probe(struct platform_device *pdev)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct net_device *dev;
+</I>&gt;&gt;<i> 	struct at91_priv *priv;
+</I>&gt;&gt;<i> 	struct resource *res;
+</I>&gt;&gt;<i> 	struct clk *clk;
+</I>&gt;&gt;<i> 	void __iomem *addr;
+</I>&gt;&gt;<i> 	int err, irq;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	clk = clk_get(&amp;pdev-&gt;dev, &quot;can_clk&quot;);
+</I>&gt;&gt;<i> 	if (IS_ERR(clk)) {
+</I>&gt;&gt;<i> 		dev_err(&amp;pdev-&gt;dev, &quot;no clock defined\n&quot;);
+</I>&gt;&gt;<i> 		err = -ENODEV;
+</I>&gt;&gt;<i> 		goto exit;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+</I>&gt;&gt;<i> 	irq = platform_get_irq(pdev, 0);
+</I>&gt;&gt;<i> 	if (!res || !irq) {
+</I>&gt;&gt;<i> 		err = -ENODEV;
+</I>&gt;&gt;<i> 		goto exit_put;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	if (!request_mem_region(res-&gt;start,
+</I>&gt;&gt;<i> 				res-&gt;end - res-&gt;start + 1,
+</I>&gt;&gt;<i> 				pdev-&gt;name)) {
+</I>&gt;&gt;<i> 		err = -EBUSY;
+</I>&gt;&gt;<i> 		goto exit_put;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	addr = ioremap_nocache(res-&gt;start, res-&gt;end - res-&gt;start + 1);
+</I>&gt;&gt;<i> 	if (!addr) {
+</I>&gt;&gt;<i> 		err = -ENOMEM;
+</I>&gt;&gt;<i> 		goto exit_release;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	dev = alloc_candev(sizeof(struct at91_priv));
+</I>&gt;&gt;<i> 	if (!dev) {
+</I>&gt;&gt;<i> 		err = -ENOMEM;
+</I>&gt;&gt;<i> 		goto exit_iounmap;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #if LINUX_VERSION_CODE &gt; KERNEL_VERSION(2,6,28)
+</I>&gt;&gt;<i> 	dev-&gt;netdev_ops		= &amp;at91_netdev_ops;
+</I>&gt;&gt;<i> #else
+</I>&gt;&gt;<i> 	dev-&gt;open		= at91_open;
+</I>&gt;&gt;<i> 	dev-&gt;stop		= at91_close;
+</I>&gt;&gt;<i> 	dev-&gt;hard_start_xmit	= at91_start_xmit;
+</I>&gt;&gt;<i> #endif
+</I>&gt;&gt;<i> 	dev-&gt;irq		= irq;
+</I>&gt;&gt;<i> 	dev-&gt;flags		|= IFF_ECHO;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	priv-&gt;can.clock.freq		= clk_get_rate(clk);
+</I>&gt;&gt;<i> 	priv-&gt;can.bittiming_const	= &amp;at91_bittiming_const;
+</I>&gt;&gt;<i> 	priv-&gt;can.do_set_bittiming	= at91_set_bittiming;
+</I>&gt;&gt;<i> 	priv-&gt;can.do_set_mode		= at91_set_mode;
+</I>&gt;&gt;<i> 	priv-&gt;clk			= clk;
+</I>&gt;&gt;<i> 	priv-&gt;reg_base			= addr;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	priv-&gt;pdata		= pdev-&gt;dev.platform_data;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	dev_set_drvdata(&amp;pdev-&gt;dev, dev);
+</I>&gt;&gt;<i> 	SET_NETDEV_DEV(dev, &amp;pdev-&gt;dev);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	err = register_candev(dev);
+</I>&gt;&gt;<i> 	if (err) {
+</I>&gt;&gt;<i> 		dev_err(&amp;pdev-&gt;dev, &quot;registering netdev failed\n&quot;);
+</I>&gt;&gt;<i> 		goto exit_free;
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	dev_info(&amp;pdev-&gt;dev, &quot;device registered (reg_base=%#p, irq=%d)\n&quot;,
+</I>&gt;&gt;<i> 		 priv-&gt;reg_base, dev-&gt;irq);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	return 0;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>  exit_free:
+</I>&gt;&gt;<i> 	free_netdev(dev);
+</I>&gt;&gt;<i>  exit_iounmap:
+</I>&gt;&gt;<i> 	iounmap(addr);
+</I>&gt;&gt;<i>  exit_release:
+</I>&gt;&gt;<i> 	release_mem_region(res-&gt;start, res-&gt;end - res-&gt;start + 1);
+</I>&gt;&gt;<i>  exit_put:
+</I>&gt;&gt;<i> 	clk_put(clk);
+</I>&gt;&gt;<i>  exit:
+</I>&gt;&gt;<i> 	return err;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static int __devexit at91_can_remove(struct platform_device *pdev)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct net_device *dev = platform_get_drvdata(pdev);
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> 	struct resource *res;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	unregister_netdev(dev);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	platform_set_drvdata(pdev, NULL);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	free_netdev(dev);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	iounmap(priv-&gt;reg_base);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+</I>&gt;&gt;<i> 	release_mem_region(res-&gt;start, res-&gt;end - res-&gt;start + 1);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	clk_put(priv-&gt;clk);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	return 0;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #ifdef CONFIG_PM
+</I>&gt;&gt;<i> static int at91_can_suspend(struct platform_device *pdev,
+</I>&gt;&gt;<i> 			    pm_message_t mesg)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct net_device *net_dev = platform_get_drvdata(pdev);
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(net_dev);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	if (netif_running(net_dev)) {
+</I>&gt;&gt;<i> 		/* TODO Disable IRQ? */
+</I>&gt;&gt;<i> 		netif_stop_queue(net_dev);
+</I>&gt;&gt;<i> 		netif_device_detach(net_dev);
+</I>&gt;&gt;<i> 		enable_can_transceiver(priv, 0);
+</I>&gt;&gt;<i> 		clk_disable(priv-&gt;clk);
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i> 	return 0;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static int at91_can_resume(struct platform_device *pdev)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	struct net_device *net_dev = platform_get_drvdata(pdev);
+</I>&gt;&gt;<i> 	struct at91_priv *priv = netdev_priv(net_dev);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	if (netif_running(net_dev)) {
+</I>&gt;&gt;<i> 		clk_enable(priv-&gt;clk);
+</I>&gt;&gt;<i> 		enable_can_transceiver(priv, 1);
+</I>&gt;&gt;<i> 		netif_device_attach(net_dev);
+</I>&gt;&gt;<i> 		netif_start_queue(net_dev);
+</I>&gt;&gt;<i> 		/* TODO Enable IRQ? */
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i> 	return 0;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i> #else
+</I>&gt;&gt;<i> #define at91_can_suspend	NULL
+</I>&gt;&gt;<i> #define at91_can_resume		NULL
+</I>&gt;&gt;<i> #endif
+</I>&gt;<i> 
+</I>&gt;<i> Has the PM code been tested?
+</I>
+nope, thus removed
+
+&gt;<i> 
+</I>&gt;&gt;<i> static struct platform_driver at91_can_driver = {
+</I>&gt;&gt;<i> 	.probe		= at91_can_probe,
+</I>&gt;&gt;<i> 	.remove		= __devexit_p(at91_can_remove),
+</I>&gt;&gt;<i> 	.suspend	= at91_can_suspend,
+</I>&gt;&gt;<i> 	.resume		= at91_can_resume,
+</I>&gt;&gt;<i> 	.driver		= {
+</I>&gt;&gt;<i> 		.name	= DRV_NAME,
+</I>&gt;&gt;<i> 		.owner	= THIS_MODULE,
+</I>&gt;&gt;<i> 	},
+</I>&gt;&gt;<i> };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static int __init at91_can_module_init(void)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	printk(KERN_INFO &quot;%s netdevice driver\n&quot;, DRV_NAME);
+</I>&gt;&gt;<i> 	return platform_driver_register(&amp;at91_can_driver);
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static void __exit at91_can_module_exit(void)
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	platform_driver_unregister(&amp;at91_can_driver);
+</I>&gt;&gt;<i> 	printk(KERN_INFO &quot;%s: driver removed\n&quot;, DRV_NAME);
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> module_init(at91_can_module_init);
+</I>&gt;&gt;<i> module_exit(at91_can_module_exit);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> MODULE_AUTHOR(&quot;Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;&quot;);
+</I>&gt;&gt;<i> MODULE_LICENSE(&quot;GPL v2&quot;);
+</I>&gt;&gt;<i> MODULE_DESCRIPTION(&quot;LLCF/socketcan '&quot; DRV_NAME &quot;' network device driver&quot;);
+</I>&gt;<i> 
+</I>&gt;<i> Please correct the module description, especially remove LLCF.
+</I>
+fixed
+
+&gt;<i> Apart from that the drives look good. Well I'm just back from holiday
+</I>&gt;<i> and may have missed something.
+</I>
+cheers, Marc
+
+-- 
+Pengutronix e.K.                         | Marc Kleine-Budde           |
+Linux Solutions for Science and Industry | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund                 | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686         | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 260 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20090819/36625442/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20090819/36625442/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002866.html">Comments on at91_can.c
+</A></li>
+	<LI>Next message: <A HREF="002911.html">Comments on at91_can.c
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2910">[ date ]</a>
+              <a href="thread.html#2910">[ thread ]</a>
+              <a href="subject.html#2910">[ subject ]</a>
+              <a href="author.html#2910">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

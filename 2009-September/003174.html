@@ -1,0 +1,122 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH V3] net-next:can: add TI CAN (HECC) driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V3%5D%20net-next%3Acan%3A%20add%20TI%20CAN%20%28HECC%29%20driver&In-Reply-To=%3C4ABB23D5.7080001%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003173.html">
+   <LINK REL="Next"  HREF="003175.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH V3] net-next:can: add TI CAN (HECC) driver</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V3%5D%20net-next%3Acan%3A%20add%20TI%20CAN%20%28HECC%29%20driver&In-Reply-To=%3C4ABB23D5.7080001%40grandegger.com%3E"
+       TITLE="[PATCH V3] net-next:can: add TI CAN (HECC) driver">wg at grandegger.com
+       </A><BR>
+    <I>Thu Sep 24 09:46:29 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003173.html">[PATCH V3] net-next:can: add TI CAN (HECC) driver
+</A></li>
+        <LI>Next message: <A HREF="003175.html">[PATCH V3] net-next:can: add TI CAN (HECC) driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3174">[ date ]</a>
+              <a href="thread.html#3174">[ thread ]</a>
+              <a href="subject.html#3174">[ subject ]</a>
+              <a href="author.html#3174">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Gole, Anant wrote:
+&gt;&gt;<i> -----Original Message-----
+</I>&gt;&gt;<i> From: Wolfgang Grandegger [mailto:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>]
+</I>&gt;&gt;<i> Sent: Wednesday, September 23, 2009 9:05 PM
+</I>&gt;&gt;<i> To: Gole, Anant
+</I>&gt;&gt;<i> Cc: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core at lists.berlios.de</A>
+</I>&gt;&gt;<i> Subject: Re: [PATCH V3] net-next:can: add TI CAN (HECC) driver
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Hi Anant,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> here is my quick review.
+</I>&gt;<i> 
+</I>&gt;<i> Appreciate the review. Ack on most comments - I will fix them before I head off for a vacation this weekend.
+</I>
+I have a few more comments, which I will post in a second.
+
+&gt;<i> [snip]
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> diff --git a/drivers/net/can/Makefile b/drivers/net/can/Makefile
+</I>&gt;&gt;&gt;<i> index 523a941..45d42dc 100644
+</I>&gt;&gt;&gt;<i> --- a/drivers/net/can/Makefile
+</I>&gt;&gt;&gt;<i> +++ b/drivers/net/can/Makefile
+</I>&gt;&gt;&gt;<i> @@ -8,5 +8,6 @@ obj-$(CONFIG_CAN_DEV)		+= can-dev.o
+</I>&gt;&gt;&gt;<i>  can-dev-y			:= dev.o
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>  obj-$(CONFIG_CAN_SJA1000)	+= sja1000/
+</I>&gt;&gt;&gt;<i> +obj-$(CONFIG_CAN_TI_HECC)	+= ti_hecc.o
+</I>&gt;&gt;<i> Die Patch will fail because two more drivers have been accepted for
+</I>&gt;&gt;<i> net-next-2.6. They should show up soon.
+</I>&gt;&gt;<i>
+</I>&gt;<i> Ok. I will take care while submitting the patch to netdev.
+</I>&gt;<i> 
+</I>&gt;<i> [snip]
+</I>&gt;&gt;&gt;<i> +static netdev_tx_t ti_hecc_xmit(struct sk_buff *skb, struct net_device
+</I>&gt;&gt;<i> *ndev)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct ti_hecc_priv *priv = netdev_priv(ndev);
+</I>&gt;&gt;&gt;<i> +	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
+</I>&gt;&gt;&gt;<i> +	u32 mbxno = 0;
+</I>&gt;&gt;&gt;<i> +	u32 data;
+</I>&gt;&gt;&gt;<i> +	unsigned long flags;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	mbxno = get_tx_head_mb(priv);
+</I>&gt;&gt;&gt;<i> +	spin_lock_irqsave(&amp;priv-&gt;mbox_lock, flags);
+</I>&gt;&gt;&gt;<i> +	if (unlikely(hecc_read(priv, HECC_CANME) &amp; (1 &lt;&lt; mbxno))) {
+</I>&gt;&gt;&gt;<i> +		spin_unlock_irqrestore(&amp;priv-&gt;mbox_lock, flags);
+</I>&gt;&gt;&gt;<i> +		netif_stop_queue(ndev);
+</I>&gt;&gt;&gt;<i> +		dev_err(priv-&gt;ndev-&gt;dev.parent,
+</I>&gt;&gt;&gt;<i> +			&quot;BUG: TX mbox not ready tx_head=%08X, tx_tail=%08X\n&quot;,
+</I>&gt;&gt;&gt;<i> +			priv-&gt;tx_head, priv-&gt;tx_tail);
+</I>&gt;&gt;&gt;<i> +		return NETDEV_TX_BUSY;
+</I>&gt;&gt;<i> Can this happen? Will the hardware recover from the error?
+</I>&gt;<i> 
+</I>&gt;<i> Technically it cannot happen but the check is put as a worst case to know if this really happened - it is difficult to predict if the driver will recover as this condition is really not expected but a error print probably can help debug. I checked other drivers with similar logic for TX mailbox (like at91) and the same error print was used which I thought would be useful.
+</I>
+OK, I was just thinking if dropping the skb would not be the better
+choice. Just keep it as-is.
+
+Wolfgang.
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003173.html">[PATCH V3] net-next:can: add TI CAN (HECC) driver
+</A></li>
+	<LI>Next message: <A HREF="003175.html">[PATCH V3] net-next:can: add TI CAN (HECC) driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3174">[ date ]</a>
+              <a href="thread.html#3174">[ thread ]</a>
+              <a href="subject.html#3174">[ subject ]</a>
+              <a href="author.html#3174">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,137 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Frame Loss during RX
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Frame%20Loss%20during%20RX&In-Reply-To=%3CD5ECB3C7A6F99444980976A8C6D896384DF158AF8B%40EAPEX1MAIL1.st.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005824.html">
+   <LINK REL="Next"  HREF="005826.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Frame Loss during RX</H1>
+    <B>Bhupesh SHARMA</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Frame%20Loss%20during%20RX&In-Reply-To=%3CD5ECB3C7A6F99444980976A8C6D896384DF158AF8B%40EAPEX1MAIL1.st.com%3E"
+       TITLE="Frame Loss during RX">bhupesh.sharma at st.com
+       </A><BR>
+    <I>Fri Jul  1 14:50:53 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005824.html">Frame Loss during RX
+</A></li>
+        <LI>Next message: <A HREF="005826.html">Frame Loss during RX
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5825">[ date ]</a>
+              <a href="thread.html#5825">[ thread ]</a>
+              <a href="subject.html#5825">[ subject ]</a>
+              <a href="author.html#5825">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+&gt;<i> &gt; &gt; I have been debugging a case of random loss of certain CAN frames
+</I>&gt;<i> at
+</I>&gt;<i> &gt; the RX end,
+</I>&gt;<i> &gt; &gt; when I use the c_can driver.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; I use a fairly simple setup:
+</I>&gt;<i> &gt; &gt; 	~ For TX, I use a vector CANAnalyzer tool (which can generate CAN
+</I>&gt;<i> &gt; frames
+</I>&gt;<i> &gt; &gt; 	 with high bus load)
+</I>&gt;<i> &gt; &gt; 	~ At RX end I use my board which has a bosch c_can core and use
+</I>&gt;<i> &gt; the
+</I>&gt;<i> &gt; &gt; 	`candump` application to dump all the frames arriving on the CAN
+</I>&gt;<i> &gt; interface.
+</I>&gt;<i> &gt; &gt; 	~ For testing I compare the sent frames with the frames received
+</I>&gt;<i> &gt; by candump.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Hello Bhupesh,
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; the first interesting thing would be to check whether the frames are
+</I>&gt;<i> &gt; dropped
+</I>&gt;<i> &gt; on socketlayer (due to a slow processing in userspace) or somewhere
+</I>&gt;<i> in
+</I>&gt;<i> &gt; the driver.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Please run the candump with the '-d' option, that enables the
+</I>&gt;<i> &gt; dropcounter in
+</I>&gt;<i> &gt; the socket receive path.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; See details here:
+</I>&gt;<i> &gt; <A HREF="https://lists.berlios.de/pipermail/socketcan-users/2010-">https://lists.berlios.de/pipermail/socketcan-users/2010-</A>
+</I>&gt;<i> &gt; January/001226.html
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; If it's not on the socketlayer it's worth checking the driver ;-)
+</I>&gt;<i> &gt;
+</I>&gt;<i> 
+</I>&gt;<i> Ok. I was a bit late in doing some tests.
+</I>&gt;<i> Actually I was stuck in getting the latest `candump` version cross
+</I>&gt;<i> compiled for
+</I>&gt;<i> my ARM platform. I was getting some errors with `useconds_t` being
+</I>&gt;<i> undefined.
+</I>&gt;<i> 
+</I>&gt;<i> However, I did some ugly hacks and now I can run candump with -d
+</I>&gt;<i> option.
+</I>&gt;<i> I see the DROPCOUNT messages like this:
+</I>&gt;<i> DROPCOUNT: dropped 1 CAN frame on 'can0' socket (total drops 1)
+</I>&gt;<i> 
+</I>&gt;<i> Pardon my limited knowledge on this option, but how can I determine
+</I>&gt;<i> whether
+</I>&gt;<i> this packet was dropped by the driver or the user-space application.
+</I>&gt;<i> 
+</I>
+Forgot to add the `ip -d -s link show can0` output:
+
+2: can0: &lt;NOARP,UP,LOWER_UP,ECHO&gt; mtu 16 qdisc pfifo_fast state UNKNOWN qlen 10
+    link/can
+    can state ERROR-ACTIVE restart-ms 0
+    bitrate 988095 sample-point 0.750
+    tq 253 prop-seg 1 phase-seg1 1 phase-seg2 1 sjw 1
+    c_can: tseg1 2..16 tseg2 1..8 sjw 1..4 brp 1..1024 brp-inc 1
+    clock 83000000
+    re-started bus-errors arbit-lost error-warn error-pass bus-off
+    0          0          0          0          0          0
+    RX: bytes  packets  errors  dropped overrun mcast
+    1380496    172562   0       0       0       0
+    TX: bytes  packets  errors  dropped carrier collsns
+    0          0        0       0       0       0
+
+I can decipher from this dump that the packet dropped and errors
+is 0 while DROPCOUNT messages are still present in `candump -d` output.
+
+Any idea, where there frames are being dropped?
+
+Regards,
+Bhupesh
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005824.html">Frame Loss during RX
+</A></li>
+	<LI>Next message: <A HREF="005826.html">Frame Loss during RX
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5825">[ date ]</a>
+              <a href="thread.html#5825">[ thread ]</a>
+              <a href="subject.html#5825">[ subject ]</a>
+              <a href="author.html#5825">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

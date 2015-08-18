@@ -1,0 +1,166 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> struct sockaddr_can for j1939
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C4D431D32.8020903%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005440.html">
+   <LINK REL="Next"  HREF="005443.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>struct sockaddr_can for j1939</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C4D431D32.8020903%40hartkopp.net%3E"
+       TITLE="struct sockaddr_can for j1939">socketcan at hartkopp.net
+       </A><BR>
+    <I>Fri Jan 28 20:46:58 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005440.html">struct sockaddr_can for j1939
+</A></li>
+        <LI>Next message: <A HREF="005443.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5442">[ date ]</a>
+              <a href="thread.html#5442">[ thread ]</a>
+              <a href="subject.html#5442">[ subject ]</a>
+              <a href="author.html#5442">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 28.01.2011 11:44, Kurt Van Dijck wrote:
+
+&gt;<i> From j1939 point of view, there is no 'box', but only a collection of ECU's.
+</I>&gt;<i> Reordering the collection of ECU's is allowed.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> An example:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I implement a vehicle diagnosis application called 'mydiag' that communicates
+</I>&gt;&gt;<i> with a CAN ECU (e.g. an instrument cluster) using the ISO 15765-2 transport
+</I>&gt;&gt;<i> protocol sockets.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Then i can do a real diag session like this:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     mydiag -s 123 -d 321 can0
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> assuming the instrument cluster ECU is connected to can0 and the CAN IDs 123
+</I>&gt;&gt;<i> and 321 are used for the ISO-TP transport protocol channel.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> And now i write a simulation for the instrument cluster ECU called 'myecusim'.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> From now, i can simulate, test and develop the diagnosis application with the
+</I>&gt;&gt;<i> ECU simulation on my Linux host without any real hardware:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Start simulation
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     myecusim -s 321 -d 123 vcan0 &amp;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Start diagnosis application
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     mydiag -s 123 -d 321 vcan0
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Finally i can simulate e.g. 30 different ECUs at the same time on my Linux
+</I>&gt;&gt;<i> host to test and develop my diagnosis application (on a business trip without
+</I>&gt;&gt;<i> hardware!).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If you attach the source address SA to the CAN interface, this means that you
+</I>&gt;&gt;<i> Linux host can only act as ONE ECU, right?
+</I>&gt;&gt;<i>
+</I>&gt;<i> Now we're getting somewhere.
+</I>
+:<i>-)
+</I>
+&gt;<i> in my j1939 view:
+</I>&gt;<i> 
+</I>&gt;<i> regular setup:
+</I>&gt;<i> $ ip addr add j1939 0x80 dev can0
+</I>&gt;<i> $ mydiag --dev can0 --sa 0x80 --da 0x81
+</I>&gt;<i> 
+</I>&gt;<i> and simulated:
+</I>&gt;<i> $ ip addr add j1939 0x80 dev vcan0
+</I>&gt;<i> $ ip addr add j1939 0x81 dev vcan0
+</I>&gt;<i> $ myecusim --dev vcan0 --sa 0x81
+</I>&gt;<i> $ mydiag --dev vcan0 --sa 0x80 --da 0x81
+</I>&gt;<i> 
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> And if you put multiple SAs on the network interface, how could it be made
+</I>&gt;&gt;<i> clear for the different processes / applications on the host, on which SA they
+</I>&gt;&gt;<i> are working??
+</I>&gt;<i> struct sockaddr_can saddr;
+</I>&gt;<i> 
+</I>&gt;<i> saddr.can_ifindex = ifindex(&quot;vcan0&quot;);
+</I>&gt;<i> saddr.can_addr.j1939.sa = 0x80;
+</I>&gt;<i> bind(sock, &amp;saddr, ...);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Got the problem?
+</I>&gt;<i> I hope I explained the answer well?
+</I>
+See my question below ...
+
+&gt;<i> This example did not show the full power of SA bound to interfaces, since
+</I>&gt;<i> only 1 application per ECU was run.
+</I>&gt;<i> 
+</I>&gt;<i> Within J1939, and that I think is the major difference, the CAN id is split
+</I>&gt;<i> in a SA &amp; PGN. 2 apps can/may/must use the same SA, with different PGN.
+</I>&gt;<i> I could so run:
+</I>&gt;<i> 
+</I>&gt;<i> $ mydiag --dev can0 --sa 0x80 --da 0x81 &amp;
+</I>&gt;<i> $ mydiag --dev can0 --sa 0x80 --da 0x82 &amp;
+</I>
+Why is the SA bound to the netdevice needed, if you set all the addresses by
+commandline here?
+
+&gt;<i> $ mydiag2 --dev can0 --sa 0x80 &amp;
+</I>
+and here?
+
+&gt;<i> $ mytimestampbroadcast --dev can0 &amp;
+</I>
+ok - here you left out the '--sa &lt;addr&gt;' as  you have set a default on the
+netdevice, right?
+
+But what address is used here as SA? 0x80 or 0x81 (both set by 'ip addr add'
+above)?
+
+
+Regards,
+Oliver
+
+&gt;<i> ....
+</I>&gt;<i> as well.
+</I>&gt;<i> I plain CAN, each of the above applications _need_ diffenent CAN-id,
+</I>&gt;<i> in J1939, the SA is reused within an ECU.
+</I>&gt;<i> An ECU is then defined be a collection of applications reusing the same
+</I>&gt;<i> SA.
+</I>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005440.html">struct sockaddr_can for j1939
+</A></li>
+	<LI>Next message: <A HREF="005443.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5442">[ date ]</a>
+              <a href="thread.html#5442">[ thread ]</a>
+              <a href="subject.html#5442">[ subject ]</a>
+              <a href="author.html#5442">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

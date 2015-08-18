@@ -1,0 +1,193 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Kernel inclusion status
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Kernel%20inclusion%20status&In-Reply-To=%3C4A2624E1.2090406%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002566.html">
+   <LINK REL="Next"  HREF="002568.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Kernel inclusion status</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Kernel%20inclusion%20status&In-Reply-To=%3C4A2624E1.2090406%40grandegger.com%3E"
+       TITLE="Kernel inclusion status">wg at grandegger.com
+       </A><BR>
+    <I>Wed Jun  3 09:23:13 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002566.html">Kernel inclusion status
+</A></li>
+        <LI>Next message: <A HREF="002568.html">Kernel inclusion status
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2567">[ date ]</a>
+              <a href="thread.html#2567">[ thread ]</a>
+              <a href="subject.html#2567">[ subject ]</a>
+              <a href="author.html#2567">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver Hartkopp wrote:
+&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;<i> 
+</I>&gt;&gt;<i> The next step would be to get the SVN branch &quot;branches/netlink&quot; in sync
+</I>&gt;&gt;<i> with &quot;net-next-2.6&quot; and sooner than later move it to trunk. Oliver,
+</I>&gt;&gt;<i> could you please re-introduce ND2D() first, also to get the MSCAN and
+</I>&gt;&gt;<i> AT91 driver compiled. Then I would apply the recent &quot;net-next-2.6&quot; changes.
+</I>&gt;<i> 
+</I>&gt;<i> Hi Wolfgang,
+</I>&gt;<i> 
+</I>&gt;<i> i reintroduced the ND2D() macro and also fixed the line where ND2D() was
+</I>&gt;<i> missing (in branches/netlink).
+</I>&gt;<i> 
+</I>&gt;<i> With having ND2D() in the SVN's dev.h the problems emerged again, that you are
+</I>&gt;<i> not able to compile the SVN tree with the latest net-next-2.6 as the can/dev.h
+</I>&gt;<i> in the kernel tree is always preferred.
+</I>&gt;<i> 
+</I>&gt;<i> My suggestion to solve this:
+</I>&gt;<i> 
+</I>&gt;<i> As the (backward compatible) code in the SVN is not 1:1 to the mainline code
+</I>&gt;<i> anymore (due to ND2D()) we should move the SVN can/dev.h to can/dev_compat.h
+</I>&gt;<i> with ND2D() and the other compatibility stuff like the different struct
+</I>&gt;<i> can_priv ...
+</I>&gt;<i> 
+</I>&gt;<i> The drivers in the SVN would then be changed like this:
+</I>&gt;<i> 
+</I>&gt;<i> Index: branches/netlink/kernel/2.6/drivers/net/can/at91_can.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- branches/netlink/kernel/2.6/drivers/net/can/at91_can.c	(revision 987)
+</I>&gt;<i> +++ branches/netlink/kernel/2.6/drivers/net/can/at91_can.c	(working copy)
+</I>&gt;<i> @@ -34,7 +34,7 @@
+</I>&gt;<i> 
+</I>&gt;<i>  #include &lt;linux/can.h&gt;
+</I>&gt;<i>  #include &lt;linux/can/error.h&gt;
+</I>&gt;<i> -#include &lt;linux/can/dev.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/dev_compat.h&gt; /* backward compatible can/dev.h */
+</I>&gt;<i> 
+</I>&gt;<i>  #include &lt;mach/board.h&gt;
+</I>&gt;<i> 
+</I>&gt;<i> And they would compile with net-next-2.6 again as the dev_compat.h is
+</I>&gt;<i> definitely pulled by the compiler correctly.
+</I>&gt;<i> 
+</I>&gt;<i> What do you think about this approach?
+</I>
+Hm, what about using the gcc argument &quot;-include&quot; to point to the
+compatibility header file as shown in the attached patch. The Makefiles
+are different anyhow. Then the &quot;#include &lt;linux/version&gt;&quot; could also be
+removed from the drivers source files. Anyhow, I still have (other)
+problems compiling with net-next-2.6.
+This also reminds me that we should use EXTRA_CFLAGS to be compatible
+with old kernel versions, right?
+
+Wolfgang.
+
+---
+ kernel/2.6/drivers/net/can/Makefile         |    5 +++--
+ kernel/2.6/drivers/net/can/sja1000/Makefile |    4 ++--
+ kernel/2.6/include/linux/can/compat.h       |   12 ++++++++++++
+ kernel/2.6/include/linux/can/dev.h          |    6 ------
+ 4 files changed, 17 insertions(+), 10 deletions(-)
+
+Index: netlink/kernel/2.6/include/linux/can/compat.h
+===================================================================
+--- /dev/null
++++ netlink/kernel/2.6/include/linux/can/compat.h
+@@ -0,0 +1,12 @@
++#ifndef CAN_COMPAT_H
++#define CAN_COMPAT_H
++
++#include &lt;linux/version.h&gt;
++
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,21)
++#define ND2D(_ndev)	(_ndev-&gt;class_dev.dev)
++#else
++#define ND2D(_ndev)	(_ndev-&gt;dev.parent)
++#endif
++
++#endif /* CAN_COMPAT_H */
+Index: netlink/kernel/2.6/include/linux/can/dev.h
+===================================================================
+--- netlink.orig/kernel/2.6/include/linux/can/dev.h
++++ netlink/kernel/2.6/include/linux/can/dev.h
+@@ -58,12 +58,6 @@ struct can_priv {
+ 			    enum can_state *state);
+ };
+ 
+-#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,21)
+-#define ND2D(_ndev)	(_ndev-&gt;class_dev.dev)
+-#else
+-#define ND2D(_ndev)	(_ndev-&gt;dev.parent)
+-#endif
+-
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,25)
+ #define IFF_ECHO IFF_LOOPBACK
+ #endif
+Index: netlink/kernel/2.6/drivers/net/can/Makefile
+===================================================================
+--- netlink.orig/kernel/2.6/drivers/net/can/Makefile
++++ netlink/kernel/2.6/drivers/net/can/Makefile
+@@ -46,7 +46,8 @@ obj-$(CONFIG_CAN_MSCAN_OLD)	+= old/mscan
+ obj-$(CONFIG_CAN_CCAN_OLD)	+= old/ccan/
+ obj-$(CONFIG_CAN_MCP251X)	+= mcp251x.o
+ 
+-ccflags-$(CONFIG_CAN_DEBUG_DEVICES) := -DDEBUG
+-ccflags-$(CONFIG_CAN_DEV_SYSFS) := -DCONFIG_CAN_DEV_SYSFS
++ccflags-y += -include $(TOPDIR)/include/linux/can/compat.h
++ccflags-$(CONFIG_CAN_DEBUG_DEVICES) += -DDEBUG
++ccflags-$(CONFIG_CAN_DEV_SYSFS) += -DCONFIG_CAN_DEV_SYSFS
+ 
+ endif
+Index: netlink/kernel/2.6/drivers/net/can/sja1000/Makefile
+===================================================================
+--- netlink.orig/kernel/2.6/drivers/net/can/sja1000/Makefile
++++ netlink/kernel/2.6/drivers/net/can/sja1000/Makefile
+@@ -14,7 +14,6 @@ modules modules_install clean:
+ else
+ 
+ -include $(TOPDIR)/Makefile.common
+-#EXTRA_CFLAGS += -I$(TOPDIR)/drivers/net/can/hal
+ 
+ obj-$(CONFIG_CAN_SJA1000) += sja1000.o
+ obj-$(CONFIG_CAN_SJA1000_PLATFORM) += sja1000_platform.o
+@@ -27,6 +26,7 @@ obj-$(CONFIG_CAN_PEAK_PCI) += peak_pci.o
+ obj-$(CONFIG_CAN_PIPCAN) += pipcan.o
+ obj-$(CONFIG_CAN_KVASER_PCI) += kvaser_pci.o
+ 
+-ccflags-$(CONFIG_CAN_DEBUG_DEVICES) := -DDEBUG
++ccflags-y += -include $(TOPDIR)/include/linux/can/compat.h
++ccflags-$(CONFIG_CAN_DEBUG_DEVICES) += -DDEBUG
+ 
+ endif
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002566.html">Kernel inclusion status
+</A></li>
+	<LI>Next message: <A HREF="002568.html">Kernel inclusion status
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2567">[ date ]</a>
+              <a href="thread.html#2567">[ thread ]</a>
+              <a href="subject.html#2567">[ subject ]</a>
+              <a href="author.html#2567">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

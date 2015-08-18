@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Frame Loss during RX
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Frame%20Loss%20during%20RX&In-Reply-To=%3CD5ECB3C7A6F99444980976A8C6D896384DF158B0BA%40EAPEX1MAIL1.st.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005826.html">
+   <LINK REL="Next"  HREF="005828.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Frame Loss during RX</H1>
+    <B>Bhupesh SHARMA</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Frame%20Loss%20during%20RX&In-Reply-To=%3CD5ECB3C7A6F99444980976A8C6D896384DF158B0BA%40EAPEX1MAIL1.st.com%3E"
+       TITLE="Frame Loss during RX">bhupesh.sharma at st.com
+       </A><BR>
+    <I>Mon Jul  4 07:02:09 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005826.html">Frame Loss during RX
+</A></li>
+        <LI>Next message: <A HREF="005828.html">Frame Loss during RX
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5827">[ date ]</a>
+              <a href="thread.html#5827">[ thread ]</a>
+              <a href="subject.html#5827">[ subject ]</a>
+              <a href="author.html#5827">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Oliver,
+
+&gt;<i> On 01.07.2011 14:50, Bhupesh SHARMA wrote:
+</I>&gt;<i> 
+</I>&gt;<i> &gt;&gt;&gt; See details here:
+</I>&gt;<i> &gt;&gt;&gt; <A HREF="https://lists.berlios.de/pipermail/socketcan-users/2010-">https://lists.berlios.de/pipermail/socketcan-users/2010-</A>
+</I>&gt;<i> &gt;&gt;&gt; January/001226.html
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; If it's not on the socketlayer it's worth checking the driver ;-)
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; However, I did some ugly hacks and now I can run candump with -d
+</I>&gt;<i> &gt;&gt; option.
+</I>&gt;<i> &gt;&gt; I see the DROPCOUNT messages like this:
+</I>&gt;<i> &gt;&gt; DROPCOUNT: dropped 1 CAN frame on 'can0' socket (total drops 1)
+</I>&gt;<i> 
+</I>&gt;<i> Do you see this once or continuous with increasing 'total drops' ?
+</I>
+Yes, I see continuous DROPCOUNT messages with increasing total drops.
+See a more descriptive log below:
+
+DROPCOUNT: dropped 1 CAN frame on 'can0' socket (total drops 1)
+  can0    1  [8] 1C 00 00 00 00 00 00 00
+DROPCOUNT: dropped 2 CAN frames on 'can0' socket (total drops 3)
+  can0    1  [8] 1F 00 00 00 00 00 00 00
+DROPCOUNT: dropped 2 CAN frames on 'can0' socket (total drops 5)
+  can0    1  [8] 22 00 00 00 00 00 00 00
+DROPCOUNT: dropped 2 CAN frames on 'can0' socket (total drops 7)
+  can0    1  [8] 25 00 00 00 00 00 00 00
+DROPCOUNT: dropped 2 CAN frames on 'can0' socket (total drops 9)
+  can0    1  [8] 28 00 00 00 00 00 00 00
+DROPCOUNT: dropped 2 CAN frames on 'can0' socket (total drops 11)
+  can0    1  [8] 2B 00 00 00 00 00 00 00
+DROPCOUNT: dropped 2 CAN frames on 'can0' socket (total drops 13)
+  can0    1  [8] 2E 00 00 00 00 00 00 00
+DROPCOUNT: dropped 2 CAN frames on 'can0' socket (total drops 15)
+
+&gt;<i> 
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Pardon my limited knowledge on this option, but how can I determine
+</I>&gt;<i> &gt;&gt; whether
+</I>&gt;<i> &gt;&gt; this packet was dropped by the driver or the user-space application.
+</I>&gt;<i> 
+</I>&gt;<i> The drop that can be monitored with the '-d' option are the CAN frames
+</I>&gt;<i> that
+</I>&gt;<i> are lost because of the userspace application was not able to consume
+</I>&gt;<i> the
+</I>&gt;<i> entire data 'in-time'.
+</I>
+Ok. Just to ensure that my driver is not losing any frames during RX, I modified
+my driver to expect the incoming data only in a particular sequence, say:
+
+0100000000000000
+0200000000000000
+0300000000000000
+ .
+ .
+ .
+2D00000000000000
+2E00000000000000
+2F00000000000000
+0100000000000000
+0200000000000000
+0300000000000000
+... and so on
+
+And complain in case it doesn't see the incoming frames in this order.
+Then, I pump the data in this sequence from a CAN generator working as a Transmitter.
+I see that the driver always receives the frames in the correct order. 
+
+Now, your mail also confirms this behavior. This means that the user space application
+is losing frames.
+
+&gt;<i> 
+</I>&gt;<i> &gt; Forgot to add the `ip -d -s link show can0` output:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; 2: can0: &lt;NOARP,UP,LOWER_UP,ECHO&gt; mtu 16 qdisc pfifo_fast state
+</I>&gt;<i> UNKNOWN qlen 10
+</I>&gt;<i> &gt;     link/can
+</I>&gt;<i> &gt;     can state ERROR-ACTIVE restart-ms 0
+</I>&gt;<i> &gt;     bitrate 988095 sample-point 0.750
+</I>&gt;<i> &gt;     tq 253 prop-seg 1 phase-seg1 1 phase-seg2 1 sjw 1
+</I>&gt;<i> &gt;     c_can: tseg1 2..16 tseg2 1..8 sjw 1..4 brp 1..1024 brp-inc 1
+</I>&gt;<i> &gt;     clock 83000000
+</I>&gt;<i> &gt;     re-started bus-errors arbit-lost error-warn error-pass bus-off
+</I>&gt;<i> &gt;     0          0          0          0          0          0
+</I>&gt;<i> &gt;     RX: bytes  packets  errors  dropped overrun mcast
+</I>&gt;<i> &gt;     1380496    172562   0       0       0       0
+</I>&gt;<i> &gt;     TX: bytes  packets  errors  dropped carrier collsns
+</I>&gt;<i> &gt;     0          0        0       0       0       0
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I can decipher from this dump that the packet dropped and errors
+</I>&gt;<i> &gt; is 0 while DROPCOUNT messages are still present in `candump -d`
+</I>&gt;<i> output.
+</I>&gt;<i> 
+</I>&gt;<i> The dropped counter in the netdevice has a different meaning.
+</I>&gt;<i> 
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Any idea, where there frames are being dropped?
+</I>&gt;<i> 
+</I>&gt;<i> Yes - see above (in the socket receive buffer to the userspace app).
+</I>&gt;<i> 
+</I>
+So, is there a mechanism to receive frames correctly using the 'candump' application
+with a socketCAN driver which implements NAPI (especially on commercial products which
+will expect the frames transmitted by a transmitter to be received correctly [read in-order]
+by an application running on the receiver side?
+
+Regards,
+Bhupesh
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005826.html">Frame Loss during RX
+</A></li>
+	<LI>Next message: <A HREF="005828.html">Frame Loss during RX
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5827">[ date ]</a>
+              <a href="thread.html#5827">[ thread ]</a>
+              <a href="subject.html#5827">[ subject ]</a>
+              <a href="author.html#5827">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,142 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-core] Error Frame Spec
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-April/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Error%20Frame%20Spec&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855D57%40vwagwox00010.vw.vwg%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000086.html">
+   <LINK REL="Next"  HREF="000075.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-core] Error Frame Spec</H1>
+    <B>Hartkopp, Oliver (K-GEFE/E)</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Error%20Frame%20Spec&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855D57%40vwagwox00010.vw.vwg%3E"
+       TITLE="[Socketcan-core] Error Frame Spec">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Fri Apr 28 07:22:51 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000086.html">[Socketcan-core] Re:  [RFC] Restructured kernel/2.6 subtree
+</A></li>
+        <LI>Next message: <A HREF="000075.html">[Socketcan-core] Error Frame Spec
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#74">[ date ]</a>
+              <a href="thread.html#74">[ thread ]</a>
+              <a href="subject.html#74">[ subject ]</a>
+              <a href="author.html#74">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all,
+
+i want to introduce a new file 'can_error.h' that specifies the content of
+the Error Frame, we discussed until Tuesday this week.
+
+The idea is to cover almost every possible error condition that can occur
+with CAN-busses, CAN-controllers, CAN-transceivers and within the
+CAN-protocol which is spoken on the bus.
+
+Through the (tbd) socket-option the user can select the error types, he's is
+interested in (e.g. only bus-off or bus-off and transceiver-status or
+whatever).
+
+If a CAN-controller is not capable to produce the 'interesting' errors, it
+just does not send them. If the controller can detect an error but can not
+give any detailed information on this error, the according bit in data[0] is
+set but the according detailed description in data[1..7] remains
+unspecified.
+
+I have been looking through several controller specs and this seems to be
+the 'reasonable' superset of possible CAN-problems that can occur.
+
+Comments on this?
+
+#ifndef CAN_ERROR_H
+#define CAN_ERROR_H
+
+#ifdef __KERNEL__
+#include &quot;version.h&quot;
+RCSID(&quot;$Id$&quot;);
+#endif
+
+#define CANERR_LEN 8 /* dlc for error frames */
+
+/* error class (mask) / data[0] */
+#define CANERR_BUSOFF           0x80 /* bus off */
+#define CANERR_LOSTARB          0x40 /* lost arbitration    / data[1]    */
+#define CANERR_CRTL             0x20 /* controller problems / data[2]    */
+#define CANERR_PROT             0x10 /* protocol violations / data[3..4] */
+#define CANERR_TRX              0x08 /* transceiver status  / data[5]    */
+
+/* arbitration lost in bit ... / data[1] */
+#define CANERR_LOSTARB_UNSPEC   0x00 /* unspecified */
+                                     /* else bit number in bitstream */
+
+/* error status of CAN-controller / data[2] */
+#define CANERR_CRTL_UNSPEC      0x00 /* unspecified */
+#define CANERR_CRTL_RX_OVERFLOW 0x01 /* RX buffer overflow */
+#define CANERR_CRTL_TX_OVERFLOW 0x02 /* TX buffer overflow */
+#define CANERR_CRTL_RX_WARNING  0x04 /* reached warning level for RX errors
+*/
+#define CANERR_CRTL_TX_WARNING  0x08 /* reached warning level for TX errors
+*/
+
+/* error in CAN protocol (type) / data[3] */
+#define CANERR_PROT_UNSPEC      0x00 /* unspecified */
+#define CANERR_PROT_BIT         0x01 /* single bit error */
+#define CANERR_PROT_FORM        0x02 /* frame format error */
+#define CANERR_PROT_STUFF       0x04 /* bit stuffing error */
+#define CANERR_PROT_OVERLOAD    0x08 /* bus overload */
+#define CANERR_PROT_CANID       0x10 /* detected identical can_id */
+#define CANERR_PROT_TX          0x80 /* error occured on transmission */
+
+/* error in CAN protocol (location) / data[4] */
+#define CANERR_PROT_UNSPEC      0x00 /* unspecified */
+                                     /* else values from SJA1000-ECC - 2 */
+
+/* error status of CAN-transceiver / data[5] */
+/*                                            CANH CANL */
+#define CANERR_TRX_UNSPEC             0x00 /* 0000 0000 */
+#define CANERR_TRX_CANH_NO_WIRE       0x04 /* 0000 0100 */
+#define CANERR_TRX_CANH_SHORT_TO_BAT  0x05 /* 0000 0101 */
+#define CANERR_TRX_CANH_SHORT_TO_VCC  0x06 /* 0000 0110 */
+#define CANERR_TRX_CANH_SHORT_TO_GND  0x07 /* 0000 0111 */
+#define CANERR_TRX_CANL_NO_WIRE       0x40 /* 0100 0000 */
+#define CANERR_TRX_CANL_SHORT_TO_BAT  0x50 /* 0101 0000 */
+#define CANERR_TRX_CANL_SHORT_TO_VCC  0x60 /* 0110 0000 */
+#define CANERR_TRX_CANL_SHORT_TO_GND  0x70 /* 0111 0000 */
+#define CANERR_TRX_CANL_SHORT_TO_CANH 0x80 /* 1000 0000 */
+
+#endif /* CAN_ERROR_H */  
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000086.html">[Socketcan-core] Re:  [RFC] Restructured kernel/2.6 subtree
+</A></li>
+	<LI>Next message: <A HREF="000075.html">[Socketcan-core] Error Frame Spec
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#74">[ date ]</a>
+              <a href="thread.html#74">[ thread ]</a>
+              <a href="subject.html#74">[ subject ]</a>
+              <a href="author.html#74">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

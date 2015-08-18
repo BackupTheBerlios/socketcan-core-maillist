@@ -1,0 +1,468 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] can: Driver for the Microchip MCP251x SPI CAN controllers
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20can%3A%20Driver%20for%20the%20Microchip%20MCP251x%20SPI%20CAN%20controllers&In-Reply-To=%3C4AEF37C1.9030706%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003347.html">
+   <LINK REL="Next"  HREF="003370.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] can: Driver for the Microchip MCP251x SPI CAN controllers</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20can%3A%20Driver%20for%20the%20Microchip%20MCP251x%20SPI%20CAN%20controllers&In-Reply-To=%3C4AEF37C1.9030706%40grandegger.com%3E"
+       TITLE="[PATCH] can: Driver for the Microchip MCP251x SPI CAN controllers">wg at grandegger.com
+       </A><BR>
+    <I>Mon Nov  2 20:49:21 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003347.html">[PATCH] can: Driver for the Microchip MCP251x SPI CAN controllers
+</A></li>
+        <LI>Next message: <A HREF="003370.html">[PATCH] can: Driver for the Microchip MCP251x SPI CAN controllers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3353">[ date ]</a>
+              <a href="thread.html#3353">[ thread ]</a>
+              <a href="subject.html#3353">[ subject ]</a>
+              <a href="author.html#3353">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I assume this is v2 of the patch.
+
+Christian Pellegrin wrote:
+&gt;<i> Signed-off-by: Christian Pellegrin &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">chripell at fsfe.org</A>&gt;
+</I>&gt;<i> ---
+</I>&gt;<i>  drivers/net/can/Kconfig              |    6 +
+</I>&gt;<i>  drivers/net/can/Makefile             |    1 +
+</I>&gt;<i>  drivers/net/can/mcp251x.c            | 1164 ++++++++++++++++++++++++++++++++++
+</I>&gt;<i>  include/linux/can/platform/mcp251x.h |   36 +
+</I>&gt;<i>  4 files changed, 1207 insertions(+), 0 deletions(-)
+</I>&gt;<i>  create mode 100644 drivers/net/can/mcp251x.c
+</I>&gt;<i>  create mode 100644 include/linux/can/platform/mcp251x.h
+</I>&gt;<i> 
+</I>[snip]
+&gt;<i> diff --git a/drivers/net/can/mcp251x.c b/drivers/net/can/mcp251x.c
+</I>&gt;<i> new file mode 100644
+</I>&gt;<i> index 0000000..9471bb7
+</I>&gt;<i> --- /dev/null
+</I>&gt;<i> +++ b/drivers/net/can/mcp251x.c
+</I>[snip]
+&gt;<i> +static void mcp251x_hw_tx(struct spi_device *spi, struct can_frame *frame,
+</I>&gt;<i> +			  int tx_buf_idx)
+</I>&gt;<i> +{
+</I>&gt;<i> +	u32 sid, eid, exide, rtr;
+</I>&gt;<i> +	u8 buf[SPI_TRANSFER_BUF_LEN];
+</I>&gt;<i> +
+</I>&gt;<i> +	exide = (frame-&gt;can_id &amp; CAN_EFF_FLAG) ? 1 : 0; /* Extended ID Enable */
+</I>&gt;<i> +	if (exide)
+</I>&gt;<i> +		sid = (frame-&gt;can_id &amp; CAN_EFF_MASK) &gt;&gt; 18;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		sid = frame-&gt;can_id &amp; CAN_SFF_MASK; /* Standard ID */
+</I>&gt;<i> +	eid = frame-&gt;can_id &amp; CAN_EFF_MASK; /* Extended ID */
+</I>&gt;<i> +	rtr = (frame-&gt;can_id &amp; CAN_RTR_FLAG) ? 1 : 0; /* Remote transmission */
+</I>&gt;<i> +
+</I>&gt;<i> +	buf[TXBCTRL_OFF] = INSTRUCTION_LOAD_TXB(tx_buf_idx);
+</I>&gt;<i> +	buf[TXBSIDH_OFF] = sid &gt;&gt; SIDH_SHIFT;
+</I>&gt;<i> +	buf[TXBSIDL_OFF] = ((sid &amp; SIDL_SID_MASK) &lt;&lt; SIDL_SID_SHIFT) |
+</I>&gt;<i> +		(exide &lt;&lt; SIDL_EXIDE_SHIFT) |
+</I>&gt;<i> +		((eid &gt;&gt; SIDL_EID_SHIFT) &amp; SIDL_EID_MASK);
+</I>&gt;<i> +	buf[TXBEID8_OFF] = GET_BYTE(eid, 1);
+</I>&gt;<i> +	buf[TXBEID0_OFF] = GET_BYTE(eid, 0);
+</I>&gt;<i> +	buf[TXBDLC_OFF]  = (rtr &lt;&lt; DLC_RTR_SHIFT) | frame-&gt;can_dlc;
+</I>
+Two spaces before &quot;=&quot;.
+
+&gt;<i> +	memcpy(buf + TXBDAT_OFF, frame-&gt;data, frame-&gt;can_dlc);
+</I>&gt;<i> +	mcp251x_hw_tx_frame(spi, buf, frame-&gt;can_dlc, tx_buf_idx);
+</I>&gt;<i> +	mcp251x_write_reg(spi, TXBCTRL(tx_buf_idx), TXBCTRL_TXREQ);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>[snip]
+&gt;<i> +static int mcp251x_open(struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp251x_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	struct spi_device *spi = priv-&gt;spi;
+</I>&gt;<i> +	struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
+</I>&gt;<i> +	int ret;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (pdata-&gt;transceiver_enable)
+</I>&gt;<i> +		pdata-&gt;transceiver_enable(1);
+</I>&gt;<i> +
+</I>&gt;<i> +	priv-&gt;force_quit = 0;
+</I>&gt;<i> +	priv-&gt;tx_skb = NULL;
+</I>&gt;<i> +	priv-&gt;tx_len = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = request_irq(spi-&gt;irq, mcp251x_can_isr,
+</I>&gt;<i> +			  IRQF_TRIGGER_FALLING, DEVICE_NAME, net);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		dev_err(&amp;spi-&gt;dev, &quot;failed to acquire irq %d\n&quot;, spi-&gt;irq);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>
+Here the transceiver should be switched off!?
+
+&gt;<i> +	mcp251x_hw_wakeup(spi);
+</I>&gt;<i> +	mcp251x_hw_reset(spi);
+</I>&gt;<i> +	ret = mcp251x_setup(net, priv, spi);
+</I>&gt;<i> +	if (ret) {
+</I>&gt;<i> +		free_irq(spi-&gt;irq, net);
+</I>&gt;<i> +		if (pdata-&gt;transceiver_enable)
+</I>&gt;<i> +			pdata-&gt;transceiver_enable(0);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	mcp251x_set_normal_mode(spi);
+</I>&gt;<i> +	netif_wake_queue(net);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>[snip]
+&gt;<i> +static void mcp251x_irq_work_handler(struct work_struct *ws)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp251x_priv *priv = container_of(ws, struct mcp251x_priv,
+</I>&gt;<i> +						 irq_work);
+</I>&gt;<i> +	struct spi_device *spi = priv-&gt;spi;
+</I>&gt;<i> +	struct net_device *net = priv-&gt;net;
+</I>&gt;<i> +	u8 txbnctrl;
+</I>&gt;<i> +	u8 intf;
+</I>&gt;<i> +	enum can_state new_state;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (priv-&gt;after_suspend) {
+</I>&gt;<i> +		mdelay(10);
+</I>&gt;<i> +		mcp251x_hw_reset(spi);
+</I>&gt;<i> +		mcp251x_setup(net, priv, spi);
+</I>&gt;<i> +		if (priv-&gt;after_suspend &amp; AFTER_SUSPEND_RESTART) {
+</I>&gt;<i> +			mcp251x_set_normal_mode(spi);
+</I>&gt;<i> +		} else if (priv-&gt;after_suspend &amp; AFTER_SUSPEND_UP) {
+</I>&gt;<i> +			netif_device_attach(net);
+</I>&gt;<i> +			/* Clean since we lost tx buffer */
+</I>&gt;<i> +			if (priv-&gt;tx_skb || priv-&gt;tx_len) {
+</I>&gt;<i> +				mcp251x_clean(net);
+</I>&gt;<i> +				netif_wake_queue(net);
+</I>&gt;<i> +			}
+</I>&gt;<i> +			mcp251x_set_normal_mode(spi);
+</I>&gt;<i> +		} else {
+</I>&gt;<i> +			mcp251x_hw_sleep(spi);
+</I>&gt;<i> +		}
+</I>&gt;<i> +		priv-&gt;after_suspend = 0;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (priv-&gt;can.restart_ms == 0 &amp;&amp; priv-&gt;can.state == CAN_STATE_BUS_OFF) {
+</I>&gt;<i> +		while (!priv-&gt;force_quit &amp;&amp; !freezing(current) &amp;&amp;
+</I>&gt;<i> +		       (intf = mcp251x_read_reg(spi, CANINTF)))
+</I>&gt;<i> +			mcp251x_write_bits(spi, CANINTF, intf, 0x00);
+</I>
+Assigning variables within if or while expressions is not allowed. I
+wonder why checkpatch did not spot it.
+
+&gt;<i> +		return;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	while (!priv-&gt;force_quit &amp;&amp; !freezing(current)) {
+</I>&gt;<i> +		u8 eflag = mcp251x_read_reg(spi, EFLG);
+</I>&gt;<i> +		int can_id = 0, data1 = 0;
+</I>&gt;<i> +
+</I>&gt;<i> +		mcp251x_write_reg(spi, EFLG, 0x00);
+</I>&gt;<i> +
+</I>&gt;<i> +		if (priv-&gt;restart_tx) {
+</I>&gt;<i> +			priv-&gt;restart_tx = 0;
+</I>&gt;<i> +			mcp251x_write_reg(spi, TXBCTRL(0), 0);
+</I>&gt;<i> +			if (priv-&gt;tx_skb || priv-&gt;tx_len)
+</I>&gt;<i> +				mcp251x_clean(net);
+</I>&gt;<i> +			netif_wake_queue(net);
+</I>&gt;<i> +			can_id |= CAN_ERR_RESTARTED;
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		if (priv-&gt;wake) {
+</I>&gt;<i> +			/* Wait whilst the device wakes up */
+</I>&gt;<i> +			mdelay(10);
+</I>&gt;<i> +			priv-&gt;wake = 0;
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		intf = mcp251x_read_reg(spi, CANINTF);
+</I>&gt;<i> +		mcp251x_write_bits(spi, CANINTF, intf, 0x00);
+</I>&gt;<i> +
+</I>&gt;<i> +		/* Update can state */
+</I>&gt;<i> +		if (eflag &amp; EFLG_TXBO) {
+</I>&gt;<i> +			new_state = CAN_STATE_BUS_OFF;
+</I>&gt;<i> +			can_id |= CAN_ERR_BUSOFF;
+</I>&gt;<i> +		} else if (eflag &amp; EFLG_TXEP) {
+</I>&gt;<i> +			new_state = CAN_STATE_ERROR_PASSIVE;
+</I>&gt;<i> +			can_id |= CAN_ERR_CRTL;
+</I>&gt;<i> +			data1 |= CAN_ERR_CRTL_TX_PASSIVE;
+</I>&gt;<i> +		} else if (eflag &amp; EFLG_RXEP) {
+</I>&gt;<i> +			new_state = CAN_STATE_ERROR_PASSIVE;
+</I>&gt;<i> +			can_id |= CAN_ERR_CRTL;
+</I>&gt;<i> +			data1 |= CAN_ERR_CRTL_RX_PASSIVE;
+</I>&gt;<i> +		} else if (eflag &amp; EFLG_TXWAR) {
+</I>&gt;<i> +			new_state = CAN_STATE_ERROR_WARNING;
+</I>&gt;<i> +			can_id |= CAN_ERR_CRTL;
+</I>&gt;<i> +			data1 |= CAN_ERR_CRTL_TX_WARNING;
+</I>&gt;<i> +		} else if (eflag &amp; EFLG_RXWAR) {
+</I>&gt;<i> +			new_state = CAN_STATE_ERROR_WARNING;
+</I>&gt;<i> +			can_id |= CAN_ERR_CRTL;
+</I>&gt;<i> +			data1 |= CAN_ERR_CRTL_RX_WARNING;
+</I>&gt;<i> +		} else {
+</I>&gt;<i> +			new_state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		/* Update can state statistics */
+</I>&gt;<i> +		switch (priv-&gt;can.state) {
+</I>&gt;<i> +		case CAN_STATE_ERROR_ACTIVE:
+</I>&gt;<i> +			if (new_state &gt;= CAN_STATE_ERROR_WARNING &amp;&amp;
+</I>&gt;<i> +			    new_state &lt;= CAN_STATE_BUS_OFF)
+</I>&gt;<i> +				priv-&gt;can.can_stats.error_warning++;
+</I>&gt;<i> +		case CAN_STATE_ERROR_WARNING:	/* fallthrough */
+</I>&gt;<i> +			if (new_state &gt;= CAN_STATE_ERROR_PASSIVE &amp;&amp;
+</I>&gt;<i> +			    new_state &lt;= CAN_STATE_BUS_OFF)
+</I>&gt;<i> +				priv-&gt;can.can_stats.error_passive++;
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		default:
+</I>&gt;<i> +			break;
+</I>&gt;<i> +		}
+</I>&gt;<i> +		priv-&gt;can.state = new_state;
+</I>&gt;<i> +
+</I>&gt;<i> +		if ((intf &amp; CANINTF_ERRIF) || (can_id &amp; CAN_ERR_RESTARTED)) {
+</I>&gt;<i> +			struct sk_buff *skb;
+</I>&gt;<i> +			struct can_frame *frame;
+</I>&gt;<i> +
+</I>&gt;<i> +			/* Create error frame */
+</I>&gt;<i> +			skb = alloc_can_err_skb(net, &amp;frame);
+</I>&gt;<i> +			if (skb) {
+</I>&gt;<i> +				/* Set error frame flags based on bus state */
+</I>&gt;<i> +				frame-&gt;can_id = can_id;
+</I>&gt;<i> +				frame-&gt;data[1] = data1;
+</I>&gt;<i> +
+</I>&gt;<i> +				/* Update net stats for overflows */
+</I>&gt;<i> +				if (eflag &amp; (EFLG_RX0OVR | EFLG_RX1OVR)) {
+</I>&gt;<i> +					if (eflag &amp; EFLG_RX0OVR)
+</I>&gt;<i> +						net-&gt;stats.rx_over_errors++;
+</I>&gt;<i> +					if (eflag &amp; EFLG_RX1OVR)
+</I>&gt;<i> +						net-&gt;stats.rx_over_errors++;
+</I>&gt;<i> +					frame-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;<i> +					frame-&gt;data[1] |=
+</I>&gt;<i> +						CAN_ERR_CRTL_RX_OVERFLOW;
+</I>&gt;<i> +				}
+</I>&gt;<i> +
+</I>&gt;<i> +				netif_rx(skb);
+</I>&gt;<i> +			} else {
+</I>&gt;<i> +				dev_info(&amp;spi-&gt;dev,
+</I>&gt;<i> +					 &quot;cannot allocate error skb\n&quot;);
+</I>&gt;<i> +			}
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		if (priv-&gt;can.state == CAN_STATE_BUS_OFF) {
+</I>&gt;<i> +			if (priv-&gt;can.restart_ms == 0) {
+</I>&gt;<i> +				can_bus_off(net);
+</I>&gt;<i> +				mcp251x_hw_sleep(spi);
+</I>&gt;<i> +				return;
+</I>&gt;<i> +			}
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		if (intf == 0)
+</I>&gt;<i> +			break;
+</I>&gt;<i> +
+</I>&gt;<i> +		if (intf &amp; CANINTF_WAKIF)
+</I>&gt;<i> +			complete(&amp;priv-&gt;awake);
+</I>&gt;<i> +
+</I>&gt;<i> +		if (intf &amp; CANINTF_MERRF) {
+</I>&gt;<i> +			/* If there are pending Tx buffers, restart queue */
+</I>&gt;<i> +			txbnctrl = mcp251x_read_reg(spi, TXBCTRL(0));
+</I>&gt;<i> +			if (!(txbnctrl &amp; TXBCTRL_TXREQ)) {
+</I>&gt;<i> +				if (priv-&gt;tx_skb || priv-&gt;tx_len)
+</I>&gt;<i> +					mcp251x_clean(net);
+</I>&gt;<i> +				netif_wake_queue(net);
+</I>&gt;<i> +			}
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		if (intf &amp; (CANINTF_TX2IF | CANINTF_TX1IF | CANINTF_TX0IF)) {
+</I>&gt;<i> +			net-&gt;stats.tx_packets++;
+</I>&gt;<i> +			net-&gt;stats.tx_bytes += priv-&gt;tx_len - 1;
+</I>&gt;<i> +			if (priv-&gt;tx_len) {
+</I>&gt;<i> +				can_get_echo_skb(net, 0);
+</I>&gt;<i> +				priv-&gt;tx_len = 0;
+</I>&gt;<i> +			}
+</I>&gt;<i> +			netif_wake_queue(net);
+</I>&gt;<i> +		}
+</I>&gt;<i> +
+</I>&gt;<i> +		if (intf &amp; CANINTF_RX0IF)
+</I>&gt;<i> +			mcp251x_hw_rx(spi, 0);
+</I>&gt;<i> +
+</I>&gt;<i> +		if (intf &amp; CANINTF_RX1IF)
+</I>&gt;<i> +			mcp251x_hw_rx(spi, 1);
+</I>&gt;<i> +	}
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static const struct net_device_ops mcp251x_netdev_ops = {
+</I>&gt;<i> +	.ndo_open	= mcp251x_open,
+</I>&gt;<i> +	.ndo_stop	= mcp251x_stop,
+</I>&gt;<i> +	.ndo_start_xmit	= mcp251x_hard_start_xmit,
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static int __devinit mcp251x_can_probe(struct spi_device *spi)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *net;
+</I>&gt;<i> +	struct mcp251x_priv *priv;
+</I>&gt;<i> +	struct mcp251x_platform_data *pdata = spi-&gt;dev.platform_data;
+</I>&gt;<i> +	int ret = -ENODEV;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!pdata)
+</I>&gt;<i> +		/* Platform data is required for osc freq */
+</I>&gt;<i> +		goto error_out;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Allocate can/net device */
+</I>&gt;<i> +	net = alloc_candev(sizeof(struct mcp251x_priv), TX_ECHO_SKB_MAX);
+</I>&gt;<i> +	if (!net) {
+</I>&gt;<i> +		ret = -ENOMEM;
+</I>&gt;<i> +		goto error_alloc;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	net-&gt;netdev_ops		= &amp;mcp251x_netdev_ops;
+</I>&gt;<i> +	net-&gt;flags		|= IFF_ECHO;
+</I>
+Remove spaces, please.
+
+&gt;<i> +	priv = netdev_priv(net);
+</I>&gt;<i> +	priv-&gt;can.bittiming_const = &amp;mcp251x_bittiming_const;
+</I>&gt;<i> +	priv-&gt;can.do_set_mode = mcp251x_do_set_mode;
+</I>&gt;<i> +	priv-&gt;can.clock.freq = pdata-&gt;oscillator_frequency / 2;
+</I>&gt;<i> +	priv-&gt;can.do_set_bittiming = mcp251x_do_set_bittiming;
+</I>&gt;<i> +	priv-&gt;net = net;
+</I>&gt;<i> +	dev_set_drvdata(&amp;spi-&gt;dev, priv);
+</I>&gt;<i> +
+</I>&gt;<i> +	priv-&gt;spi = spi;
+</I>&gt;<i> +	mutex_init(&amp;priv-&gt;spi_lock);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* If requested, allocate DMA buffers */
+</I>&gt;<i> +	if (mcp251x_enable_dma) {
+</I>&gt;<i> +		spi-&gt;dev.coherent_dma_mask = ~0;
+</I>&gt;<i> +
+</I>&gt;<i> +		/*
+</I>&gt;<i> +		 * Minimum coherent DMA allocation is PAGE_SIZE, so allocate
+</I>&gt;<i> +		 * that much and share it between Tx and Rx DMA buffers.
+</I>&gt;<i> +		 */
+</I>&gt;<i> +		priv-&gt;spi_tx_buf = dma_alloc_coherent(&amp;spi-&gt;dev,
+</I>&gt;<i> +						      PAGE_SIZE,
+</I>&gt;<i> +						      &amp;priv-&gt;spi_tx_dma,
+</I>&gt;<i> +						      GFP_DMA);
+</I>&gt;<i> +
+</I>&gt;<i> +		if (priv-&gt;spi_tx_buf) {
+</I>&gt;<i> +			priv-&gt;spi_rx_buf = (u8 *)(priv-&gt;spi_tx_buf +
+</I>&gt;<i> +						  (PAGE_SIZE / 2));
+</I>&gt;<i> +			priv-&gt;spi_rx_dma = (dma_addr_t)(priv-&gt;spi_tx_dma +
+</I>&gt;<i> +							(PAGE_SIZE / 2));
+</I>&gt;<i> +		} else {
+</I>&gt;<i> +			/* Fall back to non-DMA */
+</I>&gt;<i> +			mcp251x_enable_dma = 0;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Allocate non-DMA buffers */
+</I>&gt;<i> +	if (!mcp251x_enable_dma) {
+</I>&gt;<i> +		priv-&gt;spi_tx_buf = kmalloc(SPI_TRANSFER_BUF_LEN, GFP_KERNEL);
+</I>&gt;<i> +		if (!priv-&gt;spi_tx_buf) {
+</I>&gt;<i> +			ret = -ENOMEM;
+</I>&gt;<i> +			goto error_tx_buf;
+</I>&gt;<i> +		}
+</I>&gt;<i> +		priv-&gt;spi_rx_buf = kmalloc(SPI_TRANSFER_BUF_LEN, GFP_KERNEL);
+</I>&gt;<i> +		if (!priv-&gt;spi_tx_buf) {
+</I>&gt;<i> +			ret = -ENOMEM;
+</I>&gt;<i> +			goto error_rx_buf;
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (pdata-&gt;power_enable)
+</I>&gt;<i> +		pdata-&gt;power_enable(1);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Call out to platform specific setup */
+</I>&gt;<i> +	if (pdata-&gt;board_specific_setup)
+</I>&gt;<i> +		pdata-&gt;board_specific_setup(spi);
+</I>&gt;<i> +
+</I>&gt;<i> +	SET_NETDEV_DEV(net, &amp;spi-&gt;dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	priv-&gt;wq = create_freezeable_workqueue(&quot;mcp251x_wq&quot;);
+</I>&gt;<i> +
+</I>&gt;<i> +	INIT_WORK(&amp;priv-&gt;tx_work, mcp251x_tx_work_handler);
+</I>&gt;<i> +	INIT_WORK(&amp;priv-&gt;irq_work, mcp251x_irq_work_handler);
+</I>&gt;<i> +
+</I>&gt;<i> +	init_completion(&amp;priv-&gt;awake);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Configure the SPI bus */
+</I>&gt;<i> +	spi-&gt;mode = SPI_MODE_0;
+</I>&gt;<i> +	spi-&gt;bits_per_word = 8;
+</I>&gt;<i> +	spi_setup(spi);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (!mcp251x_hw_probe(spi)) {
+</I>&gt;<i> +		dev_info(&amp;spi-&gt;dev, &quot;Probe failed\n&quot;);
+</I>&gt;<i> +		goto error_probe;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	mcp251x_hw_sleep(spi);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (pdata-&gt;transceiver_enable)
+</I>&gt;<i> +		pdata-&gt;transceiver_enable(0);
+</I>&gt;<i> +
+</I>&gt;<i> +	ret = register_candev(net);
+</I>&gt;<i> +	if (ret &gt;= 0) {
+</I>
+if (!ret) ?
+
+&gt;<i> +		dev_info(&amp;spi-&gt;dev, &quot;probed\n&quot;);
+</I>&gt;<i> +		return ret;
+</I>&gt;<i> +	}
+</I>
+Shouldn't the power be switched off?
+
+&gt;<i> +error_probe:
+</I>&gt;<i> +	if (!mcp251x_enable_dma)
+</I>&gt;<i> +		kfree(priv-&gt;spi_rx_buf);
+</I>&gt;<i> +error_rx_buf:
+</I>&gt;<i> +	if (!mcp251x_enable_dma)
+</I>&gt;<i> +		kfree(priv-&gt;spi_tx_buf);
+</I>&gt;<i> +error_tx_buf:
+</I>&gt;<i> +	free_candev(net);
+</I>&gt;<i> +	if (mcp251x_enable_dma)
+</I>&gt;<i> +		dma_free_coherent(&amp;spi-&gt;dev, PAGE_SIZE,
+</I>&gt;<i> +				  priv-&gt;spi_tx_buf, priv-&gt;spi_tx_dma);
+</I>&gt;<i> +error_alloc:
+</I>&gt;<i> +	dev_err(&amp;spi-&gt;dev, &quot;probe failed\n&quot;);
+</I>&gt;<i> +error_out:
+</I>&gt;<i> +	return ret;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>[snip]
+
+We are close...
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003347.html">[PATCH] can: Driver for the Microchip MCP251x SPI CAN controllers
+</A></li>
+	<LI>Next message: <A HREF="003370.html">[PATCH] can: Driver for the Microchip MCP251x SPI CAN controllers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3353">[ date ]</a>
+              <a href="thread.html#3353">[ thread ]</a>
+              <a href="subject.html#3353">[ subject ]</a>
+              <a href="author.html#3353">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

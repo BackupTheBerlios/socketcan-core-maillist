@@ -1,0 +1,144 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Local Echo (Loopback)
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Local%20Echo%20%28Loopback%29&In-Reply-To=%3C20071214121943.4ac2a7fa%40dilbert.local%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001001.html">
+   <LINK REL="Next"  HREF="000981.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Local Echo (Loopback)</H1>
+    <B>Hans-J&#252;rgen Koch</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Local%20Echo%20%28Loopback%29&In-Reply-To=%3C20071214121943.4ac2a7fa%40dilbert.local%3E"
+       TITLE="Local Echo (Loopback)">hjk at linutronix.de
+       </A><BR>
+    <I>Fri Dec 14 12:19:43 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001001.html">Local Echo (Loopback)
+</A></li>
+        <LI>Next message: <A HREF="000981.html">Local Echo (Loopback)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#979">[ date ]</a>
+              <a href="thread.html#979">[ thread ]</a>
+              <a href="subject.html#979">[ subject ]</a>
+              <a href="author.html#979">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Am Fri, 14 Dec 2007 11:56:13 +0100
+schrieb Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;:
+
+&gt;<i> Hans-J&#252;rgen Koch wrote:
+</I>&gt;<i> &gt; Am Fri, 14 Dec 2007 10:30:11 +0100
+</I>&gt;<i> &gt; schrieb Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;:
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; [...]
+</I>&gt;<i> &gt;&gt; I would handle the skbs in the controller code, as mentioned in my
+</I>&gt;<i> &gt;&gt; previous mail.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Hey, it was you who suggested to move things to the core to avoid
+</I>&gt;<i> &gt; code duplications! And you were quite right. IMHO it should work
+</I>&gt;<i> &gt; like this inside a driver:
+</I>&gt;<i> 
+</I>&gt;<i> Most of the code for skb echo buffer handling will still go to dev.c,
+</I>&gt;<i> just the skb echo stack is managed by the controller driver. If a
+</I>&gt;<i> simple FIFO works, even better.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 1.) Get a TX message from the core
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 2.) Accept the message and tell the core the mailbox number (or any
+</I>&gt;<i> &gt; other unique identifier) the driver uses to refer to that message:
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; can_accept_tx_message(mailbox_id);
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; The core will then add the message to its list of messages that are
+</I>&gt;<i> &gt; on their way, but not actually sent.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 3.) The driver notices that a message is physically sent (e.g. TX
+</I>&gt;<i> &gt; irq). It will then tell the core about it:
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; can_message_is_sent(mailbox_id);
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; The core will then find this message in its list, echo it, and
+</I>&gt;<i> &gt; remove it from the list.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; What do you think about this? Is there any hardware where this
+</I>&gt;<i> &gt; approach is not feasible?
+</I>&gt;<i> 
+</I>&gt;<i> If we can assure, that the TX messages are processed in FIFO _order_,
+</I>
+Hmm, we must assure that. Sending messages in any other order would
+probably break many applications...
+
+&gt;<i> we just need:
+</I>&gt;<i> 
+</I>&gt;<i> 	can_put_echo_skb() in start_xmit() and
+</I>&gt;<i>         can_get_echo_skb() when the TX done interrupt is processed.
+</I>
+That would be the equivalent of my two functions, just without the
+mailbox_id?
+
+&gt;<i> 
+</I>&gt;<i> And one function to flush all skbs in the FIFO. I think there is no
+</I>&gt;<i> need to flush just one skb. This could be managed completely in dev.c
+</I>&gt;<i> using a FIFO defined in struct can_priv as shown:
+</I>&gt;<i> 
+</I>&gt;<i>          can_priv-&gt;echo_skb_fifo_ptr;
+</I>&gt;<i>          can_priv-&gt;echo_skb_max;
+</I>&gt;<i>          can_priv-&gt;echo_skb_head;
+</I>&gt;<i>          can_priv-&gt;echo_skb_tail;
+</I>&gt;<i> 
+</I>&gt;<i> Echo skb FIFO might be a pointer into sja1000_priv:
+</I>&gt;<i> 
+</I>&gt;<i>   can_priv-&gt;echo_skb_fifo_ptr = &amp;sja1000_priv-&gt;echo_skb_fifo
+</I>
+Hmm, I'd prefer to have that FIFO allocation stuff in the core as well.
+Otherwise each driver will implement its own variation of a list
+structure. In the core, we only need to do it once. And we can do it
+properly, possibly using one of the kernel's predefined list
+structures. 
+
+&gt;<i> 
+</I>&gt;<i> But this approach is only OK with the above assumption. 
+</I>
+Then it is OK. A driver has to ensure that messages are transmitted in
+the order the user issues them. BTW, that reminds me my at91 driver
+doesn't do that properly yet :-)
+
+Hans
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001001.html">Local Echo (Loopback)
+</A></li>
+	<LI>Next message: <A HREF="000981.html">Local Echo (Loopback)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#979">[ date ]</a>
+              <a href="thread.html#979">[ thread ]</a>
+              <a href="subject.html#979">[ subject ]</a>
+              <a href="author.html#979">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,134 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> dlc check in driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20dlc%20check%20in%20driver&In-Reply-To=%3CFC0CAFD4-7606-49DA-B840-D1C33C31F712%40googlemail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002893.html">
+   <LINK REL="Next"  HREF="002859.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>dlc check in driver</H1>
+    <B>Maximilian Falkenstein</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20dlc%20check%20in%20driver&In-Reply-To=%3CFC0CAFD4-7606-49DA-B840-D1C33C31F712%40googlemail.com%3E"
+       TITLE="dlc check in driver">maxf59964 at googlemail.com
+       </A><BR>
+    <I>Tue Aug 18 22:11:40 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002893.html">dlc check in driver
+</A></li>
+        <LI>Next message: <A HREF="002859.html">Comments on at91_can.c
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2894">[ date ]</a>
+              <a href="thread.html#2894">[ thread ]</a>
+              <a href="subject.html#2894">[ subject ]</a>
+              <a href="author.html#2894">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Marc,
+
+yes, that *should* work. I've just used a simple if-statement which  
+prints a nice error message in the kernel log, too.
+
+Regrades
+
+Maximilian
+
+Am 18.08.2009 um 19:54 schrieb Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;:
+
+&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;<i> Marc Kleine-Budde wrote:
+</I>&gt;&gt;&gt;<i> Oliver Hartkopp wrote:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> I'm developing a simple can protocol driver for binary can data  
+</I>&gt;&gt;&gt;&gt;&gt;<i> over a
+</I>&gt;&gt;&gt;&gt;&gt;<i> serial interface. The CAN Hardware is working fine(verified with a
+</I>&gt;&gt;&gt;&gt;&gt;<i> terminal). Currently, my kernel module is a copy of slcan.  
+</I>&gt;&gt;&gt;&gt;&gt;<i> Sending is
+</I>&gt;&gt;&gt;&gt;&gt;<i> working fine, but when I receive something, the whole system hangs
+</I>&gt;&gt;&gt;&gt;&gt;<i> up(but after my module passed the packet on), and I get a crash  
+</I>&gt;&gt;&gt;&gt;&gt;<i> dump(see
+</I>&gt;&gt;&gt;&gt;&gt;<i> below) over the serial console.
+</I>&gt;&gt;&gt;&gt;<i> Hi Maximilian,
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> this is because your created socketbuffer is buggy.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> We had a discussion on this topic two days ago here:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> <A HREF="http://marc.info/?t=124957743000007&amp;r=1&amp;w=2">http://marc.info/?t=124957743000007&amp;r=1&amp;w=2</A>
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> and there is currently a patch on it's way to move the BUG() to a  
+</I>&gt;&gt;&gt;&gt;<i> WARN_ONCE():
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> <A HREF="http://marc.info/?l=linux-netdev&amp;m=124990364331851&amp;w=2">http://marc.info/?l=linux-netdev&amp;m=124990364331851&amp;w=2</A>
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> Btw. The crash is caused by:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> BUG_ON(skb-&gt;len != sizeof(struct can_frame) || cf-&gt;can_dlc &gt; 8);
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> and you need to fix that in your driver.
+</I>&gt;&gt;&gt;<i> I'm working now on the at91, the driver has no check for dlc &gt; 8, so
+</I>&gt;&gt;&gt;<i> that's the proper fix?
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> @@ -364,7 +353,7 @@ static void at91_read_mb(struct net_device  
+</I>&gt;&gt;&gt;&gt;<i> *dev, int mb, struct can_frame *cf)
+</I>&gt;&gt;&gt;&gt;<i>        reg_msr = at91_read(dev, AT91_MSR(mb));
+</I>&gt;&gt;&gt;&gt;<i>        if (reg_msr &amp; AT91_MSR_MRTR)
+</I>&gt;&gt;&gt;&gt;<i>                cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;&gt;&gt;&gt;<i> -       cf-&gt;can_dlc = (reg_msr &gt;&gt; 16) &amp; 0xf;
+</I>&gt;&gt;&gt;&gt;<i> +       cf-&gt;can_dlc = max_t(__u8, (reg_msr &gt;&gt; 16) &amp; 0xf, 8);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> You meant min_t() here right?
+</I>&gt;<i>
+</I>&gt;<i> sure, it was too hot in here :D
+</I>&gt;<i>
+</I>&gt;<i> Marc
+</I>&gt;<i>
+</I>&gt;<i> -- 
+</I>&gt;<i> Pengutronix e.K.                         | Marc Kleine- 
+</I>&gt;<i> Budde           |
+</I>&gt;<i> Linux Solutions for Science and Industry | Phone:  
+</I>&gt;<i> +49-231-2826-924     |
+</I>&gt;<i> Vertretung West/Dortmund                 | Fax:    
+</I>&gt;<i> +49-5121-206917-5555 |
+</I>&gt;<i> Amtsgericht Hildesheim, HRA 2686         | <A HREF="http://">http://</A> 
+</I>&gt;<i> www.pengutronix.de   |
+</I>&gt;<i>
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> Socketcan-core mailing list
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002893.html">dlc check in driver
+</A></li>
+	<LI>Next message: <A HREF="002859.html">Comments on at91_can.c
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2894">[ date ]</a>
+              <a href="thread.html#2894">[ thread ]</a>
+              <a href="subject.html#2894">[ subject ]</a>
+              <a href="author.html#2894">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

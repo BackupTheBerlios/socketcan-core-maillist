@@ -1,0 +1,506 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> can: make the number of echo skb's configurable
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20can%3A%20make%20the%20number%20of%20echo%20skb%27s%20configurable&In-Reply-To=%3C4AB372BA.6090504%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003141.html">
+   <LINK REL="Next"  HREF="003146.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>can: make the number of echo skb's configurable</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20can%3A%20make%20the%20number%20of%20echo%20skb%27s%20configurable&In-Reply-To=%3C4AB372BA.6090504%40grandegger.com%3E"
+       TITLE="can: make the number of echo skb's configurable">wg at grandegger.com
+       </A><BR>
+    <I>Fri Sep 18 13:44:58 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003141.html">test applications (was: Re: MSCAN pacth: order of frames)
+</A></li>
+        <LI>Next message: <A HREF="003146.html">can: make the number of echo skb's configurable
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3144">[ date ]</a>
+              <a href="thread.html#3144">[ thread ]</a>
+              <a href="subject.html#3144">[ subject ]</a>
+              <a href="author.html#3144">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch allows the CAN controller driver to define the number
+of echo skb's used for the local loopback (echo), as suggested by
+Kurt, via:
+
+  struct net_device *alloc_candev(int sizeof_priv,
+                                  unsigned int echo_skb_max);
+
+The drivers have been adapted accordingly. Please test and comment
+and check if the value of echo_skb_max is OK for your driver.
+
+Kurt, feel free to add your signed-off-by here!
+Signed-off-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+---
+ kernel/2.6/drivers/net/can/at91_can.c             |    2 -
+ kernel/2.6/drivers/net/can/cc770/cc770.c          |    3 +-
+ kernel/2.6/drivers/net/can/cc770/cc770.h          |    8 +++--
+ kernel/2.6/drivers/net/can/dev.c                  |   32 +++++++++++++++++-----
+ kernel/2.6/drivers/net/can/ems_usb.c              |    4 +-
+ kernel/2.6/drivers/net/can/esd_pci331.c           |    4 ++
+ kernel/2.6/drivers/net/can/mcp251x.c              |    4 ++
+ kernel/2.6/drivers/net/can/mscan/mscan.c          |    3 +-
+ kernel/2.6/drivers/net/can/sja1000/sja1000.c      |    3 +-
+ kernel/2.6/drivers/net/can/sja1000/sja1000.h      |    2 +
+ kernel/2.6/drivers/net/can/softing/softing_main.c |   12 ++++----
+ kernel/2.6/include/linux/can/dev.h                |   16 +++++------
+ kernel/2.6/include/socketcan/can/dev.h            |   16 +++++------
+ 13 files changed, 71 insertions(+), 38 deletions(-)
+
+Index: trunk/kernel/2.6/drivers/net/can/dev.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/dev.c
++++ trunk/kernel/2.6/drivers/net/can/dev.c
+@@ -272,7 +272,7 @@ static void can_flush_echo_skb(struct ne
+ #endif
+ 	int i;
+ 
+-	for (i = 0; i &lt; CAN_ECHO_SKB_MAX; i++) {
++	for (i = 0; i &lt; priv-&gt;echo_skb_max; i++) {
+ 		if (priv-&gt;echo_skb[i]) {
+ 			kfree_skb(priv-&gt;echo_skb[i]);
+ 			priv-&gt;echo_skb[i] = NULL;
+@@ -289,10 +289,13 @@ static void can_flush_echo_skb(struct ne
+  * of the device driver. The driver must protect access to
+  * priv-&gt;echo_skb, if necessary.
+  */
+-void can_put_echo_skb(struct sk_buff *skb, struct net_device *dev, int idx)
++void can_put_echo_skb(struct sk_buff *skb, struct net_device *dev,
++		      unsigned int idx)
+ {
+ 	struct can_priv *priv = netdev_priv(dev);
+ 
++	BUG_ON(idx &gt;= priv-&gt;echo_skb_max);
++
+ 	/* check flag whether this packet has to be looped back */
+ 	if (!(dev-&gt;flags &amp; IFF_ECHO) || skb-&gt;pkt_type != PACKET_LOOPBACK) {
+ 		kfree_skb(skb);
+@@ -338,10 +341,12 @@ EXPORT_SYMBOL_GPL(can_put_echo_skb);
+  * is handled in the device driver. The driver must protect
+  * access to priv-&gt;echo_skb, if necessary.
+  */
+-void can_get_echo_skb(struct net_device *dev, int idx)
++void can_get_echo_skb(struct net_device *dev, unsigned int idx)
+ {
+ 	struct can_priv *priv = netdev_priv(dev);
+ 
++	BUG_ON(idx &gt;= priv-&gt;echo_skb_max);
++
+ 	if (priv-&gt;echo_skb[idx]) {
+ 		netif_rx(priv-&gt;echo_skb[idx]);
+ 		priv-&gt;echo_skb[idx] = NULL;
+@@ -354,10 +359,12 @@ EXPORT_SYMBOL_GPL(can_get_echo_skb);
+   *
+   * The function is typically called when TX failed.
+   */
+-void can_free_echo_skb(struct net_device *dev, int idx)
++void can_free_echo_skb(struct net_device *dev, unsigned int idx)
+ {
+ 	struct can_priv *priv = netdev_priv(dev);
+ 
++	BUG_ON(idx &gt;= priv-&gt;echo_skb_max);
++
+ 	if (priv-&gt;echo_skb[idx]) {
+ 		kfree_skb(priv-&gt;echo_skb[idx]);
+ 		priv-&gt;echo_skb[idx] = NULL;
+@@ -492,17 +499,30 @@ static void can_setup(struct net_device 
+ /*
+  * Allocate and setup space for the CAN network device
+  */
+-struct net_device *alloc_candev(int sizeof_priv)
++struct net_device *alloc_candev(int sizeof_priv, unsigned int echo_skb_max)
+ {
+ 	struct net_device *dev;
+ 	struct can_priv *priv;
++	int size;
+ 
+-	dev = alloc_netdev(sizeof_priv, &quot;can%d&quot;, can_setup);
++	if (echo_skb_max)
++		size = ALIGN(sizeof_priv, struct sk_buff *) +
++			echo_skb_max * sizeof(struct sk_buff *);
++	else
++		size = sizeof_priv;
++
++	dev = alloc_netdev(size, &quot;can%d&quot;, can_setup);
+ 	if (!dev)
+ 		return NULL;
+ 
+ 	priv = netdev_priv(dev);
+ 
++	if (echo_skb_max) {
++		priv-&gt;echo_skb_max = echo_skb_max;
++		priv-&gt;echo_skb = (void *)priv +
++			ALIGN(sizeof_priv, struct sk_buff *);
++	}
++
+ 	priv-&gt;state = CAN_STATE_STOPPED;
+ 
+ 	init_timer(&amp;priv-&gt;restart_timer);
+Index: trunk/kernel/2.6/include/linux/can/dev.h
+===================================================================
+--- trunk.orig/kernel/2.6/include/linux/can/dev.h
++++ trunk/kernel/2.6/include/linux/can/dev.h
+@@ -32,8 +32,6 @@ enum can_mode {
+ /*
+  * CAN common private data
+  */
+-#define CAN_ECHO_SKB_MAX  4
+-
+ struct can_priv {
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+ 	struct net_device_stats net_stats;
+@@ -50,12 +48,13 @@ struct can_priv {
+ 	int restart_ms;
+ 	struct timer_list restart_timer;
+ 
+-	struct sk_buff *echo_skb[CAN_ECHO_SKB_MAX];
+-
+ 	int (*do_set_bittiming)(struct net_device *dev);
+ 	int (*do_set_mode)(struct net_device *dev, enum can_mode mode);
+ 	int (*do_get_state)(const struct net_device *dev,
+ 			    enum can_state *state);
++
++	unsigned int echo_skb_max;
++	struct sk_buff **echo_skb;
+ };
+ 
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,21)
+@@ -72,7 +71,7 @@ struct can_priv {
+ struct net_device_stats *can_get_stats(struct net_device *dev);
+ #endif
+ 
+-struct net_device *alloc_candev(int sizeof_priv);
++struct net_device *alloc_candev(int sizeof_priv, unsigned int echo_skb_max);
+ void free_candev(struct net_device *dev);
+ 
+ int open_candev(struct net_device *dev);
+@@ -84,8 +83,9 @@ void unregister_candev(struct net_device
+ int can_restart_now(struct net_device *dev);
+ void can_bus_off(struct net_device *dev);
+ 
+-void can_put_echo_skb(struct sk_buff *skb, struct net_device *dev, int idx);
+-void can_get_echo_skb(struct net_device *dev, int idx);
+-void can_free_echo_skb(struct net_device *dev, int idx);
++void can_put_echo_skb(struct sk_buff *skb, struct net_device *dev,
++		      unsigned int idx);
++void can_get_echo_skb(struct net_device *dev, unsigned int idx);
++void can_free_echo_skb(struct net_device *dev, unsigned int idx);
+ 
+ #endif /* CAN_DEV_H */
+Index: trunk/kernel/2.6/drivers/net/can/at91_can.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/at91_can.c
++++ trunk/kernel/2.6/drivers/net/can/at91_can.c
+@@ -1094,7 +1094,7 @@ static int __init at91_can_probe(struct 
+ 		goto exit_release;
+ 	}
+ 
+-	dev = alloc_candev(sizeof(struct at91_priv));
++	dev = alloc_candev(sizeof(struct at91_priv), AT91_MB_TX_NUM);
+ 	if (!dev) {
+ 		err = -ENOMEM;
+ 		goto exit_iounmap;
+Index: trunk/kernel/2.6/drivers/net/can/cc770/cc770.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/cc770/cc770.c
++++ trunk/kernel/2.6/drivers/net/can/cc770/cc770.c
+@@ -862,7 +862,8 @@ struct net_device *alloc_cc770dev(int si
+ 	struct net_device *dev;
+ 	struct cc770_priv *priv;
+ 
+-	dev = alloc_candev(sizeof(struct cc770_priv) + sizeof_priv);
++	dev = alloc_candev(sizeof(struct cc770_priv) + sizeof_priv,
++			   CC770_ECHO_SKB_MAX);
+ 	if (!dev)
+ 		return NULL;
+ 
+Index: trunk/kernel/2.6/drivers/net/can/ems_usb.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/ems_usb.c
++++ trunk/kernel/2.6/drivers/net/can/ems_usb.c
+@@ -226,7 +226,7 @@ MODULE_DEVICE_TABLE(usb, ems_usb_table);
+ #define CPC_HEADER_SIZE 4
+ 
+ #define MAX_RX_URBS 10
+-#define MAX_TX_URBS CAN_ECHO_SKB_MAX
++#define MAX_TX_URBS 4
+ 
+ struct ems_usb;
+ 
+@@ -1018,7 +1018,7 @@ static int ems_usb_probe(struct usb_inte
+ 	struct ems_usb *dev;
+ 	int i, err;
+ 
+-	netdev = alloc_candev(sizeof(struct ems_usb));
++	netdev = alloc_candev(sizeof(struct ems_usb), MAX_TX_URBS);
+ 	if (!netdev) {
+ 		dev_err(ND2D(netdev), &quot;Couldn't alloc candev\n&quot;);
+ 		return -ENOMEM;
+Index: trunk/kernel/2.6/drivers/net/can/esd_pci331.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/esd_pci331.c
++++ trunk/kernel/2.6/drivers/net/can/esd_pci331.c
+@@ -99,6 +99,8 @@ MODULE_SUPPORTED_DEVICE(&quot;esd CAN-PCI/331
+ #define ESD331_I20_BOARD2		20
+ #define ESD331_I20_FAST			21
+ 
++#define ESD331_ECHO_SKB_MAX		1
++
+ static struct pci_device_id esd331_pci_tbl[] = {
+ 	{PCI_VENDOR_ID_PLX, PCI_DEVICE_ID_PLX_9050,
+ 	PCI_VENDOR_ID_ESDGMBH, ESD_PCI_SUB_SYS_ID_PCI331},
+@@ -785,7 +787,7 @@ static struct net_device *__devinit esd3
+ 	struct esd331_priv *priv;
+ 	int err;
+ 
+-	dev = alloc_candev(sizeof(*priv));
++	dev = alloc_candev(sizeof(*priv), ESD331_ECHO_SKB_MAX);
+ 	if (dev == NULL)
+ 		return ERR_PTR(-ENOMEM);
+ 
+Index: trunk/kernel/2.6/drivers/net/can/mcp251x.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/mcp251x.c
++++ trunk/kernel/2.6/drivers/net/can/mcp251x.c
+@@ -150,6 +150,8 @@
+ #define SPI_TRANSFER_BUF_LEN	(2*(6 + CAN_FRAME_MAX_DATA_LEN))
+ #define CAN_FRAME_MAX_BITS	128
+ 
++#define TX_ECHO_SKB_MAX	1
++
+ #define DEVICE_NAME &quot;mcp251x&quot;
+ 
+ static int mcp251x_enable_dma; /* Enable SPI DMA. Default: 0 (Off) */
+@@ -946,7 +948,7 @@ static struct net_device *alloc_mcp251x_
+ 	struct net_device *net;
+ 	struct mcp251x_priv *priv;
+ 
+-	net = alloc_candev(sizeof_priv);
++	net = alloc_candev(sizeof_priv, TX_ECHO_SKB_MAX);
+ 	if (!net)
+ 		return NULL;
+ 
+Index: trunk/kernel/2.6/drivers/net/can/mscan/mscan.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/mscan/mscan.c
++++ trunk/kernel/2.6/drivers/net/can/mscan/mscan.c
+@@ -46,6 +46,7 @@ RCSID(&quot;$Id: mscan.c 1059 2009-09-16 08:4
+ #define MSCAN_INIT_MODE		(MSCAN_INITRQ | MSCAN_SLPRQ)
+ #define MSCAN_POWEROFF_MODE	(MSCAN_CSWAI | MSCAN_SLPRQ)
+ #define MSCAN_SET_MODE_RETRIES	255
++#define MSCAN_ECHO_SKB_MAX	3
+ 
+ #define BTR0_BRP_MASK		0x3f
+ #define BTR0_SJW_SHIFT		6
+@@ -729,7 +730,7 @@ struct net_device *alloc_mscandev(void)
+ 	struct mscan_priv *priv;
+ 	int i;
+ 
+-	dev = alloc_candev(sizeof(struct mscan_priv));
++	dev = alloc_candev(sizeof(struct mscan_priv), MSCAN_ECHO_SKB_MAX);
+ 	if (!dev)
+ 		return NULL;
+ 	priv = netdev_priv(dev);
+Index: trunk/kernel/2.6/drivers/net/can/sja1000/sja1000.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/sja1000/sja1000.c
++++ trunk/kernel/2.6/drivers/net/can/sja1000/sja1000.c
+@@ -600,7 +600,8 @@ struct net_device *alloc_sja1000dev(int 
+ 	struct net_device *dev;
+ 	struct sja1000_priv *priv;
+ 
+-	dev = alloc_candev(sizeof(struct sja1000_priv) + sizeof_priv);
++	dev = alloc_candev(sizeof(struct sja1000_priv) + sizeof_priv,
++		SJA1000_ECHO_SKB_MAX);
+ 	if (!dev)
+ 		return NULL;
+ 
+Index: trunk/kernel/2.6/drivers/net/can/sja1000/sja1000.h
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/sja1000/sja1000.h
++++ trunk/kernel/2.6/drivers/net/can/sja1000/sja1000.h
+@@ -50,6 +50,8 @@
+ #include &lt;socketcan/can/dev.h&gt;
+ #include &lt;socketcan/can/platform/sja1000.h&gt;
+ 
++#define SJA1000_ECHO_SKB_MAX	1 /* the SJA1000 has one TX buffer object */
++
+ #define SJA1000_MAX_IRQ 20	/* max. number of interrupts handled in ISR */
+ 
+ /* SJA1000 registers - manual section 6.4 (Pelican Mode) */
+Index: trunk/kernel/2.6/drivers/net/can/softing/softing_main.c
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/softing/softing_main.c
++++ trunk/kernel/2.6/drivers/net/can/softing/softing_main.c
+@@ -33,6 +33,8 @@
+ #error This driver does not support Kernel versions &lt; 2.6.23
+ #endif
+ 
++#define TX_ECHO_SKB_MAX 4
++
+ /*
+  * test is a specific CAN netdev
+  * is online (ie. up 'n running, not sleeping, not busoff
+@@ -74,7 +76,7 @@ static netdev_tx_t netdev_start_xmit(str
+ 		goto xmit_done;
+ 	if (card-&gt;tx.pending &gt;= TXMAX)
+ 		goto xmit_done;
+-	if (priv-&gt;tx.pending &gt;= CAN_ECHO_SKB_MAX)
++	if (priv-&gt;tx.pending &gt;= TX_ECHO_SKB_MAX)
+ 		goto xmit_done;
+ 	fifo_wr = card-&gt;dpram.tx-&gt;wr;
+ 	if (fifo_wr == card-&gt;dpram.tx-&gt;rd)
+@@ -112,7 +114,7 @@ static netdev_tx_t netdev_start_xmit(str
+ 	++priv-&gt;tx.pending;
+ 	can_put_echo_skb(skb, dev, priv-&gt;tx.echo_put);
+ 	++priv-&gt;tx.echo_put;
+-	if (priv-&gt;tx.echo_put &gt;= CAN_ECHO_SKB_MAX)
++	if (priv-&gt;tx.echo_put &gt;= TX_ECHO_SKB_MAX)
+ 		priv-&gt;tx.echo_put = 0;
+ 	/* can_put_echo_skb() saves the skb, safe to return TX_OK */
+ 	ret = NETDEV_TX_OK;
+@@ -324,7 +326,7 @@ static int softing_dev_svc_once(struct s
+ 				skb-&gt;tstamp = ktime;
+ 			can_get_echo_skb(bus-&gt;netdev, bus-&gt;tx.echo_get);
+ 			++bus-&gt;tx.echo_get;
+-			if (bus-&gt;tx.echo_get &gt;= CAN_ECHO_SKB_MAX)
++			if (bus-&gt;tx.echo_get &gt;= TX_ECHO_SKB_MAX)
+ 				bus-&gt;tx.echo_get = 0;
+ 			if (bus-&gt;tx.pending)
+ 				--bus-&gt;tx.pending;
+@@ -367,7 +369,7 @@ static void softing_dev_svc(unsigned lon
+ 		if (!canif_is_active(bus-&gt;netdev))
+ 			/* it makes no sense to wake dead busses */
+ 			continue;
+-		if (bus-&gt;tx.pending &gt;= CAN_ECHO_SKB_MAX)
++		if (bus-&gt;tx.pending &gt;= TX_ECHO_SKB_MAX)
+ 			continue;
+ 		netif_wake_queue(bus-&gt;netdev);
+ 	}
+@@ -632,7 +634,7 @@ static struct softing_priv *mk_netdev(st
+ 	struct net_device *ndev;
+ 	struct softing_priv *priv;
+ 
+-	ndev = alloc_candev(sizeof(*priv));
++	ndev = alloc_candev(sizeof(*priv), TX_ECHO_SKB_MAX);
+ 	if (!ndev) {
+ 		dev_alert(card-&gt;dev, &quot;alloc_candev failed\n&quot;);
+ 		return 0;
+Index: trunk/kernel/2.6/drivers/net/can/cc770/cc770.h
+===================================================================
+--- trunk.orig/kernel/2.6/drivers/net/can/cc770/cc770.h
++++ trunk/kernel/2.6/drivers/net/can/cc770/cc770.h
+@@ -188,6 +188,8 @@ struct cc770_regs {
+ #define CC770_IO_SIZE	0x100
+ #define CC770_MAX_IRQ	20	/* max. number of interrupts handled in ISR */
+ 
++#define CC770_ECHO_SKB_MAX	1
++
+ #define cc770_read_reg(priv, member)					\
+ 	priv-&gt;read_reg(priv, offsetof(struct cc770_regs, member))
+ 
+@@ -197,9 +199,9 @@ struct cc770_regs {
+ /*
+  * Message objects and flags used by this driver
+  */
+-#define CC770_OBJ_FLAG_RX  0x01
+-#define CC770_OBJ_FLAG_RTR 0x02
+-#define CC770_OBJ_FLAG_EFF 0x04
++#define CC770_OBJ_FLAG_RX 	0x01
++#define CC770_OBJ_FLAG_RTR	0x02
++#define CC770_OBJ_FLAG_EFF	0x04
+ 
+ enum {
+ 	CC770_OBJ_RX0 = 0,	/* for receiving normal messages */
+Index: trunk/kernel/2.6/include/socketcan/can/dev.h
+===================================================================
+--- trunk.orig/kernel/2.6/include/socketcan/can/dev.h
++++ trunk/kernel/2.6/include/socketcan/can/dev.h
+@@ -32,8 +32,6 @@ enum can_mode {
+ /*
+  * CAN common private data
+  */
+-#define CAN_ECHO_SKB_MAX  4
+-
+ struct can_priv {
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,23)
+ 	struct net_device_stats net_stats;
+@@ -50,12 +48,13 @@ struct can_priv {
+ 	int restart_ms;
+ 	struct timer_list restart_timer;
+ 
+-	struct sk_buff *echo_skb[CAN_ECHO_SKB_MAX];
+-
+ 	int (*do_set_bittiming)(struct net_device *dev);
+ 	int (*do_set_mode)(struct net_device *dev, enum can_mode mode);
+ 	int (*do_get_state)(const struct net_device *dev,
+ 			    enum can_state *state);
++
++	unsigned int echo_skb_max;
++	struct sk_buff **echo_skb;
+ };
+ 
+ #if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,21)
+@@ -72,7 +71,7 @@ struct can_priv {
+ struct net_device_stats *can_get_stats(struct net_device *dev);
+ #endif
+ 
+-struct net_device *alloc_candev(int sizeof_priv);
++struct net_device *alloc_candev(int sizeof_priv, unsigned int echo_skb_max);
+ void free_candev(struct net_device *dev);
+ 
+ int open_candev(struct net_device *dev);
+@@ -84,8 +83,9 @@ void unregister_candev(struct net_device
+ int can_restart_now(struct net_device *dev);
+ void can_bus_off(struct net_device *dev);
+ 
+-void can_put_echo_skb(struct sk_buff *skb, struct net_device *dev, int idx);
+-void can_get_echo_skb(struct net_device *dev, int idx);
+-void can_free_echo_skb(struct net_device *dev, int idx);
++void can_put_echo_skb(struct sk_buff *skb, struct net_device *dev,
++		      unsigned int idx);
++void can_get_echo_skb(struct net_device *dev, unsigned int idx);
++void can_free_echo_skb(struct net_device *dev, unsigned int idx);
+ 
+ #endif /* CAN_DEV_H */
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003141.html">test applications (was: Re: MSCAN pacth: order of frames)
+</A></li>
+	<LI>Next message: <A HREF="003146.html">can: make the number of echo skb's configurable
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3144">[ date ]</a>
+              <a href="thread.html#3144">[ thread ]</a>
+              <a href="subject.html#3144">[ subject ]</a>
+              <a href="author.html#3144">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,138 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 1/4]  dev: new interface for setting bit-timing	parameters
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%201/4%5D%20%20dev%3A%20new%20interface%20for%20setting%20bit-timing%0A%09parameters&In-Reply-To=%3C20080918090306.GA3104%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001849.html">
+   <LINK REL="Next"  HREF="001851.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 1/4]  dev: new interface for setting bit-timing	parameters</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%201/4%5D%20%20dev%3A%20new%20interface%20for%20setting%20bit-timing%0A%09parameters&In-Reply-To=%3C20080918090306.GA3104%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH v2 1/4]  dev: new interface for setting bit-timing	parameters">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Thu Sep 18 11:03:07 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001849.html">[PATCH v2 1/4] dev: new interface for setting	bit-timing	parameters
+</A></li>
+        <LI>Next message: <A HREF="001851.html">[PATCH v2 1/4] dev: new interface for setting	bit-timing	parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1850">[ date ]</a>
+              <a href="thread.html#1850">[ thread ]</a>
+              <a href="subject.html#1850">[ subject ]</a>
+              <a href="author.html#1850">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger wrote:
+&gt;<i> Kurt Van Dijck wrote:
+</I>&gt;<i> &gt; Wolfgang,
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I came to the point actually using the sysfs interface.
+</I>&gt;<i> &gt; I appreciate your effort to have included sample_point support.
+</I>&gt;<i> &gt; Actually using the sample_point control was getting strange. You mainly
+</I>&gt;<i> &gt; intercepted the sysfs setting for bitrate, which does work.
+</I>&gt;<i> &gt; The problem I see dealing with the various bittiming parameters is 
+</I>&gt;<i> &gt; that there are quite some interactions between different parameters. 
+</I>&gt;<i> 
+</I>&gt;<i> What is wrong with the existing behaviour. You can set the bitrate and
+</I>&gt;<i> additionally the sample_point, if desired, and when you start the
+</I>&gt;<i> device, the corresponding bit timing parameters are calculated.
+</I>Ok, in contrast to the other fixes yesterday, there is nothing _wrong_.
+I just found it contra-intuitive.
+As you mention, you set the bitrate, &amp; then the sample_point. But then,
+   you found the bitrate empty again, by this sysfs code:
+   if (ptr == &amp;bt-&gt;bitrate)
+      bt-&gt;tq = 0;
+   else
+      bt-&gt;bitrate = 0;
+
+These 4 lines force you to set sample_point first, which is, after all,
+not that hard.
+
+I figured that your code mainly solves all issues related to only
+bitrate related settings, but not the sample_point related ones.
+All these interact very narrow with each other.
+Before complaining, I started messing around myself, and indeed, I found
+it hard getting it 'feeling good'.
+At least, I got it with this code.
+
+It's not a very 'must do', but as I said, I believe it's an improvement.
+
+&gt;<i> 
+</I>&gt;<i> &gt; So, I started coding.
+</I>&gt;<i> &gt; I had to experiment with different approaches before getting this one
+</I>&gt;<i> &gt; right. 
+</I>&gt;<i> &gt; I ended up with a system that differentiates between
+</I>&gt;<i> &gt; modifying 'easy mode' and 'expert mode' bittiming parameters.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Although your code did work fine when not touching the sample_point too
+</I>&gt;<i> &gt; much, the patch below keeps working while playing heavily with both 
+</I>&gt;<i> &gt; sample_point &amp; bitrate.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; It acts by keeping track of the last applied set of bittiming parameters
+</I>&gt;<i> &gt; given to the driver.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I believe it's an improvement :-)
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Kurt
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Index: wg/kernel/2.6/include/linux/can/dev.h
+</I>&gt;<i> &gt; ===================================================================
+</I>&gt;<i> &gt; --- wg.orig/kernel/2.6/include/linux/can/dev.h	2008-09-17 16:22:07.000000000 +0200
+</I>&gt;<i> &gt; +++ wg/kernel/2.6/include/linux/can/dev.h	2008-09-17 16:23:11.000000000 +0200
+</I>&gt;<i> &gt; @@ -96,6 +96,8 @@
+</I>&gt;<i> &gt;    struct can_device_stats can_stats;
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt;    struct can_bittiming bittiming;
+</I>&gt;<i> &gt; +	struct can_bittiming bt_prev;
+</I>&gt;<i> &gt; +	int bt_changes_expert;
+</I>&gt;<i> &gt;    struct can_bittiming_const *bittiming_const;
+</I>&gt;<i> 
+</I>&gt;<i> Hm, I hesitate to spend two more field just for that little improvement.
+</I>ok, then I'll start thinking of some other way.
+As a matter of fact, a new day gives new sights. It is possible without
+these fields. Thanks for hesitating.
+&gt;<i> 
+</I>&gt;<i> I also suggest to postpone such improvements until we have the patch
+</I>&gt;<i> included. I'm very busy with commercial projects for the next few month,
+</I>&gt;<i> at least and likely my availability for the Socket-CAN project will suffer.
+</I>then I agree that this patch must fail. I do think it's important
+to have the interface settled rather soon than late.
+&gt;<i> 
+</I>&gt;<i> Wolfgang.
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001849.html">[PATCH v2 1/4] dev: new interface for setting	bit-timing	parameters
+</A></li>
+	<LI>Next message: <A HREF="001851.html">[PATCH v2 1/4] dev: new interface for setting	bit-timing	parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1850">[ date ]</a>
+              <a href="thread.html#1850">[ thread ]</a>
+              <a href="subject.html#1850">[ subject ]</a>
+              <a href="author.html#1850">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

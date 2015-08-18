@@ -1,0 +1,320 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC] Specific CAN bit rate settings in HW-independent way
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20Specific%20CAN%20bit%20rate%20settings%20in%20HW-independent%20way&In-Reply-To=%3C200710051240.48343.jbe%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000774.html">
+   <LINK REL="Next"  HREF="000721.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC] Specific CAN bit rate settings in HW-independent way</H1>
+    <B>Juergen Beisert</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20Specific%20CAN%20bit%20rate%20settings%20in%20HW-independent%20way&In-Reply-To=%3C200710051240.48343.jbe%40pengutronix.de%3E"
+       TITLE="[RFC] Specific CAN bit rate settings in HW-independent way">jbe at pengutronix.de
+       </A><BR>
+    <I>Fri Oct  5 12:40:47 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000774.html">RFC: new can_frame.priv struct element ? - was Re: Single-shot	transmission mode
+</A></li>
+        <LI>Next message: <A HREF="000721.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#720">[ date ]</a>
+              <a href="thread.html#720">[ thread ]</a>
+              <a href="subject.html#720">[ subject ]</a>
+              <a href="author.html#720">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+we tried to fix the current can_calc_bit_time() behavior on our hardware
+(MPC5200B) without success. It always calculates unusable values for this
+hardware.
+So we made the TQ approach (as Vladislav mentioned) to set bit rate settings
+to specific interfaces and bit rates. With this additional IOCTL we can set
+these required settings one time. All applications that uses the standard way
+to set the bit rate (via SIOCSCANBAUDRATE IOCTL) will benefit from these
+specific settings without any change.
+
+Comments are welcome.
+
+
+
+Subject: [PATCH 1/1] Socket-CAN: Provide custom bitrate settings
+From: Juergen Beisert &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">j.beisert at pengutronix.de</A>&gt;
+
+This patch provides a custom bitrate setting for cases where it is impossible
+to use the SIOCSCANCUSTOMBITTIME ioctl instead (for example closed source), but
+a special hardware setting is required to meet external constraints. Or this
+feature can be used, when the auto calculation for the CAN settings fails.
+
+This works on a per interface base and baudrate base. If not used, everything
+falls back to the previous behaviour.
+
+Signed-off-by: Juergen Beisert &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">j.beisert at pengutronix.de</A>&gt;
+
+ include/linux/can/dev.h   |    9 +++
+ include/linux/can/ioctl.h |   14 +++++
+ net/can/dev.c             |  113 ++++++++++++++++++++++++++++++++++++++++++++--
+ 3 files changed, 133 insertions(+), 3 deletions(-)
+
+---
+
+Index: include/linux/can/dev.h
+===================================================================
+--- include/linux/can/dev.h.orig
++++ include/linux/can/dev.h
+@@ -13,6 +13,13 @@
+ 
+ #include &lt;linux/can/error.h&gt;
+ #include &lt;linux/can/ioctl.h&gt;
++#include &lt;linux/list.h&gt;
++
++struct custom_mode_setting {
++	struct list_head link;
++	u32 bit_rate;	/* bit rate these settings are valid for */
++	struct can_bittime_std custom_setting;
++};
+ 
+ struct can_priv {
+ 	struct can_device_stats can_stats;
+@@ -41,6 +48,8 @@ struct can_priv {
+ 	can_mode_t  mode;
+ 	can_ctrlmode_t ctrlmode;
+ 
++	struct list_head custom_modes;
++
+ 	int (*do_set_bit_time)(struct net_device *dev, struct can_bittime *br);
+ 	int (*do_get_state)   (struct net_device *dev, can_state_t *state);
+ 	int (*do_set_mode)    (struct net_device *dev, can_mode_t mode);
+Index: include/linux/can/ioctl.h
+===================================================================
+--- include/linux/can/ioctl.h.orig
++++ include/linux/can/ioctl.h
+@@ -36,6 +36,8 @@
+ #define SIOCSCANERRORCONFIG	(SIOCDEVPRIVATE+12)
+ #define SIOCGCANERRORCONFIG	(SIOCDEVPRIVATE+13)
+ 
++#define SIOCSCANDEDBITTIME	(SIOCDEVPRIVATE+14)
++
+ /* parameters for ioctls */
+ 
+ /* SIOC[SG]CANBAUDRATE */
+@@ -64,6 +66,18 @@ struct can_bittime_std {
+ 	__u8  sam:1;      /* 1 - enable triple sampling */
+ };
+ 
++/* when using this IOCTL you should know what you are doing! */
++struct can_bit_time_custom {
++	__u32 bit_rate;		/* target bit rate these values should be used */
++	__u32 bit_error;	/* max. allowed bit error in [bit_error] = ppm */
++	__u32 tq;		/* time quanta in ns */
++	__u8 prop_seg;		/* from 1 to 8 */
++	__u8 phase_seg1;	/* from 1 to 8 */
++	__u8 phase_seg2;	/* from 1 to 8 */
++	__u8 sjw:7;		/* from 1 to 4 */
++	__u8 sam:1;		/* 1 = enable triple sampling */
++};
++
+ struct can_bittime_btr {
+ 	__u8  btr0;
+ 	__u8  btr1;
+Index: net/can/dev.c
+===================================================================
+--- net/can/dev.c.orig
++++ net/can/dev.c
+@@ -143,11 +143,82 @@ int can_calc_bit_time(struct can_priv *c
+ }
+ EXPORT_SYMBOL(can_calc_bit_time);
+ 
++/*
++ * feed back custom setting (if exists)
++ */
++static struct custom_mode_setting *can_search_custom_list(struct can_priv *can,
++			u32 baudrate, struct can_bittime *bit_time)
++{
++	struct custom_mode_setting *mode;
++	struct list_head *lh;
++
++	if (list_empty(&amp;can-&gt;custom_modes))
++		return NULL;
++
++	list_for_each(lh,&amp;can-&gt;custom_modes) {
++		mode = list_entry(lh, struct custom_mode_setting, link);
++		if (bit_time != NULL &amp;&amp; mode-&gt;bit_rate == baudrate)
++			memcpy(&amp;bit_time-&gt;std, &amp;mode-&gt;custom_setting, sizeof(struct can_bittime_std));
++		return mode;
++	}
++	return NULL;
++}
++
++/*
++ * calculate BRP value from the given tq value
++ */
++static int custom_mode_calc(struct can_priv *can,
++			struct can_bittime_std *custom_mode,
++			struct can_bit_time_custom *cbt)
++{
++	u32 brp, tq, bit_time;
++	u64 bit_rate, brp_64, diff_64;
++
++	brp_64 = (u64)can-&gt;can_sys_clock * (u64)cbt-&gt;tq;
++	brp_64 +=       500000000UL;
++	do_div(brp_64, 1000000000UL);	/* the practicable BRP */
++	brp = (u32)brp_64;
++	brp_64 *= 1000000000UL;
++
++	do_div(brp_64, can-&gt;can_sys_clock);
++	tq = (u32)brp_64;	/* the practicable Tq */
++
++	/* the practicable bit time */
++	bit_time = tq * (1 + cbt-&gt;prop_seg + cbt-&gt;phase_seg1 + cbt-&gt;phase_seg2);
++
++	bit_rate = 1000000000ULL;
++	do_div(bit_rate, bit_time);	/* the practicable bit rate */
++
++	diff_64 = bit_rate &gt; cbt-&gt;bit_rate ?
++			bit_rate - cbt-&gt;bit_rate : cbt-&gt;bit_rate - bit_rate;
++
++	/* check if we are below the given error */
++
++	if (diff_64 &gt; cbt-&gt;bit_rate)	/* check for serious mistake */
++		return -EDOM;
++
++	diff_64 *= 1000000UL;
++	do_div(diff_64, cbt-&gt;bit_rate);	/* build ppm error */
++
++	if (diff_64 &gt; cbt-&gt;bit_error)
++		return -EDOM;
++
++	custom_mode-&gt;brp = brp;
++	custom_mode-&gt;prop_seg = cbt-&gt;prop_seg;
++	custom_mode-&gt;phase_seg1 = cbt-&gt;phase_seg1;
++	custom_mode-&gt;phase_seg2 = cbt-&gt;phase_seg2;
++	custom_mode-&gt;sjw = cbt-&gt;sjw;
++	custom_mode-&gt;sam = cbt-&gt;sam;
++
++	return 0;
++}
++
+ static int can_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+ {
+ 	struct can_priv *can = netdev_priv(dev);
+ 	struct can_bittime *bt = (struct can_bittime *)&amp;ifr-&gt;ifr_ifru;
+ 	ulong *baudrate = (ulong *)&amp;ifr-&gt;ifr_ifru;
++	struct can_bit_time_custom *cbt = (struct can_bit_time_custom *)&amp;ifr-&gt;ifr_ifru;
+ 	int ret = -EOPNOTSUPP;
+ 
+ 	dev_dbg(ND2D(dev), &quot;(%s) 0x%08x %p\n&quot;, __FUNCTION__, cmd, &amp;ifr-&gt;ifr_ifru);
+@@ -156,9 +227,11 @@ static int can_ioctl(struct net_device *
+ 	case SIOCSCANBAUDRATE:
+ 		if (can-&gt;do_set_bit_time) {
+ 			struct can_bittime bit_time;
+-			ret = can_calc_bit_time(can, *baudrate, &amp;bit_time.std);
+-			if (ret != 0)
+-				break;
++			if (can_search_custom_list(can,*baudrate,&amp;bit_time) == NULL) {
++				ret = can_calc_bit_time(can, *baudrate, &amp;bit_time.std);
++				if (ret != 0)
++					break;
++			}
+ 			bit_time.type = CAN_BITTIME_STD;
+ 			ret = can-&gt;do_set_bit_time(dev, &amp;bit_time);
+ 			if (!ret) {
+@@ -184,6 +257,29 @@ static int can_ioctl(struct net_device *
+ 			}
+ 		}
+ 		break;
++	case SIOCSCANDEDBITTIME: {
++		struct can_bittime_std custom_setting;
++		struct custom_mode_setting *cms;
++
++		ret = custom_mode_calc(can, &amp;custom_setting, cbt);
++		if (ret)
++			break;
++		cms = can_search_custom_list(can, cbt-&gt;bit_rate, NULL);
++		if (cms == NULL) {
++			cms = kzalloc(sizeof(struct custom_mode_setting), GFP_KERNEL);
++			if (cms == NULL) {
++				ret = -ENOMEM;
++				break;
++			}
++			memcpy(&amp;cms-&gt;custom_setting, &amp;custom_setting, sizeof(struct can_bittime_std));
++			cms-&gt;bit_rate = cbt-&gt;bit_rate;
++			list_add(&amp;cms-&gt;link, &amp;can-&gt;custom_modes);
++		}
++		else
++			memcpy(&amp;cms-&gt;custom_setting, &amp;custom_setting, sizeof(struct can_bittime_std));
++		ret = 0;
++		}
++		break;
+ 	case SIOCGCANCUSTOMBITTIME:
+ 		*bt = can-&gt;bit_time;
+ 		ret = 0;
+@@ -263,6 +359,7 @@ struct net_device *alloc_candev(int size
+ 	priv-&gt;max_brp  = DEFAULT_MAX_BRP;
+ 	priv-&gt;max_sjw  = DEFAULT_MAX_SJW;
+ 	spin_lock_init(&amp;priv-&gt;irq_lock);
++	INIT_LIST_HEAD(&amp;priv-&gt;custom_modes);
+ 
+ 	return dev;
+ }
+@@ -270,6 +367,16 @@ EXPORT_SYMBOL(alloc_candev);
+ 
+ void free_candev(struct net_device *dev)
+ {
++	struct can_priv *can = netdev_priv(dev);
++	struct custom_mode_setting *mode;
++	struct list_head *lh,*temp;
++
++	list_for_each_safe(lh, temp, &amp;can-&gt;custom_modes) {
++		mode = list_entry(lh, struct custom_mode_setting, link);
++		list_del(lh);
++		kfree(mode);
++	}
++
+ 	free_netdev(dev);
+ }
+ EXPORT_SYMBOL(free_candev);
+
+
+-- 
+Dipl.-Ing. Juergen Beisert | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>
+&#160;Pengutronix - Linux Solutions for Science and Industry
+&#160;   Handelsregister: Amtsgericht Hildesheim, HRA 2686
+&#160; &#160; &#160;    Vertretung Sued/Muenchen, Germany
+   Phone: +49-8766-939 228 |  Fax: +49-5121-206917-9
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000774.html">RFC: new can_frame.priv struct element ? - was Re: Single-shot	transmission mode
+</A></li>
+	<LI>Next message: <A HREF="000721.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#720">[ date ]</a>
+              <a href="thread.html#720">[ thread ]</a>
+              <a href="subject.html#720">[ subject ]</a>
+              <a href="author.html#720">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

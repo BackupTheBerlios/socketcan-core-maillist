@@ -1,0 +1,227 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> struct sockaddr_can for j1939
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C4B877F35.1050504%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004132.html">
+   <LINK REL="Next"  HREF="004138.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>struct sockaddr_can for j1939</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C4B877F35.1050504%40hartkopp.net%3E"
+       TITLE="struct sockaddr_can for j1939">socketcan at hartkopp.net
+       </A><BR>
+    <I>Fri Feb 26 08:58:45 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004132.html">struct sockaddr_can for j1939
+</A></li>
+        <LI>Next message: <A HREF="004138.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4135">[ date ]</a>
+              <a href="thread.html#4135">[ thread ]</a>
+              <a href="subject.html#4135">[ subject ]</a>
+              <a href="author.html#4135">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;&gt;<i> Kurt says:
+</I>
+&gt;&gt;<i> * bind() will assign local address.
+</I>&gt;&gt;<i> * connect() assigns destination address.
+</I>Would this be a &quot;write only&quot; socket then? IMO &quot;connect&quot; also requires the
+local address.
+
+&gt;&gt;<i> * recvfrom() will put all info in the sockaddr_can.
+</I>&gt;&gt;<i> * sendto() will use the sockaddr_can for header info (SA, DA, PGN, ...)
+</I>Which might be used on connected/bound sockets then?
+
+&gt;&gt;<i>
+</I>&gt;&gt;<i> * bind, connect &amp; sendto all influence the final outgoing packet. IMO,
+</I>&gt;&gt;<i>    it is as designed with regard to the socket API.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> * We want to extend the j1939 bus into the
+</I>&gt;&gt;<i>   linux kernel, so different sockets can be logically different
+</I>&gt;&gt;<i>   entities, just as can_raw does for can.
+</I>What is an entity here?
+
+A socket is a communication endpoint that can hold e.g. a communication
+relation from a local address to a specific destination address.
+
+&gt;&gt;<i>   A major point of attention is that we also want to be able to have
+</I>&gt;&gt;<i>   different sockets cooperate to form 1 logical entity on the bus,
+</I>&gt;&gt;<i> where
+</I>&gt;&gt;<i>   a logical entity means '1 source address'.
+</I>To ensure this, you need to manage different sockets in userspace - not in the
+kernel.
+
+&gt;&gt;<i>   This way, we can seperate common funcionalities, found in many
+</I>&gt;&gt;<i> logical
+</I>&gt;&gt;<i>   entities (such as error reporting, version reporting) and
+</I>&gt;&gt;<i>   core functionality in different processes.
+</I>&gt;&gt;<i>   Therefore, bind allows to share the same SA.
+</I>This can be done with sockets.
+
+&gt;&gt;<i>
+</I>&gt;&gt;<i> * A filtering similar to CAN is applied, but on PGN &amp; SA level.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Up to here, we need a layout similar to:
+</I>&gt;&gt;<i> struct sockaddr_can {
+</I>&gt;&gt;<i>    ...
+</I>&gt;&gt;<i>    union {
+</I>&gt;&gt;<i>       struct {
+</I>&gt;&gt;<i>          uint8_t sa, da;
+</I>&gt;&gt;<i>          uint8_t priority;
+</I>&gt;&gt;<i>          uint32_t pgn;
+</I>&gt;&gt;<i>       } j1939;
+</I>&gt;&gt;<i>    } can_addr;
+</I>&gt;&gt;<i> };
+</I>
+&gt;<i> Lenadro says:
+</I>&gt;<i> 
+</I>&gt;<i> Name and Address are two things that are related. Like you mention after in
+</I>&gt;<i> this email, is important to have a dynamic list for tracking, ECU's
+</I>&gt;<i> NAME&lt;-&gt;Source Address.
+</I>&gt;<i> 
+</I>&gt;<i> In the other hand. You need other separated structure information to
+</I>&gt;<i> send/receive messages containing:
+</I>&gt;<i> Priority, PGN (PDU1, PDU2 and Source address), length, and Data.
+</I>&gt;<i> 
+</I>
+I think, when you defined a socket with all these information in the
+connect(), you should be able to write just 8 bytes into the socket and let
+the system create the J1939 message.
+
+
+&gt;&gt;<i> where not all fields are necessarily used in all api calls.
+</I>&gt;&gt;<i> note that this does go further than only implementing the transport
+</I>&gt;&gt;<i> protocol, but the transport protocols do not need extensions for their
+</I>&gt;&gt;<i> own! In our current implementation, just doing sendto() with more than
+</I>&gt;&gt;<i> 8
+</I>&gt;&gt;<i> bytes data result in a transport protocol session setup, transparently.
+</I>
+This is the major point for me and picks up my last comment above.
+When you send more than 8 bytes to a connected socket (that has both the local
+and the destination address) the multipart message is generated transparently.
+
+IMO defining communication relations (via addresses) and let the kernel do the
+transport protocol is the API we should create on the J1939 sockets.
+
+In general, we could alternatively think about using raw-sockets for all types
+of unsegmented J1939 communication ... just an idea.
+
+&gt;&gt;<i> Note that the transport protocol in j1939 uses 2 pgns, but such thing
+</I>&gt;&gt;<i> should still be described with (SA, DA, PGN, PRIORITY).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> After reading the relevant man pages &amp; looking at the sockaddr_can
+</I>&gt;&gt;<i> above, the only debate I see is wether to set SA from connect(), and DA
+</I>&gt;&gt;<i> from bind(). That the only documenting up to here.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> When you say 'redundant parts', I can suggest
+</I>&gt;&gt;<i> that sa &amp; da do not necessarily be in the same structure. uint8_t addr
+</I>&gt;&gt;<i> would be sufficient too. in bind(), it means SA, in connect() it means
+</I>&gt;&gt;<i> DA, etc, etc.
+</I>&gt;&gt;<i> For getting the precise DA in recvfrom, a getsockopt could be used
+</I>&gt;&gt;<i> (similar to timestamps).
+</I>&gt;&gt;<i> struct sockaddr_can {
+</I>&gt;&gt;<i>    ...
+</I>&gt;&gt;<i>    union {
+</I>&gt;&gt;<i>       struct {
+</I>&gt;&gt;<i>          uint8_t addr;
+</I>&gt;&gt;<i>          uint8_t priority;
+</I>&gt;&gt;<i>          uint32_t pgn;
+</I>&gt;&gt;<i>       } j1939;
+</I>&gt;&gt;<i>    } can_addr;
+</I>&gt;&gt;<i> };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> At the next level, j1939 describes a dynamic addressing scheme (the
+</I>&gt;&gt;<i> above is working fine with static addresses only). That's especially
+</I>&gt;&gt;<i> used a lot in agriculture (our main market).
+</I>&gt;&gt;<i> At that point, SA &amp; DA are not persistent anymore, but the 8byte name
+</I>&gt;&gt;<i> is.
+</I>&gt;&gt;<i> We intent not to let kernel code participate in this dynamic
+</I>&gt;&gt;<i> addressing,
+</I>&gt;&gt;<i> but let the kernel code follow the actions on the bus. Since a single
+</I>&gt;&gt;<i> instance must decide which name an SA belongs to &amp; vice versa, the
+</I>&gt;&gt;<i> kernel is the perfect place.
+</I>No.
+
+I checked the idea of the Dynamic Address Configuration in SAE J1939 here
+
+    <A HREF="http://www.can-wiki.info/SaeJ1939">http://www.can-wiki.info/SaeJ1939</A>
+
+and this is definitely something that has to be handled outside the kernel.
+
+&gt;&gt;<i> To participate in dynamic addressing, userspace code is needed.
+</I>&gt;&gt;<i> But userspace programs cooperating to a single entity on the bus, must
+</I>&gt;&gt;<i> not both participate in managing dynamic addresses. That's where the
+</I>&gt;&gt;<i> uint64_t came up in the sockaddr_can. This name is used by kernel code
+</I>&gt;&gt;<i> to find the current SA according to the 8byte name.
+</I>&gt;&gt;<i> This setup results in 1 extra process managing the SA of a particular
+</I>&gt;&gt;<i> 8byte
+</I>&gt;&gt;<i> name, and all others operating on that name level.
+</I>
+Better write a daemon and/or library for that like for DNS in IP.
+
+&gt;<i> Lenadro says:
+</I>&gt;<i> 
+</I>&gt;<i> My suggestion for the J1939 stack is, a user space library with emphasis in
+</I>&gt;<i> the decoupling of the application protocol (in this case the J1939 protocol)
+</I>&gt;<i> from the under laying library, make it dependant only of the most
+</I>&gt;<i> minimalistic API possible (easy to be ported) for configure, get status,
+</I>&gt;<i> send and receive messages (in this case socketcan).
+</I>
+I can follow many of your thoughts but this would base on can-raw sockets
+entirely.
+
+IMO we should use the kernel at least where it could help us to meet the
+timing requirements (e.g. the 50ms) for the J1939 specific transport of
+segmented information.
+
+A stated above i might make sense to use the CAN filters of the can-raw
+socket(s) to handle all the single frame communication (including the address
+configuration). An to handle the raw/j1939 sockets transparently could be the
+job for the userspace library.
+
+For the segmented data transfer the ISO15765-2 implementation in the SVN could
+be a good starting point for an implementation.
+
+Am i missing something?
+
+Regards,
+Oliver
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004132.html">struct sockaddr_can for j1939
+</A></li>
+	<LI>Next message: <A HREF="004138.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4135">[ date ]</a>
+              <a href="thread.html#4135">[ thread ]</a>
+              <a href="subject.html#4135">[ subject ]</a>
+              <a href="author.html#4135">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

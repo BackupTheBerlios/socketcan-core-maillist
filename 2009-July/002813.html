@@ -1,0 +1,174 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH V2] CAN: Add Flexcan CAN controller driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V2%5D%20CAN%3A%20Add%20Flexcan%20CAN%20controller%20driver&In-Reply-To=%3C4A6F0238.6050605%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002812.html">
+   <LINK REL="Next"  HREF="002814.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH V2] CAN: Add Flexcan CAN controller driver</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20V2%5D%20CAN%3A%20Add%20Flexcan%20CAN%20controller%20driver&In-Reply-To=%3C4A6F0238.6050605%40hartkopp.net%3E"
+       TITLE="[PATCH V2] CAN: Add Flexcan CAN controller driver">socketcan at hartkopp.net
+       </A><BR>
+    <I>Tue Jul 28 15:50:48 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002812.html">[PATCH V2] CAN: Add Flexcan CAN controller driver
+</A></li>
+        <LI>Next message: <A HREF="002814.html">[PATCH V2] CAN: Add Flexcan CAN controller driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2813">[ date ]</a>
+              <a href="thread.html#2813">[ thread ]</a>
+              <a href="subject.html#2813">[ subject ]</a>
+              <a href="author.html#2813">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Sascha Hauer wrote:
+&gt;<i> Hi Oliver,
+</I>&gt;<i> 
+</I>&gt;<i> On Tue, Jul 28, 2009 at 03:21:40PM +0200, Oliver Hartkopp wrote:
+</I>&gt;&gt;<i> Sascha Hauer wrote:
+</I>&gt;&gt;&gt;<i> Hi,
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Here is the second version of the flexcan driver.
+</I>&gt;&gt;<i> Hi Sascha,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> some more points i forgot to mention, sorry ...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +/* Structure of the message buffer */
+</I>&gt;&gt;&gt;<i> +struct flexcan_mb {
+</I>&gt;&gt;&gt;<i> +	u32	can_dlc;
+</I>&gt;&gt;&gt;<i> +	u32	can_id;
+</I>&gt;&gt;&gt;<i> +	u32	data[2];
+</I>&gt;&gt;&gt;<i> +};
+</I>&gt;&gt;<i> This looks really hackish and does not reflect the structure of a flexcan
+</I>&gt;&gt;<i> message buffer! The data is 'u8' and the name of 'dlc' for the
+</I>&gt;&gt;<i> description/flag register is bad.
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> see below..
+</I>
+Especially can_dlc, can_id and data[] are known from struct can_frame which
+really can confuse here ...
+
+&gt;<i> 
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static int flexcan_start_xmit(struct sk_buff *skb, struct net_device *dev)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +	struct can_frame *frame = (struct can_frame *)skb-&gt;data;
+</I>&gt;&gt;&gt;<i> +	struct flexcan_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;&gt;<i> +	struct flexcan_regs __iomem *regs = priv-&gt;base;
+</I>&gt;&gt;&gt;<i> +	u32 can_id;
+</I>&gt;&gt;&gt;<i> +	u32 dlc = MB_CNT_CODE(0xc) | (frame-&gt;can_dlc &lt;&lt; 16);
+</I>&gt;&gt;<i> Naming this variable 'dlc' does not hit the point. See below.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +	u32 *can_data;
+</I>&gt;&gt;<i> Really this needs to be fixed up by defining a proper mailbox struct.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	netif_stop_queue(dev);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (frame-&gt;can_id &amp; CAN_EFF_FLAG) {
+</I>&gt;&gt;&gt;<i> +		can_id = frame-&gt;can_id &amp; MB_ID_EXT;
+</I>&gt;&gt;<i> Please use CAN_EFF_MASK here.
+</I>&gt;<i> 
+</I>&gt;<i> I used MX_ID_EXT intentionally because it it flexcan specific and just
+</I>&gt;<i> happens to be the same as CAN_EFF_MASK. I can change it if you like.
+</I>
+Yes, i've seen that. I would tend to use CAN_EFF_MASK here as you apply it on
+frame-&gt;can_id.
+
+When you get it from the controller MB_ID_EXT_MASK would be the better one.
+
+&gt;<i> 
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +		dlc |= MB_CNT_IDE | MB_CNT_SRR;
+</I>&gt;&gt;&gt;<i> +	} else {
+</I>&gt;&gt;&gt;<i> +		can_id = (frame-&gt;can_id &amp; CAN_SFF_MASK) &lt;&lt; 18;
+</I>&gt;&gt;&gt;<i> +	}
+</I>&gt;&gt;<i> Just nitpicking for Kernel coding style:
+</I>&gt;&gt;<i> remove the last '{' and '}' pair.
+</I>&gt;<i> 
+</I>&gt;<i> No, Documentation/CondingStyle suggests that if one branch needs braces
+</I>&gt;<i> the other branch should use them, too.
+</I>
+Sorry. Didn't know that.
+
+&gt;<i> 
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (frame-&gt;can_id &amp; CAN_RTR_FLAG)
+</I>&gt;&gt;&gt;<i> +		dlc |= MB_CNT_RTR;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	writel(dlc, &amp;regs-&gt;cantxfg[TX_BUF_ID].can_dlc);
+</I>&gt;&gt;&gt;<i> +	writel(can_id, &amp;regs-&gt;cantxfg[TX_BUF_ID].can_id);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	can_data = (u32 *)frame-&gt;data;
+</I>&gt;&gt;&gt;<i> +	writel(cpu_to_be32(*can_data), &amp;regs-&gt;cantxfg[TX_BUF_ID].data[0]);
+</I>&gt;&gt;&gt;<i> +	writel(cpu_to_be32(*(can_data + 1)), &amp;regs-&gt;cantxfg[TX_BUF_ID].data[1]);
+</I>&gt;&gt;<i> IMHO it is not really transparent, that this is a correct handling to copy the
+</I>&gt;&gt;<i>   can_frame.data[] on all architectures. I bet creating a for-statement
+</I>&gt;&gt;<i> regarding the dlc is not slower and makes really clear, what's going on here.
+</I>&gt;<i> 
+</I>&gt;<i> This is indeed a problem here. The original Coldfire code I used as a
+</I>&gt;<i> template used a loop around unsigned char * which did the wrong thing
+</I>&gt;<i> for me.
+</I>
+This could be a good starting point for an investigation ;-)
+
+&gt;<i> So yes, this is not generic here, but I have no idea how the
+</I>&gt;<i> generic code looks like. As Coldfire is big endian this doesn't seem
+</I>&gt;<i> that wrong.
+</I>
+I would try to define a proper flexcan_mb struct like
+
+struct flexcan_mb {
+	u8 code;
+	u8 ctrl;
+	u16 timestamp;
+	u32 id;
+	u8 data[8];
+}
+
+And then see how it looks like ;-)
+
+Regards,
+Oliver
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002812.html">[PATCH V2] CAN: Add Flexcan CAN controller driver
+</A></li>
+	<LI>Next message: <A HREF="002814.html">[PATCH V2] CAN: Add Flexcan CAN controller driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2813">[ date ]</a>
+              <a href="thread.html#2813">[ thread ]</a>
+              <a href="subject.html#2813">[ subject ]</a>
+              <a href="author.html#2813">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

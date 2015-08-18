@@ -1,0 +1,125 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] CAN: mcp251x.c: Reduce amount of SPI transactions in ISR
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20CAN%3A%20mcp251x.c%3A%20Reduce%20amount%20of%20SPI%20transactions%20in%20ISR&In-Reply-To=%3C4C9BDC68.9070203%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004675.html">
+   <LINK REL="Next"  HREF="004678.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] CAN: mcp251x.c: Reduce amount of SPI transactions in ISR</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20CAN%3A%20mcp251x.c%3A%20Reduce%20amount%20of%20SPI%20transactions%20in%20ISR&In-Reply-To=%3C4C9BDC68.9070203%40pengutronix.de%3E"
+       TITLE="[PATCH] CAN: mcp251x.c: Reduce amount of SPI transactions in ISR">mkl at pengutronix.de
+       </A><BR>
+    <I>Fri Sep 24 01:02:00 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004675.html">[PATCH] CAN: mcp251x.c: Reduce amount of SPI transactions in ISR
+</A></li>
+        <LI>Next message: <A HREF="004678.html">[PATCH] CAN: mcp251x.c: Reduce amount of SPI transactions in ISR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4677">[ date ]</a>
+              <a href="thread.html#4677">[ thread ]</a>
+              <a href="subject.html#4677">[ subject ]</a>
+              <a href="author.html#4677">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 09/23/2010 03:42 PM, David Jander wrote:
+&gt;<i> On Thursday 23 September 2010 02:50:41 pm Marc Kleine-Budde wrote:
+</I>&gt;&gt;<i> wOn 09/23/2010 10:29 AM, <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">david.jander at protonic.nl</A> wrote:
+</I>&gt;&gt;&gt;<i> From: David Jander &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">david at protonic.nl</A>&gt;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> This patch drastically reduces the amount of SPI transactions needed in
+</I>&gt;&gt;&gt;<i> the ISR of the driver. This can have a significant performance impact.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> My git has found a trailing whitespace (see inline).
+</I>&gt;<i> 
+</I>&gt;<i> Ooops. Sorry, must have looked over it.
+</I>&gt;<i> Will fix it, but I'll rather wait with re-supmitting if you have more feedback 
+</I>&gt;<i> from you test.
+</I>
+I've tested your first patch, not the second as I'm concentrating on the
+RX for now. For multiple TX buffers we need proper buffer priorities,
+though.
+
+I'm using our 2.6.36-rc4 (the protonic/master) on MX35 with a mcp2515, 2
+MHz SPI clock, currently using 250kbit on th CAN-bus.
+
+Without your patch the RX of a single message (dlc doesn't matter) takes
+19..20 SPI interrupts. I can receive 2 messages (with dlc==1)
+back-to-back without loosing one. The third one just gets lost.
+
+When trying to receive 6 messages I see something quite strange: The
+CAN-ID should be always &quot;2&quot;, the dlc &quot;1&quot; and the data should be increasing.
+
+CAN-ID  dlc data
+
+&lt;0x002&gt; [1] 00
+&lt;0x002&gt; [1] 01
+&lt;0x002&gt; [1] 03
+&lt;0x002&gt; [1] 04
+&lt;0x000&gt; [8] 00 00 00 00 00 00 00 00
+
+The last frame looks quite broken. I haven't debugged the problem yet.
+
+I've done this test with the pengutronix's can-utils. On the sending side:
+	cansequence -p --loop=6
+On the rx side:
+	candump
+
+
+With your patch it's 8 interrupts per message. And with the improvement
+you talked about on the phone, i.e. 2515 clears the RX flag
+automatically, I managed to get it down to 7. But I get still this
+strage 8 byte long can message, although it takes much more messages to
+trigger that problem.
+
+cheers and good night,
+Marc
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20100924/9e921aa8/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20100924/9e921aa8/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004675.html">[PATCH] CAN: mcp251x.c: Reduce amount of SPI transactions in ISR
+</A></li>
+	<LI>Next message: <A HREF="004678.html">[PATCH] CAN: mcp251x.c: Reduce amount of SPI transactions in ISR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4677">[ date ]</a>
+              <a href="thread.html#4677">[ thread ]</a>
+              <a href="subject.html#4677">[ subject ]</a>
+              <a href="author.html#4677">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

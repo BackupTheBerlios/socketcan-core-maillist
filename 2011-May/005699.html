@@ -1,0 +1,160 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [net-next-2.6 PATCH] can: make struct can_proto const
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5Bnet-next-2.6%20PATCH%5D%20can%3A%20make%20struct%20can_proto%20const&In-Reply-To=%3C20110504044057.GC278%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005716.html">
+   <LINK REL="Next"  HREF="005709.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[net-next-2.6 PATCH] can: make struct can_proto const</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5Bnet-next-2.6%20PATCH%5D%20can%3A%20make%20struct%20can_proto%20const&In-Reply-To=%3C20110504044057.GC278%40e-circ.dyndns.org%3E"
+       TITLE="[net-next-2.6 PATCH] can: make struct can_proto const">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed May  4 06:40:57 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005716.html">[PATCH] can: fix SJA1000 dlc for RTR packets
+</A></li>
+        <LI>Next message: <A HREF="005709.html">[net-next-2.6 PATCH] can: make struct can_proto const
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5699">[ date ]</a>
+              <a href="thread.html#5699">[ thread ]</a>
+              <a href="subject.html#5699">[ subject ]</a>
+              <a href="author.html#5699">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>commit 53914b67993c724cec585863755c9ebc8446e83b had the
+same message. That commit did put everything in place but
+did not make can_proto const itself.
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+
+diff --git a/include/linux/can/core.h b/include/linux/can/core.h
+index 6f70a6d..5ce6b5d 100644
+--- a/include/linux/can/core.h
++++ b/include/linux/can/core.h
+@@ -44,8 +44,8 @@ struct can_proto {
+ 
+ /* function prototypes for the CAN networklayer core (af_can.c) */
+ 
+-extern int  can_proto_register(struct can_proto *cp);
+-extern void can_proto_unregister(struct can_proto *cp);
++extern int  can_proto_register(const struct can_proto *cp);
++extern void can_proto_unregister(const struct can_proto *cp);
+ 
+ extern int  can_rx_register(struct net_device *dev, canid_t can_id,
+ 			    canid_t mask,
+diff --git a/net/can/af_can.c b/net/can/af_can.c
+index a8dcaa4..5b52762 100644
+--- a/net/can/af_can.c
++++ b/net/can/af_can.c
+@@ -84,7 +84,7 @@ static DEFINE_SPINLOCK(can_rcvlists_lock);
+ static struct kmem_cache *rcv_cache __read_mostly;
+ 
+ /* table of registered CAN protocols */
+-static struct can_proto *proto_tab[CAN_NPROTO] __read_mostly;
++static const struct can_proto *proto_tab[CAN_NPROTO] __read_mostly;
+ static DEFINE_MUTEX(proto_tab_lock);
+ 
+ struct timer_list can_stattimer;   /* timer for statistics update */
+@@ -115,9 +115,9 @@ static void can_sock_destruct(struct sock *sk)
+ 	skb_queue_purge(&amp;sk-&gt;sk_receive_queue);
+ }
+ 
+-static struct can_proto *can_try_module_get(int protocol)
++static const struct can_proto *can_try_module_get(int protocol)
+ {
+-	struct can_proto *cp;
++	const struct can_proto *cp;
+ 
+ 	rcu_read_lock();
+ 	cp = rcu_dereference(proto_tab[protocol]);
+@@ -132,7 +132,7 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
+ 		      int kern)
+ {
+ 	struct sock *sk;
+-	struct can_proto *cp;
++	const struct can_proto *cp;
+ 	int err = 0;
+ 
+ 	sock-&gt;state = SS_UNCONNECTED;
+@@ -691,7 +691,7 @@ drop:
+  *  -EBUSY  protocol already in use
+  *  -ENOBUF if proto_register() fails
+  */
+-int can_proto_register(struct can_proto *cp)
++int can_proto_register(const struct can_proto *cp)
+ {
+ 	int proto = cp-&gt;protocol;
+ 	int err = 0;
+@@ -728,7 +728,7 @@ EXPORT_SYMBOL(can_proto_register);
+  * can_proto_unregister - unregister CAN transport protocol
+  * @cp: pointer to CAN protocol structure
+  */
+-void can_proto_unregister(struct can_proto *cp)
++void can_proto_unregister(const struct can_proto *cp)
+ {
+ 	int proto = cp-&gt;protocol;
+ 
+diff --git a/net/can/bcm.c b/net/can/bcm.c
+index 8a6a05e..cced806 100644
+--- a/net/can/bcm.c
++++ b/net/can/bcm.c
+@@ -1601,7 +1601,7 @@ static struct proto bcm_proto __read_mostly = {
+ 	.init       = bcm_init,
+ };
+ 
+-static struct can_proto bcm_can_proto __read_mostly = {
++static const struct can_proto bcm_can_proto = {
+ 	.type       = SOCK_DGRAM,
+ 	.protocol   = CAN_BCM,
+ 	.ops        = &amp;bcm_ops,
+diff --git a/net/can/raw.c b/net/can/raw.c
+index 0eb39a7..dea99a6 100644
+--- a/net/can/raw.c
++++ b/net/can/raw.c
+@@ -774,7 +774,7 @@ static struct proto raw_proto __read_mostly = {
+ 	.init       = raw_init,
+ };
+ 
+-static struct can_proto raw_can_proto __read_mostly = {
++static const struct can_proto raw_can_proto = {
+ 	.type       = SOCK_RAW,
+ 	.protocol   = CAN_RAW,
+ 	.ops        = &amp;raw_ops,
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005716.html">[PATCH] can: fix SJA1000 dlc for RTR packets
+</A></li>
+	<LI>Next message: <A HREF="005709.html">[net-next-2.6 PATCH] can: make struct can_proto const
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5699">[ date ]</a>
+              <a href="thread.html#5699">[ thread ]</a>
+              <a href="subject.html#5699">[ subject ]</a>
+              <a href="author.html#5699">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

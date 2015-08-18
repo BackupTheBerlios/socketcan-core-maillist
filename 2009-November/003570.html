@@ -1,0 +1,159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> MSCAN driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20MSCAN%20driver&In-Reply-To=%3C4B13A270.2040008%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003569.html">
+   <LINK REL="Next"  HREF="003571.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>MSCAN driver</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20MSCAN%20driver&In-Reply-To=%3C4B13A270.2040008%40grandegger.com%3E"
+       TITLE="MSCAN driver">wg at grandegger.com
+       </A><BR>
+    <I>Mon Nov 30 11:46:08 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003569.html">MSCAN driver
+</A></li>
+        <LI>Next message: <A HREF="003571.html">latest mpc52xx_can.c crashes reproducible
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3570">[ date ]</a>
+              <a href="thread.html#3570">[ thread ]</a>
+              <a href="subject.html#3570">[ subject ]</a>
+              <a href="author.html#3570">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi G&#252;nter,
+
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Guenter.Ebermann at elektrobit.com</A> wrote:
+&gt;<i> Hi Wolfgang,
+</I>&gt;<i> 
+</I>&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Guenter.Ebermann at elektrobit.com</A> wrote:
+</I>&gt;&gt;&gt;<i> Problem is:
+</I>&gt;&gt;&gt;<i> MSCAN has three Tx-Buffers. But only one buffer-interface.
+</I>&gt;&gt;&gt;<i> So to select one buffer you must use a buffer selection (cantbsel)
+</I>&gt;&gt;&gt;<i> register. 
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Your driver implementation selects the buffer in the
+</I>&gt;&gt;&gt;<i> mscan_start_xmit() function and then fills the buffer with payload.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> But in the ISR mscan_isr() the buffer is also selected
+</I>&gt;&gt;&gt;<i> to maintain the tx-stats.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Race-condition occurs if mscan_isr() interrupts mscan_start_xmit()
+</I>&gt;&gt;&gt;<i> after it selects a buffer by writing to the tbsel register.
+</I>&gt;&gt;&gt;<i> After ISR returns mscan_start_xmit will continue to write payload
+</I>&gt;&gt;&gt;<i> into the wrong buffer.
+</I>&gt;&gt;<i> TX interrupts are disabled in mscan_start_xmit() while accessing the
+</I>&gt;&gt;<i> tbsel register and writing the payload:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> static netdev_tx_t mscan_start_xmit(struct sk_buff *skb, ...) {
+</I>&gt;&gt;<i> 	out_8(&amp;regs-&gt;cantier, 0);
+</I>&gt;&gt;<i> 	...
+</I>&gt;&gt;<i> 	out_8(&amp;regs-&gt;cantier, priv-&gt;tx_active);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 	return NETDEV_TX_OK;
+</I>&gt;&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> Of course, you are right. You are using cantier to disable TX interrupts.
+</I>&gt;<i> I overlooked this code - because I use a different, more obstrusive technique:
+</I>&gt;<i> In eCos a DSR (deferred service routine - called by dispatcher shortly after ISR)
+</I>&gt;<i> can be blocked by simply locking/unlocking the scheduler.
+</I>&gt;<i> 
+</I>&gt;<i> I used a &quot;global&quot; lock instead of cantier because I am not perfectly sure
+</I>&gt;<i> how this register really works. Weird thing with this register is that it
+</I>&gt;<i> is also used as a kind of acknowledgement register - the first thing i tried
+</I>&gt;<i> when fixing my driver was to treat cantier like a normal interrupt enable register:
+</I>&gt;<i> I only enabled it once during booting - and only used cantflg in ISR to know
+</I>&gt;<i> which buffer was transmitted. However this did not work -&gt; cantier bits also needs
+</I>&gt;<i> to be cleared in ISR. So I suspect cantier to be a kind of acknowledgement register
+</I>&gt;<i> and therfore its perhaps more secure to only delete bits inside the ISR and
+</I>&gt;<i> only set bits inside the transmit functions.
+</I>&gt;<i> 
+</I>&gt;<i> The problem with my driver only occured when sending a lot of
+</I>&gt;<i> messages (~4000/second).
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> A second race condition occurs with the cantier register.
+</I>&gt;&gt;&gt;<i> The documentation says its an interrupt-enable register.
+</I>&gt;&gt;&gt;<i> But in-fact it is a sort of acknowledgement register which
+</I>&gt;&gt;&gt;<i> is accessed in both ISR and xmit function with load-and-store
+</I>&gt;&gt;&gt;<i> operations.
+</I>&gt;&gt;<i> I don't see that problem yet in the MSCAN Socketcan driver.
+</I>&gt;<i> 
+</I>&gt;<i> ACK.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> Perhaps the following lines could be  written simpler
+</I>&gt;&gt;&gt;<i> in function mscan_isr():
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    cantier = in_8(&amp;regs-&gt;cantier) &amp; MSCAN_TXE;
+</I>&gt;&gt;&gt;<i>    cantflg = in_8(&amp;regs-&gt;cantflg) &amp; cantier;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>    if (cantier &amp;&amp; cantflg) {
+</I>&gt;&gt;&gt;<i>       ...
+</I>&gt;&gt;&gt;<i> Instead of this i would write (its the same):
+</I>&gt;&gt;&gt;<i>    if (cantflg) {
+</I>&gt;&gt;<i> This will break the synchronization with mscan_start_xmit(), because
+</I>&gt;&gt;<i> the ISR can be entered by to RX or error interrupts as well.
+</I>&gt;<i> 
+</I>&gt;<i> Here I disagree: It right that you must also look at cantier because
+</I>&gt;<i> ISR can also be entered for RX interrupt, but look how you initialize
+</I>&gt;<i> cantflg:
+</I>&gt;<i> 
+</I>&gt;<i> cantflg = in_8(&amp;regs-&gt;cantflg) &amp; cantier;
+</I>&gt;<i>                                ^^^^^^
+</I>&gt;<i>                                It is already masked by cantier!
+</I>&gt;<i> 
+</I>&gt;<i> So 'if (cantier &amp;&amp; cantflg)' is just redundant code.
+</I>&gt;<i> 
+</I>&gt;<i> It would be better to just write 'if (cantier)' or second possibility is
+</I>&gt;<i> to do not mask cantflg with cantier in intitialization but mask it later
+</I>&gt;<i> in the if-condition.
+</I>
+OK, I see. This should be corrected. Anyway, your review re-triggered
+myself thinking about this type of locking with cantier. While it's OK
+if the ISR is executed in the interrupt context, it may fail with
+threaded IRQs (like used by -rt). It think it should be replaced with a
+more robust locking. e.g. spin_lock_irqsave/restore. Will prepare a
+patch a.s.a.p.
+
+Thanks,
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003569.html">MSCAN driver
+</A></li>
+	<LI>Next message: <A HREF="003571.html">latest mpc52xx_can.c crashes reproducible
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3570">[ date ]</a>
+              <a href="thread.html#3570">[ thread ]</a>
+              <a href="subject.html#3570">[ subject ]</a>
+              <a href="author.html#3570">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

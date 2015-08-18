@@ -1,0 +1,259 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC] Specific CAN bit rate settings in HW-independent way
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20Specific%20CAN%20bit%20rate%20settings%20in%20HW-independent%20way&In-Reply-To=%3C200710090050.40052.pisa%40cmp.felk.cvut.cz%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000738.html">
+   <LINK REL="Next"  HREF="000740.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC] Specific CAN bit rate settings in HW-independent way</H1>
+    <B>Pavel Pisa</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20Specific%20CAN%20bit%20rate%20settings%20in%20HW-independent%20way&In-Reply-To=%3C200710090050.40052.pisa%40cmp.felk.cvut.cz%3E"
+       TITLE="[RFC] Specific CAN bit rate settings in HW-independent way">pisa at cmp.felk.cvut.cz
+       </A><BR>
+    <I>Tue Oct  9 00:50:38 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000738.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+        <LI>Next message: <A HREF="000740.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#739">[ date ]</a>
+              <a href="thread.html#739">[ thread ]</a>
+              <a href="subject.html#739">[ subject ]</a>
+              <a href="author.html#739">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Monday 08 October 2007 21:13, Wolfgang Grandegger wrote:
+&gt;<i> &gt;&gt; The calculated default values shoud be resonable, likely they are never
+</I>&gt;<i> &gt;&gt; optimal as they may also depend on things like cable lenght, etc.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Currently the calculated default values are totally broken for MPC52000B.
+</I>&gt;<i>
+</I>&gt;<i> Then it should be fixed, if possible. I agree, that the current
+</I>&gt;<i> implementation is not satisfactory. The SJA1000 (and i82572) driver does
+</I>&gt;<i> still use its own different baud-rate calculation. More feedback and
+</I>&gt;<i> maybe complaints are to be expected when they finally switch to the
+</I>&gt;<i> device interface.
+</I>&gt;<i>
+</I>
+Hello All,
+
+I do not have access to the referenced norm about predefined timings,
+but we have come to the attached bit timing calculation code
+which works reasonably on more targets. It is slightly
+generalized/redesigned code from LinCAN driver initially used
+in some of our embedded projects.
+
+The controller capabilities are described by can_calc_const_t
+parameters. All computations are done in whole times not in
+the final registers values. The attached example uses parameters
+for SJA1000 by default. Actual registers values are (brp-1), (tseg1-1),
+(tseg2-1). Please, can somebody with access to the referenced
+non public info compare results of this computations with
+recommended ones?
+
+The input is baudrate and optionally sample point placement
+(75% by default).
+
+Best wishes,
+
+                Pavel Pisa
+        e-mail: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">pisa at cmp.felk.cvut.cz</A>
+        www:    <A HREF="http://cmp.felk.cvut.cz/~pisa">http://cmp.felk.cvut.cz/~pisa</A>
+        work:   <A HREF="http://www.pikron.com">http://www.pikron.com</A>
+
+/*============================================================================*/
+/* can_baud.c - CAN baudrate calculation
+ * Code based on LinCAN sources and H8S2638 project
+ * Copyright 2004-2006 Pavel Pisa - DCE FELK CVUT cz
+ * Copyright 2005      Stanislav Marek
+ * email:<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">pisa at cmp.felk.cvut.cz</A>
+ * This software is released under the GPL-License.
+ */
+
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+#define PRINT_BAUD
+
+typedef struct {
+	int sync;
+	int tseg1_min;
+	int tseg1_max;
+	int tseg2_min;
+	int tseg2_max;
+	int brp_min;
+	int brp_max;
+	int brp_inc;
+	int fix_div;
+} can_calc_const_t;
+
+int can_auto_baud(int *pbrp, int *ptseg1, int *ptseg2, long baud_rate,
+		  int sampl_pt, long clock, can_calc_const_t * c)
+{
+	long best_error = 1000000000, error;
+	int best_tseg = 0, best_brp = 0, brp = 0;
+	long best_rate = 0;
+	int tseg = 0, tseg1 = 0, tseg2 = 0;
+
+	clock = (clock + c-&gt;fix_div / 2) / c-&gt;fix_div;
+
+	/* tseg even = round down, odd = round up */
+	for (tseg = (c-&gt;sync + c-&gt;tseg1_min + c-&gt;tseg2_min) * 2;
+	     tseg &lt;= (c-&gt;sync + c-&gt;tseg1_max + c-&gt;tseg2_max) * 2 + 1; tseg++) {
+		/* Compute all posibilities of tseg choices (tseg=tseg1+tseg2) */
+		brp = clock / ((1 + tseg / 2) * baud_rate) + tseg % 2;
+		brp = (brp / c-&gt;brp_inc) * c-&gt;brp_inc;	/* chose brp step which is possible in system */
+		if ((brp &lt; c-&gt;brp_min) || (brp &gt; c-&gt;brp_max))
+			continue;
+		error = baud_rate - clock / (brp * (1 + tseg / 2));
+		if (error &lt; 0)
+			error = -error;
+		if (error &lt;= best_error) {
+			best_error = error;
+			best_tseg = tseg / 2;
+			best_brp = brp;
+			best_rate = clock / (brp * (1 + tseg / 2));
+		}
+	}
+
+	if (best_error &amp;&amp; (baud_rate / best_error &lt; 10)) {
+#ifdef PRINT_BAUD
+		printf(&quot;baud rate %ld is not possible with %ld Hz clock\n&quot;,
+		       baud_rate, clock);
+		printf(&quot;%d bps. brp=%d, best_tseg=%d, tseg1=%d, tseg2=%d\n&quot;,
+		       best_rate, best_brp, best_tseg, tseg1, tseg2);
+#endif /* PRINT_BAUD */
+		return -1;
+	}
+
+	tseg2 = best_tseg - (sampl_pt * (best_tseg + 1)) / 100;
+	if (tseg2 &lt; c-&gt;tseg2_min)
+		tseg2 = c-&gt;tseg2_min;
+	if (tseg2 &gt; c-&gt;tseg2_max)
+		tseg2 = c-&gt;tseg2_max;
+	tseg1 = best_tseg - tseg2;
+	if (tseg1 &gt; c-&gt;tseg1_max) {
+		tseg1 = c-&gt;tseg1_max;
+		tseg2 = best_tseg - tseg1;
+	}
+#ifdef PRINT_BAUD
+	printf(&quot;Setting %ld bps, rate error %f%%.\n&quot;, best_rate,
+	       (float)100 * (baud_rate - best_rate) / baud_rate);
+	printf(&quot;brp=%d, best_tseg=%d, tseg1=%d, tseg2=%d, sampl_pt=%d\n&quot;,
+	       best_brp, best_tseg, tseg1, tseg2,
+	       (100 * (best_tseg - tseg2) / (best_tseg + 1)));
+#endif /* PRINT_BAUD */
+	*pbrp = best_brp;
+	*ptseg1 = tseg1;
+	*ptseg2 = tseg2;
+
+	return 0;
+};
+
+/*============================================================================*/
+
+can_calc_const_t can_calc_const_2638 = {
+	.sync = 1,
+	.tseg1_min = 4,
+	.tseg1_max = 16,
+	.tseg2_min = 2,
+	.tseg2_max = 8,
+	.brp_min = 2,
+	.brp_max = 128,
+	.brp_inc = 2,
+	.fix_div = 1
+};
+
+can_calc_const_t can_calc_const_sja1000 = {
+	.sync = 1,
+	.tseg1_min = 1,
+	.tseg1_max = 16,
+	.tseg2_min = 1,
+	.tseg2_max = 8,
+	.brp_min = 1,
+	.brp_max = 64,
+	.brp_inc = 1,
+	.fix_div = 2
+};
+
+/*============================================================================*/
+
+int main(int argc, char *argv[])
+{
+	long val;
+	long baud_rate, best_rate;
+	long ref_clk;
+	char *p;
+	int brp, tseg1, tseg2, best_tseg;
+	int sampl_pt;
+
+	can_calc_const_t *calc_const = &amp;can_calc_const_sja1000;
+
+	if (argc &lt;= 1) {
+		printf(&quot;usage: can_baud &lt;baudrate&gt; &lt;sample point&gt; &lt;reference clock&gt;\n&quot;);
+		return 0;
+	}
+
+	baud_rate = strtol(argv[1], NULL, 0);
+
+	if (argc &gt;= 3)
+		sampl_pt = strtol(argv[2], NULL, 0);
+	else
+		sampl_pt = 75;	/* Default is 75% */
+
+	if (argc &gt;= 4)
+		ref_clk = strtol(argv[3], NULL, 0);
+	else
+		ref_clk = 16000000;	/* Default is 8 MHz */
+
+	if (can_auto_baud(&amp;brp, &amp;tseg1, &amp;tseg2, baud_rate, sampl_pt, ref_clk, calc_const)) {
+		printf(&quot;Settings for baud rate %ld bps is not possible.\n&quot;,
+		       baud_rate);
+		return 1;
+	}
+
+	best_tseg = tseg1 + tseg2;
+	best_rate = ref_clk / (calc_const-&gt;fix_div * (brp * (calc_const-&gt;sync + tseg1 + tseg2)));
+	printf(&quot;New settings for baud rate %ld bps\n&quot;, best_rate);
+	printf(&quot;\tbrp=%d, best_tseg=%d, tseg1=%d, tseg2=%d, sampl_pt=%d\n&quot;,
+	       brp, best_tseg, tseg1, tseg2,
+	       (100 * (best_tseg - tseg2) / (best_tseg + 1)));
+}
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000738.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+	<LI>Next message: <A HREF="000740.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#739">[ date ]</a>
+              <a href="thread.html#739">[ thread ]</a>
+              <a href="subject.html#739">[ subject ]</a>
+              <a href="author.html#739">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

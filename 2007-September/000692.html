@@ -1,0 +1,147 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Setting CAN bit rate in HW-independent way
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Setting%20CAN%20bit%20rate%20in%20HW-independent%20way&In-Reply-To=%3C46FD0C14.50504%40varma-el.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000691.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Setting CAN bit rate in HW-independent way</H1>
+    <B>Andrey Volkov</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Setting%20CAN%20bit%20rate%20in%20HW-independent%20way&In-Reply-To=%3C46FD0C14.50504%40varma-el.com%3E"
+       TITLE="Setting CAN bit rate in HW-independent way">avolkov at varma-el.com
+       </A><BR>
+    <I>Fri Sep 28 16:13:40 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000691.html">Setting CAN bit rate in HW-independent way
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#692">[ date ]</a>
+              <a href="thread.html#692">[ thread ]</a>
+              <a href="subject.html#692">[ subject ]</a>
+              <a href="author.html#692">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Vladislav Gribov wrote:
+&gt;<i> Hi Andrey,
+</I>&gt;<i> 
+</I>&gt;<i> thanks for you comments.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> I am on porting the IXXAT CANopen RT Stack to work with Socket CAN, 
+</I>&gt;&gt;&gt;<i> we want to use the stack both with our PCI cards (SJA1000 CAN 
+</I>&gt;&gt;&gt;<i> controller) and on MPC5200, which has MSCAN. 
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> The problem I have now is how to switch CAN bit rate in the HW 
+</I>&gt;&gt;&gt;<i> independent way. 
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> The definition of the CAN bit rate in the almost HW independent way 
+</I>&gt;&gt;&gt;<i> is actually done over the 
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> struct can_bittime_std { 
+</I>&gt;&gt;&gt;<i> __u32 brp;        /* baud rate prescaler */  
+</I>&gt;&gt;&gt;<i> __u8  prop_seg;   /* from 1 to 8 */  
+</I>&gt;&gt;&gt;<i> __u8  phase_seg1; /* from 1 to 8 */ 
+</I>&gt;&gt;&gt;<i> __u8  phase_seg2; /* from 1 to 8 */ 
+</I>&gt;&gt;&gt;<i> __u8  sjw:7;      /* from 1 to 4 */ 
+</I>&gt;&gt;&gt;<i> __u8  sam:1;      /* 1 - enable triple sampling */ 
+</I>&gt;&gt;&gt;<i> }; 
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> The only problem with the structure is baud rate prescaler (well, 
+</I>&gt;&gt;&gt;<i> triple sampling is also SJA1000 specific). Such a structure
+</I>&gt;&gt;<i> describes 
+</I>&gt;&gt;&gt;<i> CAN bit rate only if supplied with CAN controller clock frequency 
+</I>&gt;&gt;&gt;<i> (can_priv.can_sys_clock), which is target(HW) specific. That means 
+</I>&gt;&gt;&gt;<i> that configuration 
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> brp=2, prop_seg=11, phase_seg1=2, phase_seg2=2, sjw=1, sam=0 
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> selects 125kbit/s for SJA1000 CAN controller clocked with 8MHz and 
+</I>&gt;&gt;&gt;<i> 250kbit/s  for SJA1000 CAN controller clocked with 16MHz (you have
+</I>&gt;&gt;<i> to 
+</I>&gt;&gt;&gt;<i> consider additional fix prescaler by 2 for SJA1000 CAN controllers
+</I>&gt;&gt;<i> in 
+</I>&gt;&gt;&gt;<i> this example) 
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> The definition of CAN bit rate is described in ISO 11989-1 document 
+</I>&gt;&gt;&gt;<i> (is also available in adapted form from eg 
+</I>&gt;&gt;&gt;<i> &quot;<A HREF="http://www.can-cia.org/downloads/?269">http://www.can-cia.org/downloads/?269</A>&quot; ) 
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> According to that spec following definition seems to be really HW 
+</I>&gt;&gt;&gt;<i> independent: 
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> struct can_bittime_std { 
+</I>&gt;&gt;&gt;<i> u32 TQ;         /* time quanta in ns */ 
+</I>&gt;&gt;&gt;<i> u8  Sync_Seg;   /* shall be always 1 */ 
+</I>&gt;&gt;&gt;<i> u8 Prop_Seg;   /* propagation time, at least 1..8 */ 
+</I>&gt;&gt;<i>                                          ^^^^^^^^^^ in most cases ;) 
+</I>&gt;&gt;&gt;<i> u8  Phase_Seg1; /*  at least 1..8 */ 
+</I>&gt;&gt;<i>                        ^^^^^^^^^^^^^^^ Ditto
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> u8  Phase_Seg2; /* max(Phase_Seg1,2) */ 
+</I>&gt;&gt;<i> Btw., phase_seg2 always must be greater then phase_seg1.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> u8  SJW;        /* from 1 to min (4,Phase_Seg1)    */ 
+</I>&gt;&gt;<i> And sjw must be &lt; then phase_seg2. And have not any relation to
+</I>&gt;&gt;<i> phase_seg1.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> }; 
+</I>&gt;&gt;&gt;<i>  
+</I>&gt;&gt;<i> In general, nice shot Vlad, it was my omission with brp, 
+</I>&gt;&gt;<i> TQ looks better for me.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> The requirements on segment length as in comments to can_bittime_std
+</I>&gt;<i> have been taken from the ISO 11989-1, from 2002-04-9, Chapter 12.4.1.2.
+</I>&gt;<i> I have verified it to the older revision of standard (october 1999). It
+</I>&gt;<i> is still the same. Unfortunately I cannot quote the spec here because of
+</I>&gt;<i> copyrights.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>Certainly I know this doco ;), I try to point you to physical meaning of
+this values:
+
+  sjw lengthen phase_seg1, but SHORTEN phase_seg2 hence, if smb.
+  set it to value &gt;= then phase_seg2, then sample point will be at
+  the edge in best case.
+
+Btw. common mistake is set SJW to 1, and wonder after that, why errors
+arising on &quot;my CAN on ideal line&quot; :).
+
+--
+Andrey
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000691.html">Setting CAN bit rate in HW-independent way
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#692">[ date ]</a>
+              <a href="thread.html#692">[ thread ]</a>
+              <a href="subject.html#692">[ subject ]</a>
+              <a href="author.html#692">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

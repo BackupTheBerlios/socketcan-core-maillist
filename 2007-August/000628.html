@@ -1,0 +1,112 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> problem with SLCAN
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20problem%20with%20SLCAN&In-Reply-To=%3C46CA9B51.5010905%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000626.html">
+   <LINK REL="Next"  HREF="000662.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>problem with SLCAN</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20problem%20with%20SLCAN&In-Reply-To=%3C46CA9B51.5010905%40pengutronix.de%3E"
+       TITLE="problem with SLCAN">mkl at pengutronix.de
+       </A><BR>
+    <I>Tue Aug 21 09:59:13 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000626.html">
+</A></li>
+        <LI>Next message: <A HREF="000662.html">problem with SLCAN
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#628">[ date ]</a>
+              <a href="thread.html#628">[ thread ]</a>
+              <a href="subject.html#628">[ subject ]</a>
+              <a href="author.html#628">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+Yesterday I tried to get the SLCAN running on a stock 2.6.22.1, my step
+were:
+
+1) plug the CAN dongle into USB socket
+2) the kernel discovered the USB&lt;-&gt;Serial adapter and the port shows up
+   as /dev/ttyUSB0.
+3) load slcan.ko
+4) use slcan_attach (can-utils/slcan_attach.c revision 456):
+   ./slcan_attach /dev/ttyUSB0 as root
+5) ifconfig slc0 shows an interface
+6) ifconfig slc0 up fails with -ENODEV.
+
+I tracked down the probem to slcan_close() which sets sl-&gt;tty = NULL;
+
+In detail:
+
+In step 4) the userspace util opens /dev/ttyUSB0 an switches the line
+disc with an ioctl. I think this goes into slcan_open() in the kernel.
+
+There a netdev is allocated and registered and sl-&gt;tty is set to the tty
+context we're serving. Then the ioctl return with success to userspace
+and the userspace util exists happily :).
+
+The problem is that the filedescriptor refering to /dev/ttyUSB0 is also
+closed (in the util with an explicid close). This close is handled down
+to slcan_close() in the kernel. In this function sl-&gt;tty is set to NULL.
+But the netdev is still registered, see step 5, ifconfig is still happy.
+
+Now I want to bring up the interface. In slc_open() we see a
+        if (sl-&gt;tty==NULL)
+                return -ENODEV;
+which is fatal in my situation, because sl-&gt;tty is NULL.
+
+
+Have I missed something, is the common usecase different. Is there a
+different userspace programm somewhere.
+
+Regards - Marc
+
+P.S.: Which USB CAN devices are compatible with this driver? What about
+other non compatibel CAN devices, the slcan driver should be made
+modular in some way.
+
+-- 
+ Dipl.-Ing. Marc Kleine-Budde | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>
+  Pengutronix - Linux Solutions for Science and Industry
+    Handelsregister: Amtsgericht Hildesheim, HRA 2686
+      Hannoversche Str. 2, 31134 Hildesheim, Germany
+    Phone: +49-5121-206917-0 |  Fax: +49-5121-206917-9
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000626.html">
+</A></li>
+	<LI>Next message: <A HREF="000662.html">problem with SLCAN
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#628">[ date ]</a>
+              <a href="thread.html#628">[ thread ]</a>
+              <a href="subject.html#628">[ subject ]</a>
+              <a href="author.html#628">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

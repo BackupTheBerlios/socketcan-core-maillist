@@ -1,0 +1,125 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC] Specific CAN bit rate settings in HW-independent way
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20Specific%20CAN%20bit%20rate%20settings%20in%20HW-independent%20way&In-Reply-To=%3C200710091117.03455.pisa%40cmp.felk.cvut.cz%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000744.html">
+   <LINK REL="Next"  HREF="000750.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC] Specific CAN bit rate settings in HW-independent way</H1>
+    <B>Pavel Pisa</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%5D%20Specific%20CAN%20bit%20rate%20settings%20in%20HW-independent%20way&In-Reply-To=%3C200710091117.03455.pisa%40cmp.felk.cvut.cz%3E"
+       TITLE="[RFC] Specific CAN bit rate settings in HW-independent way">pisa at cmp.felk.cvut.cz
+       </A><BR>
+    <I>Tue Oct  9 11:17:02 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000744.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+        <LI>Next message: <A HREF="000750.html">protocol 000c is buggy
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#748">[ date ]</a>
+              <a href="thread.html#748">[ thread ]</a>
+              <a href="subject.html#748">[ subject ]</a>
+              <a href="author.html#748">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tuesday 09 October 2007 08:59, Hartkopp, Oliver (K-GEFE/E) wrote:
+&gt;<i>  From the code from Pavel i got the idea, to specify that every CAN
+</I>&gt;<i>
+</I>&gt;<i> driver _has to bring his own calculation constants_, e.g.:
+</I>&gt;<i> &gt; can_calc_const_t can_calc_const_2638 = {
+</I>&gt;<i> &gt; 	.sync = 1,
+</I>&gt;<i> &gt; 	.tseg1_min = 4,
+</I>&gt;<i> &gt; 	.tseg1_max = 16,
+</I>&gt;<i> &gt; 	.tseg2_min = 2,
+</I>&gt;<i> &gt; 	.tseg2_max = 8,
+</I>&gt;<i> &gt; 	.brp_min = 2,
+</I>&gt;<i> &gt; 	.brp_max = 128,
+</I>&gt;<i> &gt; 	.brp_inc = 2,
+</I>&gt;<i> &gt; 	.fix_div = 1
+</I>&gt;<i> &gt; };
+</I>&gt;<i>
+</I>&gt;<i> or
+</I>&gt;<i>
+</I>&gt;<i> &gt; can_calc_const_t can_calc_const_sja1000 = {
+</I>&gt;<i> &gt; 	.sync = 1,
+</I>&gt;<i> &gt; 	.tseg1_min = 1,
+</I>&gt;<i> &gt; 	.tseg1_max = 16,
+</I>&gt;<i> &gt; 	.tseg2_min = 1,
+</I>&gt;<i> &gt; 	.tseg2_max = 8,
+</I>&gt;<i> &gt; 	.brp_min = 1,
+</I>&gt;<i> &gt; 	.brp_max = 64,
+</I>&gt;<i> &gt; 	.brp_inc = 1,
+</I>&gt;<i> &gt; 	.fix_div = 2
+</I>&gt;<i> &gt; };
+</I>
+The problem is, that not each HW has same range for TSEG1
+and TSEG2 given by available bit-fields widths. But there
+are even other restriction, setting minimal values results
+in hardware races or misbehavior for some controllers,
+the H8S2638 is one example. So computation has to be
+parameterized by concrete controller capabilities.
+
+&gt;<i> So that when the driver has to calculate SIOCSCANBAUDRATE it invokes the
+</I>&gt;<i> calculation function like suggested by Pavel:
+</I>&gt;<i> my_new_btr = can_auto_baud(&amp;brp, &amp;tseg1, &amp;tseg2, baud_rate, sampl_pt,
+</I>&gt;<i> ref_clk, calc_const);
+</I>&gt;<i>
+</I>&gt;<i> This also does not change the the ioctl() interface and should lead to
+</I>&gt;<i> an heavily improved SIOCSCANBAUDRATE.
+</I>
+My conclusion from work with CAN is that most portable and device
+independent parameters are BAUDRATE and SAMPLE_POINT.
+So my advice is to use simple baudrate IOCTL for normal
+use with some agreed upon sample_pt (75% default seems
+to be reasonable for me) and provide another more
+advanced timing IOCTL with next parameters
+struct can_baudparams_t {
+        long flags;
+        long baudrate;
+        long sjw;
+        long sample_pt;
+};
+which allows to select parameters the most controller independent
+way. No need to know clock value in userspace etc.
+This is what we have in LinCAN.
+
+Best wishes
+
+            Pavel
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000744.html">[RFC] Specific CAN bit rate settings in HW-independent way
+</A></li>
+	<LI>Next message: <A HREF="000750.html">protocol 000c is buggy
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#748">[ date ]</a>
+              <a href="thread.html#748">[ thread ]</a>
+              <a href="subject.html#748">[ subject ]</a>
+              <a href="author.html#748">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

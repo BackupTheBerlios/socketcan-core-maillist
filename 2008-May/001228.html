@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: Hardware independent bit timing
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20Hardware%20independent%20bit%20timing&In-Reply-To=%3C483BEC45.5080008%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001227.html">
+   <LINK REL="Next"  HREF="001229.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: Hardware independent bit timing</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20Hardware%20independent%20bit%20timing&In-Reply-To=%3C483BEC45.5080008%40grandegger.com%3E"
+       TITLE="RFC: Hardware independent bit timing">wg at grandegger.com
+       </A><BR>
+    <I>Tue May 27 13:11:01 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001227.html">strange error message with dual port peak pc104 card
+</A></li>
+        <LI>Next message: <A HREF="001229.html">RFC: Hardware independent bit timing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1228">[ date ]</a>
+              <a href="thread.html#1228">[ thread ]</a>
+              <a href="subject.html#1228">[ subject ]</a>
+              <a href="author.html#1228">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hallo,
+
+as you might know, we need to improve and enhance the API for the CAN
+bit time setting before we can go ahead with the kernel inclusion 
+procedure. It's our last big issue on the TO-DO list.
+
+I first want to summarize what we have today:
+
+o The bit-rate can be set/get through the SYSFS file &quot;can_bitrate&quot;:
+
+  # echo &quot;125000&quot; &gt; can_bitrate
+  # cat can_bitrate
+  125000
+
+  The actual hardware dependent bit timing parameters are calculated by
+  the function can_calc_bittime() in 
+
+  <A HREF="http://svn.berlios.de/svnroot/repos/socketcan/trunk/kernel/2.6/net/can/dev.c">http://svn.berlios.de/svnroot/repos/socketcan/trunk/kernel/2.6/net/can/dev.c</A>
+
+  and then set through the device specific callback function:
+
+  int (*do_set_bittime)(struct net_device * dev,
+			struct can_bittime * br);
+
+
+o Custum bittime setting is possible through the SYSFS file
+  &quot;can_custombittime&quot;, e.g.:
+
+  # cat can_custombittime
+  std 0x18 0x8 0x6 0x7 0x4 0x1
+  # echo &quot;std 0x6 0x8 0x6 0x7 0x4 0x1&quot; &gt; can_custombittime
+  # cat can_custombittime
+  std 0x6 0x8 0x6 0x7 0x4 0x1
+
+  # echo &quot;btr 0x03 0xc0&quot; &gt; can_custombittime
+  # cat can_custombittime
+  btr 0x03 0xc0
+
+  It is based on the following definition in include/linux/can/ioctl.h
+  [side note: we need to eliminate ioctl.h]:
+
+  typedef enum CAN_BITTIME_TYPE {
+	  CAN_BITTIME_STD,
+	  CAN_BITTIME_BTR
+  } can_bittime_type_t;
+
+  /* TSEG1 of controllers usually is a sum of synch_seg (always 1),
+   * prop_seg and phase_seg1, TSEG2 = phase_seg2 */
+
+  struct can_bittime_std {
+	__u32 brp;        /* baud rate prescaler */
+	__u8  prop_seg;   /* from 1 to 8 */
+	__u8  phase_seg1; /* from 1 to 8 */
+	__u8  phase_seg2; /* from 1 to 8 */
+	__u8  sjw:7;      /* from 1 to 4 */
+	__u8  sam:1;      /* 1 - enable triple sampling */
+  };
+
+  struct can_bittime_btr {
+	__u8  btr0;
+	__u8  btr1;
+  };
+
+  struct can_bittime {
+	can_bittime_type_t type;
+	union {
+		struct can_bittime_std std;
+		struct can_bittime_btr btr;
+	};
+  };
+
+o The bitrate and bittime can only be set when the device is
+  down (stopped).
+
+o A default bitrate of 500 KB/s is set when the driver is loaded.
+
+
+As already pointed out, our current implementation has some problems and
+limitations. Here is a list of them and possible solutions:
+
+o The standard bit timing is hardware dependent. The baud rate prescaler
+  field &quot;brp&quot; in &quot;struct can_bittime_std&quot; should be replaced with the
+  hardware independent time quantum tq as suggested by Vladislav:
+
+  <A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-September/000682.html">https://lists.berlios.de/pipermail/socketcan-core/2007-September/000682.html</A>
+  <A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-September/000686.html">https://lists.berlios.de/pipermail/socketcan-core/2007-September/000686.html</A>
+
+o The current can_calc_bittime() fails to calculate reasonable bit timing
+  parameters, e.g. for the MSCAN. We need a more robust and even simpler
+  calculation. Note that the function should just determine *reasonable* 
+  bit timing parameters. It should be small and simple because it lives in
+  the kernel. For optimized parameters, we should have another interface. 
+  I see two solutions:
+
+  - Take the calculation from the RT-Socket-CAN project:
+
+    <A HREF="http://www.rts.uni-hannover.de/xenomai/lxr/source/ksrc/drivers/can/rtcan_raw_dev.c#034">http://www.rts.uni-hannover.de/xenomai/lxr/source/ksrc/drivers/can/rtcan_raw_dev.c#034</A>
+
+  - Take the calculation from the LinCAN project with some additional
+    heuristics as suggest by Pavel:
+
+    <A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-October/000734.html">https://lists.berlios.de/pipermail/socketcan-core/2007-October/000734.html</A>
+
+  The first one is simpler and the second works already on many CAN 
+  controllers.
+
+o It is not possible to provide custom bit timimg parameters for a
+  defined bit-rate by-passing the default calculation. J&#252;rgen already
+  posted the following patch using an IOCTL request: 
+
+  <A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-October/000715.html">https://lists.berlios.de/pipermail/socketcan-core/2007-October/000715.html</A>
+
+  For SYSFS, I propose a slightly different solution allowing to set/get
+  the complete table with one call:
+
+    $ cat &gt; can_custombittimes &lt;&lt;EOF
+    125000 std 0x18 0x8 0x6 0x7 0x4 0x1
+    250000 std 0x10 0x8 0x6 0x7 0x4 0x1
+    500000 std 0x04 0x8 0x6 0x7 0x4 0x1
+    ...
+    EOF
+
+  I would also skip the bit error check and print a warning. In general,
+  we could add a bit_error field to &quot;struct can_bittime_std&quot; and list it
+  with &quot;cat can_custombittime&quot;.
+
+o Some intelligent CAN controllers are not able to digest the bit timing
+  parameters defined via &quot;struct can_bittime&quot; but just the bitrate.
+  Therefore bitrate must be forwarded to the callback function
+  can_set_bittime() somehow, either as argument or as field of
+  &quot;struct can_bittime&quot;. I prefer the latter.
+
+o Finally, setting a default bitrate when configuring the device is 
+  convenient but error prune, as pointed out by Uwe in a private
+  discussion. I agree, the user *must* set a bitrate before executing 
+  &quot;ifconfig canx up&quot;.
+
+Hope I did not forget too much. Please comment.
+
+Thanks,
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001227.html">strange error message with dual port peak pc104 card
+</A></li>
+	<LI>Next message: <A HREF="001229.html">RFC: Hardware independent bit timing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1228">[ date ]</a>
+              <a href="thread.html#1228">[ thread ]</a>
+              <a href="subject.html#1228">[ subject ]</a>
+              <a href="author.html#1228">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

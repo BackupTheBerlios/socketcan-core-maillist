@@ -1,0 +1,105 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 02/10] can: at91_can: fix reception of extended frames
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%2002/10%5D%20can%3A%20at91_can%3A%20fix%20reception%20of%20extended%20frames&In-Reply-To=%3C1287658882-26914-3-git-send-email-mkl%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004811.html">
+   <LINK REL="Next"  HREF="004813.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 02/10] can: at91_can: fix reception of extended frames</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%2002/10%5D%20can%3A%20at91_can%3A%20fix%20reception%20of%20extended%20frames&In-Reply-To=%3C1287658882-26914-3-git-send-email-mkl%40pengutronix.de%3E"
+       TITLE="[PATCH 02/10] can: at91_can: fix reception of extended frames">mkl at pengutronix.de
+       </A><BR>
+    <I>Thu Oct 21 13:01:14 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004811.html">[PATCH 01/10] can: at91_can: use correct bit to enable	CAN_CTRLMODE_3_SAMPLES
+</A></li>
+        <LI>Next message: <A HREF="004813.html">[PATCH 03/10] can: at91_can: fix use after free of priv
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4812">[ date ]</a>
+              <a href="thread.html#4812">[ thread ]</a>
+              <a href="subject.html#4812">[ subject ]</a>
+              <a href="author.html#4812">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The AT91_MID_MIDE bit must be set in order to receive extended frames.
+The reception of an extended frame sets this bit, while reception of
+standard frames resets it. This results in some lost extended frames in
+an extended ID only environment. But leads to unpredictable lost
+extended ID frames in a mixed environment.
+
+The problem is fixed by setting the AT91_MID_MIDE after reception of a
+CAN frame.
+
+Signed-off-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+---
+ drivers/net/can/at91_can.c |    9 +++++++++
+ 1 files changed, 9 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/can/at91_can.c b/drivers/net/can/at91_can.c
+index b2a4599..3b66c67 100644
+--- a/drivers/net/can/at91_can.c
++++ b/drivers/net/can/at91_can.c
+@@ -243,6 +243,12 @@ static void at91_setup_mailboxes(struct net_device *dev)
+ 		set_mb_mode(priv, i, AT91_MB_MODE_RX);
+ 	set_mb_mode(priv, AT91_MB_RX_LAST, AT91_MB_MODE_RX_OVRWR);
+ 
++	/* reset acceptance mask and id register */
++	for (i = AT91_MB_RX_FIRST; i &lt;= AT91_MB_RX_LAST; i++) {
++		at91_write(priv, AT91_MAM(i), 0x0 );
++		at91_write(priv, AT91_MID(i), AT91_MID_MIDE);
++	}
++
+ 	/* The last 4 mailboxes are used for transmitting. */
+ 	for (i = AT91_MB_TX_FIRST; i &lt;= AT91_MB_TX_LAST; i++)
+ 		set_mb_mode_prio(priv, i, AT91_MB_MODE_TX, 0);
+@@ -480,6 +486,9 @@ static void at91_read_mb(struct net_device *dev, unsigned int mb,
+ 	*(u32 *)(cf-&gt;data + 0) = at91_read(priv, AT91_MDL(mb));
+ 	*(u32 *)(cf-&gt;data + 4) = at91_read(priv, AT91_MDH(mb));
+ 
++	/* allow RX of extended frames */
++	at91_write(priv, AT91_MID(mb), AT91_MID_MIDE);
++
+ 	if (unlikely(mb == AT91_MB_RX_LAST &amp;&amp; reg_msr &amp; AT91_MSR_MMI))
+ 		at91_rx_overflow_err(dev);
+ }
+-- 
+1.7.0.4
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004811.html">[PATCH 01/10] can: at91_can: use correct bit to enable	CAN_CTRLMODE_3_SAMPLES
+</A></li>
+	<LI>Next message: <A HREF="004813.html">[PATCH 03/10] can: at91_can: fix use after free of priv
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4812">[ date ]</a>
+              <a href="thread.html#4812">[ thread ]</a>
+              <a href="subject.html#4812">[ subject ]</a>
+              <a href="author.html#4812">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

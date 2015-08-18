@@ -1,0 +1,542 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 2/6] CAN: add rtnetlink for CAN
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%202/6%5D%20CAN%3A%20add%20rtnetlink%20for%20CAN&In-Reply-To=%3C20110203093639.GE385%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005457.html">
+   <LINK REL="Next"  HREF="005459.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 2/6] CAN: add rtnetlink for CAN</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%202/6%5D%20CAN%3A%20add%20rtnetlink%20for%20CAN&In-Reply-To=%3C20110203093639.GE385%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH v2 2/6] CAN: add rtnetlink for CAN">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Thu Feb  3 10:36:40 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005457.html">[PATCH v2 1/6] CAN: expand struct sockaddr_can
+</A></li>
+        <LI>Next message: <A HREF="005459.html">[PATCH v2 3/6] CAN: make struct proto const
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5458">[ date ]</a>
+              <a href="thread.html#5458">[ thread ]</a>
+              <a href="subject.html#5458">[ subject ]</a>
+              <a href="author.html#5458">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The struct can_proto is extended with additional function calls
+for use with rtnetlink. The rtnetlink API calls will be distributed
+across the different CAN protocols.
+The struct can_proto is made const.
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+---
+ include/linux/can/core.h |   27 ++++-
+ net/can/af_can.c         |  298 ++++++++++++++++++++++++++++++++++++++++------
+ net/can/bcm.c            |    2 +-
+ net/can/raw.c            |    2 +-
+ 4 files changed, 291 insertions(+), 38 deletions(-)
+
+diff --git a/include/linux/can/core.h b/include/linux/can/core.h
+index a72a967..d614eba 100644
+--- a/include/linux/can/core.h
++++ b/include/linux/can/core.h
+@@ -18,6 +18,7 @@
+ #include &lt;linux/can.h&gt;
+ #include &lt;linux/skbuff.h&gt;
+ #include &lt;linux/netdevice.h&gt;
++#include &lt;net/rtnetlink.h&gt;
+ 
+ #define CAN_VERSION &quot;20090105&quot;
+ 
+@@ -40,6 +41,28 @@ struct can_proto {
+ 	int              protocol;
+ 	struct proto_ops *ops;
+ 	struct proto     *prot;
++
++	const struct rtnl_af_ops *rtnl_link_ops;
++	/*
++	 * hooks for rtnl hooks
++	 * for the *dump* functions, cb-&gt;args[0] is reserved
++	 * for use by af_can.c, so keep your fingers off.
++	 */
++	rtnl_doit_func rtnl_new_addr;
++	rtnl_doit_func rtnl_del_addr;
++	rtnl_dumpit_func rtnl_dump_addr;
++};
++
++/*
++ * this is quite a dirty hack:
++ * reuse the second byte of a rtnetlink msg
++ * to indicate the precise protocol.
++ * The major problem is that is may conflict
++ * with the prefixlen in struct ifaddrmsg.
++ */
++struct rtgencanmsg {
++	unsigned char		rtgen_family;
++	unsigned char		can_protocol;
+ };
+ 
+ /*
+@@ -52,8 +75,8 @@ struct can_proto {
+ 
+ /* function prototypes for the CAN networklayer core (af_can.c) */
+ 
+-extern int  can_proto_register(struct can_proto *cp);
+-extern void can_proto_unregister(struct can_proto *cp);
++extern int  can_proto_register(const struct can_proto *cp);
++extern void can_proto_unregister(const struct can_proto *cp);
+ 
+ extern int  can_rx_register(struct net_device *dev, canid_t can_id,
+ 			    canid_t mask,
+diff --git a/net/can/af_can.c b/net/can/af_can.c
+index 702be5a..db59c6e 100644
+--- a/net/can/af_can.c
++++ b/net/can/af_can.c
+@@ -3,6 +3,7 @@
+  *            (used by different CAN protocol modules)
+  *
+  * Copyright (c) 2002-2007 Volkswagen Group Electronic Research
++ * Copyright (C) 2011 Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+  * All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+@@ -69,7 +70,8 @@ static __initdata const char banner[] = KERN_INFO
+ MODULE_DESCRIPTION(&quot;Controller Area Network PF_CAN core&quot;);
+ MODULE_LICENSE(&quot;Dual BSD/GPL&quot;);
+ MODULE_AUTHOR(&quot;Urs Thuermann &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">urs.thuermann at volkswagen.de</A>&gt;, &quot;
+-	      &quot;Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">oliver.hartkopp at volkswagen.de</A>&gt;&quot;);
++	      &quot;Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">oliver.hartkopp at volkswagen.de</A>&gt;, &quot;
++	      &quot;Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;&quot;);
+ 
+ MODULE_ALIAS_NETPROTO(PF_CAN);
+ 
+@@ -84,7 +86,7 @@ static DEFINE_SPINLOCK(can_rcvlists_lock);
+ static struct kmem_cache *rcv_cache __read_mostly;
+ 
+ /* table of registered CAN protocols */
+-static struct can_proto *proto_tab[CAN_NPROTO] __read_mostly;
++static const struct can_proto *proto_tab[CAN_NPROTO];
+ static DEFINE_SPINLOCK(proto_tab_lock);
+ 
+ struct timer_list can_stattimer;   /* timer for statistics update */
+@@ -92,6 +94,48 @@ struct s_stats    can_stats;       /* packet statistics */
+ struct s_pstats   can_pstats;      /* receive list statistics */
+ 
+ /*
++ * can protocol lookup
++ */
++#define CGP_F_LOAD	0x01 /* try to load protocol when absent */
++static inline const struct can_proto *can_get_proto(int protocol, int flags)
++{
++	const struct can_proto *cp;
++
++	if (protocol &lt; 0 || protocol &gt;= CAN_NPROTO)
++		return ERR_PTR(-EINVAL);
++
++#ifdef CONFIG_MODULES
++	/* try to load protocol module kernel is modular */
++	if (!proto_tab[protocol] &amp;&amp; (flags &amp; CGP_F_LOAD)) {
++		int ret;
++
++		ret = request_module(&quot;can-proto-%d&quot;, protocol);
++		/*
++		 * In case of error we only print a message but don't
++		 * return the error code immediately.  Below we will
++		 * return -EPROTONOSUPPORT
++		 */
++		if (ret)
++			pr_err_ratelimited(&quot;can: request_module &quot;
++			       &quot;(can-proto-%d) failed.\n&quot;, protocol);
++	}
++#endif
++
++	spin_lock(&amp;proto_tab_lock);
++	cp = proto_tab[protocol];
++	if (cp &amp;&amp; !try_module_get(cp-&gt;prot-&gt;owner))
++		cp = 0;
++	spin_unlock(&amp;proto_tab_lock);
++	if (!cp)
++		cp = ERR_PTR(-ENOPROTOOPT);
++	return cp;
++}
++
++static inline void can_put_proto(const struct can_proto *cp)
++{
++	module_put(cp-&gt;prot-&gt;owner);
++}
++/*
+  * af_can socket functions
+  */
+ 
+@@ -118,46 +162,22 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
+ 		      int kern)
+ {
+ 	struct sock *sk;
+-	struct can_proto *cp;
++	const struct can_proto *cp;
+ 	int err = 0;
+ 
+ 	sock-&gt;state = SS_UNCONNECTED;
+ 
+-	if (protocol &lt; 0 || protocol &gt;= CAN_NPROTO)
+-		return -EINVAL;
+-
+ 	if (!net_eq(net, &amp;init_net))
+ 		return -EAFNOSUPPORT;
+ 
+-#ifdef CONFIG_MODULES
+-	/* try to load protocol module kernel is modular */
+-	if (!proto_tab[protocol]) {
+-		err = request_module(&quot;can-proto-%d&quot;, protocol);
+-
+-		/*
+-		 * In case of error we only print a message but don't
+-		 * return the error code immediately.  Below we will
+-		 * return -EPROTONOSUPPORT
+-		 */
+-		if (err &amp;&amp; printk_ratelimit())
+-			printk(KERN_ERR &quot;can: request_module &quot;
+-			       &quot;(can-proto-%d) failed.\n&quot;, protocol);
+-	}
+-#endif
+-
+-	spin_lock(&amp;proto_tab_lock);
+-	cp = proto_tab[protocol];
+-	if (cp &amp;&amp; !try_module_get(cp-&gt;prot-&gt;owner))
+-		cp = NULL;
+-	spin_unlock(&amp;proto_tab_lock);
+-
++	cp = can_get_proto(protocol, CGP_F_LOAD);
+ 	/* check for available protocol and correct usage */
+ 
+-	if (!cp)
+-		return -EPROTONOSUPPORT;
++	if (IS_ERR(cp))
++		return PTR_ERR(cp);
+ 
+ 	if (cp-&gt;type != sock-&gt;type) {
+-		err = -EPROTONOSUPPORT;
++		err = -ESOCKTNOSUPPORT;
+ 		goto errout;
+ 	}
+ 
+@@ -182,7 +202,7 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
+ 	}
+ 
+  errout:
+-	module_put(cp-&gt;prot-&gt;owner);
++	can_put_proto(cp);
+ 	return err;
+ }
+ 
+@@ -678,7 +698,7 @@ drop:
+  *  -EBUSY  protocol already in use
+  *  -ENOBUF if proto_register() fails
+  */
+-int can_proto_register(struct can_proto *cp)
++int can_proto_register(const struct can_proto *cp)
+ {
+ 	int proto = cp-&gt;protocol;
+ 	int err = 0;
+@@ -718,7 +738,7 @@ EXPORT_SYMBOL(can_proto_register);
+  * can_proto_unregister - unregister CAN transport protocol
+  * @cp: pointer to CAN protocol structure
+  */
+-void can_proto_unregister(struct can_proto *cp)
++void can_proto_unregister(const struct can_proto *cp)
+ {
+ 	int proto = cp-&gt;protocol;
+ 
+@@ -809,6 +829,206 @@ static struct notifier_block can_netdev_notifier __read_mostly = {
+ 	.notifier_call = can_notifier,
+ };
+ 
++/*
++ * RTNETLINK
++ */
++static int can_rtnl_doit(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg)
++{
++	int ret, protocol;
++	const struct can_proto *cp;
++	rtnl_doit_func fn;
++
++	protocol = ((struct rtgencanmsg *)NLMSG_DATA(nlh))-&gt;can_protocol;
++	/* since rtnl_lock is held, dont try to load protocol */
++	cp = can_get_proto(protocol, 0);
++	if (IS_ERR(cp))
++		return PTR_ERR(cp);
++
++	switch (nlh-&gt;nlmsg_type) {
++	case RTM_NEWADDR:
++		fn = cp-&gt;rtnl_new_addr;
++		break;
++	case RTM_DELADDR:
++		fn = cp-&gt;rtnl_del_addr;
++		break;
++	default:
++		fn = 0;
++		break;
++	}
++	if (fn)
++		ret = fn(skb, nlh, arg);
++	else
++		ret = -EPROTONOSUPPORT;
++	can_put_proto(cp);
++	return ret;
++}
++
++static int can_rtnl_dumpit(struct sk_buff *skb, struct netlink_callback *cb,
++		int offset)
++{
++	int ret, j;
++	const struct can_proto *cp;
++	rtnl_dumpit_func fn;
++
++	ret = 0;
++	for (j = cb-&gt;args[0]; j &lt; CAN_NPROTO; ++j) {
++		/* save state */
++		cb-&gt;args[0] = j;
++		cp = can_get_proto(j, 0);
++		if (IS_ERR(cp))
++			/* we are looping, any error is our own fault */
++			continue;
++		fn = *((rtnl_dumpit_func *)(&amp;((const uint8_t *)cp)[offset]));
++		if (fn)
++			ret = fn(skb, cb);
++		can_put_proto(cp);
++		if (ret &lt; 0)
++			/* suspend this skb */
++			return ret;
++	}
++	return ret;
++}
++
++static int can_rtnl_dump_addr(struct sk_buff *skb, struct netlink_callback *cb)
++{
++	return can_rtnl_dumpit(skb, cb,
++			offsetof(struct can_proto, rtnl_dump_addr));
++}
++
++/*
++ * LINK AF properties
++ */
++static size_t can_get_link_af_size(const struct net_device *dev)
++{
++	int ret, j, total;
++	const struct can_proto *cp;
++
++	if (!net_eq(dev_net(dev), &amp;init_net) || (dev-&gt;type != ARPHRD_CAN))
++		return 0;
++
++	total = 0;
++	for (j = 0; j &lt; CAN_NPROTO; ++j) {
++		cp = can_get_proto(j, 0);
++		if (IS_ERR(cp))
++			/* no worry */
++			continue;
++		ret = 0;
++		if (cp-&gt;rtnl_link_ops &amp;&amp; cp-&gt;rtnl_link_ops-&gt;get_link_af_size)
++			ret = cp-&gt;rtnl_link_ops-&gt;get_link_af_size(dev) +
++				nla_total_size(sizeof(struct nlattr));
++		can_put_proto(cp);
++		if (ret &lt; 0)
++			return ret;
++		total += ret;
++	}
++	return nla_total_size(total);
++}
++
++static int can_fill_link_af(struct sk_buff *skb, const struct net_device *dev)
++{
++	int ret, j, n;
++	struct nlattr *nla;
++	const struct can_proto *cp;
++
++	if (!net_eq(dev_net(dev), &amp;init_net) || (dev-&gt;type != ARPHRD_CAN))
++		return -ENODATA;
++
++	n = 0;
++	for (j = 0; j &lt; CAN_NPROTO; ++j) {
++		cp = can_get_proto(j, 0);
++		if (IS_ERR(cp))
++			/* no worry */
++			continue;
++		if (cp-&gt;rtnl_link_ops &amp;&amp; cp-&gt;rtnl_link_ops-&gt;fill_link_af) {
++			nla = nla_nest_start(skb, j);
++			if (!nla)
++				goto nla_put_failure;
++
++			ret = cp-&gt;rtnl_link_ops-&gt;fill_link_af(skb, dev);
++			/*
++			 * Caller may return ENODATA to indicate that there
++			 * was no data to be dumped. This is not an error, it
++			 * means we should trim the attribute header and
++			 * continue.
++			 */
++			if (ret == -ENODATA)
++				nla_nest_cancel(skb, nla);
++			else if (ret &lt; 0)
++				goto nla_put_failure;
++			nla_nest_end(skb, nla);
++			++n;
++		}
++		can_put_proto(cp);
++	}
++	return n ? 0 : -ENODATA;
++
++nla_put_failure:
++	nla_nest_cancel(skb, nla);
++	can_put_proto(cp);
++	return -EMSGSIZE;
++}
++
++static int can_validate_link_af(const struct net_device *dev,
++				 const struct nlattr *nla)
++{
++	int ret, rem;
++	const struct can_proto *cp;
++	struct nlattr *prot;
++
++	if (!net_eq(dev_net(dev), &amp;init_net) || (dev-&gt;type != ARPHRD_CAN))
++		return -EPROTONOSUPPORT;
++
++	nla_for_each_nested(prot, nla, rem) {
++		cp = can_get_proto(nla_type(prot), 0);
++		if (IS_ERR(cp))
++			return PTR_ERR(cp);
++		if (!cp-&gt;rtnl_link_ops)
++			ret = -EPROTONOSUPPORT;
++		else if (!cp-&gt;rtnl_link_ops-&gt;validate_link_af)
++			ret = 0;
++		else
++			ret = cp-&gt;rtnl_link_ops-&gt;validate_link_af(dev, prot);
++		can_put_proto(cp);
++		if (ret &lt; 0)
++			return ret;
++	}
++	return 0;
++}
++
++static int can_set_link_af(struct net_device *dev, const struct nlattr *nla)
++{
++	int ret, rem;
++	const struct can_proto *cp;
++	struct nlattr *prot;
++
++	if (!net_eq(dev_net(dev), &amp;init_net) || (dev-&gt;type != ARPHRD_CAN))
++		return -EPROTONOSUPPORT;
++
++	nla_for_each_nested(prot, nla, rem) {
++		cp = can_get_proto(nla_type(prot), 0);
++		if (IS_ERR(cp))
++			return PTR_ERR(cp);
++		if (!cp-&gt;rtnl_link_ops || !cp-&gt;rtnl_link_ops-&gt;set_link_af)
++			ret = -EPROTONOSUPPORT;
++		else
++			ret = cp-&gt;rtnl_link_ops-&gt;set_link_af(dev, prot);
++		can_put_proto(cp);
++		if (ret &lt; 0)
++			return ret;
++	}
++	return 0;
++}
++
++static struct rtnl_af_ops can_rtnl_af_ops = {
++	.family		  = AF_CAN,
++	.fill_link_af	  = can_fill_link_af,
++	.get_link_af_size = can_get_link_af_size,
++	.validate_link_af = can_validate_link_af,
++	.set_link_af	  = can_set_link_af,
++};
++
++/* exported init */
++
+ static __init int can_init(void)
+ {
+ 	printk(banner);
+@@ -834,6 +1054,11 @@ static __init int can_init(void)
+ 	register_netdevice_notifier(&amp;can_netdev_notifier);
+ 	dev_add_pack(&amp;can_packet);
+ 
++	rtnl_af_register(&amp;can_rtnl_af_ops);
++	rtnl_register(PF_CAN, RTM_NEWADDR, can_rtnl_doit, NULL);
++	rtnl_register(PF_CAN, RTM_DELADDR, can_rtnl_doit, NULL);
++	rtnl_register(PF_CAN, RTM_GETADDR, NULL, can_rtnl_dump_addr);
++
+ 	return 0;
+ }
+ 
+@@ -844,6 +1069,11 @@ static __exit void can_exit(void)
+ 	if (stats_timer)
+ 		del_timer(&amp;can_stattimer);
+ 
++	rtnl_unregister(PF_CAN, RTM_NEWADDR);
++	rtnl_unregister(PF_CAN, RTM_DELADDR);
++	rtnl_unregister(PF_CAN, RTM_GETADDR);
++	rtnl_af_unregister(&amp;can_rtnl_af_ops);
++
+ 	can_remove_proc();
+ 
+ 	/* protocol unregister */
+diff --git a/net/can/bcm.c b/net/can/bcm.c
+index b286e45..ac1961d 100644
+--- a/net/can/bcm.c
++++ b/net/can/bcm.c
+@@ -1596,7 +1596,7 @@ static struct proto bcm_proto __read_mostly = {
+ 	.init       = bcm_init,
+ };
+ 
+-static struct can_proto bcm_can_proto __read_mostly = {
++static const struct can_proto bcm_can_proto = {
+ 	.type       = SOCK_DGRAM,
+ 	.protocol   = CAN_BCM,
+ 	.ops        = &amp;bcm_ops,
+diff --git a/net/can/raw.c b/net/can/raw.c
+index a5f1f41..9ad3dfc 100644
+--- a/net/can/raw.c
++++ b/net/can/raw.c
+@@ -769,7 +769,7 @@ static struct proto raw_proto __read_mostly = {
+ 	.init       = raw_init,
+ };
+ 
+-static struct can_proto raw_can_proto __read_mostly = {
++static const struct can_proto raw_can_proto = {
+ 	.type       = SOCK_RAW,
+ 	.protocol   = CAN_RAW,
+ 	.ops        = &amp;raw_ops,
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005457.html">[PATCH v2 1/6] CAN: expand struct sockaddr_can
+</A></li>
+	<LI>Next message: <A HREF="005459.html">[PATCH v2 3/6] CAN: make struct proto const
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5458">[ date ]</a>
+              <a href="thread.html#5458">[ thread ]</a>
+              <a href="subject.html#5458">[ subject ]</a>
+              <a href="author.html#5458">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,372 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 3/3] gpio: add support for Janz VMOD-TTL Digital IO module
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-March/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/3%5D%20gpio%3A%20add%20support%20for%20Janz%20VMOD-TTL%20Digital%20IO%20module&In-Reply-To=%3C1269881932-3803-4-git-send-email-iws%40ovro.caltech.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004263.html">
+   <LINK REL="Next"  HREF="004262.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 3/3] gpio: add support for Janz VMOD-TTL Digital IO module</H1>
+    <B>Ira W. Snyder</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%203/3%5D%20gpio%3A%20add%20support%20for%20Janz%20VMOD-TTL%20Digital%20IO%20module&In-Reply-To=%3C1269881932-3803-4-git-send-email-iws%40ovro.caltech.edu%3E"
+       TITLE="[PATCH 3/3] gpio: add support for Janz VMOD-TTL Digital IO module">iws at ovro.caltech.edu
+       </A><BR>
+    <I>Mon Mar 29 18:58:52 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004263.html">[PATCH 2/3] can: add support for Janz VMOD-ICAN3 Intelligent	CAN	module
+</A></li>
+        <LI>Next message: <A HREF="004262.html">[PATCH] Add hotplug support to mcp251x driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4259">[ date ]</a>
+              <a href="thread.html#4259">[ thread ]</a>
+              <a href="subject.html#4259">[ subject ]</a>
+              <a href="author.html#4259">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The Janz VMOD-TTL is a MODULbus daughterboard which fits onto any MODULbus
+carrier board. It essentially consists of some various logic and a Zilog
+Z8536 CIO Counter/Timer and Parallel IO Unit.
+
+The board must be physically configured with jumpers to enable a user to
+drive output signals. I am only interested in outputs, so I have made this
+driver as simple as possible. It only supports a very minimal subset of the
+features provided by the Z8536 chip.
+
+Signed-off-by: Ira W. Snyder &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">iws at ovro.caltech.edu</A>&gt;
+---
+ drivers/gpio/Kconfig    |   10 ++
+ drivers/gpio/Makefile   |    1 +
+ drivers/gpio/janz-ttl.c |  257 +++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 268 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/gpio/janz-ttl.c
+
+diff --git a/drivers/gpio/Kconfig b/drivers/gpio/Kconfig
+index dd10eb8..1f38ff3 100644
+--- a/drivers/gpio/Kconfig
++++ b/drivers/gpio/Kconfig
+@@ -318,4 +318,14 @@ config GPIO_UCB1400
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called ucb1400_gpio.
+ 
++comment &quot;MODULbus GPIO expanders:&quot;
++
++config GPIO_JANZ_TTL
++	tristate &quot;Janz VMOD-TTL Digital IO Module&quot;
++	depends on MFD_JANZ_CMODIO
++	help
++	  This enables support for the Janz VMOD-TTL Digital IO module.
++	  This driver provides support for driving the pins in output
++	  mode only. Input mode is not supported.
++
+ endif
+diff --git a/drivers/gpio/Makefile b/drivers/gpio/Makefile
+index d3226d3..94a96c5 100644
+--- a/drivers/gpio/Makefile
++++ b/drivers/gpio/Makefile
+@@ -29,3 +29,4 @@ obj-$(CONFIG_GPIO_WM8350)	+= wm8350-gpiolib.o
+ obj-$(CONFIG_GPIO_WM8994)	+= wm8994-gpio.o
+ obj-$(CONFIG_GPIO_SCH)		+= sch_gpio.o
+ obj-$(CONFIG_GPIO_RDC321X)	+= rdc321x-gpio.o
++obj-$(CONFIG_GPIO_JANZ_TTL)	+= janz-ttl.o
+diff --git a/drivers/gpio/janz-ttl.c b/drivers/gpio/janz-ttl.c
+new file mode 100644
+index 0000000..d97eeda
+--- /dev/null
++++ b/drivers/gpio/janz-ttl.c
+@@ -0,0 +1,257 @@
++/*
++ * Janz MODULbus VMOD-TTL GPIO Driver
++ *
++ * Copyright (c) 2010 Ira W. Snyder &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">iws at ovro.caltech.edu</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as published by the
++ * Free Software Foundation; either version 2 of the License, or (at your
++ * option) any later version.
++ */
++
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/init.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/delay.h&gt;
++#include &lt;linux/platform_device.h&gt;
++#include &lt;linux/io.h&gt;
++#include &lt;linux/gpio.h&gt;
++
++#include &lt;linux/mfd/janz.h&gt;
++
++#define DRV_NAME &quot;janz-ttl&quot;
++
++#define PORTA_DIRECTION		0x23
++#define PORTB_DIRECTION		0x2B
++#define PORTC_DIRECTION		0x06
++#define PORTA_IOCTL		0x24
++#define PORTB_IOCTL		0x2C
++#define PORTC_IOCTL		0x07
++
++#define MASTER_INT_CTL		0x00
++#define MASTER_CONF_CTL		0x01
++
++#define CONF_PAE		(1 &lt;&lt; 2)
++#define CONF_PBE		(1 &lt;&lt; 7)
++#define CONF_PCE		(1 &lt;&lt; 4)
++
++struct ttl_control_regs {
++	__be16 portc;
++	__be16 portb;
++	__be16 porta;
++	__be16 control;
++};
++
++struct ttl_module {
++	struct gpio_chip gpio;
++
++	/* base address of registers */
++	struct ttl_control_regs __iomem *regs;
++
++	u8 portc_shadow;
++	u8 portb_shadow;
++	u8 porta_shadow;
++
++	spinlock_t lock;
++};
++
++static int ttl_get_value(struct gpio_chip *gpio, unsigned offset)
++{
++	struct ttl_module *mod = dev_get_drvdata(gpio-&gt;dev);
++	u8 *shadow;
++	int ret;
++
++	if (offset &lt; 8) {
++		shadow = &amp;mod-&gt;porta_shadow;
++	} else if (offset &lt; 16) {
++		shadow = &amp;mod-&gt;portb_shadow;
++		offset -= 8;
++	} else {
++		shadow = &amp;mod-&gt;portc_shadow;
++		offset -= 16;
++	}
++
++	spin_lock(&amp;mod-&gt;lock);
++	ret = *shadow &amp; (1 &lt;&lt; offset);
++	spin_unlock(&amp;mod-&gt;lock);
++	return ret;
++}
++
++static void ttl_set_value(struct gpio_chip *gpio, unsigned offset, int value)
++{
++	struct ttl_module *mod = dev_get_drvdata(gpio-&gt;dev);
++	void __iomem *port;
++	u8 *shadow;
++
++	if (offset &lt; 8) {
++		port = &amp;mod-&gt;regs-&gt;porta;
++		shadow = &amp;mod-&gt;porta_shadow;
++	} else if (offset &lt; 16) {
++		port = &amp;mod-&gt;regs-&gt;portb;
++		shadow = &amp;mod-&gt;portb_shadow;
++		offset -= 8;
++	} else {
++		port = &amp;mod-&gt;regs-&gt;portc;
++		shadow = &amp;mod-&gt;portc_shadow;
++		offset -= 16;
++	}
++
++	spin_lock(&amp;mod-&gt;lock);
++	if (value)
++		*shadow |= (1 &lt;&lt; offset);
++	else
++		*shadow &amp;= ~(1 &lt;&lt; offset);
++
++	iowrite16be(*shadow, port);
++	spin_unlock(&amp;mod-&gt;lock);
++}
++
++static void __devinit ttl_write_reg(struct ttl_module *mod, u8 reg, u16 val)
++{
++	iowrite16be(reg, &amp;mod-&gt;regs-&gt;control);
++	iowrite16be(val, &amp;mod-&gt;regs-&gt;control);
++}
++
++static void __devinit ttl_setup_device(struct ttl_module *mod)
++{
++	/* reset the device to a known state */
++	iowrite16be(0x0000, &amp;mod-&gt;regs-&gt;control);
++	iowrite16be(0x0001, &amp;mod-&gt;regs-&gt;control);
++	iowrite16be(0x0000, &amp;mod-&gt;regs-&gt;control);
++
++	/* put all ports in open-drain mode */
++	ttl_write_reg(mod, PORTA_IOCTL, 0x00ff);
++	ttl_write_reg(mod, PORTB_IOCTL, 0x00ff);
++	ttl_write_reg(mod, PORTC_IOCTL, 0x000f);
++
++	/* set all ports as outputs */
++	ttl_write_reg(mod, PORTA_DIRECTION, 0x0000);
++	ttl_write_reg(mod, PORTB_DIRECTION, 0x0000);
++	ttl_write_reg(mod, PORTC_DIRECTION, 0x0000);
++
++	/* set all ports to drive zeroes */
++	iowrite16be(0x0000, &amp;mod-&gt;regs-&gt;porta);
++	iowrite16be(0x0000, &amp;mod-&gt;regs-&gt;portb);
++	iowrite16be(0x0000, &amp;mod-&gt;regs-&gt;portc);
++
++	/* enable all ports */
++	ttl_write_reg(mod, MASTER_CONF_CTL, CONF_PAE | CONF_PBE | CONF_PCE);
++}
++
++static int __devinit ttl_probe(struct platform_device *pdev)
++{
++	struct janz_platform_data *pdata;
++	struct device *dev = &amp;pdev-&gt;dev;
++	struct ttl_module *mod;
++	struct gpio_chip *gpio;
++	struct resource *res;
++	int ret;
++
++	pdata = pdev-&gt;dev.platform_data;
++	if (!pdata) {
++		dev_err(dev, &quot;no platform data\n&quot;);
++		ret = -ENXIO;
++		goto out_return;
++	}
++
++	mod = kzalloc(sizeof(*mod), GFP_KERNEL);
++	if (!mod) {
++		dev_err(dev, &quot;unable to allocate private data\n&quot;);
++		ret = -ENOMEM;
++		goto out_return;
++	}
++
++	platform_set_drvdata(pdev, mod);
++	spin_lock_init(&amp;mod-&gt;lock);
++
++	/* get access to the MODULbus registers for this module */
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (!res) {
++		dev_err(dev, &quot;MODULbus registers not found\n&quot;);
++		ret = -ENODEV;
++		goto out_free_mod;
++	}
++
++	mod-&gt;regs = ioremap(res-&gt;start, resource_size(res));
++	if (!mod-&gt;regs) {
++		dev_err(dev, &quot;MODULbus registers not ioremap\n&quot;);
++		ret = -ENOMEM;
++		goto out_free_mod;
++	}
++
++	ttl_setup_device(mod);
++
++	/* Initialize the GPIO data structures */
++	gpio = &amp;mod-&gt;gpio;
++	gpio-&gt;dev = &amp;pdev-&gt;dev;
++	gpio-&gt;label = pdev-&gt;name;
++	gpio-&gt;get = ttl_get_value;
++	gpio-&gt;set = ttl_set_value;
++	gpio-&gt;owner = THIS_MODULE;
++
++	/* request dynamic allocation */
++	gpio-&gt;base = -1;
++	gpio-&gt;ngpio = 20;
++
++	ret = gpiochip_add(gpio);
++	if (ret) {
++		dev_err(dev, &quot;unable to add GPIO chip\n&quot;);
++		goto out_iounmap_regs;
++	}
++
++	dev_info(&amp;pdev-&gt;dev, &quot;module %d: registered GPIO device\n&quot;,
++			     pdata-&gt;modno);
++	return 0;
++
++out_iounmap_regs:
++	iounmap(mod-&gt;regs);
++out_free_mod:
++	kfree(mod);
++out_return:
++	return ret;
++}
++
++static int __devexit ttl_remove(struct platform_device *pdev)
++{
++	struct ttl_module *mod = platform_get_drvdata(pdev);
++	struct device *dev = &amp;pdev-&gt;dev;
++	int ret;
++
++	ret = gpiochip_remove(&amp;mod-&gt;gpio);
++	if (ret) {
++		dev_err(dev, &quot;unable to remove GPIO chip\n&quot;);
++		return ret;
++	}
++
++	iounmap(mod-&gt;regs);
++	kfree(mod);
++	return 0;
++}
++
++static struct platform_driver ttl_driver = {
++	.driver		= {
++		.name	= DRV_NAME,
++		.owner	= THIS_MODULE,
++	},
++	.probe		= ttl_probe,
++	.remove		= __devexit_p(ttl_remove),
++};
++
++static int __init ttl_init(void)
++{
++	return platform_driver_register(&amp;ttl_driver);
++}
++
++static void __exit ttl_exit(void)
++{
++	platform_driver_unregister(&amp;ttl_driver);
++}
++
++MODULE_AUTHOR(&quot;Ira W. Snyder &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">iws at ovro.caltech.edu</A>&gt;&quot;);
++MODULE_DESCRIPTION(&quot;Janz MODULbus VMOD-TTL Driver&quot;);
++MODULE_LICENSE(&quot;GPL&quot;);
++MODULE_ALIAS(&quot;platform:janz-ttl&quot;);
++
++module_init(ttl_init);
++module_exit(ttl_exit);
+-- 
+1.5.4.3
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004263.html">[PATCH 2/3] can: add support for Janz VMOD-ICAN3 Intelligent	CAN	module
+</A></li>
+	<LI>Next message: <A HREF="004262.html">[PATCH] Add hotplug support to mcp251x driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4259">[ date ]</a>
+              <a href="thread.html#4259">[ thread ]</a>
+              <a href="subject.html#4259">[ subject ]</a>
+              <a href="author.html#4259">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,121 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> len &amp; can_dlc checks in tx path
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20len%20%26%20can_dlc%20checks%20in%20tx%20path&In-Reply-To=%3C20091215093737.GA304%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003665.html">
+   <LINK REL="Next"  HREF="003667.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>len &amp; can_dlc checks in tx path</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20len%20%26%20can_dlc%20checks%20in%20tx%20path&In-Reply-To=%3C20091215093737.GA304%40e-circ.dyndns.org%3E"
+       TITLE="len &amp; can_dlc checks in tx path">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Tue Dec 15 10:37:37 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003665.html">len &amp; can_dlc checks in tx path
+</A></li>
+        <LI>Next message: <A HREF="003667.html">len &amp; can_dlc checks in tx path
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3666">[ date ]</a>
+              <a href="thread.html#3666">[ thread ]</a>
+              <a href="subject.html#3666">[ subject ]</a>
+              <a href="author.html#3666">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Mon, Dec 14, 2009 at 08:57:37PM +0100, Oliver Hartkopp wrote:
+&gt;<i> Kurt Van Dijck wrote:
+</I>&gt;<i> &gt;&gt;&gt;&gt; <A HREF="http://lxr.linux.no/#linux+v2.6.32/net/can/af_can.c#L218">http://lxr.linux.no/#linux+v2.6.32/net/can/af_can.c#L218</A>
+</I>&gt;<i> &gt;&gt;&gt; Wolfgang,
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; To address your concern, would a construction like this suit, when
+</I>&gt;<i> &gt;&gt;&gt; fitted in Oliver's proposal?
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; inline int no_can_skb((struct sk_buff *skb)
+</I>&gt;<i> &gt;&gt;&gt; {
+</I>&gt;<i> &gt;&gt;&gt; 	struct can_frame *cf = (struct can_frame *)skb-&gt;data
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;    if ((skb-&gt;len != sizeof(*cf)) || ((cf-&gt;can_dlc &gt; 8)) {
+</I>&gt;<i> &gt;&gt;&gt;       if (skb-&gt;sk &amp;&amp; !sock_flag(skb-&gt;sk, SOCK_DEAD)) {
+</I>&gt;<i> &gt;&gt;&gt;          skb-&gt;sk-&gt;sk_err = EINVAL;
+</I>&gt;<i> &gt;&gt;&gt;          skb-&gt;sk-&gt;sk_error_report(skb-&gt;sk); /* can this block?*/
+</I>&gt;<i> &gt;&gt;&gt;       }
+</I>&gt;<i> &gt;&gt;&gt;       
+</I>&gt;<i> &gt;&gt;&gt;       WARN_ONCE(1, &quot;non conform skbuf: ...&quot;);
+</I>&gt;<i> &gt;&gt;&gt; 			 &quot;Dropped non conform skbuf: len %d, can_dlc %d\n&quot;,
+</I>&gt;<i> &gt;&gt;&gt; 			 skb-&gt;len, cf-&gt;can_dlc);
+</I>&gt;<i> &gt;&gt;&gt;       return 1;
+</I>&gt;<i> &gt;&gt;&gt;    }
+</I>&gt;<i> &gt;&gt;&gt;    return 0;
+</I>&gt;<i> &gt;&gt;&gt; }
+</I>&gt;<i> &gt;&gt; My primary concern is about using *WARN_ONCE*. The BUG, WARN, functions
+</I>&gt;<i> &gt;&gt; and friends indicate to the user that there is a problem with the
+</I>&gt;<i> &gt;&gt; kernel, e.g. a bug and therefore I prefer a simple dev_err(). Also the
+</I>&gt;<i> &gt; I see.
+</I>&gt;<i> &gt; I agree that a dev_err seems more appropriate here.
+</I>&gt;<i> &gt; Since this is TX path, kernel message flood is with respect to local
+</I>&gt;<i> &gt; activity?
+</I>&gt;<i> 
+</I>&gt;<i> Indeed i would like to have a PRINTK_ONCE() or DEV_ERR_ONCE() :-)
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> &gt;&gt; word &quot;skbuf&quot; does say little to the normal Linux users. I find
+</I>&gt;<i> &gt;&gt; s/skbuf/packet/ more intuitive. Of course, if there is a better way to
+</I>&gt;<i> &gt; ack.
+</I>&gt;<i> &gt;&gt; inform the user we should use it. Unfortunately, I can't tell if your
+</I>&gt;<i> &gt;&gt; approach will work.
+</I>&gt;<i> &gt; I went into the code, in net/core/sock.c:sock_def_error_report.
+</I>&gt;<i> &gt; that looks like atomic code to me, so the above sk_error_report() stuff
+</I>&gt;<i> &gt; should work.
+</I>&gt;<i> &gt; no_can_skb() would not even need a dev_err in that case.
+</I>&gt;<i> 
+</I>&gt;<i> Using sk_error_report() and leaving out dev_err() is an interesting idea!
+</I>&gt;<i> 
+</I>&gt;<i> Is that a usual way to provide this kind of error notification, e.g. for
+</I>&gt;<i> broken PF_PACKET packets?
+</I>I'm not familiar with PF_PACKET sockets.
+
+I encountered this sk_error_report() during my current development.
+It appears to be _the_ method of saying
+&quot;something got in error&quot;, which must first be set by -&gt;sk_err.
+&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>&gt;<i> 
+</I>Kurt
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003665.html">len &amp; can_dlc checks in tx path
+</A></li>
+	<LI>Next message: <A HREF="003667.html">len &amp; can_dlc checks in tx path
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3666">[ date ]</a>
+              <a href="thread.html#3666">[ thread ]</a>
+              <a href="subject.html#3666">[ subject ]</a>
+              <a href="author.html#3666">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

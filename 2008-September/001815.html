@@ -1,0 +1,205 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 0/4] new interface for setting bit-timing parameters
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%200/4%5D%20new%20interface%20for%20setting%20bit-timing%20parameters&In-Reply-To=%3C48CBC4C3.3020805%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001812.html">
+   <LINK REL="Next"  HREF="001816.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 0/4] new interface for setting bit-timing parameters</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%200/4%5D%20new%20interface%20for%20setting%20bit-timing%20parameters&In-Reply-To=%3C48CBC4C3.3020805%40grandegger.com%3E"
+       TITLE="[PATCH v2 0/4] new interface for setting bit-timing parameters">wg at grandegger.com
+       </A><BR>
+    <I>Sat Sep 13 15:48:51 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001812.html">Can controller list supported (Alessandro Bonetti)
+</A></li>
+        <LI>Next message: <A HREF="001816.html">[PATCH 1/4] dev: new interface for setting bit-timing parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1815">[ date ]</a>
+              <a href="thread.html#1815">[ thread ]</a>
+              <a href="subject.html#1815">[ subject ]</a>
+              <a href="author.html#1815">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This is version 2 of the patch series to implements the *direct* setting
+of the bit-timing parameters using a hardware *independent* format for
+the expert mode. For the non-expert mode, bit-timing parameters are
+determined by a built-in algorithm. The SYSFS implementation is now much
+more compact and efficient and I also changed the name &quot;bittime&quot; to the
+more reasonable one &quot;bittiming&quot;. The series consists of 4 patches:
+
+  - dev: new interface for setting bit-timing parameters
+  - sysfs: new interface for setting bit-timing parameters
+  - mscan: new interface for setting bit-timing parameters
+  - sja1000: new interface for setting bit-timing parameters
+
+Here is a brief explanation on how the bit-timing parameters could be
+set:
+
+o The CAN device can be managed using the following SYSFS files and
+  directory in /sys/class/net/can*/:
+
+    can_echo
+    can_state
+    can_ctrlmode
+    can_restart
+    can_restart_ms
+    can_statistics/
+    can_bittiming/
+
+o For setting the bit-timing parameters, the following files are created
+  in /sys/class/net/can*/can_bittiming/:
+
+    tseg1_min
+    tseg1_max
+    tseg2_max
+    tseg2_min
+    sjw_max
+    brp_min
+    brp_max
+    brp_inc
+
+    bitrate
+    sample_point
+
+    tq
+    prop_seg
+    phase_seg1
+    phase_seg2
+    sjw
+
+    clock
+
+o The files from the first block export the hardware specific constants
+  for the bit-timing to user-space. A tool may use them to derive
+  special bit-timing parameters.
+
+o The files from the second block are for the non-expert mode. The
+  bitrate can be set be writing to the &quot;bitrate&quot; file. When the device
+  is started, bit-timing parameters are calculated by a built-in
+  algorithm. As it just costs a few additional lines of code, I added
+  the &quot;sample_point&quot; file as well allowing to specify the sample point
+  to be used. If the sample point is 0, CIA recommended values will be
+  used.
+
+o The files from the third block are for the expert mode. The SAM mode
+  can be specified via the file &quot;can_ctrlmode&quot; using:
+
+    #define CAN_CTRLMODE_3_SAMPLES  0x4 /* Triple sampling mode */
+
+o The actual interpretation and setting of the bit-timing registers is
+  done when the CAN network device gets opened/started:
+
+   static int sja1000_open(struct net_device *dev)
+   {
+       ...
+       /* determine and set bit-timing parameters */
+       err = can_set_bittime(dev);
+       if (err)
+           return err;
+
+o Here is the (almost) self-explanatory code of can_set_bittime():
+
+    int can_set_bittiming(struct net_device *dev)
+    {
+        struct can_priv *priv = netdev_priv(dev);
+        int err;
+
+        /* Check if the CAN device needs bit-timing parameters */
+        if (priv-&gt;do_set_bittiming) {
+
+            /* Check if bit-timing parameters have already been set */
+            if (priv-&gt;bittiming.tq &amp;&amp; priv-&gt;bittiming.bitrate)
+                return 0;
+
+            /* Check if bit-timing parameters have been pre-defined */
+            if (!priv-&gt;bittiming.tq &amp;&amp; !priv-&gt;bittiming.bitrate)
+                return -EINVAL;
+
+            /* Non-expert mode? Check if the bitrate has been pre-defined */
+            if (!priv-&gt;bittiming.tq)
+                /* Determine bit-timing parameters */
+                err = can_calc_bittiming(dev);
+            else
+                /* Check bit-timing params and calculate proper brp */
+                err = can_fixup_bittiming(dev);
+            if (err)
+                return err;
+
+            /* Finally, set the bit-timing registers */
+            err = priv-&gt;do_set_bittiming(dev, &amp;priv-&gt;bittiming);
+            if (err)
+                return err;
+        }
+        return 0;
+    }
+
+o Each CAN controller has to provide proper bit-timing constants
+  and the CAN system clock:
+
+    $ cat drivers/net/can/sja1000/sja1000.c
+    ...
+    static struct can_bittiming_const sja1000_bittiming_const = {
+        .tseg1_min = 1,
+        .tseg1_max = 16,
+        .tseg2_min = 1,
+        .tseg2_max = 8,
+        .sjw_max = 4,
+        .brp_min = 1,
+        .brp_max = 64,
+        .brp_inc = 1,
+    };
+    ...
+    int register_sja1000dev(struct net_device *dev)
+    {
+        ...
+        priv-&gt;can.bittiming_const = &amp;sja1000_bittiming_const;
+        priv-&gt;can.bittiming.clock = 8000000;
+
+Note: these patches provide support for the MSCAN and SJA1000 drivers.
+Support for others is broken and needs porting (which should not be a
+big deal).
+
+I would like to have this implementation included in the SVN repository.
+What do you think? Please give it a try. Hope we can finally agree on
+that solution.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001812.html">Can controller list supported (Alessandro Bonetti)
+</A></li>
+	<LI>Next message: <A HREF="001816.html">[PATCH 1/4] dev: new interface for setting bit-timing parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1815">[ date ]</a>
+              <a href="thread.html#1815">[ thread ]</a>
+              <a href="subject.html#1815">[ subject ]</a>
+              <a href="author.html#1815">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

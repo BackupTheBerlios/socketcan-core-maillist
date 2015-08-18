@@ -1,0 +1,197 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] softing_cs: fix for net-next-2.6
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20softing_cs%3A%20fix%20for%20net-next-2.6&In-Reply-To=%3C20100225132840.GA318%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004119.html">
+   <LINK REL="Next"  HREF="004121.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] softing_cs: fix for net-next-2.6</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20softing_cs%3A%20fix%20for%20net-next-2.6&In-Reply-To=%3C20100225132840.GA318%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH] softing_cs: fix for net-next-2.6">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Thu Feb 25 14:28:40 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004119.html">[PATCH] softing_cs: fix for net-next-2.6
+</A></li>
+        <LI>Next message: <A HREF="004121.html">[PATCH] softing_cs: fix for net-next-2.6
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4120">[ date ]</a>
+              <a href="thread.html#4120">[ thread ]</a>
+              <a href="subject.html#4120">[ subject ]</a>
+              <a href="author.html#4120">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+The pcmcia_request_window() is postponed a little, as some flags must be
+set before this call (I believe). It is a small change, but with some
+noise in the patch.
+Same with softing_card_irq()
+
+The netif_start_queue() is omitted, as softing_cycle() does a
+netif_wake_queue()
+
+I ran a recent net-next-2.6 kernel, with config:
+CONFIG_DEBUG_RT_MUTEXES=y
+CONFIG_DEBUG_PI_LIST=y
+# CONFIG_RT_MUTEX_TESTER is not set
+CONFIG_DEBUG_SPINLOCK=y
+CONFIG_DEBUG_MUTEXES=y
+CONFIG_DEBUG_LOCK_ALLOC=y
+CONFIG_PROVE_LOCKING=y
+CONFIG_LOCKDEP=y
+# CONFIG_LOCK_STAT is not set
+CONFIG_DEBUG_LOCKDEP=y
+CONFIG_TRACE_IRQFLAGS=y
+CONFIG_DEBUG_SPINLOCK_SLEEP=y
+# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+CONFIG_STACKTRACE=y
+
+I did not encounter locking problems (related to networking or pcmcia, I
+have an issue with cpufreq :-) )
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+---
+Index: drivers/net/can/softing/softing_cs.c
+===================================================================
+--- drivers/net/can/softing/softing_cs.c	(revision 1144)
++++ drivers/net/can/softing/softing_cs.c	(working copy)
+@@ -356,21 +356,26 @@
+ 		csdev-&gt;win.Base = mem-&gt;win[0].host_addr;
+ 		csdev-&gt;win.Size = mem-&gt;win[0].len;
+ 		csdev-&gt;win.AccessSpeed = 0;
+-		ret = pcmcia_request_window(&amp;pdev, &amp;csdev-&gt;win, &amp;pdev-&gt;win);
+-		if (ret) {
+-			dev_alert(&amp;pdev-&gt;dev,
+-				&quot;pcmcia_request_window() mismatch\n&quot;);
+-			goto do_next;
+-		}
+ 		/* softing specific: choose slower access for old cards */
+ 		if (sdev-&gt;desc-&gt;generation &lt; 2) {
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2, 6, 33)
+ 			pdev-&gt;win-&gt;ctl.flags
+ 				= MAP_ACTIVE | MAP_USE_WAIT;
+ 			pdev-&gt;win-&gt;ctl.speed = 3;
++#else
++			csdev-&gt;win.Attributes |= WIN_USE_WAIT;
++			csdev-&gt;win.AccessSpeed = 3;
++#endif
+ 		}
++		ret = pcmcia_request_window(pdev, &amp;csdev-&gt;win, &amp;pdev-&gt;win);
++		if (ret) {
++			dev_alert(&amp;pdev-&gt;dev,
++				&quot;pcmcia_request_window() mismatch\n&quot;);
++			goto do_next;
++		}
+ 		map.Page = 0;
+ 		map.CardOffset = mem-&gt;win[0].card_addr;
+-		if (pcmcia_map_mem_page(pdev-&gt;win, &amp;map)) {
++		if (pcmcia_map_mem_page(pdev, pdev-&gt;win, &amp;map)) {
+ 			dev_alert(&amp;pdev-&gt;dev,
+ 				&quot;pcmcia_map_mem_page() mismatch\n&quot;);
+ 			goto do_next_win;
+@@ -435,7 +440,9 @@
+ 	card-&gt;nbus = 2;
+ 	/* pcmcia presets */
+ 	pcmcia-&gt;irq.Attributes = IRQ_TYPE_DYNAMIC_SHARING;
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2, 6, 33)
+ 	pcmcia-&gt;irq.IRQInfo1 = IRQ_LEVEL_ID;
++#endif
+ 	pcmcia-&gt;irq.Handler	= 0;
+ 	pcmcia-&gt;conf.Attributes = 0;
+ 	pcmcia-&gt;conf.IntType = INT_MEMORY_AND_IO;
+Index: drivers/net/can/softing/softing_fw.c
+===================================================================
+--- drivers/net/can/softing/softing_fw.c	(revision 1144)
++++ drivers/net/can/softing/softing_fw.c	(working copy)
+@@ -597,13 +597,6 @@
+ 
+ 	softing_initialize_timestamp(card);
+ 
+-	/*run once */
+-	/*the bottom halve will start flushing the tx-queue too */
+-	/*tasklet_schedule(&amp;card-&gt;irq.bh);*/
+-	ret = softing_card_irq(card, 1);
+-	if (ret)
+-		goto failed;
+-
+ 	/*
+ 	 * do socketcan notifications/status changes
+ 	 * from here, no errors should occur, or the failed: part
+@@ -627,6 +620,11 @@
+ 		}
+ 		netif_wake_queue(pbus-&gt;netdev);
+ 	}
++
++	/* enable interrupts */
++	ret = softing_card_irq(card, 1);
++	if (ret)
++		goto failed;
+ card_done:
+ 	mutex_unlock(&amp;card-&gt;fw.lock);
+ 	return 0;
+Index: drivers/net/can/softing/softing_main.c
+===================================================================
+--- drivers/net/can/softing/softing_main.c	(revision 1144)
++++ drivers/net/can/softing/softing_main.c	(working copy)
+@@ -427,7 +427,6 @@
+ 	ret = softing_cycle(card, priv, 1);
+ 	if (ret)
+ 		goto failed;
+-	netif_start_queue(ndev);
+ 	return 0;
+ failed:
+ 	return ret;
+@@ -478,12 +477,11 @@
+ 	}
+ 	if (!card-&gt;irq.requested &amp;&amp; (card-&gt;irq.nr)) {
+ 		irqreturn_t(*fn) (int, void *);
+-		unsigned int flags;
+-		flags = IRQF_DISABLED | IRQF_SHARED;/*| IRQF_TRIGGER_LOW; */
+ 		fn = dev_interrupt_nshared;
+ 		if (card-&gt;desc-&gt;generation &gt;= 2)
+ 			fn = dev_interrupt_shared;
+-		ret = request_irq(card-&gt;irq.nr, fn, flags, card-&gt;id.name, card);
++		ret = request_irq(card-&gt;irq.nr, fn, IRQF_SHARED,
++				card-&gt;id.name, card);
+ 		if (ret) {
+ 			dev_alert(card-&gt;dev, &quot;%s, request_irq(%u) failed\n&quot;,
+ 				card-&gt;id.name, card-&gt;irq.nr);
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004119.html">[PATCH] softing_cs: fix for net-next-2.6
+</A></li>
+	<LI>Next message: <A HREF="004121.html">[PATCH] softing_cs: fix for net-next-2.6
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4120">[ date ]</a>
+              <a href="thread.html#4120">[ thread ]</a>
+              <a href="subject.html#4120">[ subject ]</a>
+              <a href="author.html#4120">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

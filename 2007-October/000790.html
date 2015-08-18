@@ -1,0 +1,1219 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 2/2 try#2] Add socketcan driver for Atmel AT91 SoC CAN	controller
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/2%20try%232%5D%20Add%20socketcan%20driver%20for%20Atmel%20AT91%20SoC%20CAN%0A%09controller&In-Reply-To=%3C20071031002208.7a51fcf3%40dilbert.local%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000789.html">
+   <LINK REL="Next"  HREF="000791.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 2/2 try#2] Add socketcan driver for Atmel AT91 SoC CAN	controller</H1>
+    <B>Hans-J&#252;rgen Koch</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/2%20try%232%5D%20Add%20socketcan%20driver%20for%20Atmel%20AT91%20SoC%20CAN%0A%09controller&In-Reply-To=%3C20071031002208.7a51fcf3%40dilbert.local%3E"
+       TITLE="[PATCH 2/2 try#2] Add socketcan driver for Atmel AT91 SoC CAN	controller">hjk at linutronix.de
+       </A><BR>
+    <I>Wed Oct 31 00:22:08 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000789.html">[PATCH 1/2 try#2]  Add hardware support for Atmel AT91 SoC CAN	controller
+</A></li>
+        <LI>Next message: <A HREF="000791.html">[PATCH 0/2 try#2] Add socketcan driver for Atmel AT91 SoC CAN	controller
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#790">[ date ]</a>
+              <a href="thread.html#790">[ thread ]</a>
+              <a href="subject.html#790">[ subject ]</a>
+              <a href="author.html#790">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch adds the socketcan driver for the AT91 SoC CAN controller.
+
+It was tested with 2.6.24-rc1, with &quot;preemptible kernel&quot; and lock
+debugging turned on.
+
+Signed-off-by: Hans J. Koch &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hjk at linutronix.de</A>&gt;
+
+---
+
+Index: linux-2.6.24-rc/drivers/net/can/Kconfig
+===================================================================
+--- linux-2.6.24-rc.orig/drivers/net/can/Kconfig	2007-10-31 00:04:05.000000000 +0100
++++ linux-2.6.24-rc/drivers/net/can/Kconfig	2007-10-31 00:04:06.000000000 +0100
+@@ -22,4 +22,11 @@
+ 	  a problem with CAN support and want to see more of what is going
+ 	  on.
+ 
++config CAN_AT91
++	tristate &quot;Atmel AT91 onchip CAN controller&quot;
++	depends on CAN &amp;&amp; ARCH_AT91SAM9263
++	default N
++	---help---
++	  This is a driver for the SoC CAN controller in Atmel's AT91SAM9263.
++
+ endmenu
+Index: linux-2.6.24-rc/drivers/net/can/Makefile
+===================================================================
+--- linux-2.6.24-rc.orig/drivers/net/can/Makefile	2007-10-31 00:04:05.000000000 +0100
++++ linux-2.6.24-rc/drivers/net/can/Makefile	2007-10-31 00:04:06.000000000 +0100
+@@ -3,3 +3,5 @@
+ #
+ 
+ obj-$(CONFIG_CAN_VCAN)		+= vcan.o
++obj-$(CONFIG_CAN_AT91)		+= at91_can.o
++
+Index: linux-2.6.24-rc/drivers/net/can/at91_can.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-2.6.24-rc/drivers/net/can/at91_can.c	2007-10-31 00:10:17.000000000 +0100
+@@ -0,0 +1,955 @@
++/*
++ * at91_can.c -  CAN network driver for AT91 SoC CAN controller
++ *
++ * (C) 2007 by Hans J. Koch &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hjk at linutronix.de</A>&gt;
++ *
++ * This software may be distributed under the terms of the GNU General
++ * Public License (&quot;GPL&quot;) version 2 as distributed in the 'COPYING'
++ * file from the main directory of the linux kernel source.
++ *
++ * Send feedback to &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-users at lists.berlios.de</A>&gt;
++ *
++ */
++
++#include &lt;linux/module.h&gt;
++#include &lt;linux/init.h&gt;
++#include &lt;linux/version.h&gt;
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/types.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/string.h&gt;
++#include &lt;linux/errno.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/skbuff.h&gt;
++#include &lt;linux/platform_device.h&gt;
++#include &lt;linux/spinlock.h&gt;
++#include &lt;linux/clk.h&gt;
++#include &lt;linux/can.h&gt;
++
++#include &lt;linux/can/ioctl.h&gt;
++
++#include &lt;asm/arch/board.h&gt;
++
++#include &quot;at91_can.h&quot;
++
++#include &lt;linux/can/version.h&gt; /* for RCSID. Removed by mkpatch script */
++
++MODULE_AUTHOR(&quot;Hans J. Koch &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hjk at linutronix.de</A>&gt;&quot;);
++MODULE_LICENSE(&quot;GPL v2&quot;);
++MODULE_DESCRIPTION(&quot;LLCF/socketcan '&quot; CHIP_NAME &quot;' network device driver&quot;);
++
++static char drv_name[DRV_NAME_LEN] = &quot;undefined&quot;;
++
++/* driver and version information */
++static const char *drv_version	= &quot;0.0.1&quot;;
++static const char *drv_reldate	= &quot;2007-10-26&quot;;
++
++/* We can never have more than one CAN controller */
++static struct net_device *can_dev;
++
++/* module parameters */
++static unsigned int speed	= DEFAULT_SPEED;
++static int clk			= DEFAULT_HW_CLK;
++static int debug;
++static int restart_ms		= 100;
++static int loopback;
++
++module_param(speed, int, 0);
++module_param(clk, int, 0);
++module_param(debug, int, 0);
++module_param(restart_ms, int, 0);
++module_param(loopback, int, S_IRUGO);
++
++MODULE_PARM_DESC(speed, &quot;CAN bus bitrate&quot;);
++MODULE_PARM_DESC(clk, &quot;CAN controller chip clock (default: 100MHz)&quot;);
++MODULE_PARM_DESC(debug, &quot;set debug level 0..3 (default: 0)&quot;);
++MODULE_PARM_DESC(restart_ms, &quot;restart chip on heavy bus errors / bus off &quot;
++				&quot;after x ms (default 100ms)&quot;);
++MODULE_PARM_DESC(loopback, &quot;Loop back sent frames. default: 1 (On)&quot;);
++
++#ifdef CONFIG_CAN_DEBUG_DEVICES
++#define can_dbg(netdev, level, fmt, arg...)	\
++	if (debug &gt;= level) dev_info(&amp;netdev-&gt;dev, fmt, ## arg)
++#else
++static void can_dbg(struct net_device *dev, int level, const char *fmt, ...) {}
++#endif
++
++static u32 at91_can_read(struct net_device *dev, unsigned long reg)
++{
++	return _at91_can_read(dev-&gt;base_addr + reg);
++}
++
++static void at91_can_write(struct net_device *dev, unsigned long reg, u32 value)
++{
++	_at91_can_write(dev-&gt;base_addr + reg, value);
++}
++
++static void enable_can_transceiver(struct can_priv *priv, int enable)
++{
++	/* Enable or disable transceiver */
++	if ((priv-&gt;data) &amp;&amp; (priv-&gt;data-&gt;transceiver_enable))
++		priv-&gt;data-&gt;transceiver_enable(enable);
++}
++
++/*
++ * calculate baud rate register values
++ * @baud:	Desired baud rate in Hz
++ * @clock:	MCK clock in Hz
++ */
++static int set_baud(struct net_device *dev, int baud, int clock)
++{
++	u32 brp, propag, phase1, phase2, sjw, can_mr;
++	u32 can_br = 0, time_quanta = 16;
++	int n;
++
++	if (baud &lt;= 0) {
++		can_dbg(dev, 0, &quot;Stupid baud value (%d)!\n&quot;, baud);
++		return -EINVAL;
++	}
++
++	can_dbg(dev, 1, &quot;set_baud, baud=%d, clock=%d\n&quot;, baud, clock);
++
++	while (1) {
++		brp = (u32)clock/(time_quanta * (u32)baud) - 1;
++		if (brp &lt; 50)
++			break;
++		time_quanta++;
++		if (time_quanta &gt; 25) {
++			can_dbg(dev, 1, &quot;Baud problem: Max. 25 time quanta.\n&quot;);
++			goto err_impossible;
++		}
++	}
++
++	if (brp == 0) {
++		can_dbg(dev, 1, &quot;Baud problem: brp is 0.\n&quot;);
++		goto err_impossible;
++	}
++
++	propag = time_quanta * baud * 38 / 100000000;
++	if (propag &lt; 3)
++		propag = 3;
++
++	/* Ensure phase1+phase2 &lt;= 16  by increasing propag if needed */
++	if ((time_quanta &gt; 17) &amp;&amp; (time_quanta - propag &gt; 17))
++		propag = time_quanta - 17;
++
++	n = time_quanta - propag - 1;
++	if (n &lt; 2) {
++		can_dbg(dev, 1, &quot;Baud problem: phase1+phase2 too short.\n&quot;);
++		goto err_impossible;
++	}
++	phase2 = n/2;
++	phase1 = time_quanta - propag - phase2 - 1;
++	sjw = phase1 - 1;
++	if (sjw &gt; 3)
++		sjw = 3;
++	can_dbg(dev, 2, &quot;%d time quanta, brp=%d, sjw=%d, propag=%d, phase1=%d, &quot;
++		&quot;phase2=%d\n&quot;, time_quanta, brp, sjw, propag, phase1, phase2);
++
++	can_br = (brp &lt;&lt; 16) |
++		 (sjw &lt;&lt; 12) |
++		 ((propag - 1) &lt;&lt; 8) |
++		 ((phase1 - 1) &lt;&lt; 4) |
++		 (phase2 - 1);
++	can_dbg(dev, 2, &quot;Setting CAN_BR to 0x%08X\n&quot;, can_br);
++
++	can_mr = at91_can_read(dev, CAN_MR);
++	at91_can_write(dev, CAN_MR, can_mr &amp; ~CAN_MR_CANEN);
++	at91_can_write(dev, CAN_BR, can_br);
++	at91_can_write(dev, CAN_MR, can_mr | CAN_MR_CANEN);
++
++	return 0;
++
++err_impossible:
++	can_dbg(dev, 0, &quot;Impossible baud/clock combination (%d/%d)!\n&quot;,
++		baud, clock);
++	return -EINVAL;
++}
++
++static void set_mailbox_mode(struct net_device *dev, int mb, int mode)
++{
++	at91_can_write(dev, CAN_MMR(mb), mode &lt;&lt; 24);
++}
++
++static void setup_mailboxes(struct net_device *dev)
++{
++	int mb;
++
++	/* The first 8 mailboxes are used as a reception FIFO. The eighth
++	 * mailbox is configured with overwrite option. The overwrite flag
++	 * indicates a FIFO overflow.
++	 */
++	for (mb = 0; mb &lt; LAST_RX_MB; mb++)
++		set_mailbox_mode(dev, mb, MB_MODE_RX);
++	set_mailbox_mode(dev, LAST_RX_MB, MB_MODE_RX_OVRWR);
++
++	/* The last 8 mailboxes are used for transmitting. */
++	for (mb = FIRST_TX_MB; mb &lt; 16; mb++)
++		set_mailbox_mode(dev, mb, MB_MODE_TX);
++}
++
++static int find_free_tx_mailbox(struct net_device *dev, int *is_last_mb)
++{
++	int mb, ret_mb = -1;
++	unsigned long flags;
++	struct can_priv *priv = netdev_priv(dev);
++
++	*is_last_mb = 1;
++
++	spin_lock_irqsave(&amp;priv-&gt;lock, flags);
++	for (mb = FIRST_TX_MB; mb &lt; 16; mb++) {
++		if (at91_can_read(dev, CAN_MSR(mb)) &amp; CAN_MSR_MRDY) {
++			if (ret_mb &gt;= 0) {
++				*is_last_mb = 0;
++				goto out;
++			}
++			ret_mb = mb;
++		}
++	}
++
++out:
++	spin_unlock_irqrestore(&amp;priv-&gt;lock, flags);
++	return ret_mb;
++}
++
++static int find_full_rx_mailbox(struct net_device *dev)
++{
++	int mb;
++	u32 msr;
++	struct can_priv *priv = netdev_priv(dev);
++
++	spin_lock(&amp;priv-&gt;lock);
++
++	for (mb = 0; mb &lt;= LAST_RX_MB; mb++) {
++		msr = at91_can_read(dev, CAN_MSR(mb));
++		if (msr &amp; CAN_MSR_MRDY) {
++			spin_unlock(&amp;priv-&gt;lock);
++			if ((mb == LAST_RX_MB) &amp;&amp; (msr &amp; CAN_MSR_MMI)) {
++				priv-&gt;can_stats.data_overrun++;
++				can_dbg(dev, 2, &quot;RX overrun.\n&quot;);
++			}
++			return mb;
++		}
++	}
++
++	spin_unlock(&amp;priv-&gt;lock);
++	return -1;
++}
++
++static int can_start_xmit(struct sk_buff *skb, struct net_device *dev)
++{
++	struct can_priv *priv = netdev_priv(dev);
++	struct can_frame *cf = (struct can_frame *)skb-&gt;data;
++	int loop;
++	int is_last_mb;
++	u32 can_mid, can_mcr, can_mdl = 0, can_mdh = 0;
++	unsigned long flags;
++	int mb = find_free_tx_mailbox(dev, &amp;is_last_mb);
++
++	if (is_last_mb)
++		netif_stop_queue(dev);
++
++	if (mb &lt; 0) {
++		/* This should never happen, queue should be stopped when
++		 * the last mailbox was used.
++		 */
++		can_dbg(dev, 0, &quot;Huh?? can_start_xmit without free mailbox?\n&quot;);
++		return 0;
++	}
++
++	can_dbg(dev, 2, &quot;TX start for mb #%d\n&quot;, mb);
++
++	spin_lock_irqsave(&amp;priv-&gt;lock, flags);
++	set_mailbox_mode(dev, mb, MB_MODE_DISABLED);
++
++	if (cf-&gt;can_id &amp; CAN_EFF_FLAG)
++		can_mid = CAN_MID_MIDE | (cf-&gt;can_id &amp; 0x0003FFFF);
++	else
++		can_mid = (cf-&gt;can_id &amp; 0x000007FF) &lt;&lt; 18;
++
++	at91_can_write(dev, CAN_MID(mb), can_mid);
++	set_mailbox_mode(dev, mb, MB_MODE_TX);
++
++	can_mdl = cf-&gt;data[0] |
++		  (cf-&gt;data[1] &lt;&lt; 8) |
++		  (cf-&gt;data[2] &lt;&lt; 16) |
++		  (cf-&gt;data[3] &lt;&lt; 24);
++	can_mdh = cf-&gt;data[4] |
++		  (cf-&gt;data[5] &lt;&lt; 8) |
++		  (cf-&gt;data[6] &lt;&lt; 16) |
++		  (cf-&gt;data[7] &lt;&lt; 24);
++
++	at91_can_write(dev, CAN_MDL(mb), can_mdl);
++	at91_can_write(dev, CAN_MDH(mb), can_mdh);
++
++	can_mcr = (cf-&gt;can_id &amp; CAN_RTR_FLAG) ? CAN_MCR_MRTR : 0;
++	can_mcr |= ((cf-&gt;can_dlc &amp; 0x0F) &lt;&lt; 16);
++	can_mcr |= CAN_MCR_MTCR;
++
++	/* This triggers transmission */
++	at91_can_write(dev, CAN_MCR(mb), can_mcr);
++
++	priv-&gt;stats.tx_bytes += cf-&gt;can_dlc;
++	dev-&gt;trans_start = jiffies;
++
++	/* Enable interrupt for this mailbox */
++	at91_can_write(dev, CAN_IER, 1 &lt;&lt; mb);
++
++	spin_unlock_irqrestore(&amp;priv-&gt;lock, flags);
++
++	/* set flag whether this packet has to be looped back */
++	loop = (skb-&gt;pkt_type == PACKET_LOOPBACK);
++
++	if (!loopback || !loop) {
++		kfree_skb(skb);
++		return 0;
++	}
++
++	if (!priv-&gt;loop_skb[mb - FIRST_TX_MB]) {
++		struct sock *srcsk = skb-&gt;sk;
++
++		if (atomic_read(&amp;skb-&gt;users) != 1) {
++			struct sk_buff *old_skb = skb;
++
++			skb = skb_clone(old_skb, GFP_ATOMIC);
++			can_dbg(dev, 2, &quot;freeing old skbuff %p, &quot;
++			    &quot;using new skbuff %p\n&quot;, old_skb, skb);
++			kfree_skb(old_skb);
++			if (!skb)
++				return 0;
++		} else
++			skb_orphan(skb);
++
++		skb-&gt;sk = srcsk;
++
++		skb-&gt;protocol	= htons(ETH_P_CAN);
++		skb-&gt;pkt_type	= PACKET_BROADCAST;
++		skb-&gt;ip_summed	= CHECKSUM_UNNECESSARY;
++		skb-&gt;dev	= dev;
++
++		/* save this skb for tx interrupt loopback handling */
++		priv-&gt;loop_skb[mb - FIRST_TX_MB] = skb;
++
++	} else {
++		/* locking problem with netif_stop_queue() ?? */
++		printk(KERN_ERR &quot;%s: %s: occupied loop_skb!\n&quot;,
++		       dev-&gt;name, __FUNCTION__);
++		kfree_skb(skb);
++	}
++
++	return 0;
++}
++
++static void read_mailbox(struct net_device *dev, int mb, struct can_frame *cf)
++{
++	u32 can_msr, can_mid, can_mdl, can_mdh;
++	int i;
++	struct can_priv *priv = netdev_priv(dev);
++
++	spin_lock(&amp;priv-&gt;lock);
++	can_mid = at91_can_read(dev, CAN_MID(mb));
++	if (can_mid &amp; CAN_MID_MIDE)
++		cf-&gt;can_id = (can_mid &amp; 0x0003FFFF) | CAN_EFF_FLAG;
++	else
++		cf-&gt;can_id = ((can_mid &amp; 0x1FFC0000) &gt;&gt; 18);
++
++	can_msr = at91_can_read(dev, CAN_MSR(mb));
++	cf-&gt;can_dlc = ((can_msr &amp; 0x000F0000) &gt;&gt; 16);
++	if (can_msr &amp; CAN_MSR_MRTR)
++		cf-&gt;can_id |= CAN_RTR_FLAG;
++
++	can_mdl = at91_can_read(dev, CAN_MDL(mb));
++	can_mdh = at91_can_read(dev, CAN_MDH(mb));
++
++	for (i = 0; i &lt; 4; i++) {
++		cf-&gt;data[i] = can_mdl &amp; 0x000000FF;
++		cf-&gt;data[i+4] = can_mdh &amp; 0x000000FF;
++		can_mdl = can_mdl &gt;&gt; 8;
++		can_mdh = can_mdh &gt;&gt; 8;
++	}
++
++	/* reenable mailbox */
++	set_mailbox_mode(dev, mb,
++			(mb == LAST_RX_MB) ? MB_MODE_RX_OVRWR : MB_MODE_RX);
++
++	spin_unlock(&amp;priv-&gt;lock);
++	return;
++}
++
++static void can_rx(struct net_device *dev)
++{
++	struct can_priv *priv = netdev_priv(dev);
++	struct can_frame *cf;
++	struct sk_buff	*skb;
++	u32 mcr;
++
++	int mb = find_full_rx_mailbox(dev);
++
++	while (mb &gt;= 0) {
++		skb = dev_alloc_skb(sizeof(struct can_frame));
++		if (skb == NULL)
++			return;
++
++		skb-&gt;dev = dev;
++		skb-&gt;protocol = htons(ETH_P_CAN);
++
++		cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
++		read_mailbox(dev, mb, cf);
++		spin_lock(&amp;priv-&gt;lock);
++		netif_rx(skb);
++		dev-&gt;last_rx = jiffies;
++		priv-&gt;stats.rx_packets++;
++		priv-&gt;stats.rx_bytes += cf-&gt;can_dlc;
++		mcr = at91_can_read(dev, CAN_MCR(mb));
++		/* Finished, allow new reception */
++		at91_can_write(dev, CAN_MCR(mb), mcr | CAN_MCR_MTCR);
++		spin_unlock(&amp;priv-&gt;lock);
++		mb = find_full_rx_mailbox(dev);
++	}
++}
++
++static void can_tx_irq(struct net_device *dev, u32 mask)
++{
++	int mb;
++	u32 imr;
++	struct can_priv *priv	= netdev_priv(dev);
++
++	spin_lock(&amp;priv-&gt;lock);
++	imr = at91_can_read(dev, CAN_IMR);
++
++	for (mb = FIRST_TX_MB; mb &lt; 16; mb++) {
++		if (mask &amp; imr &amp; (1 &lt;&lt; mb)) {
++			/* Disable irq for this TX mailbox */
++			at91_can_write(dev, CAN_IDR, 1 &lt;&lt; mb);
++
++			/* Reenable mailbox */
++			at91_can_write(dev, CAN_MCR(mb), 0);
++
++			priv-&gt;stats.tx_packets++;
++
++			if (loopback &amp;&amp; priv-&gt;loop_skb[mb - FIRST_TX_MB]) {
++				netif_rx(priv-&gt;loop_skb[mb - FIRST_TX_MB]);
++				priv-&gt;loop_skb[mb - FIRST_TX_MB] = NULL;
++			}
++		}
++	}
++
++	spin_unlock(&amp;priv-&gt;lock);
++	netif_wake_queue(dev);
++}
++
++static int at91_can_init_regs(struct net_device *dev)
++{
++	u32 reg;
++	int ret;
++	unsigned long flags;
++	struct can_priv *priv = netdev_priv(dev);
++
++	spin_lock_irqsave(&amp;priv-&gt;lock, flags);
++	/* Disable all interrupts */
++	at91_can_write(dev, CAN_IDR, 0x1FFFFFFF);
++
++	if (priv-&gt;speed == 0)
++		priv-&gt;speed = DEFAULT_SPEED;
++
++	ret = set_baud(dev, priv-&gt;speed, priv-&gt;clock);
++	if (ret)
++		return ret;
++
++	setup_mailboxes(dev);
++
++	/* Enable interrupts, TODO: CAN_IRQ_ERRP */
++	reg = CAN_IRQ_MB_RX |
++		CAN_IRQ_BOFF |
++		CAN_IRQ_CERR |
++		CAN_IRQ_SERR |
++		CAN_IRQ_AERR |
++		CAN_IRQ_FERR |
++		CAN_IRQ_BERR;
++
++	at91_can_write(dev, CAN_IER, reg);
++
++	spin_unlock_irqrestore(&amp;priv-&gt;lock, flags);
++	return 0;
++}
++
++static void chipset_init(struct net_device *dev, int wake)
++{
++	struct can_priv *priv = netdev_priv(dev);
++	int i;
++
++	at91_can_init_regs(dev);
++
++	if (priv-&gt;rx_probe) {
++		/* TODO: automatic bit rate detection */
++		priv-&gt;state = STATE_PROBE;
++		printk(KERN_ERR &quot;CAN: No autobaud yet!!!\n&quot;);
++	} else
++		priv-&gt;state = STATE_ACTIVE;
++
++	if ((wake) &amp;&amp; netif_queue_stopped(dev)) {
++		/* Check for pending loopback */
++		for (i = 8; i &lt; 16; i++) {
++			if (priv-&gt;loop_skb[i]) {
++				kfree_skb(priv-&gt;loop_skb[i]);
++				priv-&gt;loop_skb[i] = NULL;
++			}
++		}
++		netif_wake_queue(dev);
++	}
++}
++
++static void can_tx_timeout(struct net_device *dev)
++{
++	int i;
++	struct can_priv *priv = netdev_priv(dev);
++
++	priv-&gt;stats.tx_errors++;
++	can_dbg(dev, 0, &quot;TX timeout!\n&quot;);
++
++	/* do not conflict with e.g. bus error handling */
++	if (!(priv-&gt;timer.expires)) {
++		chipset_init(dev, 0);
++		for (i = 8; i &lt; 16; i++) {
++			if (priv-&gt;loop_skb[i]) {
++				kfree_skb(priv-&gt;loop_skb[i]);
++				priv-&gt;loop_skb[i] = NULL;
++			}
++		}
++		netif_wake_queue(dev);
++	} else
++		can_dbg(dev, 1, &quot;can_restart_dev already active.\n&quot;);
++}
++
++static void can_restart_dev(unsigned long data)
++{
++	struct net_device *dev = (struct net_device *)data;
++	struct can_priv *priv = netdev_priv(dev);
++
++	can_dbg(dev, 1, &quot;can_restart_dev (%ld)\n&quot;, jiffies);
++
++	/* mark inactive timer */
++	priv-&gt;timer.expires = 0;
++
++	if (priv-&gt;state != STATE_UNINITIALIZED) {
++		/* count number of restarts */
++		priv-&gt;can_stats.restarts++;
++		chipset_init(dev, 1);
++	}
++}
++
++static void can_restart_on(struct net_device *dev)
++{
++	struct can_priv *priv = netdev_priv(dev);
++
++	if (!(priv-&gt;timer.expires)) {
++		/* no restart in progress */
++		priv-&gt;timer.function = can_restart_dev;
++		priv-&gt;timer.data = (unsigned long) dev;
++
++		/* restart chip on persistent error in &lt;xxx&gt; ms */
++		priv-&gt;timer.expires = jiffies + (priv-&gt;restart_ms * HZ) / 1000;
++		add_timer(&amp;priv-&gt;timer);
++
++		can_dbg(dev, 1, &quot;can_restart_on (%ld)\n&quot;, jiffies);
++	} else
++		can_dbg(dev, 1, &quot;can_restart_on already active (%ld)\n&quot;,
++				jiffies);
++}
++
++static struct net_device_stats *can_get_stats(struct net_device *dev)
++{
++	struct can_priv *priv = netdev_priv(dev);
++
++	/* TODO: read statistics from chip */
++	return &amp;priv-&gt;stats;
++}
++
++static int can_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
++{
++	if (!netif_running(dev))
++		return -EINVAL;
++
++	/* TODO: Add baudrate ioctls ? */
++	switch (cmd) {
++	case SIOCSCANBAUDRATE:
++		;
++		return 0;
++	case SIOCGCANBAUDRATE:
++		;
++		return 0;
++	}
++	return 0;
++}
++
++/*
++ * interrupt handler
++ */
++static irqreturn_t can_interrupt(int irq, void *dev_id)
++{
++	u32 sr, imr;
++	struct net_device *dev	= (struct net_device *)dev_id;
++	struct can_priv *priv	= netdev_priv(dev);
++
++	sr = at91_can_read(dev, CAN_SR);
++	imr = at91_can_read(dev, CAN_IMR);
++	can_dbg(dev, 2, &quot;irq: SR=0x%08x IMR=0x%08x [0x%08x]\n&quot;,
++			sr, imr, sr &amp; imr);
++	/* Ignore masked interrupts */
++	sr &amp;= imr;
++
++	if (sr &amp; CAN_IRQ_MB_RX) {
++		can_rx(dev);
++
++		if (priv-&gt;state == STATE_PROBE) {
++			/* TODO: Handle autobaud detection */
++			printk(KERN_ERR &quot;CAN: irq: no autobaud yet!!!\n&quot;);
++		}
++	}
++
++	if (sr &amp; CAN_IRQ_MB_TX)
++		can_tx_irq(dev, sr);
++
++	if (sr &amp; CAN_IRQ_WAKEUP) {
++		priv-&gt;can_stats.wakeup++;
++		can_dbg(dev, 1, &quot;WAKEUP irq\n&quot;);
++	}
++
++	if (sr &amp; CAN_IRQ_CERR)
++		can_dbg(dev, 1, &quot;CERR irq\n&quot;);
++
++	if (sr &amp; CAN_IRQ_SERR)
++		can_dbg(dev, 1, &quot;SERR irq\n&quot;);
++
++	if (sr &amp; CAN_IRQ_AERR)
++		can_dbg(dev, 1, &quot;AERR irq\n&quot;);
++
++	if (sr &amp; CAN_IRQ_FERR)
++		can_dbg(dev, 1, &quot;FERR irq\n&quot;);
++
++	if (sr &amp; CAN_IRQ_ERRP) {
++		can_dbg(dev, 1, &quot;ERRP irq\n&quot;);
++		priv-&gt;can_stats.error_passive++;
++		can_restart_on(dev);
++		return IRQ_HANDLED;
++	}
++
++	if (sr &amp; CAN_IRQ_WARN) {
++		can_dbg(dev, 1, &quot;WARN irq\n&quot;);
++		priv-&gt;can_stats.error_warning++;
++	}
++
++	if (sr &amp; CAN_IRQ_BOFF) {
++		can_dbg(dev, 1, &quot;BOFF irq\n&quot;);
++		priv-&gt;state = STATE_BUS_OFF;
++		can_restart_on(dev);
++		return IRQ_HANDLED;
++	}
++
++	if (sr &amp; CAN_IRQ_BERR) {
++		can_dbg(dev, 1, &quot;BERR irq\n&quot;);
++		priv-&gt;can_stats.bus_error++;
++		/* TODO: Bus error == Bit error? Restart? */
++	}
++
++	/* TODO: Howto detect lost arbitration???
++	 *	priv-&gt;can_stats.arbitration_lost++;
++	 */
++
++	return IRQ_HANDLED;
++}
++
++/*
++ * initialize CAN bus driver
++ */
++static int can_open(struct net_device *dev)
++{
++	struct can_priv *priv = netdev_priv(dev);
++
++	can_dbg(dev, 1, &quot;can_open called\n&quot;);
++	priv-&gt;state = STATE_UNINITIALIZED;
++	clk_enable(priv-&gt;can_clk);
++	/* init chip */
++	chipset_init(dev, 0);
++	enable_can_transceiver(priv, 1);
++	/* clear statistics */
++	memset(&amp;priv-&gt;stats, 0, sizeof(priv-&gt;stats));
++
++	priv-&gt;open_time = jiffies;
++
++	/* register interrupt handler */
++	if (request_irq(dev-&gt;irq, &amp;can_interrupt, IRQF_SHARED,
++			dev-&gt;name, (void *)dev)) {
++		can_dbg(dev, 0, &quot;request_irq failed.\n&quot;);
++		return -EAGAIN;
++	}
++	netif_start_queue(dev);
++
++	return 0;
++}
++
++/*
++ * stop CAN bus activity
++ */
++static int can_close(struct net_device *dev)
++{
++	struct can_priv *priv = netdev_priv(dev);
++
++	can_dbg(dev, 1, &quot;can_close called\n&quot;);
++	priv-&gt;open_time = 0;
++
++	if (priv-&gt;timer.expires) {
++		del_timer(&amp;priv-&gt;timer);
++		priv-&gt;timer.expires = 0;
++	}
++
++	netif_stop_queue(dev);
++	clk_disable(priv-&gt;can_clk);
++
++	free_irq(dev-&gt;irq, (void *)dev);
++	priv-&gt;state = STATE_UNINITIALIZED;
++
++	enable_can_transceiver(priv, 0);
++
++	return 0;
++}
++
++void can_netdev_setup(struct net_device *dev)
++{
++	/* Fill in the the fields of the device structure
++	 * with CAN netdev generic values
++	 */
++
++	dev-&gt;change_mtu			= NULL;
++	dev-&gt;set_mac_address		= NULL;
++
++	dev-&gt;type			= ARPHRD_CAN;
++	dev-&gt;hard_header_len		= 0;
++	dev-&gt;mtu			= sizeof(struct can_frame);
++	dev-&gt;addr_len			= 0;
++	dev-&gt;tx_queue_len		= 10;
++
++	dev-&gt;flags			= IFF_NOARP;
++
++	/* set flags according to driver capabilities */
++	if (loopback)
++		dev-&gt;flags |= IFF_LOOPBACK;
++
++	dev-&gt;features			= NETIF_F_NO_CSUM;
++
++	dev-&gt;open			= can_open;
++	dev-&gt;stop			= can_close;
++	dev-&gt;hard_start_xmit		= can_start_xmit;
++	dev-&gt;get_stats			= can_get_stats;
++	dev-&gt;do_ioctl			= can_ioctl;
++
++	dev-&gt;tx_timeout			= can_tx_timeout;
++	dev-&gt;watchdog_timeo		= TX_TIMEOUT;
++}
++
++static struct net_device *can_create_netdev(struct platform_device *pdev,
++					    struct clk *can_clk)
++{
++	struct net_device	*dev;
++	struct can_priv		*priv;
++	struct resource *res;
++
++	dev = alloc_netdev(sizeof(struct can_priv), CAN_NETDEV_NAME,
++			   can_netdev_setup);
++	if (!dev) {
++		can_dbg(dev, 0, &quot;alloc_netdev failed!\n&quot;);
++		return NULL;
++	}
++
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (!res)
++		goto err_out0;
++
++	if (!request_mem_region(res-&gt;start, res-&gt;end - res-&gt;start + 1,
++	     &quot;at91_can&quot;))
++		goto err_out0;
++
++	dev-&gt;base_addr = (unsigned long)ioremap(res-&gt;start,
++					res-&gt;end - res-&gt;start + 1);
++	if (!dev-&gt;base_addr) {
++		can_dbg(dev, 0, &quot;ioremap failed!\n&quot;);
++		goto err_out1;
++	}
++
++	dev-&gt;irq         = AT91SAM9263_ID_CAN;
++
++	priv             = netdev_priv(dev);
++
++	spin_lock_init(&amp;priv-&gt;lock);
++	priv-&gt;can_clk	 = can_clk;
++	priv-&gt;data	 = pdev-&gt;dev.platform_data;
++	priv-&gt;speed      = speed;
++	priv-&gt;clock      = clk;
++	priv-&gt;restart_ms = restart_ms;
++	priv-&gt;debug      = debug;
++
++	init_timer(&amp;priv-&gt;timer);
++	priv-&gt;timer.expires = 0;
++
++	if (register_netdev(dev)) {
++		can_dbg(dev, 0, &quot;register netdev failed\n&quot;);
++		goto err_out2;
++	}
++
++	return dev;
++
++err_out2:
++	iounmap((void *)dev-&gt;base_addr);
++err_out1:
++	release_mem_region(res-&gt;start, res-&gt;end - res-&gt;start + 1);
++err_out0:
++	free_netdev(dev);
++	return NULL;
++}
++
++static int can_set_drv_name(void)
++{
++	char *hname = &quot;AT91_CAN&quot;;
++
++	if (strlen(CHIP_NAME) + strlen(hname) &gt;= DRV_NAME_LEN-1) {
++		printk(KERN_ERR &quot;%s: driver name too long!\n&quot;, CHIP_NAME);
++		return -EINVAL;
++	}
++	sprintf(drv_name, &quot;%s-%s&quot;, CHIP_NAME, hname);
++	return 0;
++}
++
++static int __init at91_can_probe(struct platform_device *pdev)
++{
++	int ret;
++	struct clk *can_clk;
++
++	ret = can_set_drv_name();
++	if (ret)
++		return ret;
++
++	/* MHz clock value */
++	if (clk &lt; 1000)
++		clk *= 1000000;
++	/* kHz clock value */
++	if (clk &lt; 1000000)
++		clk *= 1000;
++	/* kHz baud value */
++	if (speed &lt;= 1000)
++		speed *= 1000;
++
++	printk(KERN_ERR &quot;%s driver v%s (%s)\n&quot;,
++	       drv_name, drv_version, drv_reldate);
++	printk(KERN_ERR &quot;%s - options [clk %d.%06d MHz] [restart_ms %dms]&quot;
++			&quot; [debug %d]\n&quot;,
++	drv_name, clk/1000000, clk%1000000, restart_ms, debug);
++
++	can_clk = clk_get(&amp;pdev-&gt;dev, &quot;can_clk&quot;);
++	if (IS_ERR(can_clk)) {
++		printk(KERN_ERR &quot;at91_can: no clock defined\n&quot;);
++		return -ENODEV;
++	}
++
++	can_dev = can_create_netdev(pdev, can_clk);
++	platform_set_drvdata(pdev, can_dev);
++
++	if (!can_dev) {
++		printk(KERN_ERR &quot;at91_can: Could not create netdev.\n&quot;);
++		return -ENODEV;
++	}
++
++	return 0;
++}
++
++static int __devexit at91_can_remove(struct platform_device *pdev)
++{
++	struct net_device *net_dev = platform_get_drvdata(pdev);
++	struct can_priv	*priv;
++	struct resource *res;
++	unsigned long can_base;
++
++	if (!net_dev)
++		return -ENODEV;
++
++	can_base = net_dev-&gt;base_addr;
++
++	priv = netdev_priv(net_dev);
++
++	unregister_netdev(net_dev);
++	free_irq(net_dev-&gt;irq, net_dev);
++	del_timer(&amp;priv-&gt;timer);
++	clk_put(priv-&gt;can_clk);
++	enable_can_transceiver(priv, 0);
++
++	platform_set_drvdata(pdev, NULL);
++	free_netdev(net_dev);
++
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	iounmap((void *)can_base);
++	release_mem_region(res-&gt;start, res-&gt;end - res-&gt;start + 1);
++
++	return 0;
++}
++
++#ifdef CONFIG_PM
++
++static int at91_can_suspend(struct platform_device *pdev,
++				   pm_message_t mesg)
++{
++	struct net_device *net_dev = platform_get_drvdata(pdev);
++	struct can_priv	*priv = netdev_priv(net_dev);
++
++	if (netif_running(net_dev)) {
++		/* TODO Disable IRQ? */
++		netif_stop_queue(net_dev);
++		netif_device_detach(net_dev);
++		enable_can_transceiver(priv, 0);
++		clk_disable(priv-&gt;can_clk);
++	}
++	return 0;
++}
++
++static int at91_can_resume(struct platform_device *pdev)
++{
++	struct net_device *net_dev = platform_get_drvdata(pdev);
++	struct can_priv	*priv = netdev_priv(net_dev);
++
++	if (netif_running(net_dev)) {
++		clk_enable(priv-&gt;can_clk);
++		enable_can_transceiver(priv, 1);
++		netif_device_attach(net_dev);
++		netif_start_queue(net_dev);
++		/* TODO Enable IRQ? */
++	}
++	return 0;
++}
++
++#else
++#define at91_can_suspend	NULL
++#define at91_can_resume		NULL
++#endif
++
++static struct platform_driver at91_can_driver = {
++	.probe		= at91_can_probe,
++	.remove		= __devexit_p(at91_can_remove),
++	.suspend	= at91_can_suspend,
++	.resume		= at91_can_resume,
++	.driver		= {
++				.name	= &quot;at91_can&quot;,
++				.owner	= THIS_MODULE,
++	},
++};
++
++static int __init at91_can_init_module(void)
++{
++	return platform_driver_register(&amp;at91_can_driver);
++}
++
++static void __exit at91_can_exit_module(void)
++{
++	platform_driver_unregister(&amp;at91_can_driver);
++}
++
++module_init(at91_can_init_module);
++module_exit(at91_can_exit_module);
++
+Index: linux-2.6.24-rc/drivers/net/can/at91_can.h
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-2.6.24-rc/drivers/net/can/at91_can.h	2007-10-31 00:08:59.000000000 +0100
+@@ -0,0 +1,158 @@
++/*
++ * at91_can.h -  CAN related definitions for AT91 SoC CAN controller
++ *
++ * (C) 2007 by Hans J. Koch &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">hjk at linutronix.de</A>&gt;
++ *
++ * This software may be distributed under the terms of the GNU General
++ * Public License (&quot;GPL&quot;) version 2 as distributed in the 'COPYING'
++ * file from the main directory of the linux kernel source.
++ *
++ * Send feedback to &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-users at lists.berlios.de</A>&gt;
++ *
++ */
++
++#ifndef AT91_CAN_H
++#define AT91_CAN_H
++
++#define CHIP_NAME	&quot;AT91&quot;
++
++#define DRV_NAME_LEN	30 /* for &quot;&lt;chip_name&gt;-&lt;hal_name&gt;&quot; */
++
++#define DEFAULT_HW_CLK	100000000
++#define DEFAULT_SPEED	250 /* kBit/s */
++
++#define CAN_NETDEV_NAME	&quot;can%d&quot;
++
++#define TX_TIMEOUT      (50*HZ/1000) /* 50ms */
++#define RESTART_MS      100  /* restart chip on persistent errors in 100ms */
++#define MAX_BUS_ERRORS  200  /* prevent from flooding bus error interrupts */
++
++#define TX_MAILBOX_COUNT	8
++#define LAST_RX_MB	7
++#define FIRST_TX_MB	(LAST_RX_MB + 1)
++
++/* Common registers */
++#define CAN_MR		0x000
++#define CAN_IER		0x004
++#define CAN_IDR		0x008
++#define CAN_IMR		0x00C
++#define CAN_SR		0x010
++#define CAN_BR		0x014
++#define CAN_TIM		0x018
++#define CAN_TIMESTP	0x01C
++#define CAN_ECR		0x020
++#define CAN_TCR		0x024
++#define CAN_ACR		0x028
++
++/* Mailbox registers (0 &lt;= i &lt;= 15) */
++#define CAN_MMR(i)	(0x200 + ((i) * 0x20))
++#define CAN_MAM(i)	(0x204 + ((i) * 0x20))
++#define CAN_MID(i)	(0x208 + ((i) * 0x20))
++#define CAN_MFID(i)	(0x20C + ((i) * 0x20))
++#define CAN_MSR(i)	(0x210 + ((i) * 0x20))
++#define CAN_MDL(i)	(0x214 + ((i) * 0x20))
++#define CAN_MDH(i)	(0x218 + ((i) * 0x20))
++#define CAN_MCR(i)	(0x21C + ((i) * 0x20))
++
++/* Register bits */
++#define CAN_MR_CANEN	(1 &lt;&lt; 0)
++#define CAN_MR_LPM	(1 &lt;&lt; 1)
++#define CAN_MR_ABM	(1 &lt;&lt; 2)
++#define CAN_MR_OVL	(1 &lt;&lt; 3)
++#define CAN_MR_TEOF	(1 &lt;&lt; 4)
++#define CAN_MR_TTM	(1 &lt;&lt; 5)
++#define CAN_MR_TIMFRZ	(1 &lt;&lt; 6)
++#define CAN_MR_DRPT	(1 &lt;&lt; 7)
++
++#define CAN_MID_MIDE	(1 &lt;&lt; 29)
++
++#define CAN_MSR_MRTR	(1 &lt;&lt; 20)
++#define CAN_MSR_MRDY	(1 &lt;&lt; 23)
++#define CAN_MSR_MMI	(1 &lt;&lt; 24)
++
++#define CAN_MCR_MRTR	(1 &lt;&lt; 20)
++#define CAN_MCR_MTCR	(1 &lt;&lt; 23)
++
++/* Mailbox Modes */
++#define MB_MODE_DISABLED	0
++#define MB_MODE_RX		1
++#define MB_MODE_RX_OVRWR	2
++#define MB_MODE_TX		3
++#define MB_MODE_CONSUMER	4
++#define MB_MODE_PRODUCER	5
++
++/* Interrupt mask bits */
++
++#define CAN_IRQ_MB0		(1 &lt;&lt; 0)
++#define CAN_IRQ_MB1		(1 &lt;&lt; 1)
++#define CAN_IRQ_MB2		(1 &lt;&lt; 2)
++#define CAN_IRQ_MB3		(1 &lt;&lt; 3)
++#define CAN_IRQ_MB4		(1 &lt;&lt; 4)
++#define CAN_IRQ_MB5		(1 &lt;&lt; 5)
++#define CAN_IRQ_MB6		(1 &lt;&lt; 6)
++#define CAN_IRQ_MB7		(1 &lt;&lt; 7)
++#define CAN_IRQ_MB8		(1 &lt;&lt; 8)
++#define CAN_IRQ_MB9		(1 &lt;&lt; 9)
++#define CAN_IRQ_MB10		(1 &lt;&lt; 10)
++#define CAN_IRQ_MB11		(1 &lt;&lt; 11)
++#define CAN_IRQ_MB12		(1 &lt;&lt; 12)
++#define CAN_IRQ_MB13		(1 &lt;&lt; 13)
++#define CAN_IRQ_MB14		(1 &lt;&lt; 14)
++#define CAN_IRQ_MB15		(1 &lt;&lt; 15)
++
++#define CAN_IRQ_MB_TX		0x0000FF00
++#define CAN_IRQ_MB_RX		0x000000FF
++#define CAN_IRQ_MB_ALL		0x0000FFFF
++
++#define CAN_IRQ_ERRA		(1 &lt;&lt; 16)
++#define CAN_IRQ_WARN		(1 &lt;&lt; 17)
++#define CAN_IRQ_ERRP		(1 &lt;&lt; 18)
++#define CAN_IRQ_BOFF		(1 &lt;&lt; 19)
++#define CAN_IRQ_SLEEP		(1 &lt;&lt; 20)
++#define CAN_IRQ_WAKEUP		(1 &lt;&lt; 21)
++#define CAN_IRQ_TOVF		(1 &lt;&lt; 22)
++#define CAN_IRQ_TSTP		(1 &lt;&lt; 23)
++#define CAN_IRQ_CERR		(1 &lt;&lt; 24)
++#define CAN_IRQ_SERR		(1 &lt;&lt; 25)
++#define CAN_IRQ_AERR		(1 &lt;&lt; 26)
++#define CAN_IRQ_FERR		(1 &lt;&lt; 27)
++#define CAN_IRQ_BERR		(1 &lt;&lt; 28)
++
++
++/* CAN private data structure */
++
++enum can_state {
++	STATE_UNINITIALIZED = 0,
++	STATE_PROBE,
++	STATE_ACTIVE,
++	STATE_ERROR_ACTIVE,
++	STATE_ERROR_PASSIVE,
++	STATE_BUS_OFF,
++	STATE_RESET_MODE,
++};
++
++struct can_priv {
++	struct net_device_stats	stats;
++	struct can_device_stats	can_stats;
++	struct clk		*can_clk;
++	struct at91_can_data	*data;
++	long			open_time;
++	int			clock;
++	int			hw_regs;
++	int			restart_ms;
++	int			debug;
++	int			speed;
++	int			btr;
++	int			rx_probe;
++	struct timer_list       timer;
++	enum can_state		state;
++	struct sk_buff		*loop_skb[TX_MAILBOX_COUNT];
++	spinlock_t		lock;
++};
++
++/* Register access macros */
++
++#define _at91_can_read(a)	((unsigned long) __raw_readl(a))
++#define _at91_can_write(a, v)	__raw_writel((v), (a))
++
++#endif /* AT91_CAN_H */
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000789.html">[PATCH 1/2 try#2]  Add hardware support for Atmel AT91 SoC CAN	controller
+</A></li>
+	<LI>Next message: <A HREF="000791.html">[PATCH 0/2 try#2] Add socketcan driver for Atmel AT91 SoC CAN	controller
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#790">[ date ]</a>
+              <a href="thread.html#790">[ thread ]</a>
+              <a href="subject.html#790">[ subject ]</a>
+              <a href="author.html#790">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

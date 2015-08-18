@@ -1,0 +1,106 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next v3] candev: allow SJW user setting for bittiming	calculation
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%20v3%5D%20candev%3A%20allow%20SJW%20user%20setting%20for%20bittiming%0A%09calculation&In-Reply-To=%3C4E831803.7020409%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006130.html">
+   <LINK REL="Next"  HREF="006131.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next v3] candev: allow SJW user setting for bittiming	calculation</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%20v3%5D%20candev%3A%20allow%20SJW%20user%20setting%20for%20bittiming%0A%09calculation&In-Reply-To=%3C4E831803.7020409%40hartkopp.net%3E"
+       TITLE="[PATCH net-next v3] candev: allow SJW user setting for bittiming	calculation">socketcan at hartkopp.net
+       </A><BR>
+    <I>Wed Sep 28 14:50:11 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006130.html">[PATCH net-next] can/sja1000: add driver for EMS PCMCIA card
+</A></li>
+        <LI>Next message: <A HREF="006131.html">[PATCH net-next v3] candev: allow SJW user setting for	bittiming calculation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6124">[ date ]</a>
+              <a href="thread.html#6124">[ thread ]</a>
+              <a href="subject.html#6124">[ subject ]</a>
+              <a href="author.html#6124">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch adds support for SJW user settings to not set the synchronization
+jump width (SJW) to 1 in any case when using the in-kernel bittiming
+calculation.
+
+The ip-tool from iproute2 already supports to pass the user defined SJW
+value. The given SJW value is sanitized with the controller specific sjw_max
+and the calculated tseg2 value. As the SJW can have values up to 4 providing
+this value will lead to the maximum possible SJW automatically. A higher SJW
+allows higher controller oscillator tolerances.
+
+Signed-off-by: Oliver Hartkopp &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan at hartkopp.net</A>&gt;
+Acked-by: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+
+---
+
+v2: Resend due to wrong mail address header encoding.
+v3: - Detected malformed patch format due to line break in function name
+    - Added Acked-by: from Wolfgang Grandegger
+
+diff --git a/drivers/net/can/dev.c b/drivers/net/can/dev.c
+index 9bf1116..25695bd 100644
+--- a/drivers/net/can/dev.c
++++ b/drivers/net/can/dev.c
+@@ -150,7 +150,19 @@ static int can_calc_bittiming(struct net_device *dev, struct can_bittiming *bt)
+ 	bt-&gt;prop_seg = tseg1 / 2;
+ 	bt-&gt;phase_seg1 = tseg1 - bt-&gt;prop_seg;
+ 	bt-&gt;phase_seg2 = tseg2;
+-	bt-&gt;sjw = 1;
++
++	/* check for sjw user settings */
++	if (!bt-&gt;sjw || !btc-&gt;sjw_max)
++		bt-&gt;sjw = 1;
++	else {
++		/* bt-&gt;sjw is at least 1 -&gt; sanitize upper bound to sjw_max */
++		if (bt-&gt;sjw &gt; btc-&gt;sjw_max)
++			bt-&gt;sjw = btc-&gt;sjw_max;
++		/* bt-&gt;sjw must not be higher than tseg2 */
++		if (tseg2 &lt; bt-&gt;sjw)
++			bt-&gt;sjw = tseg2;
++	}
++
+ 	bt-&gt;brp = best_brp;
+ 	/* real bit-rate */
+ 	bt-&gt;bitrate = priv-&gt;clock.freq / (bt-&gt;brp * (tseg1 + tseg2 + 1));
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006130.html">[PATCH net-next] can/sja1000: add driver for EMS PCMCIA card
+</A></li>
+	<LI>Next message: <A HREF="006131.html">[PATCH net-next v3] candev: allow SJW user setting for	bittiming calculation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6124">[ date ]</a>
+              <a href="thread.html#6124">[ thread ]</a>
+              <a href="subject.html#6124">[ subject ]</a>
+              <a href="author.html#6124">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

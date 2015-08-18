@@ -1,0 +1,368 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> struct sockaddr_can for j1939
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20110124121330.GD332%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005414.html">
+   <LINK REL="Next"  HREF="005437.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>struct sockaddr_can for j1939</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20110124121330.GD332%40e-circ.dyndns.org%3E"
+       TITLE="struct sockaddr_can for j1939">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Mon Jan 24 13:13:30 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005414.html">struct sockaddr_can for j1939
+</A></li>
+        <LI>Next message: <A HREF="005437.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5426">[ date ]</a>
+              <a href="thread.html#5426">[ thread ]</a>
+              <a href="subject.html#5426">[ subject ]</a>
+              <a href="author.html#5426">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver,
+
+First example of rtnetlink message distribution for CAN sockets.
+I did not (yet) do the userspace side, but I'm confident that is possible.
+
+1 major remark I found is that rtnetlink has not left much room for
+specifying addditional common attributes. See include/linux/can/core.h
+
+Any remarks on this? Does this meet your ideas?
+
+BTW, I changed all 'struct can_proto' to 'const struct proto', since that
+struct may extend even more in the future if we continue like I propose now.
+(ie. extensions for routing etc.).
+
+Thanks,
+Kurt
+---
+ include/linux/can/core.h |   27 +++++++++-
+ net/can/af_can.c         |  124 +++++++++++++++++++++++++++++++++++++++------
+ net/can/bcm.c            |    2 +-
+ net/can/raw.c            |    2 +-
+ 4 files changed, 134 insertions(+), 21 deletions(-)
+
+diff --git a/include/linux/can/core.h b/include/linux/can/core.h
+index a72a967..f8a79c3 100644
+--- a/include/linux/can/core.h
++++ b/include/linux/can/core.h
+@@ -18,6 +18,7 @@
+ #include &lt;linux/can.h&gt;
+ #include &lt;linux/skbuff.h&gt;
+ #include &lt;linux/netdevice.h&gt;
++#include &lt;net/rtnetlink.h&gt;
+ 
+ #define CAN_VERSION &quot;20090105&quot;
+ 
+@@ -40,6 +41,28 @@ struct can_proto {
+ 	int              protocol;
+ 	struct proto_ops *ops;
+ 	struct proto     *prot;
++
++	//const struct rtnl_af_ops *rtnl_link_ops;
++	/*
++	 * hooks for rtnl hooks
++	 * for the *dump* functions, cb-&gt;args[0] is reserved
++	 * for use by af_can.c, so keep your fingers off.
++	 */
++	rtnl_doit_func rtnl_new_addr;
++	rtnl_doit_func rtnl_del_addr;
++	rtnl_dumpit_func rtnl_dump_addr;
++};
++
++/*
++ * this is quite a dirty hack:
++ * reuse the second byte of a rtnetlink msg
++ * to indicate the precise protocol.
++ * The major problem is that is may conflict
++ * with the prefixlen in struct ifaddrmsg.
++ */
++struct rtgencanmsg {
++	unsigned char		rtgen_family;
++	unsigned char		can_protocol;
+ };
+ 
+ /*
+@@ -52,8 +75,8 @@ struct can_proto {
+ 
+ /* function prototypes for the CAN networklayer core (af_can.c) */
+ 
+-extern int  can_proto_register(struct can_proto *cp);
+-extern void can_proto_unregister(struct can_proto *cp);
++extern int  can_proto_register(const struct can_proto *cp);
++extern void can_proto_unregister(const struct can_proto *cp);
+ 
+ extern int  can_rx_register(struct net_device *dev, canid_t can_id,
+ 			    canid_t mask,
+diff --git a/net/can/af_can.c b/net/can/af_can.c
+index 702be5a..54729d7 100644
+--- a/net/can/af_can.c
++++ b/net/can/af_can.c
+@@ -84,7 +84,7 @@ static DEFINE_SPINLOCK(can_rcvlists_lock);
+ static struct kmem_cache *rcv_cache __read_mostly;
+ 
+ /* table of registered CAN protocols */
+-static struct can_proto *proto_tab[CAN_NPROTO] __read_mostly;
++static const struct can_proto *proto_tab[CAN_NPROTO];
+ static DEFINE_SPINLOCK(proto_tab_lock);
+ 
+ struct timer_list can_stattimer;   /* timer for statistics update */
+@@ -92,6 +92,27 @@ struct s_stats    can_stats;       /* packet statistics */
+ struct s_pstats   can_pstats;      /* receive list statistics */
+ 
+ /*
++ * can protocol lookup
++ */
++static inline const struct can_proto *can_get_proto(int protocol)
++{
++	const struct can_proto *cp;
++
++	if (protocol &lt; 0 || protocol &gt;= CAN_NPROTO)
++		return ERR_PTR(-EINVAL);
++	spin_lock(&amp;proto_tab_lock);
++	cp = proto_tab[protocol];
++	if (cp &amp;&amp; !try_module_get(cp-&gt;prot-&gt;owner))
++		cp = ERR_PTR(-EPROTONOSUPPORT);
++	spin_unlock(&amp;proto_tab_lock);
++	return cp;
++}
++
++static inline void can_put_proto(const struct can_proto *cp)
++{
++	module_put(cp-&gt;prot-&gt;owner);
++}
++/*
+  * af_can socket functions
+  */
+ 
+@@ -118,14 +139,11 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
+ 		      int kern)
+ {
+ 	struct sock *sk;
+-	struct can_proto *cp;
++	const struct can_proto *cp;
+ 	int err = 0;
+ 
+ 	sock-&gt;state = SS_UNCONNECTED;
+ 
+-	if (protocol &lt; 0 || protocol &gt;= CAN_NPROTO)
+-		return -EINVAL;
+-
+ 	if (!net_eq(net, &amp;init_net))
+ 		return -EAFNOSUPPORT;
+ 
+@@ -145,19 +163,14 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
+ 	}
+ #endif
+ 
+-	spin_lock(&amp;proto_tab_lock);
+-	cp = proto_tab[protocol];
+-	if (cp &amp;&amp; !try_module_get(cp-&gt;prot-&gt;owner))
+-		cp = NULL;
+-	spin_unlock(&amp;proto_tab_lock);
+-
++	cp = can_get_proto(protocol);
+ 	/* check for available protocol and correct usage */
+ 
+-	if (!cp)
+-		return -EPROTONOSUPPORT;
++	if (IS_ERR(cp))
++		return PTR_ERR(cp);
+ 
+ 	if (cp-&gt;type != sock-&gt;type) {
+-		err = -EPROTONOSUPPORT;
++		err = -ESOCKTNOSUPPORT;
+ 		goto errout;
+ 	}
+ 
+@@ -182,7 +195,7 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
+ 	}
+ 
+  errout:
+-	module_put(cp-&gt;prot-&gt;owner);
++	can_put_proto(cp);
+ 	return err;
+ }
+ 
+@@ -678,7 +691,7 @@ drop:
+  *  -EBUSY  protocol already in use
+  *  -ENOBUF if proto_register() fails
+  */
+-int can_proto_register(struct can_proto *cp)
++int can_proto_register(const struct can_proto *cp)
+ {
+ 	int proto = cp-&gt;protocol;
+ 	int err = 0;
+@@ -718,7 +731,7 @@ EXPORT_SYMBOL(can_proto_register);
+  * can_proto_unregister - unregister CAN transport protocol
+  * @cp: pointer to CAN protocol structure
+  */
+-void can_proto_unregister(struct can_proto *cp)
++void can_proto_unregister(const struct can_proto *cp)
+ {
+ 	int proto = cp-&gt;protocol;
+ 
+@@ -809,6 +822,75 @@ static struct notifier_block can_netdev_notifier __read_mostly = {
+ 	.notifier_call = can_notifier,
+ };
+ 
++/*
++ * RTNETLINK
++ */
++static int can_rtnl_doit(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg)
++{
++	int ret, protocol;
++	const struct can_proto *cp;
++	rtnl_doit_func fn;
++
++	protocol = ((struct rtgencanmsg *)NLMSG_DATA(nlh))-&gt;can_protocol;
++	cp = can_get_proto(protocol);
++	if (IS_ERR(cp))
++		return PTR_ERR(cp);
++
++	switch (nlh-&gt;nlmsg_type) {
++	case RTM_NEWADDR:
++		fn = cp-&gt;rtnl_new_addr;
++		break;
++	case RTM_DELADDR:
++		fn = cp-&gt;rtnl_del_addr;
++		break;
++	default:
++		fn = 0;
++		break;
++	}
++	if (fn)
++		ret = fn(skb, nlh, arg);
++	else
++		ret = -EPROTONOSUPPORT;
++	can_put_proto(cp);
++	return ret;
++}
++
++static int can_rtnl_dumpit(struct sk_buff *skb, struct netlink_callback *cb,
++		int offset)
++{
++	int ret, j;
++	const struct can_proto *cp;
++	rtnl_dumpit_func fn;
++
++	ret = 0;
++	for (j = cb-&gt;args[0]; j &lt; CAN_NPROTO; ++j) {
++		/* save state */
++		cb-&gt;args[0] = j;
++		cp = can_get_proto(j);
++		if (IS_ERR(cp))
++			/* we are looping, any error is our own fault */
++			continue;
++		fn = (rtnl_dumpit_func)(&amp;((const uint8_t *)cp)[offset]);
++		if (fn)
++			ret = fn(skb, cb);
++		else
++			ret = 0;
++		can_put_proto(cp);
++		if (ret &lt; 0)
++			/* suspend this skb */
++			return ret;
++	}
++	return ret;
++}
++
++static int can_rtnl_dump_addr(struct sk_buff *skb, struct netlink_callback *cb)
++{
++	return can_rtnl_dumpit(skb, cb,
++			offsetof(struct can_proto, rtnl_dump_addr));
++}
++
++/* exported init */
++
+ static __init int can_init(void)
+ {
+ 	printk(banner);
+@@ -834,6 +916,10 @@ static __init int can_init(void)
+ 	register_netdevice_notifier(&amp;can_netdev_notifier);
+ 	dev_add_pack(&amp;can_packet);
+ 
++	rtnl_register(PF_CAN, RTM_NEWADDR, can_rtnl_doit, NULL);
++	rtnl_register(PF_CAN, RTM_DELADDR, can_rtnl_doit, NULL);
++	rtnl_register(PF_CAN, RTM_GETADDR, NULL, can_rtnl_dump_addr);
++
+ 	return 0;
+ }
+ 
+@@ -844,6 +930,10 @@ static __exit void can_exit(void)
+ 	if (stats_timer)
+ 		del_timer(&amp;can_stattimer);
+ 
++	rtnl_unregister(PF_CAN, RTM_NEWADDR);
++	rtnl_unregister(PF_CAN, RTM_DELADDR);
++	rtnl_unregister(PF_CAN, RTM_GETADDR);
++
+ 	can_remove_proc();
+ 
+ 	/* protocol unregister */
+diff --git a/net/can/bcm.c b/net/can/bcm.c
+index 4f39d4c..65dcec5 100644
+--- a/net/can/bcm.c
++++ b/net/can/bcm.c
+@@ -1596,7 +1596,7 @@ static struct proto bcm_proto __read_mostly = {
+ 	.init       = bcm_init,
+ };
+ 
+-static struct can_proto bcm_can_proto __read_mostly = {
++static const struct can_proto bcm_can_proto = {
+ 	.type       = SOCK_DGRAM,
+ 	.protocol   = CAN_BCM,
+ 	.ops        = &amp;bcm_ops,
+diff --git a/net/can/raw.c b/net/can/raw.c
+index e50c23a..9938dde 100644
+--- a/net/can/raw.c
++++ b/net/can/raw.c
+@@ -769,7 +769,7 @@ static struct proto raw_proto __read_mostly = {
+ 	.init       = raw_init,
+ };
+ 
+-static struct can_proto raw_can_proto __read_mostly = {
++static const struct can_proto raw_can_proto = {
+ 	.type       = SOCK_RAW,
+ 	.protocol   = CAN_RAW,
+ 	.ops        = &amp;raw_ops,
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005414.html">struct sockaddr_can for j1939
+</A></li>
+	<LI>Next message: <A HREF="005437.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5426">[ date ]</a>
+              <a href="thread.html#5426">[ thread ]</a>
+              <a href="subject.html#5426">[ subject ]</a>
+              <a href="author.html#5426">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

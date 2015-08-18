@@ -1,0 +1,151 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Best of both: comparing LinCAN and Socket-CAN
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Best%20of%20both%3A%20comparing%20LinCAN%20and%20Socket-CAN&In-Reply-To=%3C44E205DA.1060708%40web.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000311.html">
+   <LINK REL="Next"  HREF="000312.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Best of both: comparing LinCAN and Socket-CAN</H1>
+    <B>Jan Kiszka</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Best%20of%20both%3A%20comparing%20LinCAN%20and%20Socket-CAN&In-Reply-To=%3C44E205DA.1060708%40web.de%3E"
+       TITLE="Best of both: comparing LinCAN and Socket-CAN">jan.kiszka at web.de
+       </A><BR>
+    <I>Tue Aug 15 19:35:22 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000311.html">Best of both: comparing LinCAN and Socket-CAN
+</A></li>
+        <LI>Next message: <A HREF="000312.html">rtcan_rb_frame with HAS_TIMESTAMP
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#314">[ date ]</a>
+              <a href="thread.html#314">[ thread ]</a>
+              <a href="subject.html#314">[ subject ]</a>
+              <a href="author.html#314">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hartkopp, Oliver (K-GEFE/E) wrote:
+&gt;<i> Jan Kiszka wrote:
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;&gt;<i>   
+</I>&gt;&gt;&gt;<i> Yes, a nice idea indeed! It should be no problem writing more than one 
+</I>&gt;&gt;&gt;<i> CAN-Frame at a time to the RAW-Socket - splitted up into 'single frame' 
+</I>&gt;&gt;&gt;<i> SKBs inside the RAW-Socket. So it should be easy to reduce the 
+</I>&gt;&gt;&gt;<i> syscall-overhead at this point. On the receiving side there may be some 
+</I>&gt;&gt;&gt;<i> kind of socket-option that allows the RAW-Socket passing more than one 
+</I>&gt;&gt;&gt;<i> CAN-Frame into the Userspace. So when there is more than one CAN-Frame 
+</I>&gt;&gt;&gt;<i> in the queue the user gets them in one sycall ...
+</I>&gt;&gt;<i> I think we have three options regarding a multi-frame API:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>  o read/write (as alternative to recv/send)
+</I>&gt;&gt;<i>  o special IOCTLs
+</I>&gt;&gt;<i>  o new protocol type with different recv/send message format
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> All three require to define an enhanced message format in order to pass
+</I>&gt;&gt;<i> ifindex and timestamp.
+</I>&gt;<i> 
+</I>&gt;<i> Hm - i don't know, if this is too much overhead.
+</I>&gt;<i> 
+</I>&gt;<i> Regarding the sending:
+</I>&gt;<i> 
+</I>&gt;<i> If the application wants to send more than one CAN-Frame at a time it may
+</I>&gt;<i> send/write an array of 'n' CAN-Frames at one syscall - so the RAW-sockets
+</I>&gt;<i> splits this up one-by-one from the first CAN-Frame in the array and sends it
+</I>&gt;<i> to the CAN-device. This can be implemented even without any extension on the
+</I>&gt;<i> socket-API nor any new socket-option for the RAW-Socket. BUT: This is only
+</I>&gt;<i> working, when you want to send multiple CAN-Frames to _one_ CAN-device.
+</I>
+Cannot say if this limitation to one CAN port is too restrictive in
+practice. The only use-case I have in mind ATM which may require to spit
+out frames to multiple ports is redundant transmission.
+
+&gt;<i> 
+</I>&gt;<i> Regarding the receiving:
+</I>&gt;<i> 
+</I>&gt;<i> I don't know if the receiving of more than one CAN-Frame with one read
+</I>&gt;<i> syscall is at least a wanted usecase (please check this first!). But if it
+</I>&gt;<i> is (and there is a socket-option that enables the receiving of more than one
+</I>&gt;<i> CAN-Frame at a time), there are IMO two possibilities to deal e.g. with
+</I>&gt;<i> timestamps when receiving more than one CAN-Frame:
+</I>&gt;<i> 
+</I>&gt;<i> o the timestamp you can get with ioctl() reflects only one (of x) CAN-Frames
+</I>&gt;<i> (the easy way)
+</I>
+The first one would be best then. When you are interested in timestamps
+for a stream, it is to my experience almost always its beginning. [This
+is also how our real-time serial device API works.]
+
+&gt;<i> o the timestamp is part of your suggested enhanced message format struct
+</I>&gt;<i> (covering the CAN-Frame, the timestamp and the ifindex).
+</I>&gt;<i> 
+</I>&gt;<i> Or maybe there are two new socket options for the RAW-Socket:
+</I>&gt;<i> 
+</I>&gt;<i> 1. Enable to read more than one CAN-Frame with one read() syscall on this
+</I>&gt;<i> RAW-Socket
+</I>&gt;<i> 2. Switch this RAW-Socket to the suggested 'enhanced message format' (RX &amp;
+</I>&gt;<i> TX)
+</I>&gt;<i> 
+</I>&gt;<i> In the TX-case the timestamp of the enhanced message is ignored and the
+</I>&gt;<i> ifindex is only used if the socket is not bound to any ifindex ... 
+</I>&gt;<i> 
+</I>&gt;<i> What do you think?
+</I>
+This all depends on the scenario. Let's try to categorise:
+
+ 1. sending or receiving  a stream of frames over a single port (e.g.
+    Pavel's drive commands or our Ibeo scanner)
+ 2. sending or receiving frames for redundancy reasons over several
+    ports (should this be handled at application or kernel level?)
+ 3. receiving frames from all ports, maybe also being interested in
+    timestamps (traffic sniffer)
+
+If we push 2. into the kernel and let 3. suffer, we could get away with
+a &quot;cheap&quot; solution based on the existing can_frame - unless there are
+other demanding scenarios...
+
+Pavel, what scenarios did you encounter so far for multi-frame
+transmission/reception? Are all covered by the list above?
+
+Jan
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 250 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20060815/4bc42f5b/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20060815/4bc42f5b/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000311.html">Best of both: comparing LinCAN and Socket-CAN
+</A></li>
+	<LI>Next message: <A HREF="000312.html">rtcan_rb_frame with HAS_TIMESTAMP
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#314">[ date ]</a>
+              <a href="thread.html#314">[ thread ]</a>
+              <a href="subject.html#314">[ subject ]</a>
+              <a href="author.html#314">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

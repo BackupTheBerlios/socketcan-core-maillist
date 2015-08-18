@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Socketcan-core] Release critical problems (Was:  cleanups, t	weaks and bugfixes for net/can/*.c)
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2006-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Release%20critical%20problems%20%28Was%3A%20%20cleanups%2C%20t%0A%09weaks%20and%20bugfixes%20for%20net/can/%2A.c%29&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855E1F%40vwagwox00010.vw.vwg%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000172.html">
+   <LINK REL="Next"  HREF="000178.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Socketcan-core] Release critical problems (Was:  cleanups, t	weaks and bugfixes for net/can/*.c)</H1>
+    <B>Hartkopp, Oliver (K-GEFE/E)</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BSocketcan-core%5D%20Release%20critical%20problems%20%28Was%3A%20%20cleanups%2C%20t%0A%09weaks%20and%20bugfixes%20for%20net/can/%2A.c%29&In-Reply-To=%3C0BC6CCCB3D723E468B124BF3115CC912855E1F%40vwagwox00010.vw.vwg%3E"
+       TITLE="[Socketcan-core] Release critical problems (Was:  cleanups, t	weaks and bugfixes for net/can/*.c)">oliver.hartkopp at volkswagen.de
+       </A><BR>
+    <I>Thu Jun  8 13:50:36 CEST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000172.html">[Socketcan-core] Release critical problems (Was:  cleanups, tweaks and bugfixes for net/can/*.c)
+</A></li>
+        <LI>Next message: <A HREF="000178.html">[Socketcan-core] OT: sending mbox
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#173">[ date ]</a>
+              <a href="thread.html#173">[ thread ]</a>
+              <a href="subject.html#173">[ subject ]</a>
+              <a href="author.html#173">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> &gt; The change of hardware filters has systemwide effects on 
+</I>&gt;<i> all applications
+</I>&gt;<i> &gt; using this specific CAN-bus (you are currently working on). 
+</I>&gt;<i> For this reason
+</I>&gt;<i> &gt; changing baudrates and filters is something only root has 
+</I>&gt;<i> to do. And root
+</I>&gt;<i> &gt; should do this on startup, BEFORE all applications begin 
+</I>&gt;<i> with their work. So
+</I>&gt;<i> &gt; if root decides to change hardware-filters on the fly, the 
+</I>&gt;<i> user-applications
+</I>&gt;<i> &gt; may loose some frames. But: What happens if your 
+</I>&gt;<i> application needs CAN-IDs
+</I>&gt;<i> &gt; root is just masking out?
+</I>&gt;<i> &gt; Is changing hardware-filters on the fly a real use-case?
+</I>&gt;<i> If it will be part of socket filters (i.e. use hwd. filters 
+</I>&gt;<i> while it is
+</I>&gt;<i> not full, then switch to a software one) then yes, such terrible
+</I>&gt;<i> situation occurred very often.
+</I>&gt;<i> BUT I have some another idea: How about &quot;virtual&quot; (or aliased) CAN
+</I>&gt;<i> devices? I.e. for each hwd. filter (or, in other words, 
+</I>&gt;<i> &quot;mailbox&quot;) what
+</I>&gt;<i> we have, we could create something like can0:1, can0:2, can0:N devices
+</I>&gt;<i> in startup scripts. This behavior certainly resurrect &quot;CANbus-address&quot;
+</I>&gt;<i> concept (as minimum of 3 types: 32bits, 16bits, 8bits),
+</I>&gt;<i> but I don't think that it will be big problem.
+</I>&gt;<i> Workflow  in this case will be next:
+</I>&gt;<i>   &quot;ifconfig can0 CANADDR CANMASK&quot;
+</I>&gt;<i>   &quot;ifconfig can0:1 CANADDR CANMASK&quot;
+</I>&gt;<i>    ......
+</I>&gt;<i>   &quot;ifconfig can0 up&quot;
+</I>&gt;<i>   &quot;ifconfig can0:1 up&quot;
+</I>&gt;<i>    ....
+</I>&gt;<i> where CANADDR/CANMASK is a ACR/AMR values correspondingly.
+</I>&gt;<i> 
+</I>&gt;<i> So disabling changing/addition new filters on the fly, i.e.
+</I>&gt;<i> if one of canX:N is in ACTIVE state, will be natural and logical.
+</I>
+The socket-can core does a good job - even in performant filtering. We run
+it successfully in 133MHz PPC405-boxes with 4 SJA1000 CAN-busses under heavy
+load. When you are filtering on single SFF-IDs the filtering is done in one
+step. I was just thinking about a SFF-softwarefilter which can be handled in
+the CAN-drivers interrupt context. But nevertheless all this might not be
+enough to reduce the interrupt load on really weak systems.
+But with all our improvements, we should look that we don't break up with
+the original idea to implement CAN-drivers as network-devices. So maybe it
+is an idea to have ONE CAN-network-driver that creates as many netdevices as
+it has mailboxes at start-time. And these netdevices are named can0:0,
+can0:1, etc.
+What do you think?
+ 
+&gt;<i> 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;&gt;&gt;&gt; 2) PHY.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;&gt;   if(can-&gt;phy)
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; where the transceivers are controlled correctly by 
+</I>&gt;<i> &gt;&gt; hardwaredependend 
+</I>&gt;<i> &gt;&gt;&gt; GPIO-pins.
+</I>&gt;<i> &gt;&gt; For a GPIO based devices exist platform data/platform drivers 
+</I>&gt;<i> &gt;&gt; (check i2c/spi/rtc drivers).
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; I assume we will become mad, when we try to cover any f*cking 
+</I>&gt;<i> &gt;&gt;&gt; (transceiver)hardware derivate with one driver and one 
+</I>&gt;<i> &gt;&gt;&gt; ioctl()-interface.
+</I>&gt;<i> &gt;&gt; No, I think that each (family of) transceiver(s)
+</I>&gt;<i> &gt;&gt; must have itself driver.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; The idea looks nice but where is the code for the 
+</I>&gt;<i> transceiver hosted? In an
+</I>&gt;<i> &gt; extra kernel-module? 
+</I>&gt;<i> Yes, this should be proffered way. But since transceiver is a
+</I>&gt;<i> board/platform specific device, it may be placed in corresponding
+</I>&gt;<i> board/platform driver.
+</I>&gt;<i> 
+</I>&gt;<i> &gt;And this kernel-module is hardware-specific then?
+</I>&gt;<i> Yes.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; How can you link the can-controller and the associated 
+</I>&gt;<i> transceiver and the
+</I>&gt;<i> &gt; different hardware-adresses?
+</I>&gt;<i> By name of transceiver, but problem of enumeration may be arising.
+</I>&gt;<i> So this conception need more examination.
+</I>
+Yep - this looks like a real problem.
+What about giving the transceiver-driver some kind of command-line
+parameters that can be identified by the real CAN-driver? E.g. give the
+transceiver the information to which CAN-controller it is connected, by the
+baseaddress of the CAN-controller. So the CAN-controller can ask the
+transceiver-driver with his baseadress and gets a link to the transceiver.
+This may fit into most hardware-realisations that need to work with
+transceivers.
+
+Regards, Oliver.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000172.html">[Socketcan-core] Release critical problems (Was:  cleanups, tweaks and bugfixes for net/can/*.c)
+</A></li>
+	<LI>Next message: <A HREF="000178.html">[Socketcan-core] OT: sending mbox
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#173">[ date ]</a>
+              <a href="thread.html#173">[ thread ]</a>
+              <a href="subject.html#173">[ subject ]</a>
+              <a href="author.html#173">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

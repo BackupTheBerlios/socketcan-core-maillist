@@ -1,0 +1,129 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Local Echo (Loopback)
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Local%20Echo%20%28Loopback%29&In-Reply-To=%3C47626501.8040107%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000977.html">
+   <LINK REL="Next"  HREF="000980.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Local Echo (Loopback)</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Local%20Echo%20%28Loopback%29&In-Reply-To=%3C47626501.8040107%40grandegger.com%3E"
+       TITLE="Local Echo (Loopback)">wg at grandegger.com
+       </A><BR>
+    <I>Fri Dec 14 12:12:01 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000977.html">Local Echo (Loopback)
+</A></li>
+        <LI>Next message: <A HREF="000980.html">Local Echo (Loopback)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#978">[ date ]</a>
+              <a href="thread.html#978">[ thread ]</a>
+              <a href="subject.html#978">[ subject ]</a>
+              <a href="author.html#978">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger wrote:
+&gt;<i> Hans-J&#252;rgen Koch wrote:
+</I>&gt;&gt;<i> Am Fri, 14 Dec 2007 10:30:11 +0100
+</I>&gt;&gt;<i> schrieb Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> [...]
+</I>&gt;&gt;&gt;<i> I would handle the skbs in the controller code, as mentioned in my
+</I>&gt;&gt;&gt;<i> previous mail.
+</I>&gt;&gt;<i> Hey, it was you who suggested to move things to the core to avoid code
+</I>&gt;&gt;<i> duplications! And you were quite right. IMHO it should work like this
+</I>&gt;&gt;<i> inside a driver:
+</I>&gt;<i> 
+</I>&gt;<i> Most of the code for skb echo buffer handling will still go to dev.c,
+</I>&gt;<i> just the skb echo stack is managed by the controller driver. If a simple
+</I>&gt;<i> FIFO works, even better.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> 1.) Get a TX message from the core
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 2.) Accept the message and tell the core the mailbox number (or any
+</I>&gt;&gt;<i> other unique identifier) the driver uses to refer to that message:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> can_accept_tx_message(mailbox_id);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The core will then add the message to its list of messages that are on
+</I>&gt;&gt;<i> their way, but not actually sent.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 3.) The driver notices that a message is physically sent (e.g. TX irq).
+</I>&gt;&gt;<i> It will then tell the core about it:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> can_message_is_sent(mailbox_id);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The core will then find this message in its list, echo it, and remove
+</I>&gt;&gt;<i> it from the list.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> What do you think about this? Is there any hardware where this approach
+</I>&gt;&gt;<i> is not feasible?
+</I>&gt;<i> 
+</I>&gt;<i> If we can assure, that the TX messages are processed in FIFO _order_, we
+</I>&gt;<i> just need:
+</I>&gt;<i> 
+</I>&gt;<i> 	can_put_echo_skb() in start_xmit() and
+</I>&gt;<i>         can_get_echo_skb() when the TX done interrupt is processed.
+</I>&gt;<i> 
+</I>&gt;<i> And one function to flush all skbs in the FIFO. I think there is no need
+</I>&gt;<i> to flush just one skb. This could be managed completely in dev.c using a
+</I>&gt;<i> FIFO defined in struct can_priv as shown:
+</I>&gt;<i> 
+</I>&gt;<i>          can_priv-&gt;echo_skb_fifo_ptr;
+</I>&gt;<i>          can_priv-&gt;echo_skb_max;
+</I>&gt;<i>          can_priv-&gt;echo_skb_head;
+</I>&gt;<i>          can_priv-&gt;echo_skb_tail;
+</I>&gt;<i> 
+</I>&gt;<i> Echo skb FIFO might be a pointer into sja1000_priv:
+</I>&gt;<i> 
+</I>&gt;<i>   can_priv-&gt;echo_skb_fifo_ptr = &amp;sja1000_priv-&gt;echo_skb_fifo
+</I>&gt;<i> 
+</I>&gt;<i> But this approach is only OK with the above assumption. If the
+</I>&gt;<i> controller driver needs to handle the skbs in another way, we need
+</I>&gt;<i> something more specific.
+</I>
+And if you want/need to specify the FIFO entry number with
+can_put_echo_skb() and can_get_echo_skb(), you must manage the FIFO in
+the controller driver, which means for the SJA1000, advancing head and
+tail and that's exactly what I ment with driver specific echo skb
+FIFO/stack management.
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000977.html">Local Echo (Loopback)
+</A></li>
+	<LI>Next message: <A HREF="000980.html">Local Echo (Loopback)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#978">[ date ]</a>
+              <a href="thread.html#978">[ thread ]</a>
+              <a href="subject.html#978">[ subject ]</a>
+              <a href="author.html#978">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

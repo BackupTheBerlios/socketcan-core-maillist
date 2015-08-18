@@ -1,0 +1,170 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> struct can_addr extensions
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20can_addr%20extensions&In-Reply-To=%3C4B76D434.9090508%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003999.html">
+   <LINK REL="Next"  HREF="004030.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>struct can_addr extensions</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20can_addr%20extensions&In-Reply-To=%3C4B76D434.9090508%40hartkopp.net%3E"
+       TITLE="struct can_addr extensions">socketcan at hartkopp.net
+       </A><BR>
+    <I>Sat Feb 13 17:32:52 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003999.html">struct can_addr extensions
+</A></li>
+        <LI>Next message: <A HREF="004030.html">struct can_addr extensions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4027">[ date ]</a>
+              <a href="thread.html#4027">[ thread ]</a>
+              <a href="subject.html#4027">[ subject ]</a>
+              <a href="author.html#4027">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Kurt Van Dijck wrote:
+&gt;<i> On Tue, Feb 09, 2010 at 06:03:30PM +0100, Oliver Hartkopp wrote:
+</I>
+&gt;&gt;<i> AFAIK in J1939 you have broadcast announce messages (BAM) that send on two
+</I>&gt;&gt;<i> different CAN identifiers in one direction. This could be handled within the
+</I>&gt;&gt;<i> union.
+</I>&gt;<i> In fact, there's a lot more.
+</I>&gt;<i> J1939 introduces a network addressing (both source &amp; destination).
+</I>&gt;<i> And this addressing tables (comparable to arp tables I think) should be
+</I>&gt;<i> kept in kernel.
+</I>&gt;<i> The CAN id's are then seperated into SRC &amp; DST fields, and a PGN
+</I>&gt;<i> (iso11783 naming). SRC &amp; DST is comparable to IP, in the way that is a
+</I>&gt;<i> mapped address from an 'ISONAME' (iso11783 naming). The PGN is roughly
+</I>&gt;<i> to be compared with a TCP port number, but again, roughly.
+</I>&gt;<i> 
+</I>&gt;<i> So, J1939 much better matches the kernel-to-userspace API sendto,
+</I>&gt;<i>    recvfrom, .... using all a 'struct sockaddr_xxx' derivate.
+</I>&gt;<i> I could use a seperate struct, but don't think that's an elegant
+</I>&gt;<i> solution.
+</I>&gt;<i> 
+</I>&gt;<i> The transport protocol indeed used 2 'PGN's, but they are fixed. the
+</I>&gt;<i> transport protocol must thus be serialized, but that's a different
+</I>&gt;<i> thing.
+</I>
+Hi Kurt,
+
+sorry for my late answer.
+
+First of all i think the ISONAME is nothing that has to be handled inside
+kernel context. What would be the benefit? ARP is also not implemented within
+the TCP protocol socket :-)
+
+Additionally you should use __u8, __u16, __u32 types.
+
+My suggestion for a J1939 struct inside the can_addr union would be:
+
+struct {
+
+	/* J1939 source device address */
+	__u8 srcaddr;
+
+	/* priority:3, reserve:1, datapage:1 */
+	__u8 ctrl;
+
+	/* Parameter Group Number (PGN) with dest addr / group extension */
+	__u16 pgn;
+
+	/* Secondary PGN for multiframe transmissions*/
+	__u16 pgnsec;
+
+} j1939;
+
+IMO we should leave as much information out of the kernel as possible.
+
+E.g. the destination address is an integrated element of the PGN in connection
+oriented J1939 communications.
+
+Generally the address structure should only contain information that's really
+needed to allow a usual communication requirement. Other things (like your
+isoname that should not be relevant here anyway) or special settings that
+differ from communication defaults could be set with sockopts.
+
+What do you think?
+
+Can you map your requirements to this reduced j1939 structure, or do you feel
+there's something missing?
+
+Regards,
+Oliver
+
+ps. The new j1939 struct is only 48 bits, which also fits perfectly into the
+current union ;-)
+
+&gt;<i> 
+</I>&gt;&gt;<i> What are your proposed new structure elements for a J1939 socketcan address?
+</I>&gt;<i> struct sockaddr_can {
+</I>&gt;<i> 	sa_family_t can_family;
+</I>&gt;<i> 	int         can_ifindex;
+</I>&gt;<i> 	union {
+</I>&gt;<i> 		/* transport protocol class address information (e.g. ISOTP) */
+</I>&gt;<i> 		struct { canid_t rx_id, tx_id; } tp;
+</I>&gt;<i> 
+</I>&gt;<i> 		/* J1939 address information */
+</I>&gt;<i> 		struct {
+</I>&gt;<i> 			/*
+</I>&gt;<i> 			 * any of these parameters that are used in connect()
+</I>&gt;<i> 			 * can be overruled by using sendto()
+</I>&gt;<i> 			 */
+</I>&gt;<i> 			/* name: bind() sets source, connect sets dest */
+</I>&gt;<i> 			uint64_t name; /* bind != connect */
+</I>&gt;<i> 			/* pgn &amp; priority: can be set by bind &amp; connect */
+</I>&gt;<i> 			uint32_t pgn;
+</I>&gt;<i> 			uint8_t priority;
+</I>&gt;<i> 			/*
+</I>&gt;<i> 			 * 'sa' is used in bind() &amp; sendto(),
+</I>&gt;<i> 			 * 'da' is used in connect() &amp; sendto()
+</I>&gt;<i> 			 */
+</I>&gt;<i> 			uint8_t sa; /* the originator address */
+</I>&gt;<i> 			uint8_t da; /* the destination address */
+</I>&gt;<i> 		} j1939;
+</I>&gt;<i> 
+</I>&gt;<i> 		/* reserved for future CAN protocols address information */
+</I>&gt;<i> 	} can_addr;
+</I>&gt;<i> };
+</I>&gt;<i> 
+</I>&gt;<i> this is my current working version.
+</I>&gt;<i> 
+</I>&gt;<i> Now, this is a preliminary thing, and only for j1939/iso11783.
+</I>&gt;<i> 
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003999.html">struct can_addr extensions
+</A></li>
+	<LI>Next message: <A HREF="004030.html">struct can_addr extensions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4027">[ date ]</a>
+              <a href="thread.html#4027">[ thread ]</a>
+              <a href="subject.html#4027">[ subject ]</a>
+              <a href="author.html#4027">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

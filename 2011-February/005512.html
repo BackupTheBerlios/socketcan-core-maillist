@@ -1,0 +1,246 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> j1939: ecu's &amp; dynamic addressing
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20j1939%3A%20ecu%27s%20%26%20dynamic%20addressing&In-Reply-To=%3C20110210160201.GC335%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005504.html">
+   <LINK REL="Next"  HREF="005513.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>j1939: ecu's &amp; dynamic addressing</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20j1939%3A%20ecu%27s%20%26%20dynamic%20addressing&In-Reply-To=%3C20110210160201.GC335%40e-circ.dyndns.org%3E"
+       TITLE="j1939: ecu's &amp; dynamic addressing">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Thu Feb 10 17:02:01 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005504.html">[PATCH v2 4/6] J1939: add documentation
+</A></li>
+        <LI>Next message: <A HREF="005513.html">j1939 socket semantics
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5512">[ date ]</a>
+              <a href="thread.html#5512">[ thread ]</a>
+              <a href="subject.html#5512">[ subject ]</a>
+              <a href="author.html#5512">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver,
+
+Your comments are very 'diverse'. I addressed a subset in this reply.
+
+On Wed, Feb 09, 2011 at 08:31:06PM +0100, Oliver Hartkopp wrote:
+&gt;<i> On 03.02.2011 10:39, Kurt Van Dijck wrote:
+</I>&gt;<i> &gt; This contains the j1939 documentation.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> 
+</I>&gt;<i> &gt; +  The j1939 sockets operate on CAN network devices (see SocketCAN). Any j1939
+</I>&gt;<i> &gt; +  userspace library operating on CAN raw sockets will still operate properly.
+</I>&gt;<i> &gt; +  Since such library does not communicate with the in-kernel implementation,
+</I>&gt;<i> &gt; +  care must be taken that these 2 do not interfere. In practice, this means
+</I>&gt;<i> &gt; +  they cannot share ECU addresses. A single ECU (or virtual ECU) address is
+</I>&gt;<i> &gt; +  used by the library exclusively, or by the in-kernel system exclusively.
+</I>&gt;<i> 
+</I>&gt;<i> I'm really concerned, that there's no possibility to have more than one ECU
+</I>&gt;<i> running on our multi-user system ...
+</I>&gt;<i> 
+</I>&gt;<i> If that would be possible, some kind of 'ecu' entry would need to be part of
+</I>&gt;<i> the sockaddr_can, right?
+</I>&gt;<i> 
+</I>hold on:
+multiple ECU's are possible. It was a key feature of the design.
+
+The 'ecu' entry of the sockaddr_can is in fact the 'u8 addr', since
+that identifies the ecu (in case of static addressing ...).
+
+What I wanted to say here is that when you start issuing j1939 CAN frames
+from the same host, the local j1939 stack will not recognize those j1939
+frames as local, and therefore, the SA must differ.
+
+In other words, you can't mix j1939 stacks and expect them to cooperate!
+&gt;<i> &gt; +
+</I>&gt;<i> &gt; +  In order to send data, a bind(2) must have succeeded. bind(2) assigns a local
+</I>&gt;<i> &gt; +  address to a socket. For this to succeed, you can only choose addresses
+</I>&gt;<i> &gt; +  that have been assigned with '$ ip addr add j1939 .... dev canX'.
+</I>&gt;<i> 
+</I>&gt;<i> When implementing only one ECU on the host.
+</I>&gt;<i> 
+</I>&gt;<i> Now that i have read several documentation and also some j1939 API references like
+</I>&gt;<i> 
+</I>&gt;<i>  <A HREF="http://www.esd-electronics-usa.com/Shared/Handbooks/CAN-J1939StackManual.pdf">http://www.esd-electronics-usa.com/Shared/Handbooks/CAN-J1939StackManual.pdf</A>
+</I>&gt;<i> 
+</I>&gt;<i> i'm really sure that i definitely want to have more than one ECU at a time on
+</I>&gt;<i> my host (e.g. for rest-bus-simulation) and that binding j1939 addresses to
+</I>&gt;<i> network interfaces is broken.
+</I>you can bind multiple addresses on an interface, so there is no problem.
+&gt;<i> 
+</I>&gt;<i> &gt; +  When an
+</I>&gt;<i> &gt; +  empty address is assigned (ie. SA=0xff &amp;&amp; name=0), a default is taken for
+</I>&gt;<i> &gt; +  the device that is bound to.
+</I>&gt;<i> 
+</I>&gt;<i> As you stated somewhere above at &quot;2. Motivation *addressing&quot; only one process
+</I>&gt;<i> should need to keep track of setting the relevant addresses for a specific
+</I>&gt;<i> ECU. Once the ECU is part of struct sockaddr_can this can be managed. All
+</I>&gt;<i> processes can use the ECU-specific address information at least one of the ECU
+</I>&gt;<i> member processes has defined.
+</I>&gt;<i> 
+</I>&gt;<i> Please keep off attaching j1939 addresses to network devices.
+</I>But aren't you suggesting the same thing but call it 'ecu' instead of 'address'?
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> In general i wonder if it would make sense to define
+</I>&gt;<i> 
+</I>&gt;<i> struct {
+</I>&gt;<i>     __u32 pgn;
+</I>&gt;<i>     __u8 prio;
+</I>&gt;<i>     __u8 src;
+</I>&gt;<i>     __u8 dest:
+</I>&gt;<i>     __u8 ecu;
+</I>&gt;<i> } j1939;
+</I>&gt;<i> 
+</I>1) you mix src &amp; dst in 1 structure.
+2) what is 'ecu'? Isn't that the source address, indicated by 'src'?
+&gt;<i> As it makes *really* clear in any case - also when using sento() and
+</I>&gt;<i> recvfrom() - what the j1939 stack does.
+</I>&gt;<i> 
+</I>&gt;<i> Even when it's a nice idea to handle all the address claiming infrastructure
+</I>&gt;<i> inside the kernel:
+</I>It's the only option to make the stack _fully_ compliant since address claiming
+requires other traffic to suspend momentarily.
+&gt;<i> 
+</I>&gt;<i> 1. It's not mandatory
+</I>I do not require it neither.
+&gt;<i> 
+</I>&gt;<i> 2. Things that could be handled outside the kernel should be handled outside
+</I>&gt;<i> the kernel. There are several userspace j1939 implementations doing so.
+</I>Note that only the _absolutely required_ part is put in kernel. No address
+claiming traffic is sent from kernelspace. It _must_ come from userspace.
+&gt;<i> 
+</I>&gt;<i> 3. The concepts with ECUs, segments and data structures are really complex and
+</I>&gt;<i> hard to understand and to review.
+</I>That is true, but I cannot introduce protocol violations for that reason.
+&gt;<i> 
+</I>&gt;<i> If you insist on address claiming in kernelspace you might override the given
+</I>&gt;<i> src and dst adresses with a sockopt
+</I>When using address claiming, then the name is the unique identification
+of an ECU, not its SA. So, they're not options.
+&gt;<i> 
+</I>&gt;<i> SO_J1939_DEST_NAME
+</I>&gt;<i> SO_J1939_SRC_NAME
+</I>&gt;<i> 
+</I>&gt;<i> so that these name resolved values are used on this specific bound/connected
+</I>&gt;<i> socket instead of the given __u8 values - as an _option_.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> &gt; +  can_addr.j1939.pgn specifies the PGN (max 0x3ffff). Individual bits are
+</I>&gt;<i> &gt; +  specified above.
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +  can_addr.j1939.name contains the 64-bit J1939 NAME.
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +  can_addr.j1939.addr contains the source address.
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +  When sending data, the source address is applied as follows: If
+</I>&gt;<i> &gt; +  can_addr.j1939.name != 0 the NAME is looked up by the kernel and the
+</I>&gt;<i> &gt; +  corresponding Source Address is used. If can_addr.j1939.name == 0,
+</I>&gt;<i> &gt; +  can_addr.j1939.addr is used.
+</I>&gt;<i> 
+</I>&gt;<i> You provide two addressing schemata in one structure here.
+</I>They can mix: send from fixed SA to dynamic SA(dst)
+&gt;<i> 
+</I>&gt;<i> &gt; +  If no-one else contest the address claim within 250ms after transmission, the
+</I>&gt;<i> &gt; +  kernel marks the NAME-SA assignment as valid. The valid assignment will be
+</I>&gt;<i> &gt; +  kept, among other valid NAME-SA assignments. From that point, any socket
+</I>&gt;<i> &gt; +  bound to the NAME can send packets.
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +  If another ECU claims the address, the kernel will mark the NAME-SA expired.
+</I>&gt;<i> &gt; +  No socket bound to the NAME can send packets (other than address claims).
+</I>&gt;<i> &gt; +  To claim another address, some socket bound to NAME, must bind(2) again,
+</I>&gt;<i> &gt; +  but with only j1939.addr changed to the new SA, and must then send a
+</I>&gt;<i> &gt; +  valid address claim packet. This restarts the state machine in the kernel
+</I>&gt;<i> &gt; +  (and any other participant on the bus) for this NAME.
+</I>&gt;<i> 
+</I>&gt;<i> This is the complexity i would prefer to leave out of the kernel ...
+</I>And move this complexity to each individual user, with potential race conditions?
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +5.7 SO_J1939_DEST_MASK
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +  When a destination is specified by its name (and thus using dynamic addressing),
+</I>&gt;<i> &gt; +  and such name should be unique amongst the world, it may be hard to predict the
+</I>&gt;<i> &gt; +  name of eg. a gearbox controller on the bus, although its type and manufacturer
+</I>&gt;<i> &gt; +  are know. This is because the serial number is part of the name.
+</I>&gt;<i> &gt; +  To simplify specifying a destination, a per-socket destination mask is provided
+</I>&gt;<i> &gt; +  that is activated whenever a destination name is wanted. Any bits cleared in
+</I>&gt;<i> &gt; +  this mask are ignored during the lookup. As a result, more than 1 ECU may match
+</I>&gt;<i> &gt; +  this name/mask pair. In all cases, the first match is used.
+</I>&gt;<i> &gt; +  The API is thus capable of specifying a name for eg. the gearbox controller,
+</I>&gt;<i> &gt; +  without knowing its serial number.
+</I>&gt;<i> 
+</I>&gt;<i> Yes. The address claiming and name handling inside the kernel is a heavy thing.
+</I>&gt;<i> 
+</I>I just thought (from experience) that this would be handy.
+&gt;<i> &gt; +6. /proc Interface.
+</I>&gt;<i> &gt; +--------------------------------
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +  Files giving you a view on the in-kernel operation of J1939 are located at:
+</I>&gt;<i> &gt; +  /proc/net/j1939.
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +6.1 /proc/net/j1939/ecu
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +  This file gives an overview of the known ECU's to the kernel.
+</I>&gt;<i> &gt; +  - iface : network interface they operate on.
+</I>&gt;<i> &gt; +  - SA : current address.
+</I>&gt;<i> &gt; +  - name : 64bit NAME
+</I>&gt;<i> &gt; +  - flags : 'L' = local, 'R' = remote
+</I>&gt;<i> &gt; +
+</I>&gt;<i> 
+</I>&gt;<i> Ah, you have ECUs - can you have more that one ECU marked as 'L'ocal?
+</I>yes yes yes.
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> The lack of multiple ECU
+</I>&gt;<i> support on a single host (coming hand-in-hand with addresses attached to
+</I>&gt;<i> network interfaces) needs some rework. There is not reason on a multi-user
+</I>&gt;<i> system to stay away from a multi-ECU support that's implemnted in userspace
+</I>&gt;<i> j1939 stacks (as referenced above).
+</I>I tried to explain the thing here. It is capable, but somehow, I seem incapable
+of showing that...
+&gt;<i> 
+</I>Kurt
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005504.html">[PATCH v2 4/6] J1939: add documentation
+</A></li>
+	<LI>Next message: <A HREF="005513.html">j1939 socket semantics
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5512">[ date ]</a>
+              <a href="thread.html#5512">[ thread ]</a>
+              <a href="subject.html#5512">[ subject ]</a>
+              <a href="author.html#5512">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,164 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] net/can: add driver for mscan family &amp; mpc52xx_mscan
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20net/can%3A%20add%20driver%20for%20mscan%20family%20%26%20mpc52xx_mscan&In-Reply-To=%3C4B011001.807%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003525.html">
+   <LINK REL="Next"  HREF="003497.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] net/can: add driver for mscan family &amp; mpc52xx_mscan</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20net/can%3A%20add%20driver%20for%20mscan%20family%20%26%20mpc52xx_mscan&In-Reply-To=%3C4B011001.807%40grandegger.com%3E"
+       TITLE="[PATCH] net/can: add driver for mscan family &amp; mpc52xx_mscan">wg at grandegger.com
+       </A><BR>
+    <I>Mon Nov 16 09:40:33 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003525.html">[PATCH] can: add the missing netlink get_xstats_size callback
+</A></li>
+        <LI>Next message: <A HREF="003497.html">[PATCH] net/can: add driver for mscan family &amp; mpc52xx_mscan
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3492">[ date ]</a>
+              <a href="thread.html#3492">[ thread ]</a>
+              <a href="subject.html#3492">[ subject ]</a>
+              <a href="author.html#3492">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Grant Likely wrote:
+&gt;<i> On Fri, Nov 13, 2009 at 9:14 AM, Wolfram Sang &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">w.sang at pengutronix.de</A>&gt; wrote:
+</I>&gt;&gt;<i> Taken from socketcan-svn, fixed remaining todos, cleaned up, tested with a
+</I>&gt;&gt;<i> phyCORE-MPC5200B-IO and a custom board.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Signed-off-by: Wolfram Sang &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">w.sang at pengutronix.de</A>&gt;
+</I>&gt;&gt;<i> Cc: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+</I>&gt;&gt;<i> Cc: Grant Likely &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">grant.likely at secretlab.ca</A>&gt;
+</I>&gt;&gt;<i> Cc: David Miller &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">davem at davemloft.net</A>&gt;
+</I>&gt;<i> 
+</I>&gt;<i> I don't see any locking in this driver.  What keeps the mscan_isr or
+</I>&gt;<i> other routines from conflicting with each other?  What is the
+</I>&gt;<i> concurrency model for CAN devices?
+</I>
+There is concurrency between the mscan_start_xmit() and mscan_irq()
+routine, which is handled by disabling/enabling the TX interrupt source.
+CAN configuration (bit-timing) can only be changed when the device is
+stopped (down) and bus-off recovery requires that interrupts are
+disabled or the hadrware does not send/receive messages after the
+bus-off occurred.
+
+&gt;<i> More comments below.  I don't have the background to delve into the
+</I>&gt;<i> CAN details, but I can make some comments on the general structure of
+</I>&gt;<i> the driver.
+</I>
+[snip]
+&gt;&gt;<i> +static unsigned int  __devinit mpc52xx_can_clock_freq(struct of_device *of,
+</I>&gt;&gt;<i> +                                                     int clock_src)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +       unsigned int pvr;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +       pvr = mfspr(SPRN_PVR);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +       if (clock_src == MSCAN_CLKSRC_BUS || pvr == 0x80822011)
+</I>&gt;&gt;<i> +               return mpc5xxx_get_bus_frequency(of-&gt;node);
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +       return mpc52xx_can_xtal_freq(of);
+</I>&gt;&gt;<i> +}
+</I>&gt;<i> 
+</I>&gt;<i> mpc52xx_can_xtal_freq() is only used by this function.  Do they need
+</I>&gt;<i> to be separate?
+</I>
+Not really, and it would save some lines of code.
+
+[snip]
+&gt;&gt;<i> +static int mscan_set_mode(struct net_device *dev, u8 mode)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +       struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> +       struct mscan_regs *regs = (struct mscan_regs *)priv-&gt;reg_base;
+</I>&gt;&gt;<i> +       int ret = 0;
+</I>&gt;&gt;<i> +       int i;
+</I>&gt;&gt;<i> +       u8 canctl1;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +       if (mode != MSCAN_NORMAL_MODE) {
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +               if (priv-&gt;tx_active) {
+</I>&gt;&gt;<i> +                       /* Abort transfers before going to sleep */#
+</I>&gt;&gt;<i> +                       out_8(&amp;regs-&gt;cantarq, priv-&gt;tx_active);
+</I>&gt;&gt;<i> +                       /* Suppress TX done interrupts */
+</I>&gt;&gt;<i> +                       out_8(&amp;regs-&gt;cantier, 0);
+</I>&gt;&gt;<i> +               }
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +               canctl1 = in_8(&amp;regs-&gt;canctl1);
+</I>&gt;&gt;<i> +               if ((mode &amp; MSCAN_SLPRQ) &amp;&amp; (canctl1 &amp; MSCAN_SLPAK) == 0) {
+</I>&gt;&gt;<i> +                       out_8(&amp;regs-&gt;canctl0,
+</I>&gt;&gt;<i> +                             in_8(&amp;regs-&gt;canctl0) | MSCAN_SLPRQ);
+</I>&gt;&gt;<i> +                       for (i = 0; i &lt; MSCAN_SET_MODE_RETRIES; i++) {
+</I>&gt;&gt;<i> +                               if (in_8(&amp;regs-&gt;canctl1) &amp; MSCAN_SLPAK)
+</I>&gt;&gt;<i> +                                       break;
+</I>&gt;&gt;<i> +                               udelay(100);
+</I>&gt;<i> 
+</I>&gt;<i> Ugh.  Can you sleep instead?  This burns a lot of CPU cycles to no purpose.
+</I>
+A real sleep for 100us? The usual jiffy based sleep would take 1..10 ms,
+at least. I think we should check how much time/cycles it usually takes.
+
+[snip]
+&gt;&gt;<i> +static int mscan_do_set_mode(struct net_device *dev, enum can_mode mode)
+</I>&gt;&gt;<i> +{
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +       struct mscan_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;<i> +       int ret = 0;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +       if (!priv-&gt;open_time)
+</I>&gt;&gt;<i> +               return -EINVAL;
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +       switch (mode) {
+</I>&gt;&gt;<i> +       case CAN_MODE_SLEEP:
+</I>&gt;&gt;<i> +       case CAN_MODE_STOP:
+</I>&gt;&gt;<i> +               netif_stop_queue(dev);
+</I>&gt;&gt;<i> +               mscan_set_mode(dev,
+</I>&gt;&gt;<i> +                              (mode ==
+</I>&gt;&gt;<i> +                               CAN_MODE_STOP) ? MSCAN_INIT_MODE :
+</I>&gt;&gt;<i> +                              MSCAN_SLEEP_MODE);
+</I>&gt;<i> 
+</I>&gt;<i> A little hard on the eyes.  Can you rework to not spill over 4 lines?
+</I>&gt;<i> (ie. calc mode flag on the line above?)
+</I>
+These cases can safely be removed as currently only CAN_MODE_START is
+supported by the upper layer.
+
+Wolfgang.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003525.html">[PATCH] can: add the missing netlink get_xstats_size callback
+</A></li>
+	<LI>Next message: <A HREF="003497.html">[PATCH] net/can: add driver for mscan family &amp; mpc52xx_mscan
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3492">[ date ]</a>
+              <a href="thread.html#3492">[ thread ]</a>
+              <a href="subject.html#3492">[ subject ]</a>
+              <a href="author.html#3492">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,129 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> setting controll mode, design flaw or user error?
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20setting%20controll%20mode%2C%20design%20flaw%20or%20user%20error%3F&In-Reply-To=%3C4BF42AEC.9090203%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004383.html">
+   <LINK REL="Next"  HREF="004385.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>setting controll mode, design flaw or user error?</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20setting%20controll%20mode%2C%20design%20flaw%20or%20user%20error%3F&In-Reply-To=%3C4BF42AEC.9090203%40pengutronix.de%3E"
+       TITLE="setting controll mode, design flaw or user error?">mkl at pengutronix.de
+       </A><BR>
+    <I>Wed May 19 20:16:12 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004383.html">[PATCH net-next-2.6] can: SJA1000 add missing spin_lock_init()
+</A></li>
+        <LI>Next message: <A HREF="004385.html">setting controll mode, design flaw or user error?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4384">[ date ]</a>
+              <a href="thread.html#4384">[ thread ]</a>
+              <a href="subject.html#4384">[ subject ]</a>
+              <a href="author.html#4384">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+I just notided that the &quot;ctrlmode&quot; variable is handled in most drivers
+only in &quot;set_bittiming&quot; function, here the function from the sja:
+
+&gt;<i> static int sja1000_set_bittiming(struct net_device *dev)
+</I>&gt;<i> {
+</I>&gt;<i> 	struct sja1000_priv *priv = netdev_priv(dev);
+</I>&gt;<i> 	struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
+</I>&gt;<i> 	u8 btr0, btr1;
+</I>&gt;<i> 
+</I>&gt;<i> 	btr0 = ((bt-&gt;brp - 1) &amp; 0x3f) | (((bt-&gt;sjw - 1) &amp; 0x3) &lt;&lt; 6);
+</I>&gt;<i> 	btr1 = ((bt-&gt;prop_seg + bt-&gt;phase_seg1 - 1) &amp; 0xf) |
+</I>&gt;<i> 		(((bt-&gt;phase_seg2 - 1) &amp; 0x7) &lt;&lt; 4);
+</I>&gt;<i> 	if (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES)
+</I>&gt;<i> 		btr1 |= 0x80;
+</I>&gt;<i> 
+</I>&gt;<i> 	dev_info(dev-&gt;dev.parent,
+</I>&gt;<i> 		 &quot;setting BTR0=0x%02x BTR1=0x%02x\n&quot;, btr0, btr1);
+</I>&gt;<i> 
+</I>&gt;<i> 	priv-&gt;write_reg(priv, REG_BTR0, btr0);
+</I>&gt;<i> 	priv-&gt;write_reg(priv, REG_BTR1, btr1);
+</I>&gt;<i> 
+</I>&gt;<i> 	return 0;
+</I>&gt;<i> }
+</I>
+Consider the following sequence:
+$ modprobe sja1000-platform
+$ canconfig can0 bitrate 250000		# using pengutronix's canutils
+$ ifconfig can0 up
+
+# do some testing, with a bitrate of 250000
+
+$ ifconfig can0 down
+
+# decide to activate tripple samling:
+
+$ canconfig can0 ctrlmode triple-sampling on
+$ ifconfig can0
+
+Contrary to the expectation the tripple sampling mode isn't activated.
+All other control modes that are set during bittiming aren't handled as
+well. For e.g. the flexcan (I'm just hacking on) it's the tripple
+sample, listen only and loopback mode.
+
+Thinking a bit about the problem...what are the pros and cons of calling
+the do_set_bittiming when the bittiming is changed comapred to call it
+in the &quot;ndo_open&quot; function, e.g. via &quot;open_candev&quot;.
+
+This would simplify the flexcan driver, because it must be in a certain
+state (clocks enabled but device in freeze mode) for the bittiming
+configuration. For power saving reasons the clock stay off between
+_probe and _open.
+
+Cheers, Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 260 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20100519/af055cd9/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20100519/af055cd9/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004383.html">[PATCH net-next-2.6] can: SJA1000 add missing spin_lock_init()
+</A></li>
+	<LI>Next message: <A HREF="004385.html">setting controll mode, design flaw or user error?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4384">[ date ]</a>
+              <a href="thread.html#4384">[ thread ]</a>
+              <a href="subject.html#4384">[ subject ]</a>
+              <a href="author.html#4384">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

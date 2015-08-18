@@ -1,0 +1,119 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v3] can: Topcliff: PCH_CAN driver: Add Flow	control,
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v3%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Add%20Flow%0A%09control%2C&In-Reply-To=%3C4CEE51CA.8010402%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005069.html">
+   <LINK REL="Next"  HREF="005071.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v3] can: Topcliff: PCH_CAN driver: Add Flow	control,</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v3%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Add%20Flow%0A%09control%2C&In-Reply-To=%3C4CEE51CA.8010402%40pengutronix.de%3E"
+       TITLE="[PATCH net-next-2.6 v3] can: Topcliff: PCH_CAN driver: Add Flow	control,">mkl at pengutronix.de
+       </A><BR>
+    <I>Thu Nov 25 13:08:42 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005069.html">[PATCH net-next-2.6 v3] can: Topcliff: PCH_CAN driver: Add Flow	control, 
+</A></li>
+        <LI>Next message: <A HREF="005071.html">[PATCH net-next-2.6 v3] can: Topcliff: PCH_CAN driver: Add Flow	control, 
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5070">[ date ]</a>
+              <a href="thread.html#5070">[ thread ]</a>
+              <a href="subject.html#5070">[ subject ]</a>
+              <a href="author.html#5070">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 11/25/2010 01:03 PM, Tomoya MORINAGA wrote:
+&gt;<i> On Wednesday, November 24, 2010 9:34 PM, Marc Kleine-Budde wrote :
+</I>&gt;&gt;<i> On 11/24/2010 01:09 AM, Tomoya MORINAGA wrote:
+</I>&gt;&gt;&gt;<i> On Monday, November 22, 2010 5:27 PM, Marc Kleine-Budde wrote:
+</I>&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;<i> Still we have the busy waiting in the TX path. Maybe you can move the
+</I>&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;<i> waiting before accessing the if[1] and remove the busy waiting here.
+</I>&gt;&gt;&gt;&gt;&gt;&gt;&gt;<i> I can't understand your saying.
+</I>&gt;&gt;&gt;&gt;&gt;&gt;&gt;<i> For transmitting data, calling pch_can_rw_msg_obj is mandatory.
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> Yes, but the busy wait is not needed. It should be enough to do the
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> busy-waiting _before_ accessing the if[1].
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> Do you mean we should create other pch_can_rw_msg_obj which doesn't have busy wait ?
+</I>&gt;&gt;&gt;&gt;<i> ACK, and this non busy waiting is use in the TX path. But you add a busy
+</I>&gt;&gt;&gt;&gt;<i> wait only function before accessing the if[1] in the TX path.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> The &quot;busy waiting&quot; of pch_can_rw_msg_obj is for next processing accesses to Message object.
+</I>&gt;&gt;&gt;<i> If deleting this busy waiting, next processing can access to Message object, regardless previous transfer doesn't
+</I>&gt;&gt;&gt;<i> complete yet.
+</I>&gt;&gt;&gt;<i> Thus, I think, the &quot;busy waiting&quot; is necessary.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Yes, it's necessary, but not where it is done currently.
+</I>&gt;&gt;<i> Let me outline how I think the TX path should look like:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> pch_xmit() {
+</I>&gt;&gt;<i> take_care_about_flow_control();
+</I>&gt;&gt;<i> prepare_can_frame_to_be_copied_to_tx_if();
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /* most likely we don't have to wait here */
+</I>&gt;&gt;<i> wait_until_tx_if_is_ready();
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> copy_can_frame_to_tx_if();
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /* trigger tx in hardware */
+</I>&gt;&gt;<i> send_tx_if_but_dont_do_busywait();
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /* tx_if is busy now, but before we access it, we'll check tx_if is ready */
+</I>&gt;&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> This Tx path also has Read-Modify-Write for MessageRAM access.
+</I>&gt;<i> Do you mean Tx path shouldn't have Read-Modify-Write ?
+</I>
+Why do you Read-Modify-Write for TX? Naively speaking you just need to
+push your Data into a Mail/IF/Whatever and push the send button.
+
+Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101125/ce2c2c87/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101125/ce2c2c87/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005069.html">[PATCH net-next-2.6 v3] can: Topcliff: PCH_CAN driver: Add Flow	control, 
+</A></li>
+	<LI>Next message: <A HREF="005071.html">[PATCH net-next-2.6 v3] can: Topcliff: PCH_CAN driver: Add Flow	control, 
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5070">[ date ]</a>
+              <a href="thread.html#5070">[ thread ]</a>
+              <a href="subject.html#5070">[ subject ]</a>
+              <a href="author.html#5070">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,197 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] mcp251x driver fixes
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20mcp251x%20driver%20fixes&In-Reply-To=%3Ccabda6420906180537t159aae02lb373118994d4d868%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002741.html">
+   <LINK REL="Next"  HREF="002731.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] mcp251x driver fixes</H1>
+    <B>christian pellegrin</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20mcp251x%20driver%20fixes&In-Reply-To=%3Ccabda6420906180537t159aae02lb373118994d4d868%40mail.gmail.com%3E"
+       TITLE="[PATCH] mcp251x driver fixes">chripell at gmail.com
+       </A><BR>
+    <I>Thu Jun 18 14:37:02 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002741.html">Review of netlink's
+</A></li>
+        <LI>Next message: <A HREF="002731.html">[PATCH] mcp251x driver fixes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2729">[ date ]</a>
+              <a href="thread.html#2729">[ thread ]</a>
+              <a href="subject.html#2729">[ subject ]</a>
+              <a href="author.html#2729">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, Jun 18, 2009 at 10:40 AM, Wolfgang Grandegger&lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt; wrote:
+&gt;<i> christian pellegrin wrote:
+</I>&gt;<i>
+</I>&gt;<i> &#160;$ git clone \
+</I>&gt;<i> &#160; &#160;<A HREF="git://git.kernel.org/pub/scm/linux/kernel/git/shemminger/iproute2">git://git.kernel.org/pub/scm/linux/kernel/git/shemminger/iproute2</A>
+</I>&gt;<i> &#160;$ cd iproute2
+</I>&gt;<i> &#160;$ make CC=?
+</I>
+thanks I'll try and report ASAP
+
+&gt;<i>
+</I>&gt;<i> The patch looks OK. To spot functional problems, I'm reviewing the patched
+</I>&gt;<i> file mpc5251x.c instead. The dev_dbg() lines need to be limited to the
+</I>&gt;<i> useful ones. Most of them are just good for development purposes.
+</I>
+ok, I'll fix the problens you suggested and resubmit ASAP. I'll take
+out as many dev_dbg as it seems doable.
+
+&gt;<i> &#160; &#160;88 &#160;#define INSTRUCTION_RESET &#160; &#160; &#160; &#160; &#160; &#160; &#160; 0xC0
+</I>&gt;<i>
+</I>&gt;<i> Alignment &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; ^^^^?
+</I>
+ack, checkpatch.pl didn't complain so I haven't noticed ;-)
+
+&gt;<i> &#160; 232 &#160;#ifdef DEBUG_IO
+</I>&gt;<i> &#160; 233 &#160; &#160; &#160; &#160; &#160;dev_dbg(&amp;spi-&gt;dev, &quot;%s: read %02x = %02x\n&quot;, __func__, reg, val);
+</I>&gt;<i> &#160; 234 &#160;#endif
+</I>&gt;<i>
+</I>&gt;<i> DEBUG_IO? What is it good for?
+</I>
+well this is &quot;desperate mode&quot; debugging aid, so we know everything the
+chip is telling us. I'll take it away anyway since without a good
+knowledge of the chip it's not that useful and it's very noisy.
+
+&gt;<i>
+</I>&gt;<i> &#160; 270 &#160; &#160; &#160; &#160; &#160;if (ret &lt; 0)
+</I>&gt;<i> &#160; 271 &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;dev_dbg(&amp;spi-&gt;dev, &quot;%s: failed\n&quot;, __func__);
+</I>&gt;<i> &#160; 272 &#160;}
+</I>&gt;<i>
+</I>&gt;<i> The above pattern is repeated quite often throughout this file. It could make
+</I>&gt;<i> sense to introduce a dedicated function, e.g. mcp251x_spi_transfer();
+</I>
+ack
+
+&gt;<i> &#160; 668 &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;mcp251x_do_set_bittiming(net);
+</I>&gt;<i>
+</I>&gt;<i> Please do not set a default bit-timing! If open_candev() fails, just
+</I>&gt;<i> exit with the returned error code.
+</I>
+ack
+
+&gt;<i> &#160; 766 &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;priv-&gt;tx_len = 0;
+</I>&gt;<i> &#160; 767 &#160; &#160; &#160; &#160; &#160;}
+</I>&gt;<i>
+</I>&gt;<i> This pattern is repeated a few times. Extra function? Can you
+</I>&gt;<i> explain to me under which conditions priv-&gt;tx_skb and priv-&gt;tx_len
+</I>&gt;<i> are NULL?
+</I>
+let's say it's &quot;defensive programming&quot;. I'll change it in a more &quot;bug
+hunting&quot; style. Anyway:
+
+tx_skb == NULL &amp;&amp; tx_len == 0 =&gt; no paacket was transmitted with hard_xmit_start
+tx_skb != NULL &amp;&amp; tx_len == 0 =&gt; hard_xmit_start has been run, but the
+work queue hasn't
+tx_skb == NULL &amp;&amp; tx_len != 0 =&gt; the work queue has been run but the
+hardware hasn't finished yet
+
+all other combinations should be BUG() and I'll change the code to put
+this in evidence.
+
+Unfortunately the driver is complicated by the fact that we cannot do
+spi I/O in a conteext that doesn't allow sleeping (well async
+submission could be used but it would make the code quite a bit more
+complicated).
+
+
+&gt;<i> &#160; 786 &#160;}
+</I>&gt;<i>
+</I>&gt;<i> Can be removed as the upper layer already does it.
+</I>&gt;<i>
+</I>&gt;<i> &#160; 787
+</I>
+ack
+
+&gt;<i> &#160; 796 &#160; &#160; &#160; &#160; &#160;if (priv-&gt;tx_skb) {
+</I>&gt;<i> &#160; 797 &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;frame = (struct can_frame *)priv-&gt;tx_skb-&gt;data;
+</I>&gt;<i>
+</I>&gt;<i> Please use a skb macro.
+</I>
+ack
+
+&gt;<i> &#160; 800 &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;mcp251x_hw_tx(spi, frame, 0);
+</I>&gt;<i>
+</I>&gt;<i> I think mcp251x_hw_tx() may fail, right?
+</I>&gt;<i>
+</I>
+ack I'll check this condition.
+
+&gt;<i> &#160; 831 &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;can_free_echo_skb(net, 0);
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Hm, can_free_echo_skb() will free priv-&gt;tx_skb as well. Can that happen?
+</I>
+ack, see above.
+
+&gt;<i> &#160; 993 &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;netif_carrier_on(net);
+</I>&gt;<i>
+</I>&gt;<i> Does the controller recover from bus-off automatically? It's up to the
+</I>&gt;<i> user to decide what to do and therefore the netif_carrier_on() is not
+</I>&gt;<i> legal here.
+</I>
+yes, the controller automatically restarts tx/rx of the already
+programmed mailboxes when the bus comes alive. I have to admit that I
+copied this code fragment from other drivers. Anyway isn't
+netif_carrier_on just a feedback that the link is now active, is it?
+The decision to restart transmission is done by netif_start_queue (and
+this is the generic can-dev code so under user control). I'm not
+really sure about this point, so I'll check it.
+
+&gt;<i> &#160;1287 &#160; &#160; &#160; &#160; &#160;.resume &#160; &#160; &#160; &#160; = mcp251x_can_resume,
+</I>&gt;<i>
+</I>&gt;<i> A CONFIG_PM would be more transparent, I think.
+</I>&gt;<i>
+</I>
+ack, I'll saw the other idiom in many places, anyway it's just a
+matter of code style.
+
+
+thanks for the review I'll resubmit ASAP.
+
+-- 
+Christian Pellegrin, see <A HREF="http://www.evolware.org/chri/">http://www.evolware.org/chri/</A>
+&quot;Real Programmers don't play tennis, or any other sport which requires
+you to change clothes. Mountain climbing is OK, and Real Programmers
+wear their climbing boots to work in case a mountain should suddenly
+spring up in the middle of the computer room.&quot;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002741.html">Review of netlink's
+</A></li>
+	<LI>Next message: <A HREF="002731.html">[PATCH] mcp251x driver fixes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2729">[ date ]</a>
+              <a href="thread.html#2729">[ thread ]</a>
+              <a href="subject.html#2729">[ subject ]</a>
+              <a href="author.html#2729">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

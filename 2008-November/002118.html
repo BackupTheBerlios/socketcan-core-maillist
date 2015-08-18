@@ -1,0 +1,107 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> SFF &amp; EFF filtering
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SFF%20%26%20EFF%20filtering&In-Reply-To=%3C20081128153317.GA3726%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002117.html">
+   <LINK REL="Next"  HREF="002119.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>SFF &amp; EFF filtering</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SFF%20%26%20EFF%20filtering&In-Reply-To=%3C20081128153317.GA3726%40e-circ.dyndns.org%3E"
+       TITLE="SFF &amp; EFF filtering">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Fri Nov 28 16:33:17 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002117.html">REC and TEC
+</A></li>
+        <LI>Next message: <A HREF="002119.html">SFF &amp; EFF filtering
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2118">[ date ]</a>
+              <a href="thread.html#2118">[ thread ]</a>
+              <a href="subject.html#2118">[ subject ]</a>
+              <a href="author.html#2118">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+During filtering of CAN msgs, I noticed that if I apply a SFF filter
+(11bit id), EFF (29 bit id) msgs that match in the lowest 11bits come
+through the filter too.
+
+I noticed this with using candump.
+
+I do not think this behaviour is wanted. If EFF msgs were subject to SFF
+filters, it should at least apply on the highest 11bits anyway.
+
+Now that I have a spare moment, I went in the code. The following patch
+is what I came up with. I have not tested this well yet, but I think it
+should do the trick. But, my views on socketcan filters are quite
+limited yet. Does anyone see how this would affect other functionality
+badly?
+
+The idea behind this is that the EFF flag is, just as the RTR flag, a
+part of the can id. when the mask will be applied on a received can_id,
+both RTR flag, EFF flag must match, in _all_ cases, also the SFF msgs.
+Applying the EFF-flag in the mask of a SFF message does not really hurt,
+consumes no cpu cycles at all, and guarantees that a EFF msg will not
+come through a SFF filter (which has EFF cleared in the can_id, but EFF
+      set in mask)
+
+by looking in the filtering code, I think I got some other interesting
+scenario. If 2 filters were applied on a single socket, an incoming msg
+is delivered to each matching filter, not necessarily once per socket.
+This would only pose a problem when filters with overlapping ranges are
+applied on a single socket. I have no solution for this yet, nor do I
+experience the problem _yet_. But I'd like to question this behaviour.
+
+Index: net/can/af_can.c
+===================================================================
+--- net/can/af_can.c    (revision 870)
++++ net/can/af_can.c    (working copy)
+@@ -406,7 +406,7 @@
+        if (*mask &amp; CAN_EFF_FLAG)
+                *mask &amp;= (CAN_EFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG);
+        else
+-               *mask &amp;= (CAN_SFF_MASK | CAN_RTR_FLAG);
++               *mask &amp;= (CAN_SFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG);
+ 
+        /* reduce condition testing at receive time */
+        *can_id &amp;= *mask;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002117.html">REC and TEC
+</A></li>
+	<LI>Next message: <A HREF="002119.html">SFF &amp; EFF filtering
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2118">[ date ]</a>
+              <a href="thread.html#2118">[ thread ]</a>
+              <a href="subject.html#2118">[ subject ]</a>
+              <a href="author.html#2118">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

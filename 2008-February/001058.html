@@ -1,0 +1,222 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> mcp251x driver problems on xscale PXA255 based board
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%20driver%20problems%20on%20xscale%20PXA255%20based%20board&In-Reply-To=%3C1202143223.15702.74.camel%40localhost.localdomain%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001057.html">
+   <LINK REL="Next"  HREF="001059.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>mcp251x driver problems on xscale PXA255 based board</H1>
+    <B>Alexander Didebulidze</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%20driver%20problems%20on%20xscale%20PXA255%20based%20board&In-Reply-To=%3C1202143223.15702.74.camel%40localhost.localdomain%3E"
+       TITLE="mcp251x driver problems on xscale PXA255 based board">sd-work at inet.ge
+       </A><BR>
+    <I>Mon Feb  4 17:40:23 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001057.html">Mscan: BUG! Tx Ring full when queue awake!
+</A></li>
+        <LI>Next message: <A HREF="001059.html">mcp251x driver problems on xscale PXA255 based board
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1058">[ date ]</a>
+              <a href="thread.html#1058">[ thread ]</a>
+              <a href="subject.html#1058">[ subject ]</a>
+              <a href="author.html#1058">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+Socket-can kernel part and example tools work fine for me ...
+I tested it with vcan.ko and cansend/candump 
+but i can't get mcp2515 driver working with a board(Altair) which is
+based on Xscale PXA255. PXA part is similar to LUBBOCK.
+
+
+when i load mcp251x.ko i get:
+Using mcp251x.ko
+[   19.090000] altairv2 myboard_mcp251x_initfunc called (empty function)
+[   19.090000] altairv2 myboard_mcp251x_reset called (empty function)
+[   19.150000] mcp251x spi1.0: probed
+
+after changing SSP_MODE to 0 i can bring interface UP by
+ifconfig can0 up
+
+I have a scope connected to on SPI pins and i can see 
+SPISCK(1,8MHz. why not 3,6?? )
+CS goes down... i also see signals on SPI_SI and SPI_SO 
+
+./cansend can0 5A1#11.2233.44556677.88
+./cansend can0 5A1#11.2233.44556677.88
+. 
+. after ~10 times i get
+./cansend can0 5A1#11.2233.44556677.88
+write: No buffer space available
+
+I'm not sure if SPI Bus is working right, but since MCP2515 is the only
+device on SPI i can't test it right.
+I have feeling that mcp2515 is not replying right.
+on the scope i see different TX Frames/Signals 
+but mcp2515 reply on SSPRXD is always similar signal (one or two peaks)
+
+Images taken from scope screen are here :
+<A HREF="http://stats.inet.ge/tmp/mcp2515-spi/">http://stats.inet.ge/tmp/mcp2515-spi/</A>
+
+
+for my tests i was using hardware setup 1.
+i want to use setup 2. but for this i need to use SSPEXTCLK in MCP251x
+driver and i don't know where to set this.
+
+if somebody has experience with SPI on PXA255 please write me if my code
+in arch/arm/mach-pxa/altairv2.c is OK.
+
+I'm also don't know what to do with #INT connected to GPIO19. 
+
+Before trying Socket-Can there was linux 2.6.7 on the board with
+can4linux driver for MCP2515 which worked &quot;fine&quot; with hardware setup 2.
+PXA and SSP hardware is OK and CAN hardware works too .
+
+It would be great if someone can tell me how and in which order to debug
+it. how to test SPI etc...
+maybe there is some ready driver to test SPI bus. (loopback ?)
+
+
+Thank you in advance,
+Alexander
+
+P.S I'm newbie in embedded... so, sorry in advance if I asked stupid
+questions :)
+
+
+------------------------------ MY SETUP ------------------------------
+
+Hardware setup:
+1 -&gt; 	mcp2515 is connected to pxa255 SSP on GPIO (23-26) 
+	#INT is connected to GPIO 19
+	#CS is SSPSFRM etc...
+	OSC1 is connected to GPIO11 (GPIO can generate 3,6 Mhz on it)
+	in this case OSC1 and SPI Clock are 3,6MHz
+
+2 -&gt;	in second case OSC1 and SPI Clocl are 16 Mhz :
+	GPIO7 generates 48Mhz
+	Onboard FPGA divides is by 3 and 16MHz goes to 
+	GPIO11 and GPIO27(SSPEXTCLK)
+	in this case GPIO11 is in high impedance mode and SPI uses 
+	SSPEXTCLK 16Mhz. 
+
+I'm using SSP1 port of PXA255 not the NSSP port!
+
+Software setup:
+	Patched Linux kernel 2.6.23.1
+	Socket-Can trunk Rev: 658
+	linux-2.6.24-rc1-can-driver-mcp2515.patch from
+<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20071108/6c440448/attachment-0001.bin">https://lists.berlios.de/pipermail/socketcan-core/attachments/20071108/6c440448/attachment-0001.bin</A>
+	modifications from 
+<A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-December/000940.html">https://lists.berlios.de/pipermail/socketcan-core/2007-December/000940.html</A>
+	and SPI_MODE_0
+
+
+----------------------------------------------
+in arch/arm/mach-pxa/altairv2.c i have :
+
+/* Altair SSP */
+static struct resource pxa_ssp_resources[] = {
+        [0] = {
+                .start  = __PREG(SSCR0_P(1)),
+                .end    = __PREG(SSCR0_P(1)) + 0x14,
+                .flags  = IORESOURCE_MEM,
+        },
+        [1] = {
+                .start  = IRQ_SSP, // FIXME - What is right value ?
+GPIO19 CAN Interrupt
+                .end    = IRQ_SSP,
+                .flags  = IORESOURCE_IRQ,
+        },
+};
+
+static struct pxa2xx_spi_master pxa_ssp_master_info = {
+        .ssp_type       = PXA25x_SSP,
+        .clock_enable   = CKEN_SSP,
+        .num_chipselect = 1,
+};
+
+static struct platform_device pxa_ssp = {
+        .name           = &quot;pxa2xx-spi&quot;,
+        .id             = 1,
+        .resource       = pxa_ssp_resources,
+        .num_resources  = ARRAY_SIZE(pxa_ssp_resources),
+        .dev = {
+                .platform_data  = &amp;pxa_ssp_master_info,
+        },
+};
+
+
+void myboard_mcp251x_initfunc()
+{
+        printk(KERN_ERR &quot;altairv2 myboard_mcp251x_initfunc called\n&quot;);
+}
+         
+void myboard_mcp251x_reset()
+{
+        printk(KERN_ERR &quot;altairv2 myboard_mcp251x_reset called\n&quot;);
+}
+
+
+/* Altair MCP2515 CAN	*/
+static struct mcp251x_platform_data mcp251x_info = {
+        .oscillator_frequency = 16000000,
+        .board_specific_setup = myboard_mcp251x_initfunc,
+        .device_reset = myboard_mcp251x_reset,
+        .transceiver_enable = NULL,
+};
+
+static struct spi_board_info spi_board_info[] __initdata = { {
+                .modalias = &quot;mcp251x&quot;,
+                .platform_data = &amp;mcp251x_info,
+                .irq = IRQ_GPIO(19),
+                .max_speed_hz = 8000000,
+                .bus_num = 1,
+                .chip_select = 0
+},
+};
+
+--------------------------------------------------
+
+
+
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001057.html">Mscan: BUG! Tx Ring full when queue awake!
+</A></li>
+	<LI>Next message: <A HREF="001059.html">mcp251x driver problems on xscale PXA255 based board
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1058">[ date ]</a>
+              <a href="thread.html#1058">[ thread ]</a>
+              <a href="subject.html#1058">[ subject ]</a>
+              <a href="author.html#1058">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

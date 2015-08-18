@@ -1,0 +1,195 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add Flow	control,
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Add%20Flow%0A%09control%2C&In-Reply-To=%3C4CE141EA.5070702%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004952.html">
+   <LINK REL="Next"  HREF="004954.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add Flow	control,</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Add%20Flow%0A%09control%2C&In-Reply-To=%3C4CE141EA.5070702%40grandegger.com%3E"
+       TITLE="[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add Flow	control,">wg at grandegger.com
+       </A><BR>
+    <I>Mon Nov 15 15:21:30 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004952.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add Flow	control, 
+</A></li>
+        <LI>Next message: <A HREF="004954.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add Flow	control, 
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4950">[ date ]</a>
+              <a href="thread.html#4950">[ thread ]</a>
+              <a href="subject.html#4950">[ subject ]</a>
+              <a href="author.html#4950">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+On 11/15/2010 09:30 AM, Tomoya MORINAGA wrote:
+&gt;<i>  * Add Flow control
+</I>&gt;<i>  * Fix Data copy issue (endianness)
+</I>&gt;<i>  * Add Macro prefix &quot;PCH_&quot;
+</I>&gt;<i>  * Separate interface register structure
+</I>&gt;<i>  * Some functions are unified.
+</I>&gt;<i>  * Change MessageObject indication(PCH_RX_OBJ_START, etc..)
+</I>&gt;<i>  * Enumerate LEC macro
+</I>&gt;<i>  * Move MSI processing from open/close to probe/remove processing
+</I>&gt;<i>  * Use BIT(x)
+</I>&gt;<i>  * and more...
+</I>&gt;<i> 
+</I>&gt;<i> Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+</I>&gt;<i> ---
+</I>&gt;<i>  drivers/net/can/pch_can.c | 1348 ++++++++++++++++++++-------------------------
+</I>&gt;<i>  1 files changed, 595 insertions(+), 753 deletions(-)
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+</I>&gt;<i> index 6727182..6a38593 100644
+</I>&gt;<i> --- a/drivers/net/can/pch_can.c
+</I>&gt;<i> +++ b/drivers/net/can/pch_can.c
+</I>...
+&gt;<i> -	if (status &amp; PCH_LEC_ALL) {
+</I>&gt;<i> +	lec = status &amp; PCH_LEC_ALL;
+</I>&gt;<i> +	switch (lec) {
+</I>&gt;<i> +	case PCH_STUF_ERR:
+</I>&gt;<i> +		cf-&gt;data[2] |= CAN_ERR_PROT_STUFF;
+</I>&gt;<i>  		priv-&gt;can.can_stats.bus_error++;
+</I>&gt;<i>  		stats-&gt;rx_errors++;
+</I>&gt;<i> -		switch (status &amp; PCH_LEC_ALL) {
+</I>&gt;<i> -		case PCH_STUF_ERR:
+</I>&gt;<i> -			cf-&gt;data[2] |= CAN_ERR_PROT_STUFF;
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		case PCH_FORM_ERR:
+</I>&gt;<i> -			cf-&gt;data[2] |= CAN_ERR_PROT_FORM;
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		case PCH_ACK_ERR:
+</I>&gt;<i> -			cf-&gt;data[2] |= CAN_ERR_PROT_LOC_ACK |
+</I>&gt;<i> -				       CAN_ERR_PROT_LOC_ACK_DEL;
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		case PCH_BIT1_ERR:
+</I>&gt;<i> -		case PCH_BIT0_ERR:
+</I>&gt;<i> -			cf-&gt;data[2] |= CAN_ERR_PROT_BIT;
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		case PCH_CRC_ERR:
+</I>&gt;<i> -			cf-&gt;data[2] |= CAN_ERR_PROT_LOC_CRC_SEQ |
+</I>&gt;<i> -				       CAN_ERR_PROT_LOC_CRC_DEL;
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		default:
+</I>&gt;<i> -			iowrite32(status | PCH_LEC_ALL, &amp;priv-&gt;regs-&gt;stat);
+</I>&gt;<i> -			break;
+</I>&gt;<i> -		}
+</I>&gt;<i> -
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case PCH_FORM_ERR:
+</I>&gt;<i> +		cf-&gt;data[2] |= CAN_ERR_PROT_FORM;
+</I>&gt;<i> +		priv-&gt;can.can_stats.bus_error++;
+</I>&gt;<i> +		stats-&gt;rx_errors++;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case PCH_ACK_ERR:
+</I>&gt;<i> +		cf-&gt;can_id |= CAN_ERR_ACK;
+</I>&gt;<i> +		priv-&gt;can.can_stats.bus_error++;
+</I>&gt;<i> +		stats-&gt;rx_errors++;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case PCH_BIT1_ERR:
+</I>&gt;<i> +	case PCH_BIT0_ERR:
+</I>&gt;<i> +		cf-&gt;data[2] |= CAN_ERR_PROT_BIT;
+</I>&gt;<i> +		priv-&gt;can.can_stats.bus_error++;
+</I>&gt;<i> +		stats-&gt;rx_errors++;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case PCH_CRC_ERR:
+</I>&gt;<i> +		cf-&gt;data[2] |= CAN_ERR_PROT_LOC_CRC_SEQ |
+</I>&gt;<i> +			       CAN_ERR_PROT_LOC_CRC_DEL;
+</I>&gt;<i> +		priv-&gt;can.can_stats.bus_error++;
+</I>&gt;<i> +		stats-&gt;rx_errors++;
+</I>&gt;<i> +		break;
+</I>&gt;<i> +	case PCH_LEC_ALL: /* Written by CPU. No error status */
+</I>&gt;<i> +		break;
+</I>&gt;<i>  	}
+</I>
+More comments to the lec handling below.
+
+&gt;<i> +	cf-&gt;data[6] = ioread32(&amp;priv-&gt;regs-&gt;errc) &amp; PCH_TEC;
+</I>&gt;<i> +	cf-&gt;data[7] = (ioread32(&amp;priv-&gt;regs-&gt;errc) &amp; PCH_REC) &gt;&gt; 8;
+</I>
+Could be handle with just *one* register access.
+
+...
+&gt;<i>  static int pch_can_rx_poll(struct napi_struct *napi, int quota)
+</I>&gt;<i>  {
+</I>&gt;<i>  	struct net_device *ndev = napi-&gt;dev;
+</I>&gt;<i>  	struct pch_can_priv *priv = netdev_priv(ndev);
+</I>&gt;<i> -	struct net_device_stats *stats = &amp;(priv-&gt;ndev-&gt;stats);
+</I>&gt;<i> -	u32 dlc;
+</I>&gt;<i>  	u32 int_stat;
+</I>&gt;<i>  	int rcv_pkts = 0;
+</I>&gt;<i>  	u32 reg_stat;
+</I>&gt;<i> -	unsigned long flags;
+</I>&gt;<i>  
+</I>&gt;<i>  	int_stat = pch_can_int_pending(priv);
+</I>&gt;<i>  	if (!int_stat)
+</I>&gt;<i> -		return 0;
+</I>&gt;<i> +		goto end;
+</I>&gt;<i>  
+</I>&gt;<i> -INT_STAT:
+</I>&gt;<i> -	if (int_stat == CAN_STATUS_INT) {
+</I>&gt;<i> +	if ((int_stat == PCH_STATUS_INT) &amp;&amp; (quota &gt; 0)) {
+</I>&gt;<i>  		reg_stat = ioread32(&amp;priv-&gt;regs-&gt;stat);
+</I>&gt;<i>  		if (reg_stat &amp; (PCH_BUS_OFF | PCH_LEC_ALL)) {
+</I>&gt;<i> -			if ((reg_stat &amp; PCH_LEC_ALL) != PCH_LEC_ALL)
+</I>&gt;<i> +			if ((reg_stat &amp; PCH_LEC_ALL) != PCH_LEC_ALL) {
+</I>&gt;<i>  				pch_can_error(ndev, reg_stat);
+</I>&gt;<i> +				quota--;
+</I>&gt;<i> +			}
+</I>
+Should be:
+
+  		if (reg_stat &amp; PCH_BUS_OFF ||
+		    (reg_stat &amp; PCH_LEC_ALL) != PCH_LEC_ALL) {
+
+Your lec handling is still not correc, I believe. The driver needs to
+write PCH_LEC_ALL to the &quot;stat&quot; register once in the initialization code
+and then after each error observed (lec != PCH_LEC_ALL). I still do not
+find such code. Could you show us the output of
+
+  &quot;# candump any,0:0,#FFFFFFFF&quot;
+
+when yo send CAN messages *without* a cable connected?.
+
+Thanks,
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004952.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add Flow	control, 
+</A></li>
+	<LI>Next message: <A HREF="004954.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Add Flow	control, 
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4950">[ date ]</a>
+              <a href="thread.html#4950">[ thread ]</a>
+              <a href="subject.html#4950">[ subject ]</a>
+              <a href="author.html#4950">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

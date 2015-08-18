@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 3/6] CAN: make struct proto const
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%203/6%5D%20CAN%3A%20make%20struct%20proto%20const&In-Reply-To=%3C20110203093854.GF385%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005458.html">
+   <LINK REL="Next"  HREF="005460.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 3/6] CAN: make struct proto const</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%203/6%5D%20CAN%3A%20make%20struct%20proto%20const&In-Reply-To=%3C20110203093854.GF385%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH v2 3/6] CAN: make struct proto const">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Thu Feb  3 10:38:54 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005458.html">[PATCH v2 2/6] CAN: add rtnetlink for CAN
+</A></li>
+        <LI>Next message: <A HREF="005460.html">[PATCH v2 4/6] J1939: add documentation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5459">[ date ]</a>
+              <a href="thread.html#5459">[ thread ]</a>
+              <a href="subject.html#5459">[ subject ]</a>
+              <a href="author.html#5459">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>By exporting the can_ioctl() socket function,
+any registered CAN protocols can use a const struct proto
+instead.
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+---
+ include/linux/can/core.h |    4 +++-
+ net/can/af_can.c         |    7 ++-----
+ net/can/bcm.c            |    4 ++--
+ net/can/raw.c            |    4 ++--
+ 4 files changed, 9 insertions(+), 10 deletions(-)
+
+diff --git a/include/linux/can/core.h b/include/linux/can/core.h
+index d614eba..8790ea8 100644
+--- a/include/linux/can/core.h
++++ b/include/linux/can/core.h
+@@ -39,7 +39,7 @@
+ struct can_proto {
+ 	int              type;
+ 	int              protocol;
+-	struct proto_ops *ops;
++	const struct proto_ops *ops;
+ 	struct proto     *prot;
+ 
+ 	const struct rtnl_af_ops *rtnl_link_ops;
+@@ -77,6 +77,8 @@ struct rtgencanmsg {
+ 
+ extern int  can_proto_register(const struct can_proto *cp);
+ extern void can_proto_unregister(const struct can_proto *cp);
++extern int can_sock_ioctl(struct socket *sock, unsigned int cmd,
++		unsigned long arg);
+ 
+ extern int  can_rx_register(struct net_device *dev, canid_t can_id,
+ 			    canid_t mask,
+diff --git a/net/can/af_can.c b/net/can/af_can.c
+index db59c6e..c1f8c05 100644
+--- a/net/can/af_can.c
++++ b/net/can/af_can.c
+@@ -139,7 +139,7 @@ static inline void can_put_proto(const struct can_proto *cp)
+  * af_can socket functions
+  */
+ 
+-static int can_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
++int can_sock_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
+ {
+ 	struct sock *sk = sock-&gt;sk;
+ 
+@@ -152,6 +152,7 @@ static int can_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
+ 		return -ENOIOCTLCMD;
+ 	}
+ }
++EXPORT_SYMBOL(can_sock_ioctl);
+ 
+ static void can_sock_destruct(struct sock *sk)
+ {
+@@ -720,10 +721,6 @@ int can_proto_register(const struct can_proto *cp)
+ 		err = -EBUSY;
+ 	} else {
+ 		proto_tab[proto] = cp;
+-
+-		/* use generic ioctl function if not defined by module */
+-		if (!cp-&gt;ops-&gt;ioctl)
+-			cp-&gt;ops-&gt;ioctl = can_ioctl;
+ 	}
+ 	spin_unlock(&amp;proto_tab_lock);
+ 
+diff --git a/net/can/bcm.c b/net/can/bcm.c
+index ac1961d..fd89542 100644
+--- a/net/can/bcm.c
++++ b/net/can/bcm.c
+@@ -1569,7 +1569,7 @@ static int bcm_recvmsg(struct kiocb *iocb, struct socket *sock,
+ 	return size;
+ }
+ 
+-static struct proto_ops bcm_ops __read_mostly = {
++static const struct proto_ops bcm_ops = {
+ 	.family        = PF_CAN,
+ 	.release       = bcm_release,
+ 	.bind          = sock_no_bind,
+@@ -1578,7 +1578,7 @@ static struct proto_ops bcm_ops __read_mostly = {
+ 	.accept        = sock_no_accept,
+ 	.getname       = sock_no_getname,
+ 	.poll          = datagram_poll,
+-	.ioctl         = NULL,		/* use can_ioctl() from af_can.c */
++	.ioctl         = can_sock_ioctl,
+ 	.listen        = sock_no_listen,
+ 	.shutdown      = sock_no_shutdown,
+ 	.setsockopt    = sock_no_setsockopt,
+diff --git a/net/can/raw.c b/net/can/raw.c
+index 9ad3dfc..8581596 100644
+--- a/net/can/raw.c
++++ b/net/can/raw.c
+@@ -742,7 +742,7 @@ static int raw_recvmsg(struct kiocb *iocb, struct socket *sock,
+ 	return size;
+ }
+ 
+-static struct proto_ops raw_ops __read_mostly = {
++static const struct proto_ops raw_ops = {
+ 	.family        = PF_CAN,
+ 	.release       = raw_release,
+ 	.bind          = raw_bind,
+@@ -751,7 +751,7 @@ static struct proto_ops raw_ops __read_mostly = {
+ 	.accept        = sock_no_accept,
+ 	.getname       = raw_getname,
+ 	.poll          = datagram_poll,
+-	.ioctl         = NULL,		/* use can_ioctl() from af_can.c */
++	.ioctl         = can_sock_ioctl,
+ 	.listen        = sock_no_listen,
+ 	.shutdown      = sock_no_shutdown,
+ 	.setsockopt    = raw_setsockopt,
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005458.html">[PATCH v2 2/6] CAN: add rtnetlink for CAN
+</A></li>
+	<LI>Next message: <A HREF="005460.html">[PATCH v2 4/6] J1939: add documentation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5459">[ date ]</a>
+              <a href="thread.html#5459">[ thread ]</a>
+              <a href="subject.html#5459">[ subject ]</a>
+              <a href="author.html#5459">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

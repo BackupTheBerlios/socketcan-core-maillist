@@ -1,0 +1,162 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next] can-raw: add msg_flags to distinguish local	traffic
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%5D%20can-raw%3A%20add%20msg_flags%20to%20distinguish%20local%0A%09traffic&In-Reply-To=%3CAANLkTi%3D3Zh%2BEQ%2BCcwypMMJWu80BC_UNsPe7yQUN5ciDL%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004738.html">
+   <LINK REL="Next"  HREF="004742.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next] can-raw: add msg_flags to distinguish local	traffic</H1>
+    <B>Daniel Baluta</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next%5D%20can-raw%3A%20add%20msg_flags%20to%20distinguish%20local%0A%09traffic&In-Reply-To=%3CAANLkTi%3D3Zh%2BEQ%2BCcwypMMJWu80BC_UNsPe7yQUN5ciDL%40mail.gmail.com%3E"
+       TITLE="[PATCH net-next] can-raw: add msg_flags to distinguish local	traffic">daniel.baluta at gmail.com
+       </A><BR>
+    <I>Fri Oct 15 11:09:37 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004738.html">[PATCH net-next] can-raw: add msg_flags to distinguish local traffic
+</A></li>
+        <LI>Next message: <A HREF="004742.html">No subject
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4740">[ date ]</a>
+              <a href="thread.html#4740">[ thread ]</a>
+              <a href="subject.html#4740">[ subject ]</a>
+              <a href="author.html#4740">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Fri, Oct 15, 2010 at 10:37 AM, Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt; wrote:
+&gt;<i> CAN has no addressing scheme. It is currently impossible
+</I>&gt;<i> for userspace to tell is a received CAN frame comes from
+</I>&gt;<i> another process on the local host, or from a remote CAN
+</I>&gt;<i> device.
+</I>&gt;<i> This patch add support for userspace applications to distinguish
+</I>&gt;<i> between 'own', 'local' and 'remote' CAN traffic.
+</I>&gt;<i> Distinction is made by returning some flags in msg-&gt;msg_flags
+</I>&gt;<i> in the call to recvmsg.
+</I>&gt;<i> MSG_CONFIRM flag means 'own', as in 'transmission confirmation'
+</I>&gt;<i> MSG_DONTROUTE flag means 'local', not routed.
+</I>&gt;<i> Obviously, msgs with MSG_CONFIRM will have MSG_DONTROUTE set too.
+</I>&gt;<i>
+</I>&gt;<i> Please note that on SocketCAN mailing list, different opinions
+</I>&gt;<i> exist on the exact meaning of MSG_DONTROUTE. Better (=more
+</I>&gt;<i> intuitive) alternatives are appreciated.
+</I>&gt;<i>
+</I>&gt;<i> Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at skynet.be</A>&gt;
+</I>&gt;<i> ---
+</I>&gt;<i> &#160;net/can/raw.c | &#160; 33 ++++++++++++++++++++++++++++++---
+</I>&gt;<i> &#160;1 files changed, 30 insertions(+), 3 deletions(-)
+</I>&gt;<i>
+</I>&gt;<i> diff --git a/net/can/raw.c b/net/can/raw.c
+</I>&gt;<i> index 7d77e67..f98709e 100644
+</I>&gt;<i> --- a/net/can/raw.c
+</I>&gt;<i> +++ b/net/can/raw.c
+</I>&gt;<i> @@ -90,23 +90,39 @@ struct raw_sock {
+</I>&gt;<i> &#160; &#160; &#160; &#160;can_err_mask_t err_mask;
+</I>&gt;<i> &#160;};
+</I>&gt;<i>
+</I>&gt;<i> +/*
+</I>&gt;<i> + * return some space to store extra msg flags in.
+</I>&gt;<i> + * We use 1 int beyond the 'struct sockaddr_can' in skb-&gt;cb
+</I>&gt;<i> + * to store those.
+</I>&gt;<i> + * These flags will be use in raw_recvmsg()
+</I>&gt;<i> + */
+</I>&gt;<i> +static inline int *raw_flags(struct sk_buff *skb)
+</I>&gt;<i> +{
+</I>&gt;<i> + &#160; &#160; &#160; BUILD_BUG_ON(sizeof(skb-&gt;cb)
+</I>&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &lt;= (sizeof(struct sockaddr_can) + sizeof(int)));
+</I>&gt;<i> + &#160; &#160; &#160; /* return pointer after struct sockaddr_can */
+</I>&gt;<i> + &#160; &#160; &#160; return (int *)(&amp;((struct sockaddr_can *)skb-&gt;cb)[1]);
+</I>
+Since msg_flags is unsigned, it would be nice if this function returns unsigned.
+
+&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> &#160;static inline struct raw_sock *raw_sk(const struct sock *sk)
+</I>&gt;<i> &#160;{
+</I>&gt;<i> &#160; &#160; &#160; &#160;return (struct raw_sock *)sk;
+</I>&gt;<i> &#160;}
+</I>&gt;<i>
+</I>&gt;<i> -static void raw_rcv(struct sk_buff *skb, void *data)
+</I>&gt;<i> +static void raw_rcv(struct sk_buff *oskb, void *data)
+</I>&gt;<i> &#160;{
+</I>&gt;<i> &#160; &#160; &#160; &#160;struct sock *sk = (struct sock *)data;
+</I>&gt;<i> &#160; &#160; &#160; &#160;struct raw_sock *ro = raw_sk(sk);
+</I>&gt;<i> &#160; &#160; &#160; &#160;struct sockaddr_can *addr;
+</I>&gt;<i> + &#160; &#160; &#160; struct sk_buff *skb;
+</I>&gt;<i> + &#160; &#160; &#160; int *pflags;
+</I>&gt;<i>
+</I>&gt;<i> &#160; &#160; &#160; &#160;/* check the received tx sock reference */
+</I>&gt;<i> - &#160; &#160; &#160; if (!ro-&gt;recv_own_msgs &amp;&amp; skb-&gt;sk == sk)
+</I>&gt;<i> + &#160; &#160; &#160; if (!ro-&gt;recv_own_msgs &amp;&amp; oskb-&gt;sk == sk)
+</I>&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;return;
+</I>&gt;<i>
+</I>&gt;<i> &#160; &#160; &#160; &#160;/* clone the given skb to be able to enqueue it into the rcv queue */
+</I>&gt;<i> - &#160; &#160; &#160; skb = skb_clone(skb, GFP_ATOMIC);
+</I>&gt;<i> + &#160; &#160; &#160; skb = skb_clone(oskb, GFP_ATOMIC);
+</I>&gt;<i> &#160; &#160; &#160; &#160;if (!skb)
+</I>&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;return;
+</I>&gt;<i>
+</I>&gt;<i> @@ -123,6 +139,14 @@ static void raw_rcv(struct sk_buff *skb, void *data)
+</I>&gt;<i> &#160; &#160; &#160; &#160;addr-&gt;can_family &#160;= AF_CAN;
+</I>&gt;<i> &#160; &#160; &#160; &#160;addr-&gt;can_ifindex = skb-&gt;dev-&gt;ifindex;
+</I>&gt;<i>
+</I>&gt;<i> + &#160; &#160; &#160; /* prepare the flags for raw_recvmsg() */
+</I>&gt;<i> + &#160; &#160; &#160; pflags = raw_flags(skb);
+</I>&gt;<i> + &#160; &#160; &#160; *pflags = 0;
+</I>&gt;<i> + &#160; &#160; &#160; if (oskb-&gt;sk)
+</I>&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; *pflags |= MSG_DONTROUTE;
+</I>&gt;<i> + &#160; &#160; &#160; if (oskb-&gt;sk == sk)
+</I>&gt;<i> + &#160; &#160; &#160; &#160; &#160; &#160; &#160; *pflags |= MSG_CONFIRM;
+</I>&gt;<i> +
+</I>&gt;<i> &#160; &#160; &#160; &#160;if (sock_queue_rcv_skb(sk, skb) &lt; 0)
+</I>&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;kfree_skb(skb);
+</I>&gt;<i> &#160;}
+</I>&gt;<i> @@ -707,6 +731,9 @@ static int raw_recvmsg(struct kiocb *iocb, struct socket *sock,
+</I>&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;memcpy(msg-&gt;msg_name, skb-&gt;cb, msg-&gt;msg_namelen);
+</I>&gt;<i> &#160; &#160; &#160; &#160;}
+</I>&gt;<i>
+</I>&gt;<i> + &#160; &#160; &#160; /* assign the flags that have been recorded in in raw_rcv() */
+</I>small typo: double in
+&gt;<i> + &#160; &#160; &#160; msg-&gt;msg_flags |= *(raw_flags(skb));
+</I>&gt;<i> +
+</I>&gt;<i> &#160; &#160; &#160; &#160;skb_free_datagram(sk, skb);
+</I>&gt;<i>
+</I>&gt;<i> &#160; &#160; &#160; &#160;return size;
+</I>
+thanks,
+Daniel.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004738.html">[PATCH net-next] can-raw: add msg_flags to distinguish local traffic
+</A></li>
+	<LI>Next message: <A HREF="004742.html">No subject
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4740">[ date ]</a>
+              <a href="thread.html#4740">[ thread ]</a>
+              <a href="subject.html#4740">[ subject ]</a>
+              <a href="author.html#4740">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

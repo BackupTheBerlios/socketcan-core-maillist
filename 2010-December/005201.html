@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v9 18/20] pch_can: Optimize &quot;if&quot; condition in	rx/tx processing
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v9%2018/20%5D%20pch_can%3A%20Optimize%20%22if%22%20condition%20in%0A%09rx/tx%20processing&In-Reply-To=%3C1292221467-8039-18-git-send-email-tomoya-linux%40dsn.okisemi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005200.html">
+   <LINK REL="Next"  HREF="005202.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v9 18/20] pch_can: Optimize &quot;if&quot; condition in	rx/tx processing</H1>
+    <B>Tomoya MORINAGA</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v9%2018/20%5D%20pch_can%3A%20Optimize%20%22if%22%20condition%20in%0A%09rx/tx%20processing&In-Reply-To=%3C1292221467-8039-18-git-send-email-tomoya-linux%40dsn.okisemi.com%3E"
+       TITLE="[PATCH net-next-2.6 v9 18/20] pch_can: Optimize &quot;if&quot; condition in	rx/tx processing">tomoya-linux at dsn.okisemi.com
+       </A><BR>
+    <I>Mon Dec 13 07:24:24 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005200.html">[PATCH net-next-2.6 v9 17/20] pch_can: Fix incorrect return processing
+</A></li>
+        <LI>Next message: <A HREF="005202.html">[PATCH net-next-2.6 v9 19/20] pch_can: Add setting TEC/REC statistics	processing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5201">[ date ]</a>
+              <a href="thread.html#5201">[ thread ]</a>
+              <a href="subject.html#5201">[ subject ]</a>
+              <a href="author.html#5201">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>For reduce &quot;if&quot; condition, easy to read/understand the code,
+optimize &quot;if&quot; condition in rx/tx processing.
+
+Signed-off-by: Tomoya MORINAGA &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">tomoya-linux at dsn.okisemi.com</A>&gt;
+Acked-by: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+---
+ drivers/net/can/pch_can.c |   26 ++++++++++----------------
+ 1 files changed, 10 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+index 8efbe35..dcd8f00 100644
+--- a/drivers/net/can/pch_can.c
++++ b/drivers/net/can/pch_can.c
+@@ -746,19 +746,16 @@ static int pch_can_poll(struct napi_struct *napi, int quota)
+ 
+ 	if (int_stat == PCH_STATUS_INT) {
+ 		reg_stat = ioread32(&amp;priv-&gt;regs-&gt;stat);
+-		if (reg_stat &amp; (PCH_BUS_OFF | PCH_LEC_ALL)) {
+-			if (reg_stat &amp; PCH_BUS_OFF ||
+-			   (reg_stat &amp; PCH_LEC_ALL) != PCH_LEC_ALL) {
+-				pch_can_error(ndev, reg_stat);
+-				quota--;
+-			}
+-		}
+ 
+-		if (reg_stat &amp; PCH_TX_OK)
+-			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;stat, PCH_TX_OK);
++		if ((reg_stat &amp; (PCH_BUS_OFF | PCH_LEC_ALL)) &amp;&amp;
++		   ((reg_stat &amp; PCH_LEC_ALL) != PCH_LEC_ALL)) {
++			pch_can_error(ndev, reg_stat);
++			quota--;
++		}
+ 
+-		if (reg_stat &amp; PCH_RX_OK)
+-			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;stat, PCH_RX_OK);
++		if (reg_stat &amp; (PCH_TX_OK | PCH_RX_OK))
++			pch_can_bit_clear(&amp;priv-&gt;regs-&gt;stat,
++					  reg_stat &amp; (PCH_TX_OK | PCH_RX_OK));
+ 
+ 		int_stat = pch_can_int_pending(priv);
+ 	}
+@@ -900,14 +897,13 @@ static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+ 	if (can_dropped_invalid_skb(ndev, skb))
+ 		return NETDEV_TX_OK;
+ 
++	tx_obj_no = priv-&gt;tx_obj;
+ 	if (priv-&gt;tx_obj == PCH_TX_OBJ_END) {
+ 		if (ioread32(&amp;priv-&gt;regs-&gt;treq2) &amp; PCH_TREQ2_TX_MASK)
+ 			netif_stop_queue(ndev);
+ 
+-		tx_obj_no = priv-&gt;tx_obj;
+ 		priv-&gt;tx_obj = PCH_TX_OBJ_START;
+ 	} else {
+-		tx_obj_no = priv-&gt;tx_obj;
+ 		priv-&gt;tx_obj++;
+ 	}
+ 
+@@ -926,9 +922,7 @@ static netdev_tx_t pch_xmit(struct sk_buff *skb, struct net_device *ndev)
+ 	id2 |= PCH_ID_MSGVAL;
+ 
+ 	/* If remote frame has to be transmitted.. */
+-	if (cf-&gt;can_id &amp; CAN_RTR_FLAG)
+-		id2 &amp;= ~PCH_ID2_DIR;
+-	else
++	if (!(cf-&gt;can_id &amp; CAN_RTR_FLAG))
+ 		id2 |= PCH_ID2_DIR;
+ 
+ 	iowrite32(id2, &amp;priv-&gt;regs-&gt;ifregs[1].id2);
+-- 
+1.6.0.6
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005200.html">[PATCH net-next-2.6 v9 17/20] pch_can: Fix incorrect return processing
+</A></li>
+	<LI>Next message: <A HREF="005202.html">[PATCH net-next-2.6 v9 19/20] pch_can: Add setting TEC/REC statistics	processing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5201">[ date ]</a>
+              <a href="thread.html#5201">[ thread ]</a>
+              <a href="subject.html#5201">[ subject ]</a>
+              <a href="author.html#5201">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

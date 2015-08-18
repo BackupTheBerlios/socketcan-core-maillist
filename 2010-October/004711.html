@@ -1,0 +1,1027 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> mcp2515
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp2515&In-Reply-To=%3C4CB2D725.2080100%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004702.html">
+   <LINK REL="Next"  HREF="004713.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>mcp2515</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp2515&In-Reply-To=%3C4CB2D725.2080100%40pengutronix.de%3E"
+       TITLE="mcp2515">mkl at pengutronix.de
+       </A><BR>
+    <I>Mon Oct 11 11:21:41 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004702.html">mcp2515
+</A></li>
+        <LI>Next message: <A HREF="004713.html">mcp2515
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4711">[ date ]</a>
+              <a href="thread.html#4711">[ thread ]</a>
+              <a href="subject.html#4711">[ subject ]</a>
+              <a href="author.html#4711">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 10/06/2010 12:53 PM, Andre B. Oliveira wrote:
+&gt;<i> 2010/10/6 Andre B. Oliveira &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">anbadeol at gmail.com</A>&gt;:
+</I>&gt;&gt;<i> And here is a driver for the Microchip MCP2515 SPI controller:
+</I>
+The driver looks really good. Some comments inline..mainly:
+- replace the unsigned char for the spi transfer buffer by u8,
+  then the casts can go away
+- implement IFF_ECHO
+
+cheers, Marc
+
+&gt;<i> 
+</I>&gt;<i> Here is the patch:
+</I>&gt;<i> 
+</I>&gt;<i> diff -uprN -X linux-2.6.35.4/Documentation/dontdiff
+</I>&gt;<i> linux-2.6.35.4/drivers/net/can/Kconfig
+</I>&gt;<i> linux-2.6.35.4-mcp2515/drivers/net/can/Kconfig
+</I>&gt;<i> --- linux-2.6.35.4/drivers/net/can/Kconfig	2010-08-27 00:47:12.000000000 +0100
+</I>&gt;<i> +++ linux-2.6.35.4-mcp2515/drivers/net/can/Kconfig	2010-09-17
+</I>&gt;<i> 16:04:26.000000000 +0100
+</I>&gt;<i> @@ -48,6 +48,16 @@ config CAN_TI_HECC
+</I>&gt;<i>  	  Driver for TI HECC (High End CAN Controller) module found on many
+</I>&gt;<i>  	  TI devices. The device specifications are available from www.ti.com
+</I>&gt;<i> 
+</I>&gt;<i> +config CAN_MCP2515
+</I>&gt;<i> +	tristate &quot;Microchip MCP2515 SPI CAN controller&quot;
+</I>&gt;<i> +	depends on SPI
+</I>&gt;<i> +	select CAN_DEV
+</I>&gt;<i> +	help
+</I>&gt;<i> +	Driver for the Microchip MCP2515 SPI CAN controllers.
+</I>&gt;<i> +	This is a new driver that uses the asynchronous SPI API directly,
+</I>&gt;<i> +	eliminating the overhead of threads, work queues and synchronous SPI
+</I>&gt;<i> +	wrappers, thus reducing SPI transactions latency to a minimum.
+</I>&gt;<i> +
+</I>&gt;<i>  config CAN_MCP251X
+</I>&gt;<i>  	tristate &quot;Microchip MCP251x SPI CAN controllers&quot;
+</I>&gt;<i>  	depends on CAN_DEV &amp;&amp; SPI &amp;&amp; HAS_DMA
+</I>&gt;<i> diff -uprN -X linux-2.6.35.4/Documentation/dontdiff
+</I>&gt;<i> linux-2.6.35.4/drivers/net/can/Makefile
+</I>&gt;<i> linux-2.6.35.4-mcp2515/drivers/net/can/Makefile
+</I>&gt;<i> --- linux-2.6.35.4/drivers/net/can/Makefile	2010-08-27 00:47:12.000000000 +0100
+</I>&gt;<i> +++ linux-2.6.35.4-mcp2515/drivers/net/can/Makefile	2010-09-16
+</I>&gt;<i> 16:00:51.000000000 +0100
+</I>&gt;<i> @@ -13,6 +13,7 @@ obj-$(CONFIG_CAN_SJA1000)	+= sja1000/
+</I>&gt;<i>  obj-$(CONFIG_CAN_MSCAN)		+= mscan/
+</I>&gt;<i>  obj-$(CONFIG_CAN_AT91)		+= at91_can.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_TI_HECC)	+= ti_hecc.o
+</I>&gt;<i> +obj-$(CONFIG_CAN_MCP2515)	+= mcp2515.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_MCP251X)	+= mcp251x.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_BFIN)		+= bfin_can.o
+</I>&gt;<i>  obj-$(CONFIG_CAN_JANZ_ICAN3)	+= janz-ican3.o
+</I>&gt;<i> diff -uprN -X linux-2.6.35.4/Documentation/dontdiff
+</I>&gt;<i> linux-2.6.35.4/drivers/net/can/mcp2515.c
+</I>&gt;<i> linux-2.6.35.4-mcp2515/drivers/net/can/mcp2515.c
+</I>&gt;<i> --- linux-2.6.35.4/drivers/net/can/mcp2515.c	1970-01-01 01:00:00.000000000 +0100
+</I>&gt;<i> +++ linux-2.6.35.4-mcp2515/drivers/net/can/mcp2515.c	2010-09-17
+</I>&gt;<i> 16:08:01.000000000 +0100
+</I>&gt;<i> @@ -0,0 +1,785 @@
+</I>&gt;<i> +/*
+</I>&gt;<i> + * linux/drivers/net/can/mcp2515.c - driver for Microchip MCP2515
+</I>&gt;<i> + *
+</I>&gt;<i> + * Copyright 2010 Andre B. Oliveira
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is free software: you can redistribute it and/or modify
+</I>&gt;<i> + * it under the terms of the GNU General Public License as published by
+</I>&gt;<i> + * the Free Software Foundation, either version 3 of the License, or
+</I>&gt;<i> + * (at your option) any later version.
+</I>&gt;<i> + *
+</I>&gt;<i> + * This program is distributed in the hope that it will be useful,
+</I>&gt;<i> + * but WITHOUT ANY WARRANTY; without even the implied warranty of
+</I>&gt;<i> + * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+</I>&gt;<i> + * GNU General Public License for more details.
+</I>&gt;<i> + *
+</I>&gt;<i> + * You should have received a copy of the GNU General Public License
+</I>&gt;<i> + * along with this program.  If not, see &lt;<A HREF="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</A>&gt;.
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Example of mcp2515 platform spi_board_info definition:
+</I>&gt;<i> + *
+</I>&gt;<i> + * static struct spi_board_info spi_board_info[] = {
+</I>&gt;<i> + * #ifdef CONFIG_CAN_MCP2515
+</I>&gt;<i> + *	{
+</I>&gt;<i> + *		.modalias = &quot;mcp2515&quot;,
+</I>&gt;<i> + *		.bus_num = 2,
+</I>&gt;<i> + *		.chip_select = 0,
+</I>&gt;<i> + *		.irq = IRQ_GPIO(28),
+</I>&gt;<i> + *		.max_speed_hz = 10000000,
+</I>&gt;<i> + *		.platform_data = (void *)(MCP2515_OSC_FREQ_HZ / 2),
+</I>
+Have a look at the &quot;struct mcp251x_platform_data&quot;. In order to replace
+the existing driver you should IMHO implement some of the callbacks
+there. I.e., power_enable and transceiver_enable.
+
+&gt;<i> + *	},
+</I>&gt;<i> + * #endif
+</I>&gt;<i> + * };
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * References: Microchip MCP2515 data sheet, DS21801E, 2007.
+</I>&gt;<i> + */
+</I>&gt;<i> +
+</I>&gt;<i> +#include &lt;linux/dma-mapping.h&gt;
+</I>&gt;<i> +#include &lt;linux/init.h&gt;
+</I>&gt;<i> +#include &lt;linux/interrupt.h&gt;
+</I>&gt;<i> +#include &lt;linux/module.h&gt;
+</I>&gt;<i> +#include &lt;linux/netdevice.h&gt;
+</I>&gt;<i> +#include &lt;linux/skbuff.h&gt;
+</I>&gt;<i> +#include &lt;linux/spi/spi.h&gt;
+</I>&gt;<i> +#include &lt;linux/spinlock.h&gt;
+</I>&gt;<i> +#include &lt;linux/can.h&gt;
+</I>&gt;<i> +#include &lt;linux/can/dev.h&gt;
+</I>&gt;<i> +
+</I>&gt;<i> +MODULE_DESCRIPTION(&quot;Driver for Microchip MCP2515 SPI CAN controller&quot;);
+</I>&gt;<i> +MODULE_AUTHOR(&quot;Andre B. Oliveira &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">anbadeol at gmail.com</A>&gt;&quot;);
+</I>&gt;<i> +MODULE_LICENSE(&quot;GPL&quot;);
+</I>&gt;<i> +
+</I>&gt;<i> +/* Registers */
+</I>&gt;<i> +#define CANCTRL		0x0f
+</I>&gt;<i> +#define RXB0CTRL	0x60
+</I>&gt;<i> +#define RXB1CTRL	0x70
+</I>&gt;<i> +
+</I>&gt;<i> +/* RXBnCTRL bits */
+</I>&gt;<i> +#define RXBCTRL_RXM1	0x40
+</I>&gt;<i> +#define RXBCTRL_RXM0	0x20
+</I>&gt;<i> +#define RXBCTRL_BUKT	0x04
+</I>&gt;<i> +
+</I>&gt;<i> +/* RXBnSIDL bits */
+</I>&gt;<i> +#define RXBSIDL_SRR	0x10
+</I>&gt;<i> +#define RXBSIDL_IDE	0x08
+</I>&gt;<i> +
+</I>&gt;<i> +/* RXBnDLC bits */
+</I>&gt;<i> +#define RXBDLC_RTR	0x40
+</I>&gt;<i> +
+</I>&gt;<i> +/* CANINTF bits */
+</I>&gt;<i> +#define CANINTF_ERRIF	0x20
+</I>&gt;<i> +#define CANINTF_TX0IF	0x04
+</I>&gt;<i> +#define CANINTF_RX1IF	0x02
+</I>&gt;<i> +#define CANINTF_RX0IF	0x01
+</I>&gt;<i> +
+</I>&gt;<i> +/* EFLG bits */
+</I>&gt;<i> +#define EFLG_RX1OVR	0x80
+</I>&gt;<i> +#define EFLG_RX0OVR	0x40
+</I>&gt;<i> +
+</I>&gt;<i> +/* Network device private data */
+</I>&gt;<i> +struct mcp2515_priv {
+</I>&gt;<i> +	struct can_priv can;	/* must be first for all CAN network devices */
+</I>&gt;<i> +	struct spi_device *spi;	/* SPI device */
+</I>&gt;<i> +
+</I>&gt;<i> +	unsigned char canintf;	/* last read value of CANINTF register */
+</I>&gt;<i> +	unsigned char eflg;	/* last read value of EFLG register */
+</I>
+I would use &quot;u8&quot; for these two.
+
+&gt;<i> +
+</I>&gt;<i> +	struct sk_buff *skb;	/* skb to transmit or currently transmitting */
+</I>&gt;<i> +
+</I>&gt;<i> +	spinlock_t lock;	/* Lock for the following flags: */
+</I>&gt;<i> +	unsigned busy : 1;	/* set when pending async spi transaction */
+</I>&gt;<i> +	unsigned interrupt : 1;	/* set when pending interrupt handling */
+</I>&gt;<i> +	unsigned transmit : 1;	/* set when pending transmission */
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Message, transfer and buffers for one async spi transaction */
+</I>&gt;<i> +	struct spi_message message;
+</I>&gt;<i> +	struct spi_transfer transfer;
+</I>&gt;<i> +	unsigned char rx_buf[14] __attribute__((aligned(8)));
+</I>&gt;<i> +	unsigned char tx_buf[14] __attribute__((aligned(8)));
+</I>
+I'd use u8 here, too
+
+&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static struct can_bittiming_const mcp2515_bittiming_const = {
+</I>&gt;<i> +	.name = &quot;mcp2515&quot;,
+</I>&gt;<i> +	.tseg1_min = 3,
+</I>&gt;<i> +	.tseg1_max = 16,
+</I>&gt;<i> +	.tseg2_min = 2,
+</I>&gt;<i> +	.tseg2_max = 8,
+</I>&gt;<i> +	.sjw_max = 4,
+</I>&gt;<i> +	.brp_min = 1,
+</I>&gt;<i> +	.brp_max = 64,
+</I>&gt;<i> +	.brp_inc = 1,
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * SPI asynchronous completion callback functions.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_read_flags_complete(void *context);
+</I>&gt;<i> +static void mcp2515_read_rxb0_complete(void *context);
+</I>&gt;<i> +static void mcp2515_read_rxb1_complete(void *context);
+</I>&gt;<i> +static void mcp2515_clear_canintf_complete(void *context);
+</I>&gt;<i> +static void mcp2515_clear_eflg_complete(void *context);
+</I>&gt;<i> +static void mcp2515_load_txb0_complete(void *context);
+</I>&gt;<i> +static void mcp2515_rts_txb0_complete(void *context);
+</I>
+Is it possible to rearrange the code so that these forward declarations
+are not needed?
+
+&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Write VALUE to register at address ADDR.
+</I>&gt;<i> + * Synchronous.
+</I>&gt;<i> + */
+</I>&gt;<i> +static int mcp2515_write(struct spi_device *spi, unsigned addr, unsigned value)
+</I>&gt;<i> +{
+</I>&gt;<i> +	unsigned char buf[3] __attribute__((aligned(8)));
+</I>
+u8, as spi_write takes an u8, and maybe C99 initializer for the array.
+
+&gt;<i> +
+</I>&gt;<i> +	buf[0] = 2;	/* write instruction */
+</I>&gt;<i> +	buf[1] = addr;	/* address */
+</I>&gt;<i> +	buf[2] = value;	/* data */
+</I>&gt;<i> +
+</I>&gt;<i> +	return spi_write(spi, buf, 3);
+</I>
+ARRAY_SIZE instead of &quot;3&quot;
+
+&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Reset internal registers to default state and enter configuration mode.
+</I>&gt;<i> + * Synchronous.
+</I>&gt;<i> + */
+</I>&gt;<i> +static int mcp2515_reset(struct spi_device *spi)
+</I>&gt;<i> +{
+</I>&gt;<i> +	const unsigned char reset = 0xc0;
+</I>
+u8
+
+&gt;<i> +
+</I>&gt;<i> +	return spi_write(spi, &amp;reset, 1);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Set the bit timing configuration registers, the interrupt enable register
+</I>&gt;<i> + * and the receive buffers control registers.
+</I>&gt;<i> + * Synchronous.
+</I>&gt;<i> + */
+</I>&gt;<i> +static int mcp2515_config(struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	struct spi_device *spi = priv-&gt;spi;
+</I>&gt;<i> +	struct can_bittiming *bt = &amp;priv-&gt;can.bittiming;
+</I>&gt;<i> +	unsigned char buf[6] __attribute__((aligned(8)));
+</I>
+u8 + C99 initializer.....
+btw: why don't you use the buf from the priv?
+
+&gt;<i> +	int err;
+</I>&gt;<i> +
+</I>&gt;<i> +	buf[0] = 2;	/* write instruction */
+</I>&gt;<i> +	buf[1] = 0x28;	/* address of CNF3 */
+</I>&gt;<i> +
+</I>&gt;<i> +	/* CNF3 */
+</I>&gt;<i> +	buf[2] = bt-&gt;phase_seg2 - 1;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* CNF2 */
+</I>&gt;<i> +	buf[3] = (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_3_SAMPLES ? 0xc0 : 0x80)
+</I>&gt;<i> +		| (bt-&gt;phase_seg1 - 1) &lt;&lt; 3 | (bt-&gt;prop_seg - 1);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* CNF1 */
+</I>&gt;<i> +	buf[4] = (bt-&gt;sjw - 1) &lt;&lt; 6 | (bt-&gt;brp - 1);
+</I>&gt;<i> +
+</I>&gt;<i> +	/* CANINTE */
+</I>&gt;<i> +	buf[5] = ~0;	/* enable all interrupts */
+</I>&gt;<i> +
+</I>&gt;<i> +	err = spi_write(spi, buf, 6);
+</I>
+ARRAY_SIZE
+
+&gt;<i> +	if (err)
+</I>&gt;<i> +		return err;
+</I>&gt;<i> +
+</I>&gt;<i> +	err = mcp2515_write(spi, RXB0CTRL,
+</I>&gt;<i> +				RXBCTRL_RXM1 | RXBCTRL_RXM0 | RXBCTRL_BUKT);
+</I>&gt;<i> +	if (err)
+</I>&gt;<i> +		return err;
+</I>&gt;<i> +
+</I>&gt;<i> +	err = mcp2515_write(spi, RXB1CTRL, RXBCTRL_RXM1 | RXBCTRL_RXM0);
+</I>&gt;<i> +	if (err)
+</I>&gt;<i> +		return err;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* Finally, enter normal operation mode. */
+</I>&gt;<i> +	return mcp2515_write(spi, CANCTRL, 0);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Start an asynchronous SPI transaction.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_spi_async(struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	int err;
+</I>&gt;<i> +
+</I>&gt;<i> +	err = spi_async(priv-&gt;spi, &amp;priv-&gt;message);
+</I>&gt;<i> +	if (err)
+</I>&gt;<i> +		printk(KERN_ERR &quot;%s: mcp2515_spi_async=%d\n&quot;, net-&gt;name, err);
+</I>
+use dev_err() instead, please
+
+&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Read CANINTF and EFLG registers in one shot.
+</I>&gt;<i> + * Asynchronous.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_read_flags(struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	unsigned char *buf = (unsigned char *)priv-&gt;transfer.tx_buf;
+</I>
+u8 * please, the cast is unneeded
+&gt;<i> +
+</I>&gt;<i> +	buf[0] = 3;	/* read instruction */
+</I>&gt;<i> +	buf[1] = 0x2c;	/* address of CANINTF */
+</I>&gt;<i> +	buf[2] = 0;	/* CANINTF */
+</I>&gt;<i> +	buf[3] = 0;	/* EFLG */
+</I>&gt;<i> +	priv-&gt;transfer.len = 4;
+</I>&gt;<i> +	priv-&gt;message.complete = mcp2515_read_flags_complete;
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_spi_async(net);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Read receive buffer 0 (instruction 0x90) or 1 (instruction 0x94).
+</I>&gt;<i> + * Asynchronous.
+</I>&gt;<i> + */
+</I>
+I suggest to change the function's semantics, replace the instruction
+parameter by the buffer number remove the complete parameter. Do the
+demultiplexing of buffer to instruction and complete function here.
+
+&gt;<i> +static void mcp2515_read_rxb(struct net_device *net, unsigned char instruction,
+</I>u8
+&gt;<i> +						void (*complete)(void *))
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	unsigned char *buf = (unsigned char *)priv-&gt;transfer.tx_buf;
+</I>u8 *
+&gt;<i> +
+</I>&gt;<i> +	memset(buf, 0, 14);
+</I>&gt;<i> +	buf[0] = instruction;
+</I>&gt;<i> +	priv-&gt;transfer.len = 14; /* instruction + id(4) + dlc + data(8) */
+</I>&gt;<i> +	priv-&gt;message.complete = complete;
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_spi_async(net);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Read receive buffer 0.
+</I>&gt;<i> + * Asynchronous.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_read_rxb0(struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	mcp2515_read_rxb(net, 0x90, mcp2515_read_rxb0_complete);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Read receive buffer 1.
+</I>&gt;<i> + * Asynchronous.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_read_rxb1(struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	mcp2515_read_rxb(net, 0x94, mcp2515_read_rxb1_complete);
+</I>&gt;<i> +}
+</I>
+these two can be removed, then
+
+&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Clear CANINTF bits.
+</I>&gt;<i> + * Asynchronous.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_clear_canintf(struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	unsigned char *buf = (unsigned char *)priv-&gt;transfer.tx_buf;
+</I>
+u8 *
+
+&gt;<i> +
+</I>&gt;<i> +	buf[0] = 5;	/* bit modify instruction */
+</I>&gt;<i> +	buf[1] = 0x2c;	/* address of CANINTF */
+</I>&gt;<i> +	buf[2] = priv-&gt;canintf &amp; ~(CANINTF_RX0IF | CANINTF_RX1IF); /* mask */
+</I>&gt;<i> +	buf[3] = 0;	/* data */
+</I>&gt;<i> +	priv-&gt;transfer.len = 4;
+</I>&gt;<i> +	priv-&gt;message.complete = mcp2515_clear_canintf_complete;
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_spi_async(net);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Clear EFLG bits.
+</I>&gt;<i> + * Asynchronous.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_clear_eflg(struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	unsigned char *buf = (unsigned char *)priv-&gt;transfer.tx_buf;
+</I>
+u8 *
+
+&gt;<i> +
+</I>&gt;<i> +	buf[0] = 5;		/* bit modify instruction */
+</I>&gt;<i> +	buf[1] = 0x2d;		/* address of EFLG */
+</I>&gt;<i> +	buf[2] = priv-&gt;eflg;	/* mask */
+</I>&gt;<i> +	buf[3] = 0;		/* data */
+</I>&gt;<i> +	priv-&gt;transfer.len = 4;
+</I>&gt;<i> +	priv-&gt;message.complete = mcp2515_clear_eflg_complete;
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_spi_async(net);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Set the transmit buffer, starting at TXB0SIDH, for an skb.
+</I>&gt;<i> + */
+</I>&gt;<i> +static int mcp2515_set_txbuf(unsigned char *buf, const struct sk_buff *skb)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct can_frame *frame = (struct can_frame *)skb-&gt;data;
+</I>&gt;<i> +
+</I>&gt;<i> +	if (frame-&gt;can_id &amp; CAN_EFF_FLAG) {
+</I>&gt;<i> +		buf[0] = frame-&gt;can_id &gt;&gt; 21;
+</I>&gt;<i> +		buf[1] = (frame-&gt;can_id&gt;&gt;13&amp;0xe0) | 8 | (frame-&gt;can_id&gt;&gt;16&amp;3);
+</I>
+please add spaces before and after &gt;&gt; and &amp;
+please use checkpatch.pl to test for coding style improvements
+
+&gt;<i> +		buf[2] = frame-&gt;can_id &gt;&gt; 8;
+</I>&gt;<i> +		buf[3] = frame-&gt;can_id;
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		buf[0] = frame-&gt;can_id &gt;&gt; 3;
+</I>&gt;<i> +		buf[1] = frame-&gt;can_id &lt;&lt; 5;
+</I>&gt;<i> +		buf[2] = 0;
+</I>&gt;<i> +		buf[3] = 0;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (frame-&gt;can_id &amp; CAN_RTR_FLAG)
+</I>&gt;<i> +		buf[4] = frame-&gt;can_dlc | 0x40;
+</I>&gt;<i> +	else
+</I>&gt;<i> +		buf[4] = frame-&gt;can_dlc;
+</I>&gt;<i> +
+</I>&gt;<i> +	memcpy(buf + 5, frame-&gt;data, frame-&gt;can_dlc);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 5 + frame-&gt;can_dlc;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Send the &quot;load transmit buffer 0&quot; SPI message.
+</I>&gt;<i> + * Asynchronous.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_load_txb0(struct sk_buff *skb, struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	unsigned char *buf = (unsigned char *)priv-&gt;transfer.tx_buf;
+</I>
+u8 *
+
+&gt;<i> +
+</I>&gt;<i> +	buf[0] = 0x40;	/* load txb0 instruction */
+</I>&gt;<i> +	priv-&gt;transfer.len = mcp2515_set_txbuf(buf + 1, skb) + 1;
+</I>&gt;<i> +	priv-&gt;message.complete = mcp2515_load_txb0_complete;
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_spi_async(net);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Send the &quot;request to send transmit buffer 0&quot; SPI message.
+</I>&gt;<i> + * Asynchronous.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_rts_txb0(struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	unsigned char *buf = (unsigned char *)priv-&gt;transfer.tx_buf;
+</I>&gt;<i> +
+</I>&gt;<i> +	buf[0] = 0x81;	/* request to send txb0 instruction */
+</I>&gt;<i> +	priv-&gt;transfer.len = 1;
+</I>&gt;<i> +	priv-&gt;message.complete = mcp2515_rts_txb0_complete;
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_spi_async(net);
+</I>&gt;<i> +}
+</I>
+Can these two SPI transfers be merged into one? IIRC there's a parameter
+to tell the SPI framework that the CS should be toggled between two
+messages.
+
+&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Called when the &quot;read CANINTF and EFLG registers&quot; SPI message completes.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_read_flags_complete(void *context)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *net = context;
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	unsigned char *buf = (unsigned char *)priv-&gt;transfer.rx_buf;
+</I>u8 *
+&gt;<i> +	unsigned canintf;
+</I>u8
+&gt;<i> +	unsigned long flags;
+</I>&gt;<i> +
+</I>&gt;<i> +	priv-&gt;canintf = canintf = buf[2];
+</I>&gt;<i> +	priv-&gt;eflg = buf[3];
+</I>&gt;<i> +
+</I>&gt;<i> +	if (canintf &amp; CANINTF_RX0IF)
+</I>&gt;<i> +		mcp2515_read_rxb0(net);
+</I>&gt;<i> +	else if (canintf &amp; CANINTF_RX1IF)
+</I>&gt;<i> +		mcp2515_read_rxb1(net);
+</I>&gt;<i> +	else if (canintf)
+</I>&gt;<i> +		mcp2515_clear_canintf(net);
+</I>&gt;<i> +	else {
+</I>&gt;<i> +		spin_lock_irqsave(&amp;priv-&gt;lock, flags);
+</I>&gt;<i> +		if (priv-&gt;transmit) {
+</I>&gt;<i> +			priv-&gt;transmit = 0;
+</I>&gt;<i> +			spin_unlock_irqrestore(&amp;priv-&gt;lock, flags);
+</I>&gt;<i> +			mcp2515_load_txb0(priv-&gt;skb, net);
+</I>&gt;<i> +		} else if (priv-&gt;interrupt) {
+</I>&gt;<i> +			priv-&gt;interrupt = 0;
+</I>&gt;<i> +			spin_unlock_irqrestore(&amp;priv-&gt;lock, flags);
+</I>&gt;<i> +			mcp2515_read_flags(net);
+</I>&gt;<i> +		} else {
+</I>&gt;<i> +			priv-&gt;busy = 0;
+</I>&gt;<i> +			spin_unlock_irqrestore(&amp;priv-&gt;lock, flags);
+</I>&gt;<i> +		}
+</I>&gt;<i> +	}
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Called when one of the &quot;read receive buffer i&quot; SPI message completes.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_read_rxb_complete(void *context)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *net = context;
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	struct sk_buff *skb;
+</I>&gt;<i> +	struct can_frame *frame;
+</I>&gt;<i> +	unsigned char *buf;
+</I>u8 *
+&gt;<i> +
+</I>&gt;<i> +	buf = priv-&gt;transfer.rx_buf;
+</I>&gt;<i> +
+</I>&gt;<i> +	if ((buf[5] &amp; 15) &gt; 8) {	/* dlc &gt; 8 */
+</I>&gt;<i> +		net-&gt;stats.rx_length_errors++;
+</I>&gt;<i> +		return;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	skb = alloc_can_skb(net, &amp;frame);
+</I>&gt;<i> +	if (!skb) {
+</I>&gt;<i> +		net-&gt;stats.rx_dropped++;
+</I>&gt;<i> +		return;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (buf[2] &amp; RXBSIDL_IDE) {
+</I>&gt;<i> +		frame-&gt;can_id = ((buf[1] &lt;&lt; 21 | (buf[2] &amp; 0xe0) &lt;&lt; 13 |
+</I>&gt;<i> +				(buf[2] &amp; 3) &lt;&lt; 16 | buf[3] &lt;&lt; 8 | buf[4])
+</I>&gt;<i> +						&amp; 0x1fffffff) | CAN_EFF_FLAG;
+</I>&gt;<i> +		if (buf[5] &amp; RXBDLC_RTR)
+</I>&gt;<i> +			frame-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		frame-&gt;can_id = buf[1] &lt;&lt; 3 | buf[2] &gt;&gt; 5;
+</I>&gt;<i> +		if (buf[2] &amp; RXBSIDL_SRR)
+</I>&gt;<i> +			frame-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	frame-&gt;can_dlc = buf[5] &amp; 15;
+</I>&gt;<i> +
+</I>&gt;<i> +	memcpy(frame-&gt;data, buf + 6, frame-&gt;can_dlc);
+</I>&gt;<i> +
+</I>&gt;<i> +	net-&gt;stats.rx_packets++;
+</I>&gt;<i> +	net-&gt;stats.rx_bytes += frame-&gt;can_dlc;
+</I>&gt;<i> +
+</I>&gt;<i> +	netif_rx(skb);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Transmit a frame if transmission pending, else read and process flags.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_transmit_or_read_flags(struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	unsigned long flags;
+</I>&gt;<i> +
+</I>&gt;<i> +	spin_lock_irqsave(&amp;priv-&gt;lock, flags);
+</I>&gt;<i> +	if (priv-&gt;transmit) {
+</I>&gt;<i> +		priv-&gt;transmit = 0;
+</I>&gt;<i> +		spin_unlock_irqrestore(&amp;priv-&gt;lock, flags);
+</I>&gt;<i> +		mcp2515_load_txb0(priv-&gt;skb, net);
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		spin_unlock_irqrestore(&amp;priv-&gt;lock, flags);
+</I>&gt;<i> +		mcp2515_read_flags(net);
+</I>&gt;<i> +	}
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Called when the &quot;read receive buffer 0&quot; SPI message completes.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_read_rxb0_complete(void *context)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *net = context;
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_read_rxb_complete(context);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (priv-&gt;canintf &amp; CANINTF_RX1IF)
+</I>&gt;<i> +		mcp2515_read_rxb1(net);
+</I>&gt;<i> +	else
+</I>&gt;<i> +		mcp2515_transmit_or_read_flags(net);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Called when the &quot;read receive buffer 1&quot; SPI message completes.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_read_rxb1_complete(void *context)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *net = context;
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_read_rxb_complete(context);
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_transmit_or_read_flags(net);
+</I>&gt;<i> +}
+</I>
+If you track the current rx'ed buffer in priv you maybe can merge these
+two functions. I'm not sure if it's worth that....
+
+&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Called when the &quot;clear CANINTF bits&quot; SPI message completes.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_clear_canintf_complete(void *context)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *net = context;
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +
+</I>&gt;<i> +	if (priv-&gt;canintf &amp; CANINTF_TX0IF) {
+</I>&gt;<i> +		net-&gt;stats.tx_packets++;
+</I>&gt;<i> +		if (priv-&gt;skb) {
+</I>
+Is this possible? (tx-complete interrupt but no skb?)
+
+&gt;<i> +			/* net-&gt;stats.tx_bytes += priv-&gt;skb-&gt;dlc; */
+</I>
+please implements this :)
+
+&gt;<i> +			dev_kfree_skb_any(priv-&gt;skb);
+</I>
+BTW: please also implement the echoing of the tx'ed packet
+
+&gt;<i> +		}
+</I>&gt;<i> +		priv-&gt;skb = NULL;
+</I>&gt;<i> +		netif_wake_queue(net);
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	if (priv-&gt;eflg)
+</I>&gt;<i> +		mcp2515_clear_eflg(net);
+</I>&gt;<i> +	else
+</I>&gt;<i> +		mcp2515_read_flags(net);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Called when the &quot;clear EFLG bits&quot; SPI message completes.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_clear_eflg_complete(void *context)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *net = context;
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +
+</I>&gt;<i> +	/*
+</I>&gt;<i> +	 * The receive flow chart (figure 4-3) of the data sheet (DS21801E)
+</I>&gt;<i> +	 * says that, if RXB0CTRL.BUKT is set (our case), the overflow
+</I>&gt;<i> +	 * flag that is set is EFLG.RX1OVR, when in fact it is EFLG.RX0OVR
+</I>&gt;<i> +	 * that is set.  To be safe, we test for any one of them.
+</I>&gt;<i> +	 */
+</I>&gt;<i> +	if (priv-&gt;eflg &amp; (EFLG_RX0OVR | EFLG_RX1OVR))
+</I>&gt;<i> +		net-&gt;stats.rx_over_errors++;
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_read_flags(net);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Called when the &quot;load transmit buffer 0&quot; SPI message completes.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_load_txb0_complete(void *context)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *net = context;
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_rts_txb0(net);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Called when the &quot;request to send transmit buffer 0&quot; SPI message completes.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_rts_txb0_complete(void *context)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *net = context;
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_read_flags(net);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Interrupt handler.
+</I>&gt;<i> + */
+</I>&gt;<i> +static irqreturn_t mcp2515_interrupt(int irq, void *dev_id)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *net = dev_id;
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +
+</I>&gt;<i> +	spin_lock(&amp;priv-&gt;lock);
+</I>&gt;<i> +	if (priv-&gt;busy) {
+</I>&gt;<i> +		priv-&gt;interrupt = 1;
+</I>&gt;<i> +		spin_unlock(&amp;priv-&gt;lock);
+</I>&gt;<i> +		return IRQ_HANDLED;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	priv-&gt;busy = 1;
+</I>&gt;<i> +	spin_unlock(&amp;priv-&gt;lock);
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_read_flags(net);
+</I>&gt;<i> +
+</I>&gt;<i> +	return IRQ_HANDLED;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Transmit a frame.
+</I>&gt;<i> + */
+</I>&gt;<i> +static netdev_tx_t mcp2515_start_xmit(struct sk_buff *skb,
+</I>&gt;<i> +					struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	unsigned long flags;
+</I>&gt;<i> +
+</I>&gt;<i> +	netif_stop_queue(net);
+</I>&gt;<i> +	priv-&gt;skb = skb;
+</I>
+With the current driver I have the situation, that xmit gets called even
+if the skb has not been deliverted yet. I don't know why....
+
+Can you please check if priv-&gt;skb == NULL and print and error message. I
+don't know if this is a HW problem or a driver problem of the other driver.
+
+&gt;<i> +	net-&gt;trans_start = jiffies;
+</I>&gt;<i> +
+</I>&gt;<i> +	spin_lock_irqsave(&amp;priv-&gt;lock, flags);
+</I>&gt;<i> +	if (priv-&gt;busy) {
+</I>&gt;<i> +		priv-&gt;transmit = 1;
+</I>&gt;<i> +		spin_unlock_irqrestore(&amp;priv-&gt;lock, flags);
+</I>&gt;<i> +		return NETDEV_TX_OK;
+</I>&gt;<i> +	}
+</I>&gt;<i> +	priv-&gt;busy = 1;
+</I>&gt;<i> +	spin_unlock_irqrestore(&amp;priv-&gt;lock, flags);
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_load_txb0(skb, net);
+</I>&gt;<i> +
+</I>&gt;<i> +	return NETDEV_TX_OK;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Called when the network device transitions to the up state.
+</I>&gt;<i> + */
+</I>&gt;<i> +static int mcp2515_open(struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	struct spi_device *spi = priv-&gt;spi;
+</I>&gt;<i> +	int err;
+</I>&gt;<i> +
+</I>&gt;<i> +	err = mcp2515_reset(spi);
+</I>&gt;<i> +	if (err)
+</I>&gt;<i> +		return err;
+</I>&gt;<i> +
+</I>&gt;<i> +	err = open_candev(net);
+</I>&gt;<i> +	if (err)
+</I>&gt;<i> +		return err;
+</I>&gt;<i> +
+</I>&gt;<i> +	err = request_irq(spi-&gt;irq, mcp2515_interrupt,
+</I>&gt;<i> +				IRQF_TRIGGER_FALLING, net-&gt;name, net);
+</I>&gt;<i> +	if (err)
+</I>&gt;<i> +		goto err1;
+</I>&gt;<i> +
+</I>&gt;<i> +	err = mcp2515_config(net);
+</I>&gt;<i> +	if (err)
+</I>&gt;<i> +		goto err2;
+</I>&gt;<i> +
+</I>&gt;<i> +	netif_wake_queue(net);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +
+</I>&gt;<i> +err2:	mcp2515_reset(spi);
+</I>
+please add a newline after a label
+
+&gt;<i> +	free_irq(spi-&gt;irq, net);
+</I>&gt;<i> +err1:	close_candev(net);
+</I>&gt;<i> +	return err;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Called when the network device transitions to the down state.
+</I>&gt;<i> + */
+</I>&gt;<i> +static int mcp2515_stop(struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	struct spi_device *spi = priv-&gt;spi;
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_reset(spi);
+</I>&gt;<i> +	close_candev(net);
+</I>&gt;<i> +	free_irq(spi-&gt;irq, net);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Set up SPI messages.
+</I>&gt;<i> + */
+</I>&gt;<i> +static void mcp2515_setup_spi_messages(struct net_device *net)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct mcp2515_priv *priv = netdev_priv(net);
+</I>&gt;<i> +	struct device *dev;
+</I>&gt;<i> +	void *buf;
+</I>&gt;<i> +	dma_addr_t dma;
+</I>&gt;<i> +
+</I>&gt;<i> +	spi_message_init(&amp;priv-&gt;message);
+</I>&gt;<i> +	priv-&gt;message.context = net;
+</I>&gt;<i> +
+</I>&gt;<i> +	/* FIXME */
+</I>&gt;<i> +	dev = &amp;priv-&gt;spi-&gt;dev;
+</I>&gt;<i> +	dev-&gt;coherent_dma_mask = 0xffffffff;
+</I>&gt;<i> +
+</I>&gt;<i> +	buf = dma_alloc_coherent(dev, 32, &amp;dma, GFP_KERNEL);
+</I>&gt;<i> +	if (buf) {
+</I>&gt;<i> +		priv-&gt;transfer.tx_buf = buf;
+</I>&gt;<i> +		priv-&gt;transfer.rx_buf = buf + 16;
+</I>&gt;<i> +		priv-&gt;transfer.tx_dma = dma;
+</I>&gt;<i> +		priv-&gt;transfer.rx_dma = dma + 16;
+</I>&gt;<i> +		priv-&gt;message.is_dma_mapped = 1;
+</I>&gt;<i> +	} else {
+</I>&gt;<i> +		priv-&gt;transfer.tx_buf = priv-&gt;tx_buf;
+</I>&gt;<i> +		priv-&gt;transfer.rx_buf = priv-&gt;rx_buf;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	spi_message_add_tail(&amp;priv-&gt;transfer, &amp;priv-&gt;message);
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static int mcp2515_set_mode(struct net_device *net, enum can_mode mode)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Network device operations.
+</I>&gt;<i> + */
+</I>&gt;<i> +static const struct net_device_ops mcp2515_netdev_ops = {
+</I>&gt;<i> +	.ndo_open = mcp2515_open,
+</I>&gt;<i> +	.ndo_stop = mcp2515_stop,
+</I>&gt;<i> +	.ndo_start_xmit = mcp2515_start_xmit,
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Binds this driver to the spi device.
+</I>&gt;<i> + */
+</I>&gt;<i> +static int __devinit mcp2515_probe(struct spi_device *spi)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *net;
+</I>&gt;<i> +	struct mcp2515_priv *priv;
+</I>&gt;<i> +	int err;
+</I>&gt;<i> +
+</I>&gt;<i> +	err = mcp2515_reset(spi);
+</I>&gt;<i> +	if (err)
+</I>&gt;<i> +		return err;
+</I>&gt;<i> +
+</I>&gt;<i> +	net = alloc_candev(sizeof(struct mcp2515_priv), 0);
+</I>&gt;<i> +	if (!net)
+</I>&gt;<i> +		return -ENOMEM;
+</I>&gt;<i> +
+</I>&gt;<i> +	dev_set_drvdata(&amp;spi-&gt;dev, net);
+</I>&gt;<i> +	/* SET_NETDEV_DEV(net, &amp;spi-&gt;dev); */
+</I>
+???, please uncomment
+
+&gt;<i> +
+</I>&gt;<i> +	net-&gt;netdev_ops = &amp;mcp2515_netdev_ops;
+</I>&gt;<i> +	/* net-&gt;flags |= IFF_ECHO; */
+</I>
+please implement
+
+&gt;<i> +
+</I>&gt;<i> +	priv = netdev_priv(net);
+</I>&gt;<i> +	priv-&gt;can.bittiming_const = &amp;mcp2515_bittiming_const;
+</I>&gt;<i> +	priv-&gt;can.do_set_mode = mcp2515_set_mode;
+</I>&gt;<i> +	priv-&gt;can.clock.freq = (__u32)spi-&gt;dev.platform_data;
+</I>&gt;<i> +	priv-&gt;spi = spi;
+</I>&gt;<i> +
+</I>&gt;<i> +	spin_lock_init(&amp;priv-&gt;lock);
+</I>&gt;<i> +
+</I>&gt;<i> +	mcp2515_setup_spi_messages(net);
+</I>&gt;<i> +
+</I>&gt;<i> +	err = register_candev(net);
+</I>&gt;<i> +	if (err) {
+</I>&gt;<i> +		free_candev(net);
+</I>&gt;<i> +		return err;
+</I>&gt;<i> +	}
+</I>&gt;<i> +
+</I>&gt;<i> +	printk(KERN_INFO &quot;%s: mcp2515 cs %u irq %d\n&quot;,
+</I>&gt;<i> +				net-&gt;name, spi-&gt;chip_select, spi-&gt;irq);
+</I>
+dev_info
+
+&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +/*
+</I>&gt;<i> + * Unbinds this driver from the spi device.
+</I>&gt;<i> + */
+</I>&gt;<i> +static int __devexit mcp2515_remove(struct spi_device *spi)
+</I>&gt;<i> +{
+</I>&gt;<i> +	struct net_device *net = dev_get_drvdata(&amp;spi-&gt;dev);
+</I>&gt;<i> +
+</I>&gt;<i> +	unregister_candev(net);
+</I>&gt;<i> +	dev_set_drvdata(&amp;spi-&gt;dev, NULL);
+</I>&gt;<i> +	free_candev(net);
+</I>&gt;<i> +
+</I>&gt;<i> +	return 0;
+</I>&gt;<i> +}
+</I>&gt;<i> +
+</I>&gt;<i> +static struct spi_driver mcp2515_spi_driver = {
+</I>&gt;<i> +	.driver = {
+</I>&gt;<i> +		.name = &quot;mcp2515&quot;,
+</I>&gt;<i> +		.owner = THIS_MODULE,
+</I>&gt;<i> +	},
+</I>&gt;<i> +	.probe = mcp2515_probe,
+</I>&gt;<i> +	.remove = __devexit_p(mcp2515_remove),
+</I>&gt;<i> +};
+</I>&gt;<i> +
+</I>&gt;<i> +static int __init mcp2515_init(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	return spi_register_driver(&amp;mcp2515_spi_driver);
+</I>
+please add a pr_info here that the driver has been loaded
+
+&gt;<i> +}
+</I>&gt;<i> +module_init(mcp2515_init);
+</I>&gt;<i> +
+</I>&gt;<i> +static void __exit mcp2515_exit(void)
+</I>&gt;<i> +{
+</I>&gt;<i> +	spi_unregister_driver(&amp;mcp2515_spi_driver)
+</I>
+and a pr_info for removed driver
+
+&gt;<i> +}
+</I>&gt;<i> +module_exit(mcp2515_exit);
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> Socketcan-core mailing list
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101011/8c6e7f84/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101011/8c6e7f84/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004702.html">mcp2515
+</A></li>
+	<LI>Next message: <A HREF="004713.html">mcp2515
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4711">[ date ]</a>
+              <a href="thread.html#4711">[ thread ]</a>
+              <a href="subject.html#4711">[ subject ]</a>
+              <a href="author.html#4711">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

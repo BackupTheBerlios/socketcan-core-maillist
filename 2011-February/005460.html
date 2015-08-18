@@ -1,0 +1,576 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 4/6] J1939: add documentation
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%204/6%5D%20J1939%3A%20add%20documentation&In-Reply-To=%3C20110203093937.GG385%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005459.html">
+   <LINK REL="Next"  HREF="005463.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 4/6] J1939: add documentation</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%204/6%5D%20J1939%3A%20add%20documentation&In-Reply-To=%3C20110203093937.GG385%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH v2 4/6] J1939: add documentation">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Thu Feb  3 10:39:37 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005459.html">[PATCH v2 3/6] CAN: make struct proto const
+</A></li>
+        <LI>Next message: <A HREF="005463.html">[PATCH v2 4/6] J1939: add documentation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5460">[ date ]</a>
+              <a href="thread.html#5460">[ thread ]</a>
+              <a href="subject.html#5460">[ subject ]</a>
+              <a href="author.html#5460">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This contains the j1939 documentation.
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dicjk at eia.be</A>&gt;
+---
+ Documentation/networking/j1939.txt |  502 ++++++++++++++++++++++++++++++++++++
+ 1 files changed, 502 insertions(+), 0 deletions(-)
+
+diff --git a/Documentation/networking/j1939.txt b/Documentation/networking/j1939.txt
+new file mode 100644
+index 0000000..8ef8e34
+--- /dev/null
++++ b/Documentation/networking/j1939.txt
+@@ -0,0 +1,502 @@
++============================================================================
++
++j1939.txt
++
++Readme file for the J1939 Protocol
++
++This file contains
++
++  1 Overview / What is j1939
++    1.1 specifications used
++
++  2 Motivation
++
++  3 J1939 concepts
++    3.1 socket type
++    3.2 addressing
++    3.3 priority
++    3.4 PGN
++    3.5 filtering
++    3.6 destinations with dynamic address
++
++  4 How to use J1939
++    4.1 API calls
++    4.2 starting j1939
++    4.3 dynamic addressing
++    4.4 socket options
++        4.4.1 SO_J1939_FILTER
++        4.4.2 SO_J1939_PROMISC
++        4.4.3 SO_J1939_RECV_OWN
++        4.4.4 SO_J1939_RECV_DEST
++        4.4.5 SO_J1939_RECV_PRIO
++        4.4.6 SO_J1939_SEND_PRIO
++        4.4.7 SO_J1939_DEST_MASK
++    4.5 /proc/net/j1939 interface
++      4.5.1 /proc/net/j1939/ecu
++      4.5.2 /proc/net/j1939/filter
++      4.5.3 /proc/net/j1939/sock
++      4.5.4 /proc/net/j1939/stack
++      4.5.5 /proc/net/j1939/transport
++    4.6 /proc/sys/net/j1939 - SYSCTL
++
++  5 Credits
++
++============================================================================
++
++1. Introduction
++--------------------------------
++
++  SAE J1939 defines a higher layer protocol on CAN. It implements a more
++  sophisticated addressing scheme and extends the maximum packet size above
++  8 bytes. Several derived specifications exists, which differ from the
++  original j1939 on the application level, like MilCAN, NMEA2000 and
++  especially ISO-11783 (ISOBUS). This last one specifies the so-called ETP
++  (Extended Transport Protocol) which is has been included in this
++  implementation. This inclusion results in a maximum packet size of
++  ((2^24)-1)*7 bytes
++
++
++1.1 specifications used
++
++  SAE J1939-21 : data link layer
++  SAE J1939-81 : network management
++  ISO 11783-6  : Virtual Terminal (Extended Transport Protocol)
++
++
++2. Motivation
++--------------------------------
++
++  Given the fact there's something like SocketCAN with an API similar to BSD
++  sockets, we found some reasons to justify a kernel implementation for the
++  addressing and transport methods used by J1939.
++
++  * addressing:
++    When a process on an ECU communicates via j1939, it should not necessarily
++    know its source address. Although at least 1 process per ECU should know
++    the source address. Other processes should be able to reuse that address.
++    This way, address parameters for different processes cooperating for the
++    same ECU, are not duplicated.
++    This way of working is closely related to the unix concept where programs
++    do just 1 thing, and do it well.
++
++  * dynamic addressing:
++    Address Claiming in J1939 is time critical. Furthermore data transport
++    should be handled properly during the address negotiation. Putting these
++    functionality in the kernel eliminates this functionality as a requirement
++    for _every_ userspace process that communicates via J1939. This results in
++    a consistent J1939 bus with proper addressing.
++
++  * transport:
++    Both TP &amp; ETP reuse some PGN's to relay big packets over them. Different
++    processes may thus use the same TP &amp; ETP PGN's without actually knowing it.
++    The individual TP &amp; ETP sessions _must_ be serialized (synchronised)
++    between different processes. The kernel solves this problem properly, and
++    eliminates the serialisation (synchronisation) as a requirement for
++    _every_ userspace process that communicates via J1939.
++
++  J1939 defines some other features (relaying, gateway, Fast Packet transport,
++  ...). In-kernel code for these would not contribute to protocol stability.
++  Therefore, these parts are left to userspace.
++
++  The j1939 sockets operate on CAN network devices (see SocketCAN). Any j1939
++  userspace library operating on CAN raw sockets will still operate properly.
++  Since such library does not communicate with the in-kernel implementation,
++  care must be taken that these 2 do not interfere. In practice, this means
++  they cannot share ECU addresses. A single ECU (or virtual ECU) address is
++  used by the library exclusively, or by the in-kernel system exclusively.
++
++
++3. J1939 concepts
++--------------------------------
++
++3.1 PGN
++
++  The PGN (Parameter Group Number) is a number to identify a packet. The PGN
++  is composed as follows:
++   1 bit  : Reserved Bit
++   1 bit  : Data Page
++   8 bits : PF (PDU Format)
++   8 bits : PS (PDU Specific)
++
++  In J1939-21, distinction is made between PDU1 Format (where PF &lt; 240) and
++  PDU2 Format (where PF &gt;= 240). Furthermore, when using PDU2 Format, the
++  PS-field contains a so-called Group Extension, which is part of the PGN.
++  When using PDU2 Format, the Group Extension is set in the PS-field.
++
++  On the other hand, when using PDU1 Format, the PS-field contains a so-called
++  Destination Address, which is _not_ part of the PGN. When communicating a
++  PGN from userspace to kernel (or visa versa) and PDU2 Format is used, the
++  PS-field of the PGN shall be set to zero. The Destination Address shall be
++  set elsewhere.
++
++  Regarding PGN mapping to 29-bit CAN identifier, the Destination Address
++  shall be get/set from/to the apropriate bits of the identifier by the kernel.
++
++
++3.2 addressing
++
++  Both static and dynamic addressing methods can be used.
++
++  For static addresses, no extra checks are made by the kernel, and provided
++  addresses are considered right. This responsibility is for the OEM or system
++  integrator.
++
++  For dynamic addressing, so-called Address Claiming, extra support is forseen
++  in the kernel. In J1939 any ECU is known by it's 64-bit NAME. At the moment
++  of succesfull address claim, the kernel keeps track of both NAME and source
++  address being claimed. This serves as a base for filter schemes. By default,
++  packets with a destination that is not locally, will be rejected soon after
++  reception.
++
++  Mixed mode packets (from a static to a dynamic address or vice versa) are
++  allowed. The BSD sockets define seperate API calls for getting/setting the
++  local &amp; remote address and are applicable for J1939 sockets.
++
++
++3.3 Filtering
++
++  Similar to SocketCAN, j1939 defines filters (per socket) that a user can set
++  in order to receive a subset of the j1939 traffic. Filtering can base on
++  * SA
++  * NAME
++  * PGN
++
++  Note:
++  When a filter on the SA is set, j1939 traffic with a matching SA, but with
++  its NAME set (aka having claimed SA successfully) will match, although
++  the filter would not match its NAME.
++
++  Filtering on priority is _not_ supported.
++
++
++4. How to use J1939
++--------------------------------
++
++4.1 API calls
++
++  Like TCP/IP and CAN, you first need to open a socket for communicating over a
++  CAN network. To use j1939, include &lt;include/linux/j1939.h&gt;. From there,
++  &lt;include/linux/can.h&gt; will be included too.
++  To open a socket, you would write
++
++    s = socket(PF_CAN, SOCK_DGRAM, CAN_J1939);
++
++  J1939 does use SOCK_DGRAM sockets. In the j1939 specification, connections are
++  mentioned in the context of transport protocol sessions. These still deliver
++  packets to the other end (using several CAN packets).
++  SOCK_STREAM is never appropriate.
++
++  After the successful creation of the socket, you would normally use the
++  bind(2) or connect(2) system call to bind the socket to a CAN interface
++  (which is different from TCP/IP due to different addressing) After binding or
++  connecting the socket, you can read(2) and write(2) from/to the socket or use
++  send(2), sendto(2), sendmsg(2) and the recv* counterpart operations on the
++  socket as usual. There are also J1939 specific socket options described below.
++
++  Per default j1939 is not active. Specifying can_ifindex != 0 in bind(2)
++  or connect(2) needs an active j1939 on that interface. You must have done
++  $ ip link set canX j1939 on
++  on that interface.
++
++  In order to send data, a bind(2) must have succeeded. bind(2) assigns a local
++  address to a socket. For this to succeed, you can only choose addresses
++  that have been assigned with '$ ip addr add j1939 .... dev canX'. When an
++  empty address is assigned (ie. SA=0xff &amp;&amp; name=0), a default is taken for
++  the device that is bound to.
++
++  Different from CAN is that the payload data is just the data that get send,
++  without it's header info. The header info is derived from the sockaddr
++  supplied to bind(2), connect(2), sendto(2) and recvfrom(2). A write(2) with
++  size 4 will result in a packet with 4 bytes.
++
++  The sockaddr structure has extensions for use with j1939 as specified below:
++      struct sockaddr_can {
++         sa_family_t can_family;
++         int         can_ifindex;
++         union {
++            struct {
++               __u64 name;
++               __u32 pgn;
++               __u8  addr;
++            } j1939;
++         } can_addr;
++      }
++
++  can_family &amp; can_ifindex serve the same purpose as for other SocketCAN sockets.
++
++  can_addr.j1939.pgn specifies the PGN (max 0x3ffff). Individual bits are
++  specified above.
++
++  can_addr.j1939.name contains the 64-bit J1939 NAME.
++
++  can_addr.j1939.addr contains the source address.
++
++  When sending data, the source address is applied as follows: If
++  can_addr.j1939.name != 0 the NAME is looked up by the kernel and the
++  corresponding Source Address is used. If can_addr.j1939.name == 0,
++  can_addr.j1939.addr is used.
++
++  After a bind(2), the local address is assigned, i.e. the source address.
++  After a connect(2), the remote address is assigned, i.e. the destination
++  address.
++
++  Both write(2) and send(2) will send a packet with local address from bind,
++  remote address from connect(2). When the address was not set, a broadcast is
++  sent. The PGN is used from bind(2) or overruled with sendto(2), which will
++  override the destination address when valid, and the PGN when valid.
++
++  Both read(2) and recv(2) will receive packets matching the sockets filters.
++  recvfrom(2) will receive these packets with originator's address.
++
++  When creating a socket, reasonable defaults have been set. Some options can be
++  modified with setsockopt(2) &amp; getsockopt(2).
++
++
++4.3 Address Claiming
++
++  Distinction has to be made in and using the claimed address and doing an
++  address claim. To use an already claimed address, one has to fill in the
++  j1939.name member and provide it to bind(2). If the name had claimed an
++  address earlier, all further PGN's being sent will use that address. And the
++  j1939.addr member will be ignored.
++
++  An exception on this is pgn 0x0ee00. This is the &quot;Address Claim/Cannot Claim
++  Address&quot; message and when the kernel will use the j1939.addr member for that
++  pgn if necessary.
++
++  To claim an address, bind(2) with:
++  j1939.pgn  set to 0x0ee00
++  j1939.addr set to the desired Source Address.
++  j1939.name set to the NAME you want the Source Address to claim to.
++
++  Afterwards do a write(2) with data set to the NAME (Little Endian). If the
++  NAME provided, does not match the j1939.name provided to bind(2), EPROTO
++  will be returned. One might use sendto(2) also to send the Addres Claim. In
++  that case, the j1939.addr member must be set to the broadcast address (255)
++  and the j1939.pgn must be set to 0x0ee00. If This combination is not given,
++  EPROTO is returned.
++
++  If no-one else contest the address claim within 250ms after transmission, the
++  kernel marks the NAME-SA assignment as valid. The valid assignment will be
++  kept, among other valid NAME-SA assignments. From that point, any socket
++  bound to the NAME can send packets.
++
++  If another ECU claims the address, the kernel will mark the NAME-SA expired.
++  No socket bound to the NAME can send packets (other than address claims).
++  To claim another address, some socket bound to NAME, must bind(2) again,
++  but with only j1939.addr changed to the new SA, and must then send a
++  valid address claim packet. This restarts the state machine in the kernel
++  (and any other participant on the bus) for this NAME.
++
++
++5 Socket Options
++--------------------------------
++
++  j1939 sockets have some options that are configurable via setsockopt(2).
++  Each of those options is initialized with a reasonable default.
++
++
++5.1 SO_J1939_FILTER
++
++  As mentioned above, J1939 supports filtering in both NAME, Source Address
++  and PGN. All members must match.
++
++   struct j1939_filter filter = {
++      .name         = ...
++      .name_mask   = ...
++      .addr         = ...
++      .addr_mask   = ...
++      .pgn         = ...
++      .pgn_mask   = ...
++   }
++
++    setsockopt(s, SOL_CAN_J1939, SO_J1939_FILTER, &amp;filter, sizeof(filter));
++
++
++5.2 SO_J1939_PROMISC
++
++  When set, j1939 will receive all packets, not just those with a destination
++  on the local system.
++  default off.
++
++    int promisc = 1; /* 0 = disabled (default), 1 = enabled */
++
++    setsockopt(s, SOL_CAN_J1939, SO_J1939_PROMISC, &amp;promisc, sizeof(promisc));
++
++
++5.3 SO_J1939_RECV_OWN
++
++  All the sent j1939 packets are looped back in the system.
++  The reception of the j1939 packets on the same socket that was
++  sending the j1939 packet is assumed to be unwanted and therefore
++  disabled by default. This default behaviour may be changed on
++  demand:
++
++    int recv_own_msgs = 1; /* 0 = disabled (default), 1 = enabled */
++
++    setsockopt(s, SOL_CAN_J1939, SO_J1939_RECV_OWN,
++               &amp;recv_own_msgs, sizeof(recv_own_msgs));
++
++
++5.4 SO_J1939_RECV_DEST
++
++  Received j1939 packets that make their way up to the socket, had a destination
++  address matching the socket's local address. This can have several reasons:
++  - broadcast packet.
++  - destination spec matches the local address
++  - destination spec matches _a_ local address on the system, and the socket
++    had no local address defined.
++  - SO_J1939_PROMISC was set
++  If the user is interested in the original destination spec, SO_J1939_RECV_DEST
++  can be changed to 1 to receive the destination spec with each packet.
++  The destination is attached to the msghdr in the recvmsg(2) call.
++  It can be extracted using cmsg(3) macros, with
++  cmsg_level == SOL_J1939 &amp;&amp; cmsg_type == SCM_J1939_DEST.
++  the returned data is a struct sockaddr_can, with the regular j1939 fields
++  stuffed. Mind that PGN is the same as the PGN in sockaddr after recvfrom.
++
++
++5.5 SO_J1939_RECV_PRIO
++
++  As stated earlier, the priority field is stripped very soon. In order to
++  allow retreiving the packet's priority, SO_J1939_RECV_PRIO can be set to 1.
++
++  As a result, an extra int will be attached during recvmsg(2), similar
++  as in SO_J1939_RECV_DEST, but with cmsg_type == SCM_J1939_PRIO
++
++6.6 SO_J1939_SEND_PRIO
++
++  To set the priority field for outgoing packets, the SO_J1939_SEND_PRIO can
++  be changed. This int field specifies the priority that will be used.
++  j1939 defines a priority between 0 and 7 inclusive,
++  with 7 the lowest priority.
++  Per default, the priority is set to 6 (conforming J1939).
++  This priority socket option operates on the same value that is modified
++  with
++
++    setsockopt(s, SOL_SOCKET, SO_PRIORITY, &amp;pri, sizeof(pri))
++
++  socketoption, with a difference that SOL_SOCKET/SO_PRIORITY is defined with
++  0 the lowest priority. SOL_CAN_J1939/SO_J1939_SEND_PRIO inverts this value
++  for you.
++
++5.7 SO_J1939_DEST_MASK
++
++  When a destination is specified by its name (and thus using dynamic addressing),
++  and such name should be unique amongst the world, it may be hard to predict the
++  name of eg. a gearbox controller on the bus, although its type and manufacturer
++  are know. This is because the serial number is part of the name.
++  To simplify specifying a destination, a per-socket destination mask is provided
++  that is activated whenever a destination name is wanted. Any bits cleared in
++  this mask are ignored during the lookup. As a result, more than 1 ECU may match
++  this name/mask pair. In all cases, the first match is used.
++  The API is thus capable of specifying a name for eg. the gearbox controller,
++  without knowing its serial number.
++  This mask can mask out any part in the name. Note there's only 1 mask per socket.
++
++  this mask is default set to mask the serial number.
++
++  when can_addr.j1939.name is used for destination in outgoing packets
++  (see bind(2), sendto(2)), the exact name is often not known due to serial
++  numbers in it.
++  Therefore, SO_J1939_DEST_MASK sets an uint64_t mask that will be used
++  for resolving these names. Only the bits set to 1 in the mask will be
++  evaluated for find the destination name.
++  Per default, the mask is set to mask out the serial number
++  (0xffffffffffe00000ULL)
++
++  to mask out only the manufacturer code (bits 21-31), do
++
++    uint64_t mask = 0xffffffff001fffffULL;
++
++    setsockopt(s, SOL_CAN_J1939, SO_J1939_DEST_MASK, &amp;mask, sizeof(mask));
++
++
++6. /proc Interface.
++--------------------------------
++
++
++  Files giving you a view on the in-kernel operation of J1939 are located at:
++  /proc/net/j1939.
++
++6.1 /proc/net/j1939/ecu
++
++  This file gives an overview of the known ECU's to the kernel.
++  - iface : network interface they operate on.
++  - SA : current address.
++  - name : 64bit NAME
++  - flags : 'L' = local, 'R' = remote
++
++
++6.2 /proc/net/j1939/filter
++
++
++6.3 /proc/net/j1939/sock
++
++  This file gives a list of all j1939 sockets currently open.
++  - iface : network interface
++  - flags :
++    'b' : bound
++    'c' : connected
++    'P' : PROMISC
++    'o' : RECV_OWN
++    'd' : RECV_DEST
++    'p' : RECV_PRIO
++  - local: [NAME],SA
++  - remote: [NAME]/MASK,DA
++  - pgn : PGN
++  - prio : priority
++
++
++6.4 /proc/net/j1939/stack
++
++  The internal j1939 is build with a stack of code blocks. This blocks are
++  passed for each packet (both RX &amp; TX).
++  this file gives an insight view on this stack.
++  - prio : level, priority
++  - name :
++  - tx matches :
++  - rx matches :
++
++
++6.5 /proc/net/j1939/transport
++
++
++6.6 /proc/sys/net/j1939 - SYSCTL
++
++  Via these sysctl files, several parameters of the j1939 module can be tuned.
++
++  - /proc/sys/net/j1939/loop [bool]:
++    Control if packets with local source _and_ local destination may be (true)
++    loopback'd (injected directly in the receive path from the transmit path)
++    or (false, default) must be sent on CAN via the regular transmit path.
++
++  - /proc/sys/net/j1939/promisc [bool]:
++    Specifies PROMISC mode for the whole stack, i.e. _all_ J1939-sockets. The
++    PROMISC mode is normally set per socket via setsockopt(2).
++
++  - /proc/sys/net/j1939/tp/max_packet_size [int]:
++    Is the maximum packet size to accept on both transmit &amp; receive side.
++    Bigger packets will be rejected (local sender), aborted (local receiver)
++    or ignored (broadcasts &amp; remote recievers in PROMISC).
++
++  - /proc/sys/net/j1939/tp/preferred_block_count [int]:
++    Controls how many data packets the TP &amp; ETP will receive before requiring
++    flow control packets.
++
++  - /proc/sys/net/j1939/tp/queue_len [int]:
++    Controls how many pending packets the TP module may queue before returning
++    ENOBUFS to sender. Note this is not the only source of ENOBUFS, the CAN
++    device driver may also return ENOBUFS.
++
++  - /proc/sys/net/j1939/tp/retry_ms [int]:
++    Controls how many time to wait before retrying to send an individual TP
++    flow or data packet after transmission failure.
++
++
++7. Credits
++--------------------------------
++
++  Kurt Van Dijck (j1939 core, transport protocol, API)
++  Pieter Beyens (j1939 core, address claiming)
++
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005459.html">[PATCH v2 3/6] CAN: make struct proto const
+</A></li>
+	<LI>Next message: <A HREF="005463.html">[PATCH v2 4/6] J1939: add documentation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5460">[ date ]</a>
+              <a href="thread.html#5460">[ thread ]</a>
+              <a href="subject.html#5460">[ subject ]</a>
+              <a href="author.html#5460">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

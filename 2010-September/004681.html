@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: linux MCP2515 CAN driver hacks....
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20linux%20MCP2515%20CAN%20driver%20hacks....&In-Reply-To=%3C201009270844.12831.david.jander%40protonic.nl%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004680.html">
+   <LINK REL="Next"  HREF="004683.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: linux MCP2515 CAN driver hacks....</H1>
+    <B>David Jander</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20linux%20MCP2515%20CAN%20driver%20hacks....&In-Reply-To=%3C201009270844.12831.david.jander%40protonic.nl%3E"
+       TITLE="RFC: linux MCP2515 CAN driver hacks....">david.jander at protonic.nl
+       </A><BR>
+    <I>Mon Sep 27 08:44:12 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004680.html">[Xenomai-help] Support for PCAN-PCI Express card
+</A></li>
+        <LI>Next message: <A HREF="004683.html">RFC: linux MCP2515 CAN driver hacks....
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4681">[ date ]</a>
+              <a href="thread.html#4681">[ thread ]</a>
+              <a href="subject.html#4681">[ subject ]</a>
+              <a href="author.html#4681">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+Hi Chrisitian,
+
+I am posting this on the socketcan-core list.
+
+On Friday 24 September 2010 10:41:15 am christian pellegrin wrote:
+&gt;<i> &gt; 1.- The MCP2515 driver (from current mainline linux) makes quite a lot of
+</I>&gt;<i> &gt; SPI transfers from inside the ISR. I counted 10 SPI-transfers for each
+</I>&gt;<i> &gt; CAN message sent or received. This can be reduced a lot. For instance,
+</I>&gt;<i> &gt; the INTF and EFLG registers can be read and cleard both in just two
+</I>&gt;<i> &gt; transactions. Also, if the second receive buffer isn't filled, there is
+</I>&gt;<i> &gt; no need to first clear the interrupt flag of buffer 0 and then clear them
+</I>&gt;<i> &gt; all in two separate transactions.
+</I>&gt;<i> 
+</I>&gt;<i> nice idea, but have you checked that this works on mcp2510 too? (I
+</I>&gt;<i> think it has a reduced instruction set on SPI).
+</I>
+Yes, that part should be no problem for the MCP2510, since it also supports 
+automatic address increase.
+
+&gt;<i> &gt; 2.- Only one of the three available TX-boxes is used. This makes the
+</I>&gt;<i> &gt; driver simple, but performance is less than it could be for
+</I>&gt;<i> &gt; transmit-bursts. Essentially a message is put into the TX-box, and the
+</I>&gt;<i> &gt; netif-queue is stopped, then the message is sent, an interrupt is
+</I>&gt;<i> &gt; generated, SPI transactions occur to service the interrupt, and only then
+</I>&gt;<i> &gt; is the netif queue re-enabled. This introduces a delay between two
+</I>&gt;<i> &gt; consecutive CAN messages. In my patch below, I implemented a (very dirty)
+</I>&gt;<i> &gt; hack to enable the use of two TX-boxes, and now the driver is able to use
+</I>&gt;<i> &gt; the full bandwidth of a 250kbaud link.
+</I>&gt;<i> 
+</I>&gt;<i> have you checked that there aren't out of order transmission problems?
+</I>
+No, and yes, there most probably are out of order transmission problems. I 
+just want to make clear that patch 1. was meant to be implemented as is, since 
+I am pretty confident that it works, but patch 2. is meant only as RFC. It is 
+known to be broken in several ways.
+
+&gt;<i> &gt; 1.- When just started the interface, a few of the first CAN messages to
+</I>&gt;<i> &gt; arrive are being discarded, because of some strange race condition (I
+</I>&gt;<i> &gt; have NOHZ enabled). I get the following kenel messages (10 times):
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;  NOHZ: local_softirq_pending 08
+</I>&gt;<i> 
+</I>&gt;<i> I see the same message on my laptop to which I connected an external
+</I>&gt;<i> (USB) ISDN adapter. A quick question to google showed me this:
+</I>&gt;<i> <A HREF="http://patchwork.ozlabs.org/patch/33630/">http://patchwork.ozlabs.org/patch/33630/</A> which can be related.
+</I>
+Interesting. I haven't checked, but either this patch isn't in mainline yet 
+(one year later), or this isn't the same problem...
+
+&gt;<i> &gt; 2.- The second problem was introduced by my hacks, and I am currently
+</I>&gt;<i> &gt; investigating why this occurs: If the system is heavily loaded, I
+</I>&gt;<i> &gt; sometimes get the following error message (no CAN-messages are lost):
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;  mcp251x spi0.2: hard_xmit called while tx busy
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I have carefully checked the conditions when the netif-queue is started
+</I>&gt;<i> &gt; and stopped, and have yet to discover why this message gets printed.
+</I>&gt;<i> 
+</I>&gt;<i> I had just a quick glance at your patch but this seem possible for the
+</I>&gt;<i> sequence:
+</I>&gt;<i> 
+</I>&gt;<i> mcp251x_hard_start_xmit -&gt; tx_skb full, tx_busy_mask 0
+</I>&gt;<i> mcp251x_tx_work_handler -&gt; tx_skb free, tx_busy_mask 1
+</I>&gt;<i> mcp251x_hard_start_xmit -&gt; tx_skb full, tx_busy_mask 1
+</I>&gt;<i> mcp251x_tx_work_handler -&gt; tx_skb free, tx_busy_mask 3
+</I>&gt;<i> mcp251x_can_ist -&gt; tx_skb free, tx_busy_mask 2
+</I>&gt;<i> mcp251x_hard_start_xmit -&gt; tx_skb full, tx_busy_mask 2
+</I>&gt;<i> mcp251x_can_ist -&gt; tx_skb full, tx_busy_mask 0
+</I>&gt;<i> mcp251x_hard_start_xmit -&gt; has tx_skb at the beginning full so the
+</I>&gt;<i> warning you reported
+</I>
+Hmmm. So I guess we do need an extra skb (I wanted to avoid that), or change 
+the end of the ISR from:
+
+		netif_wake_queue(net);
+
+to:
+
+		if (!priv-&gt;tx_skb)
+			netif_wake_queue(net);
+
+But in that case, I need to check if there isn't a scenario where the netif-
+queue stays stopped forever... I'll try this later.
+
+&gt;<i> please check this sequence carefully since I could be mistaken.
+</I>
+I guess you are right.
+
+Best regards,
+
+-- 
+David Jander
+Protonic Holland.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004680.html">[Xenomai-help] Support for PCAN-PCI Express card
+</A></li>
+	<LI>Next message: <A HREF="004683.html">RFC: linux MCP2515 CAN driver hacks....
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4681">[ date ]</a>
+              <a href="thread.html#4681">[ thread ]</a>
+              <a href="subject.html#4681">[ subject ]</a>
+              <a href="author.html#4681">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

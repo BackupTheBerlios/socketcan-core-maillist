@@ -1,0 +1,183 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 1/2] CAN transceiver control
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%201/2%5D%20CAN%20transceiver%20control&In-Reply-To=%3C20091005073009.GA356%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003236.html">
+   <LINK REL="Next"  HREF="003204.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 1/2] CAN transceiver control</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%201/2%5D%20CAN%20transceiver%20control&In-Reply-To=%3C20091005073009.GA356%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH 1/2] CAN transceiver control">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Mon Oct  5 09:30:09 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003236.html">[PATCH 0/2] CAN transceiver control
+</A></li>
+        <LI>Next message: <A HREF="003204.html">[PATCH 1/2] CAN transceiver control
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3194">[ date ]</a>
+              <a href="thread.html#3194">[ thread ]</a>
+              <a href="subject.html#3194">[ subject ]</a>
+              <a href="author.html#3194">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Sat, Oct 03, 2009 at 11:11:41AM +0200, Wolfram Sang wrote:
+&gt;<i> 
+</I>&gt;<i> Hi Kurt,
+</I>&gt;<i> 
+</I>&gt;<i> On Fri, Oct 02, 2009 at 05:28:56PM +0200, Kurt Van Dijck wrote:
+</I>&gt;<i> &gt; This part does the generic sja1000 hook.
+</I>&gt;<i> &gt; I used 'static inline' functions to keep the open_candev/close_candev
+</I>&gt;<i> &gt; functions readable.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+</I>&gt;<i> &gt; ---
+</I>&gt;<i> &gt; Index: drivers/net/can/sja1000/sja1000.h
+</I>&gt;<i> &gt; ===================================================================
+</I>&gt;<i> &gt; --- drivers/net/can/sja1000/sja1000.h	(revision 1066)
+</I>&gt;<i> &gt; +++ drivers/net/can/sja1000/sja1000.h	(working copy)
+</I>&gt;<i> &gt; @@ -171,6 +171,14 @@
+</I>&gt;<i> &gt;  	u16 flags;		/* custom mode flags */
+</I>&gt;<i> &gt;  	u8 ocr;			/* output control register */
+</I>&gt;<i> &gt;  	u8 cdr;			/* clock divider register */
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	/*
+</I>&gt;<i> 
+</I>&gt;<i> Should have two asterisks if it is meant as nanodoc.
+</I>I'll take a look at some example.
+&gt;<i> 
+</I>&gt;<i> &gt; +	 * enable function pointer:
+</I>&gt;<i> &gt; +	 * @dev		: the device, parent of the net_device
+</I>&gt;<i> &gt; +	 * @active	: 1 = enable, 0 = disable
+</I>&gt;<i> &gt; +	 * @returns	: 0 or -error
+</I>&gt;<i> &gt; +	 */
+</I>&gt;<i> &gt; +	int (*enable)(struct device *dev, int active);
+</I>&gt;<i> &gt;  };
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt;  struct net_device *alloc_sja1000dev(int sizeof_priv);
+</I>&gt;<i> &gt; Index: drivers/net/can/sja1000/sja1000.c
+</I>&gt;<i> &gt; ===================================================================
+</I>&gt;<i> &gt; --- drivers/net/can/sja1000/sja1000.c	(revision 1066)
+</I>&gt;<i> &gt; +++ drivers/net/can/sja1000/sja1000.c	(working copy)
+</I>&gt;<i> &gt; @@ -541,6 +541,24 @@
+</I>&gt;<i> &gt;  }
+</I>&gt;<i> &gt;  EXPORT_SYMBOL_GPL(sja1000_interrupt);
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; +static inline int sja1000_ext_enable(struct net_device *dev)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	struct sja1000_priv *priv = netdev_priv(dev);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	if (!priv-&gt;enable)
+</I>&gt;<i> &gt; +		return 0;
+</I>&gt;<i> 
+</I>&gt;<i> Isn't an errorcode more apropriate?
+</I>When an 'enable' function has not been supplied, you're in a default
+state. 'Just do nothing and succeed'.
+&gt;<i> 
+</I>&gt;<i> &gt; +	return priv-&gt;enable(dev-&gt;dev.parent, 1);
+</I>&gt;<i> &gt; +}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +static inline void sja1000_ext_disable(struct net_device *dev)
+</I>&gt;<i> &gt; +{
+</I>&gt;<i> &gt; +	struct sja1000_priv *priv = netdev_priv(dev);
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt; +	if (!priv-&gt;enable)
+</I>&gt;<i> &gt; +		return;
+</I>&gt;<i> &gt; +	priv-&gt;enable(dev-&gt;dev.parent, 0);
+</I>&gt;<i> 
+</I>&gt;<i> Invert the if-logic and save a line here.
+</I>it now looks more like the ..._enable(). Sure to invert?
+&gt;<i> 
+</I>&gt;<i> &gt; +}
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt;  static int sja1000_open(struct net_device *dev)
+</I>&gt;<i> &gt;  {
+</I>&gt;<i> &gt;  	struct sja1000_priv *priv = netdev_priv(dev);
+</I>&gt;<i> &gt; @@ -549,10 +567,17 @@
+</I>&gt;<i> &gt;  	/* set chip into reset mode */
+</I>&gt;<i> &gt;  	set_reset_mode(dev);
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; +	/* do external initialization */
+</I>&gt;<i> &gt; +	err = sja1000_ext_enable(dev);
+</I>&gt;<i> &gt; +	if (err)
+</I>&gt;<i> &gt; +		return err;
+</I>&gt;<i> &gt; +
+</I>&gt;<i> &gt;  	/* common open */
+</I>&gt;<i> &gt;  	err = open_candev(dev);
+</I>&gt;<i> &gt; -	if (err)
+</I>&gt;<i> &gt; +	if (err) {
+</I>&gt;<i> &gt; +		sja1000_ext_disable(dev);
+</I>&gt;<i> &gt;  		return err;
+</I>&gt;<i> &gt; +	}
+</I>&gt;<i> 
+</I>&gt;<i> disable is void.
+</I>euhm, ???
+I don't really understand your point. Can you explain a tiny bit more?
+&gt;<i> 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt;  	/* register interrupt handler, if not done by the device driver */
+</I>&gt;<i> &gt;  	if (!(priv-&gt;flags &amp; SJA1000_CUSTOM_IRQ_HANDLER)) {
+</I>&gt;<i> &gt; @@ -560,6 +585,7 @@
+</I>&gt;<i> &gt;  				  dev-&gt;name, (void *)dev);
+</I>&gt;<i> &gt;  		if (err) {
+</I>&gt;<i> &gt;  			close_candev(dev);
+</I>&gt;<i> &gt; +			sja1000_ext_disable(dev);
+</I>&gt;<i> &gt;  			return -EAGAIN;
+</I>&gt;<i> &gt;  		}
+</I>&gt;<i> &gt;  	}
+</I>&gt;<i> &gt; @@ -589,6 +615,7 @@
+</I>&gt;<i> &gt;  		free_irq(dev-&gt;irq, (void *)dev);
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt;  	close_candev(dev);
+</I>&gt;<i> &gt; +	sja1000_ext_disable(dev);
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt;  	priv-&gt;open_time = 0;
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; _______________________________________________
+</I>&gt;<i> &gt; Socketcan-core mailing list
+</I>&gt;<i> &gt; <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> &gt; <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>&gt;<i> 
+</I>&gt;<i> -- 
+</I>&gt;<i> Pengutronix e.K.                           | Wolfram Sang                |
+</I>&gt;<i> Industrial Linux Solutions                 | <A HREF="http://www.pengutronix.de/">http://www.pengutronix.de/</A>  |
+</I>
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003236.html">[PATCH 0/2] CAN transceiver control
+</A></li>
+	<LI>Next message: <A HREF="003204.html">[PATCH 1/2] CAN transceiver control
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3194">[ date ]</a>
+              <a href="thread.html#3194">[ thread ]</a>
+              <a href="subject.html#3194">[ subject ]</a>
+              <a href="author.html#3194">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

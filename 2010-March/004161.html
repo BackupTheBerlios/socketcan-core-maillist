@@ -1,0 +1,183 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> struct sockaddr_can for j1939
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-March/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20100305094039.GB328%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004155.html">
+   <LINK REL="Next"  HREF="004162.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>struct sockaddr_can for j1939</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20struct%20sockaddr_can%20for%20j1939&In-Reply-To=%3C20100305094039.GB328%40e-circ.dyndns.org%3E"
+       TITLE="struct sockaddr_can for j1939">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Fri Mar  5 10:40:39 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004155.html">struct sockaddr_can for j1939
+</A></li>
+        <LI>Next message: <A HREF="004162.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4161">[ date ]</a>
+              <a href="thread.html#4161">[ thread ]</a>
+              <a href="subject.html#4161">[ subject ]</a>
+              <a href="author.html#4161">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Second transmission. the email got lost between me &amp; lists.berlios.de
+
+On Wed, Mar 03, 2010 at 08:12:30AM +0000, Oliver Hartkopp wrote:
+&gt;<i> Kurt Van Dijck wrote:
+</I>&gt;<i> &gt; On Mon, Mar 01, 2010 at 10:41:00PM +0100, Oliver Hartkopp wrote:
+</I>&gt;<i> &gt;&gt;&gt; When this 8byte name is stripped from the sockaddr,
+</I>&gt;<i> &gt;&gt;&gt; this would work as sender (definitely), but would not work as good for receiving.
+</I>&gt;<i> &gt;&gt;&gt; An extra cmsg would work, but I doubt such API (for standard
+</I>&gt;<i> &gt;&gt;&gt; usage) is a good API.
+</I>&gt;<i> 
+</I>&gt;<i> After reading your good and informative description, i would tend to propose
+</I>Should have supplied it earlier :-).
+&gt;<i> this cmsg solluion. So far it's only necessary for use-case '4' which is not
+</I>&gt;<i> common j1939 transport but comes from a special application requirement.
+</I>* I doubt use-case '4' is  'special'
+  only use-case '1' I consider special.
+* the sockaddr is not 'j1939 transport' related, but j1939 related (mind
+  the difference). The j1939 stack I'm now working on mainly provides 2
+  features in-kernel: dynaddr &amp; transport.
+
+[...]
+&gt;<i> 
+</I>&gt;<i> Yes. That's true. But can be solved with cmsg.
+</I>indeed.
+&gt;<i> 
+</I>&gt;<i> &gt; When dynamic address is _never_ used, the name may be ignored.
+</I>&gt;<i> 
+</I>&gt;<i> So then it's superfluous all the time.
+</I>IMHO, IPv4 does similar when supplied 0.0.0.0
+&gt;<i> 
+</I>&gt;<i> &gt; I don't
+</I>&gt;<i> &gt; have a problem with that. I consider that an application choice on how
+</I>&gt;<i> &gt; to use the API.
+</I>... ie. choosing between static &amp; dynamic addressing.
+&gt;<i> 
+</I>&gt;<i> It's up to _us_ to lead the user work with easy and hard to misuse APIs.
+</I>&gt;<i> 
+</I>[...]
+&gt;<i> 
+</I>&gt;<i> There's no reason to overload the address structure with optional(!) data,
+</I>in case of dynamic addressing, the j1939.addr member is unused too!
+The optional point is the choice between the 2 members, but in both
+cases will the other one be discarded.
+I agree to avoid overloading (stripped a lot yet), but I don't consider
+j1939.name as optional. it is required in at least 80% of my use.
+
+Although j1939 _was_ primary used
+with static addressing, most busses I encounter now are mixed, and dynaddr
+seems to increase (in my world at least).
+
+Maybe I'll describe the dynaddr in j1939 a bit by comparing with DHCP.
+DHCP is host based, ie. it concerns a single host (and a server). During
+the DHCP, the host is unreachable (no IP yet). After DHCP, the host has
+a 'fixed' IP. If the host would start a new DHCP request, it may get
+another IP (theoretically). From that point in time, the old IP is
+not assigned to that host. Any IP connections will get stalled,
+since DHCP was not a network or bus operation.
+dynamic addressing in j1939 differs on 1 important issue, in a way that address
+claiming is a bus operation. This allows/forces other members on the bus
+to update their name-address caches.
+Any j1939 member should still keep functioning, with the updated
+address in mind, ie. if I was listening to SA 0x80, which moved to 0x81,
+I'm supposed to transparently continue listening to 0x81.
+
+In theory, even a pending transport protocol session should move to the
+new SA (0x81), although I _suspect_ most implementations will just abort &amp;
+retry.
+
+This can only be done by effectively do the listening based on 64bit
+name, and not the 8bit address. It would create a mess in a program.
+
+Therefore, my proposal is to ignore the SA completely at that point,
+and work with the name instead.
+
+&gt;<i> that need to be checked if != 0. Better send a cmsg entry with the name when
+</I>I tend to evaluate static &amp; dynamic addressing as equal choices.
+Requiring cmsg in case of dynamic addressing, makes this choice
+'unequal', not _as_ straightforward.
+So, we (the API) lead the user into preferring static addressing.
+To illustrate this with the use-cases I provided,
+then '2' does require _other_ calls in order to make it dynaddr-capable
+than '3' &amp; '4' do.
+&gt;<i> it needs to be.
+</I>&gt;<i> 
+</I>&gt;<i> Would you be also fine with that in the case of dynamic addressing?
+</I>Although there's no technical problem left,
+I hesitate to make that choice to the API.
+
+If it's ok, I'd like move away from pure technical issues, and inspect
+the API as such. see also the difference with DHCP above.
+Since I didn't convince my management of open-sourcing all yet, there's
+no hurry anyway.
+
+IMHO, your proposal violates these 2 major points you mentioned earlier
+with API design (with special regard to dynamic addressing, since static
+addressing will does not suffer this):
+* Easy to learn
+* Easy to use, even without documentation.
+
+I think I would prefer documenting that 'name == 0 means static
+addressing used'.
+We coud so reduce the application choice between static &amp;
+dynamic addressing to just choosing between j1939.name &amp; j1939.addr, rather
+than choosing between API calls.
+Yes, this choice can be made wrong. When j1939.name is set, but not
+used, users might experience problems. I bet this will occur much
+sooner if they would need to get the name elsewhere (via cmsg()).
+
+The biggest challenge with documenting this j1939 approach IMO is learn
+typical CAN/J1939 users to think in terms of local &amp; remote addresses in
+a BSD socket compliant way, rather than combining local &amp; remote address
+in 1 can_id (as I also did when I started 10 years ago, I'm not blaming
+anyone here).
+The dynamic thing is minor challenge in documenting the api, given that
+using it is not too difficult.
+
+&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Oliver
+</I>Regards,
+Kurt
+&gt;<i> 
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004155.html">struct sockaddr_can for j1939
+</A></li>
+	<LI>Next message: <A HREF="004162.html">struct sockaddr_can for j1939
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4161">[ date ]</a>
+              <a href="thread.html#4161">[ thread ]</a>
+              <a href="subject.html#4161">[ subject ]</a>
+              <a href="author.html#4161">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

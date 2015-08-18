@@ -1,0 +1,139 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> SFF &amp; EFF filtering
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-November/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SFF%20%26%20EFF%20filtering&In-Reply-To=%3C493015D8.5070403%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002118.html">
+   <LINK REL="Next"  HREF="002120.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>SFF &amp; EFF filtering</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SFF%20%26%20EFF%20filtering&In-Reply-To=%3C493015D8.5070403%40hartkopp.net%3E"
+       TITLE="SFF &amp; EFF filtering">socketcan at hartkopp.net
+       </A><BR>
+    <I>Fri Nov 28 17:01:28 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002118.html">SFF &amp; EFF filtering
+</A></li>
+        <LI>Next message: <A HREF="002120.html">SFF &amp; EFF filtering
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2119">[ date ]</a>
+              <a href="thread.html#2119">[ thread ]</a>
+              <a href="subject.html#2119">[ subject ]</a>
+              <a href="author.html#2119">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Kurt Van Dijck wrote:
+&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> During filtering of CAN msgs, I noticed that if I apply a SFF filter
+</I>&gt;<i> (11bit id), EFF (29 bit id) msgs that match in the lowest 11bits come
+</I>&gt;<i> through the filter too.
+</I>&gt;<i>
+</I>&gt;<i> I noticed this with using candump.
+</I>&gt;<i>   
+</I>
+Hm - i'll take a closer look on this at the weekend. That the lowest 11 
+bits pass the filter also is indeed no wanted behaviour when only 
+dealing with EFF frames ...
+
+&gt;<i> I do not think this behaviour is wanted. If EFF msgs were subject to SFF
+</I>&gt;<i> filters, it should at least apply on the highest 11bits anyway.
+</I>&gt;<i>
+</I>&gt;<i> Now that I have a spare moment, I went in the code. The following patch
+</I>&gt;<i> is what I came up with. I have not tested this well yet, but I think it
+</I>&gt;<i> should do the trick. But, my views on socketcan filters are quite
+</I>&gt;<i> limited yet. Does anyone see how this would affect other functionality
+</I>&gt;<i> badly?
+</I>&gt;<i>
+</I>&gt;<i> The idea behind this is that the EFF flag is, just as the RTR flag, a
+</I>&gt;<i> part of the can id. when the mask will be applied on a received can_id,
+</I>&gt;<i> both RTR flag, EFF flag must match, in _all_ cases, also the SFF msgs.
+</I>&gt;<i> Applying the EFF-flag in the mask of a SFF message does not really hurt,
+</I>&gt;<i> consumes no cpu cycles at all, and guarantees that a EFF msg will not
+</I>&gt;<i> come through a SFF filter (which has EFF cleared in the can_id, but EFF
+</I>&gt;<i>       set in mask)
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>
+Does it change the behaviour?
+I would bet it doesn't as you try to make the CAN_EFF_FLAG not to be 
+masked to zero, which is already zero (see the 'if' before).
+
+&gt;<i> by looking in the filtering code, I think I got some other interesting
+</I>&gt;<i> scenario. If 2 filters were applied on a single socket, an incoming msg
+</I>&gt;<i> is delivered to each matching filter, not necessarily once per socket.
+</I>&gt;<i> This would only pose a problem when filters with overlapping ranges are
+</I>&gt;<i> applied on a single socket. I have no solution for this yet, nor do I
+</I>&gt;<i> experience the problem _yet_. But I'd like to question this behaviour.
+</I>&gt;<i>   
+</I>
+Yes this scenario is known and it is a correct behaviour.
+It's like writing 'C': You need to know what you are doing and you get 
+what you requested ;-)
+
+If you think about sanity checks on filters these should be performed in 
+userspace.
+
+On the other stuff, i'll take a closer look - thanks for catching this!
+
+Best regards,
+Oliver
+
+
+&gt;<i> Index: net/can/af_can.c
+</I>&gt;<i> ===================================================================
+</I>&gt;<i> --- net/can/af_can.c    (revision 870)
+</I>&gt;<i> +++ net/can/af_can.c    (working copy)
+</I>&gt;<i> @@ -406,7 +406,7 @@
+</I>&gt;<i>         if (*mask &amp; CAN_EFF_FLAG)
+</I>&gt;<i>                 *mask &amp;= (CAN_EFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG);
+</I>&gt;<i>         else
+</I>&gt;<i> -               *mask &amp;= (CAN_SFF_MASK | CAN_RTR_FLAG);
+</I>&gt;<i> +               *mask &amp;= (CAN_SFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG);
+</I>&gt;<i>  
+</I>&gt;<i>         /* reduce condition testing at receive time */
+</I>&gt;<i>         *can_id &amp;= *mask;
+</I>&gt;<i>
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> Socketcan-core mailing list
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>&gt;<i>   
+</I>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002118.html">SFF &amp; EFF filtering
+</A></li>
+	<LI>Next message: <A HREF="002120.html">SFF &amp; EFF filtering
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2119">[ date ]</a>
+              <a href="thread.html#2119">[ thread ]</a>
+              <a href="subject.html#2119">[ subject ]</a>
+              <a href="author.html#2119">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

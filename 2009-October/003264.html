@@ -1,0 +1,325 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH 2/5] PCA82C251 driver
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/5%5D%20PCA82C251%20driver&In-Reply-To=%3C20091014152828.GD313%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003263.html">
+   <LINK REL="Next"  HREF="003265.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH 2/5] PCA82C251 driver</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%202/5%5D%20PCA82C251%20driver&In-Reply-To=%3C20091014152828.GD313%40e-circ.dyndns.org%3E"
+       TITLE="[PATCH 2/5] PCA82C251 driver">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Wed Oct 14 17:28:28 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003263.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+        <LI>Next message: <A HREF="003265.html">[PATCH 3/5] TJA1041 driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3264">[ date ]</a>
+              <a href="thread.html#3264">[ thread ]</a>
+              <a href="subject.html#3264">[ subject ]</a>
+              <a href="author.html#3264">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The subject was wrong
+
+This adds a (platform) driver for the well known pca82c251.
+Due to the requirement to attach transceivers directly to netdevs,
+2 interfaces exists: platform_device &amp;&amp; pca82c251_create()
+
+The enable GPIO is optional (-1 = don't use). It takes a bit noise to
+deal with the 'optional' case.
+
+Signed-off-by: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
+---
+Index: include/socketcan/can/platform/pca82c251.h
+===================================================================
+--- include/socketcan/can/platform/pca82c251.h	(revision 0)
++++ include/socketcan/can/platform/pca82c251.h	(revision 0)
+@@ -0,0 +1,22 @@
++#ifndef CAN_TRANSCEIVER_PCA82C251_H
++#define CAN_TRANSCEIVER_PCA82C251_H
++
++/*
++ * PCA82C251 interface
++ * to make it available from outside platform_driver ('pca82c251')
++ */
++struct pca82c251_platform_data {
++	int gpio;
++	unsigned long slope_resistor;
++	const char *match;
++};
++
++/*
++ * some kind of 'manual' interface
++ */
++extern struct can_transceiver *pca82c251_create(
++	struct device *parent, const struct pca82c251_platform_data *pdata);
++extern void pca82c251_destroy(struct can_transceiver *cantr);
++
++#endif /* CAN_TRANSCEIVER_PCA82C251_H */
++
+Index: drivers/net/can/transceiver/pca82c251.c
+===================================================================
+--- drivers/net/can/transceiver/pca82c251.c	(revision 0)
++++ drivers/net/can/transceiver/pca82c251.c	(revision 0)
+@@ -0,0 +1,220 @@
++/*
++ * NXP pca82c251 CAN transceiver
++ *
++ * Copyright (C) 2009 EIA Electronics
++ * Author: Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++*/
++
++#include &lt;linux/module.h&gt;
++#include &lt;linux/errno.h&gt;
++#include &lt;linux/err.h&gt;
++#include &lt;linux/gpio.h&gt;
++#include &lt;linux/platform_device.h&gt;
++#include &lt;socketcan/can/transceiver.h&gt;
++#include &lt;socketcan/can/platform/pca82c251.h&gt;
++
++/*
++ * dynamic can_transceiver stuff
++ */
++struct pca82c251 {
++	struct can_transceiver cantr;
++	unsigned long slope_resistor;
++	int gpio;
++	int gpio_valid;
++};
++#define to_pca82c251(d)	container_of((d), struct pca82c251, cantr)
++
++static int pca82c251_validate_gpio(struct pca82c251 *pca)
++{
++	int ret;
++
++	if (pca-&gt;gpio_valid)
++		return 0;
++	ret = gpio_request(pca-&gt;gpio, dev_name(&amp;pca-&gt;cantr.dev));
++	if (ret &lt; 0)
++		return ret;
++	pca-&gt;gpio_valid = 1;
++	gpio_direction_output(pca-&gt;gpio, 0);
++	return 0;
++}
++
++static int pca82c251_get_max_bitrate(struct can_transceiver *cantr)
++{
++	/*
++	 * physically, this depends on the used slope resistor
++	 * but the actual computation, I don't know yet
++	 */
++	return 1000000;
++}
++
++static int pca82c251_set_mode(struct can_transceiver *cantr, int mode)
++{
++	struct pca82c251 *pca = to_pca82c251(cantr);
++	int ret;
++
++	if (pca-&gt;gpio &lt; 0)
++		/* always ok, no gpio control is provided */
++		return 0;
++	ret = pca82c251_validate_gpio(pca);
++	if (ret &lt; 0)
++		return ret;
++
++	switch (mode) {
++	case CANTR_MODE_ON:
++		gpio_set_value(pca-&gt;gpio, 1);
++		return 0;
++	case CANTR_MODE_OFF:
++		gpio_set_value(pca-&gt;gpio, 0);
++		return 0;
++	}
++	return -ENOTSUPP;
++}
++
++/*
++ * DEVICE management
++ */
++struct can_transceiver *pca82c251_create(
++	struct device *parent, const struct pca82c251_platform_data *pdata)
++{
++	struct pca82c251 *pca;
++	int ret;
++
++	pca = kzalloc(sizeof(*pca), GFP_KERNEL);
++	if (!pca) {
++		ret = -ENOMEM;
++		goto fail_mem;
++	}
++	pca-&gt;cantr.dev.parent = parent;
++	pca-&gt;cantr.set_mode = pca82c251_set_mode;
++	pca-&gt;cantr.get_max_bitrate = pca82c251_get_max_bitrate;
++
++	pca-&gt;slope_resistor = pdata-&gt;slope_resistor;
++	pca-&gt;gpio = pdata-&gt;gpio;
++	pca-&gt;gpio_valid = 0;
++
++	ret = can_transceiver_register(&amp;pca-&gt;cantr);
++	if (ret &lt; 0)
++		goto fail_register;
++
++	/*
++	 * initial request for gpio
++	 * don't fail when it does not succeed, because the gpio may
++	 * come from future probed gpio_chips.
++	 */
++	pca82c251_validate_gpio(pca);
++	if (pdata-&gt;match)
++		can_transceiver_set_match_name(&amp;pca-&gt;cantr, pdata-&gt;match);
++	return &amp;pca-&gt;cantr;
++
++fail_register:
++	kfree(pca);
++fail_mem:
++	return ERR_PTR(ret);
++}
++EXPORT_SYMBOL_GPL(pca82c251_create);
++
++void pca82c251_destroy(struct can_transceiver *cantr)
++{
++	struct pca82c251 *pca = to_pca82c251(cantr);
++
++	can_transceiver_unregister(&amp;pca-&gt;cantr);
++	if (pca-&gt;gpio_valid) {
++		gpio_direction_input(pca-&gt;gpio);
++		gpio_free(pca-&gt;gpio);
++	}
++	kfree(pca);
++}
++EXPORT_SYMBOL_GPL(pca82c251_destroy);
++
++/*
++ * SYSFS
++ */
++static ssize_t show_resistor(struct device *dev,
++			struct device_attribute *attr, char *buf)
++{
++	struct pca82c251 *pca = platform_get_drvdata(to_platform_device(dev));
++
++	return sprintf(buf, &quot;%lu\n&quot;, pca-&gt;slope_resistor);
++}
++
++static ssize_t show_gpio(struct device *dev,
++			struct device_attribute *attr, char *buf)
++{
++	struct pca82c251 *pca = platform_get_drvdata(to_platform_device(dev));
++
++	return sprintf(buf, &quot;%s%i\n&quot;,
++			((pca-&gt;gpio &gt;= 0) &amp;&amp; !pca-&gt;gpio_valid) ? &quot;!&quot; : &quot;&quot;,
++			pca-&gt;gpio);
++}
++static DEVICE_ATTR(gpio, S_IRUGO, show_gpio, 0);
++static DEVICE_ATTR(resistor, S_IRUGO, show_resistor, 0);
++static struct attribute *pca_attrs[] = {
++	&amp;dev_attr_gpio.attr,
++	&amp;dev_attr_resistor.attr,
++	NULL
++};
++
++static struct attribute_group pca_attr_group = {
++	.name = NULL,
++	.attrs = pca_attrs,
++};
++
++static int pca82c251_probe(struct platform_device *pdev)
++{
++	struct can_transceiver *cantr;
++	int ret;
++
++	cantr = pca82c251_create(&amp;pdev-&gt;dev, pdev-&gt;dev.platform_data);
++	if (IS_ERR(cantr))
++		return PTR_ERR(cantr);
++	ret = sysfs_create_group(&amp;pdev-&gt;dev.kobj, &amp;pca_attr_group);
++	if (ret &lt; 0)
++		goto fail_sysfs;
++
++	platform_set_drvdata(pdev, cantr);
++	return 0;
++fail_sysfs:
++	pca82c251_destroy(cantr);
++	return ret;
++
++}
++
++static int pca82c251_remove(struct platform_device *pdev)
++{
++	struct can_transceiver *cantr = platform_get_drvdata(pdev);
++
++	sysfs_remove_group(&amp;pdev-&gt;dev.kobj, &amp;pca_attr_group);
++	platform_set_drvdata(pdev, 0);
++	if (cantr)
++		pca82c251_destroy(cantr);
++	return 0;
++}
++
++static struct platform_driver pca82c251_driver = {
++	.driver.name = &quot;pca82c251&quot;,
++	.probe = pca82c251_probe,
++	.remove = pca82c251_remove,
++};
++MODULE_ALIAS(&quot;platform:pca82c251&quot;);
++
++static int __init pca82c251_start_mod(void)
++{
++	return platform_driver_register(&amp;pca82c251_driver);
++}
++
++static void __exit pca82c251_stop_mod(void)
++{
++	platform_driver_unregister(&amp;pca82c251_driver);
++}
++
++module_init(pca82c251_start_mod);
++module_exit(pca82c251_stop_mod);
++
++MODULE_AUTHOR(&quot;Kurt Van Dijck &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;&quot;);
++MODULE_DESCRIPTION(&quot;PCA82C251 CAN transceiver support&quot;);
++MODULE_LICENSE(&quot;GPL&quot;);
++
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003263.html">[PATCH 0/5] CAN transceiver subsystem
+</A></li>
+	<LI>Next message: <A HREF="003265.html">[PATCH 3/5] TJA1041 driver
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3264">[ date ]</a>
+              <a href="thread.html#3264">[ thread ]</a>
+              <a href="subject.html#3264">[ subject ]</a>
+              <a href="author.html#3264">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

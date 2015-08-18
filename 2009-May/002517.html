@@ -1,0 +1,131 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH v2 3/7] [PATCH 3/8] can: CAN Network device driver and	Netlink interface
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-May/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%203/7%5D%20%5BPATCH%203/8%5D%20can%3A%20CAN%20Network%20device%20driver%20and%0A%09Netlink%20interface&In-Reply-To=%3C4A0D2594.2060400%40grandegger.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002516.html">
+   <LINK REL="Next"  HREF="002518.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH v2 3/7] [PATCH 3/8] can: CAN Network device driver and	Netlink interface</H1>
+    <B>Wolfgang Grandegger</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20v2%203/7%5D%20%5BPATCH%203/8%5D%20can%3A%20CAN%20Network%20device%20driver%20and%0A%09Netlink%20interface&In-Reply-To=%3C4A0D2594.2060400%40grandegger.com%3E"
+       TITLE="[PATCH v2 3/7] [PATCH 3/8] can: CAN Network device driver and	Netlink interface">wg at grandegger.com
+       </A><BR>
+    <I>Fri May 15 10:19:32 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002516.html">[PATCH v2 3/7] [PATCH 3/8] can: CAN Network device driver and	Netlink interface
+</A></li>
+        <LI>Next message: <A HREF="002518.html">[PATCH v2 3/7] [PATCH 3/8] can: CAN Network device driver and	Netlink interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2517">[ date ]</a>
+              <a href="thread.html#2517">[ thread ]</a>
+              <a href="subject.html#2517">[ subject ]</a>
+              <a href="author.html#2517">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oliver Hartkopp wrote:
+&gt;<i> Welcome back on SocketCAN core ML :-)
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Wolfgang Grandegger wrote:
+</I>&gt;&gt;<i> Oliver Hartkopp wrote:
+</I>[...]
+&gt;&gt;&gt;<i> Hi Wolfgang,
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> i think, i found a solution that removes the locking problem completely:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> When a bus-off occurs in the controller, the communication on the CAN
+</I>&gt;&gt;&gt;<i> bus can be treated as unusable for this controller (let's say it is
+</I>&gt;&gt;&gt;<i> dead).
+</I>&gt;&gt;&gt;<i> E.g. the SJA1000 set's its reset bit for that reason and waits to be
+</I>&gt;&gt;&gt;<i> initialized by the CPU again.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> So IMO restarting the CAN controller while in operational state is not a
+</I>&gt;&gt;&gt;<i> valid use case.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> When a bus-off (interrupt) occurs, we should
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> - invoke netif_carrier_off(dev)
+</I>&gt;&gt;&gt;<i> - invoke netif_stop_queue(dev)
+</I>&gt;&gt;&gt;<i> - set the state to CAN_STATE_BUS_OFF
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> and of course create the error message, clear the interrupts(!) and then
+</I>&gt;&gt;&gt;<i> leave the irq service function.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> That's it.
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> It's already like that.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>  
+</I>&gt;&gt;&gt;<i> When the automatic CAN controller restart is enabled: start the timer.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> For the manual netlink function: Test for CAN_STATE_BUS_OFF (!) and
+</I>&gt;&gt;&gt;<i> invoke the current can_restart_now(dev) or start the timer with e.g. 1ms
+</I>&gt;&gt;&gt;<i> ...
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> This approach should make it and fulfills the bus-off intention of the
+</I>&gt;&gt;&gt;<i> CAN controllers (&quot;disabled and wait for re-initialisation&quot;).
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> And there's no locking of the tx_queue needed anymore as the tx_queue is
+</I>&gt;&gt;&gt;<i> already stopped, when the restart is performed.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> What do you think about this approach?
+</I>&gt;&gt;&gt;<i>     
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> That's a solution and would comply with the can spec, I believe, but it
+</I>&gt;&gt;<i> should be discussed on the Socket-CAN mailing list. We should not change
+</I>&gt;&gt;<i> policy just to avoid locking or simplify the code.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   
+</I>&gt;<i> 
+</I>&gt;<i> AFAIK we only discussed about the automatic and manual CAN controller
+</I>&gt;<i> restart in bus-off conditions (namely whether we want to have automatic
+</I>&gt;<i> restarts or not) but we did not discuss about *how* this 'mechanic'
+</I>&gt;<i> works in detail.
+</I>&gt;<i> 
+</I>&gt;<i> So i wonder if we ever defined a policy for CAN controller restarts
+</I>&gt;<i> besides changing the code?
+</I>
+The current implementation allows a manual restart under any condition.
+This could be error-prone, I suspect, and is also not in accordance with
+the CAN spec. If there are no objections, I'm going to restrict the
+manual restart to BUS-OFF error conditions only.
+
+Wolfgang.
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002516.html">[PATCH v2 3/7] [PATCH 3/8] can: CAN Network device driver and	Netlink interface
+</A></li>
+	<LI>Next message: <A HREF="002518.html">[PATCH v2 3/7] [PATCH 3/8] can: CAN Network device driver and	Netlink interface
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2517">[ date ]</a>
+              <a href="thread.html#2517">[ thread ]</a>
+              <a href="subject.html#2517">[ subject ]</a>
+              <a href="author.html#2517">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

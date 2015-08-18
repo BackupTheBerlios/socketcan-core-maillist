@@ -1,0 +1,298 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Self-reception
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Self-reception&In-Reply-To=%3C20101012124837.GC382%40e-circ.dyndns.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004727.html">
+   <LINK REL="Next"  HREF="004732.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Self-reception</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20Self-reception&In-Reply-To=%3C20101012124837.GC382%40e-circ.dyndns.org%3E"
+       TITLE="Self-reception">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Tue Oct 12 14:48:37 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004727.html">Self-reception
+</A></li>
+        <LI>Next message: <A HREF="004732.html">Self-reception
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4728">[ date ]</a>
+              <a href="thread.html#4728">[ thread ]</a>
+              <a href="subject.html#4728">[ subject ]</a>
+              <a href="author.html#4728">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tue, Oct 12, 2010 at 09:05:28AM +0200, Oliver Hartkopp wrote:
+&gt;<i> On 12.10.2010 08:51, Kurt Van Dijck wrote:
+</I>&gt;<i> &gt; On Mon, Oct 11, 2010 at 05:14:20PM +0200, <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">gribov at ixxat.de</A> wrote:
+</I>&gt;<i> 
+</I>&gt;<i> So far i did not have any luck to push the MSG_DONTROUTE bit into userspace.
+</I>Happy to note I did.
+
+I combined 2 things:
+* notify 'local' originated messages (strictly speaking, this should not
+  be necessary
+* notify 'transmission confirmation' on sockets
+
+below are 2 patches and a brand new C file:
+1 patch (little modified from Oliver's patch. I thought  'L' from local
+is more intuitive for regular users
+
+1 patch for raw.c (kernel space). 2 flags are added.
+
+1 test program. The problem I faced is that candump will never receive
+a transmission confirmation (or self-reception) message, since it doesn't
+send any traffic. This program does send initially a frame, which it will
+read back shortly after.
+
+Most of the code is a cowardly copy of candump.c, which I did not want to
+touch for a proof-of-concept.
+
+The patches are taken from different root's
+
+Regards,
+Kurt
+
+proof-of-concept C file
+
+#include &lt;string.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;inttypes.h&gt;
+#include &lt;error.h&gt;
+#include &lt;sys/ioctl.h&gt;
+#include &lt;sys/socket.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;linux/can.h&gt;
+#include &lt;linux/can/raw.h&gt;
+#include &lt;net/if.h&gt;
+
+int main(int argc, char *argv[]) {
+	int sk, ret, j;
+	const char *dev = &quot;can0&quot;;
+	struct sockaddr_can addr;
+	const int val = 1;
+	struct ifreq ifr;
+	struct can_frame frame;
+	struct iovec iov;
+	struct msghdr msg;
+	struct cmsghdr *cmsg;
+	struct timeval tv;
+	static uint8_t ctrlmsg[CMSG_SPACE(sizeof(struct timeval)) + CMSG_SPACE(sizeof(__u32))];
+
+	memset(&amp;addr, 0, sizeof(addr));
+	if (argc &gt; 1)
+		dev = argv[1];
+
+	ret = sk = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+	if (ret &lt; 0)
+		error(1, errno, &quot;socket&quot;);
+	ret = setsockopt(sk, SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS,
+			&amp;val, sizeof(val));
+	if (ret &lt; 0)
+		error(1, errno, &quot;recv own&quot;);
+
+	strcpy(ifr.ifr_name, dev);
+	ret = ioctl(sk, SIOCGIFINDEX, &amp;ifr);
+	if (ret &lt; 0)
+		error(1, errno, &quot;SOICGIFINDEX %s&quot;, dev);
+	addr.can_family = AF_CAN;
+	addr.can_ifindex = ifr.ifr_ifindex;
+
+	ret = bind(sk, (void *)&amp;addr, sizeof(addr));
+	if (ret &lt; 0)
+		error(1, errno, &quot;bind&quot;);
+
+	// fixed settings
+	iov.iov_base = &frame;
+	msg.msg_name = &addr;
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_control = &ctrlmsg;
+
+	memset(&amp;frame, 0, sizeof(frame));
+	frame.can_id = 0x123;
+	frame.can_dlc = 2;
+	frame.data[0] = 4;
+	frame.data[1] = 5;
+	ret = write(sk, &amp;frame, sizeof(frame));
+	if (ret &lt; 0)
+		error(1, errno, &quot;can send&quot;);
+
+	while (1) {
+		/* these settings may be modified by recvmsg() */
+		iov.iov_len = sizeof(frame);
+		msg.msg_namelen = sizeof(addr);
+		msg.msg_controllen = sizeof(ctrlmsg);  
+		msg.msg_flags = 0;
+
+		ret = recvmsg(sk, &amp;msg, 0);
+		if (ret &lt; 0)
+			error(1, errno, &quot;recvmsg&quot;);
+
+		for (cmsg = CMSG_FIRSTHDR(&amp;msg);
+				cmsg &amp;&amp; (cmsg-&gt;cmsg_level == SOL_SOCKET);
+				cmsg = CMSG_NXTHDR(&amp;msg,cmsg)) {
+			if (cmsg-&gt;cmsg_type == SO_TIMESTAMP)
+				tv = *(struct timeval *)CMSG_DATA(cmsg);
+		}
+
+		printf(&quot;(%ld.%06ld) &quot;, tv.tv_sec, tv.tv_usec);
+		printf(&quot; %s&quot;, dev);
+		if (msg.msg_flags &amp; MSG_CONFIRM)
+			/* transmission confirmation */
+			printf(&quot; T&quot;);
+		else if (msg.msg_flags &amp; MSG_DONTROUTE)
+			printf(&quot; L&quot;);
+		else
+			printf(&quot; -&quot;);
+
+		if (frame.can_id &amp; CAN_EFF_FLAG)
+			printf(&quot; %08lx:&quot;, frame.can_id);
+		else
+			printf(&quot;      %03x:&quot;, frame.can_id);
+		if (frame.can_id &amp; CAN_RTR_FLAG)
+			printf(&quot; rtr %u&quot;, frame.can_dlc);
+		else for (j = 0; j &lt; frame.can_dlc; ++j)
+			printf(&quot; %02x&quot;, frame.data[j]);
+		printf(&quot;\n&quot;);
+		fflush(stdout);
+	}
+	return 0;
+}
+---
+Index: can-utils/candump.c
+===================================================================
+--- can-utils/candump.c	(revision 1198)
++++ can-utils/candump.c	(working copy)
+@@ -722,6 +722,11 @@
+ 				printf(&quot;%*s&quot;, max_devname_len, devname[idx]);
+ 				printf(&quot;%s  &quot;, (color==1)?col_off:&quot;&quot;);
+ 
++				if (msg.msg_flags &amp; MSG_DONTROUTE)
++					printf(&quot; L&quot;);
++				else
++					printf(&quot; -&quot;);
++
+ 				fprint_long_canframe(stdout, &amp;frame, NULL, view);
+ 
+ 				printf(&quot;%s&quot;, (color&gt;1)?col_off:&quot;&quot;);
+
+---
+
+Index: net/can/raw.c
+===================================================================
+--- net/can/raw.c	(revision 1198)
++++ net/can/raw.c	(working copy)
+@@ -102,6 +102,15 @@
+ 	can_err_mask_t err_mask;
+ };
+ 
++#define RAWF_LOCAL	0x01
++#define RAWF_SELF	0x02
++static inline int *raw_flags(struct sk_buff *skb)
++{
++	BUILD_BUG_ON((sizeof(skb-&gt;cb)+sizeof(int)) &lt;= sizeof(struct sockaddr_can));
++	/* return pointer after struct sockaddr_can */
++	return (int *)(&amp;((struct sockaddr_can *)skb-&gt;cb)[1]);
++}
++
+ static inline struct raw_sock *raw_sk(const struct sock *sk)
+ {
+ #if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,12)
+@@ -111,18 +120,20 @@
+ #endif
+ }
+ 
+-static void raw_rcv(struct sk_buff *skb, void *data)
++static void raw_rcv(struct sk_buff *oskb, void *data)
+ {
+ 	struct sock *sk = (struct sock *)data;
+ 	struct raw_sock *ro = raw_sk(sk);
+ 	struct sockaddr_can *addr;
++	struct sk_buff *skb;
++	int *pflags;
+ 
+ 	/* check the received tx sock reference */
+-	if (!ro-&gt;recv_own_msgs &amp;&amp; skb-&gt;sk == sk)
++	if (!ro-&gt;recv_own_msgs &amp;&amp; oskb-&gt;sk == sk)
+ 		return;
+ 
+ 	/* clone the given skb to be able to enqueue it into the rcv queue */
+-	skb = skb_clone(skb, GFP_ATOMIC);
++	skb = skb_clone(oskb, GFP_ATOMIC);
+ 	if (!skb)
+ 		return;
+ 
+@@ -139,6 +150,13 @@
+ 	addr-&gt;can_family  = AF_CAN;
+ 	addr-&gt;can_ifindex = skb-&gt;dev-&gt;ifindex;
+ 
++	pflags = raw_flags(skb);
++	*pflags = 0;
++	if (oskb-&gt;sk)
++		*pflags |= RAWF_LOCAL;
++	if (oskb-&gt;sk == sk)
++		*pflags |= RAWF_SELF;
++
+ 	if (sock_queue_rcv_skb(sk, skb) &lt; 0)
+ 		kfree_skb(skb);
+ }
+@@ -713,6 +731,7 @@
+ 	struct sk_buff *skb;
+ 	int err = 0;
+ 	int noblock;
++	int *pflags;
+ 
+ 	noblock =  flags &amp; MSG_DONTWAIT;
+ 	flags   &amp;= ~MSG_DONTWAIT;
+@@ -739,6 +758,12 @@
+ 		memcpy(msg-&gt;msg_name, skb-&gt;cb, msg-&gt;msg_namelen);
+ 	}
+ 
++	pflags = raw_flags(skb);
++	if (*pflags &amp; RAWF_LOCAL)
++		msg-&gt;msg_flags |= MSG_DONTROUTE;
++	if (*pflags &amp; RAWF_SELF)
++		msg-&gt;msg_flags |= MSG_CONFIRM;
++
+ 	skb_free_datagram(sk, skb);
+ 
+ 	return size;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004727.html">Self-reception
+</A></li>
+	<LI>Next message: <A HREF="004732.html">Self-reception
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4728">[ date ]</a>
+              <a href="thread.html#4728">[ thread ]</a>
+              <a href="subject.html#4728">[ subject ]</a>
+              <a href="author.html#4728">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,166 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> RFC: CAN state management
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20CAN%20state%20management&In-Reply-To=%3C4755AD81.9000304%40hartkopp.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000923.html">
+   <LINK REL="Next"  HREF="000927.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>RFC: CAN state management</H1>
+    <B>Oliver Hartkopp</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20RFC%3A%20CAN%20state%20management&In-Reply-To=%3C4755AD81.9000304%40hartkopp.net%3E"
+       TITLE="RFC: CAN state management">socketcan at hartkopp.net
+       </A><BR>
+    <I>Tue Dec  4 20:41:53 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000923.html">RFC: CAN state management
+</A></li>
+        <LI>Next message: <A HREF="000927.html">RFC: CAN state management
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#924">[ date ]</a>
+              <a href="thread.html#924">[ thread ]</a>
+              <a href="subject.html#924">[ subject ]</a>
+              <a href="author.html#924">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Wolfgang Grandegger wrote:
+&gt;<i> Hartkopp, Oliver (K-GEFE/E) wrote:
+</I>&gt;<i>   
+</I>&gt;&gt;<i> Sam Ravnborg wrote:
+</I>&gt;&gt;<i>     
+</I>&gt;<i> [...deletions...]
+</I>&gt;<i>   
+</I>&gt;&gt;<i> Hi all,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> i just looked into the Kernel source to check the already defined
+</I>&gt;&gt;<i> interface states. There is a interface &quot;operational state&quot; defined
+</I>&gt;&gt;<i> following RFC2863:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> //lxr.linux.no/linux+v2.6.23.9/include/linux/if.h#L91
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Regarding these definitions i would tend to define
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> /* RFC 2863 operational status */
+</I>&gt;&gt;<i> enum {
+</I>&gt;&gt;<i>        IF_OPER_UNKNOWN,
+</I>&gt;&gt;<i>        IF_OPER_NOTPRESENT,
+</I>&gt;&gt;<i>        IF_OPER_DOWN, /* CAN_STATE_STOPPED */
+</I>&gt;&gt;<i>        IF_OPER_LOWERLAYERDOWN, /* CAN_STATE_BUS_OFF */
+</I>&gt;&gt;<i>        IF_OPER_TESTING, /* CAN_STATE_SCANNING_BIT(!)RATE */
+</I>&gt;&gt;<i>        IF_OPER_DORMANT, /* CAN_STATE_SLEEPING */
+</I>&gt;&gt;<i>        IF_OPER_UP, /* CAN_STATE_ACTIVE */
+</I>&gt;&gt;<i> };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> IMO the RFC 2863 defines the interface status quite nice. Especially
+</I>&gt;&gt;<i> because of the current state CAN_STATE_BUS_WARNING  and
+</I>&gt;&gt;<i> CAN_STATE_BUS_PASSIVE does not really tell the user about the
+</I>&gt;&gt;<i> 'operational' state of the interface as it is still possible to send and
+</I>&gt;&gt;<i> receive CAN frames. This is what also Vladislav pointed out.
+</I>&gt;&gt;<i>     
+</I>&gt;<i>
+</I>&gt;<i> Ah, now I understand Vladislav's point. We mix operational states with
+</I>&gt;<i> bus error states.
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>
+Yep! I just got this insight while trying to map the current CAN states 
+to the RFC2683 states.
+
+&gt;&gt;<i> My suggestion would be to use the RFC 2863 states for the interface
+</I>&gt;&gt;<i> state in general (e.g. in sysfs) and to change the error frame
+</I>&gt;&gt;<i> definition in error.h like this:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> ===================================================================
+</I>&gt;&gt;<i> --- include/linux/can/error.h    (revision 572)
+</I>&gt;&gt;<i> +++ include/linux/can/error.h    (working copy)
+</I>&gt;&gt;<i> @@ -25,7 +25,7 @@
+</I>&gt;&gt;<i> #define CAN_ERR_PROT         0x00000008U /* protocol violations /
+</I>&gt;&gt;<i> data[2..3] */
+</I>&gt;&gt;<i> #define CAN_ERR_TRX          0x00000010U /* transceiver status  /
+</I>&gt;&gt;<i> data[4]    */
+</I>&gt;&gt;<i> #define CAN_ERR_ACK          0x00000020U /* received no ACK on
+</I>&gt;&gt;<i> transmission */
+</I>&gt;&gt;<i> -#define CAN_ERR_BUSOFF       0x00000040U /* bus off */
+</I>&gt;&gt;<i> +#define CAN_ERR_STATECHANGE  0x00000040U /* interface state changes /
+</I>&gt;&gt;<i> data[5] */
+</I>&gt;&gt;<i> #define CAN_ERR_BUSERROR     0x00000080U /* bus error (may flood!) */
+</I>&gt;&gt;<i> #define CAN_ERR_RESTARTED    0x00000100U /* controller restarted */
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> @@ -90,6 +90,10 @@
+</I>&gt;&gt;<i> #define CAN_ERR_TRX_CANL_SHORT_TO_GND  0x70 /* 0111 0000 */
+</I>&gt;&gt;<i> #define CAN_ERR_TRX_CANL_SHORT_TO_CANH 0x80 /* 1000 0000 */
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> -/* controller specific additional information / data[5..7] */
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> +/* interface state changes / data[5] - see RFC2863 definitions in
+</I>&gt;&gt;<i> linux/if.h */
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> +/* controller specific additional information / data[6..7] */
+</I>&gt;&gt;<i> +
+</I>&gt;&gt;<i> #endif /* CAN_ERROR_H */
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> This would bring a clean separation from the well defined operating
+</I>&gt;&gt;<i> state in RFC2863 (for sysfs) and the CAN controller specific things that
+</I>&gt;&gt;<i> are transported via the error frame.
+</I>&gt;&gt;<i>     
+</I>&gt;<i>
+</I>&gt;<i> Makes sense.
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>&gt;&gt;<i> Additionally the error frame becomes capable to announce changing
+</I>&gt;&gt;<i> RFC2863 operating states, when this is requested by setting
+</I>&gt;&gt;<i> CAN_ERR_STATECHANGE in the error frame mask. The definitions for
+</I>&gt;&gt;<i> OVERFLOW, WARNING and PASSIVE are define in the error frame anyway.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Comments?
+</I>&gt;&gt;<i>     
+</I>&gt;<i>
+</I>&gt;<i> Just the names, especially &quot;bus-off&quot; are not nice. I still prefer CAN
+</I>&gt;<i> specific names.
+</I>&gt;<i>   
+</I>
+??? I can't see any &quot;bus-off&quot; in *my* text.
+
+The _comments_ in the RFC2863 definitions sniplet are just to give an 
+idea which CAN states could be mapped to which RFC2863 states - nothing 
+more.
+
+Oliver
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000923.html">RFC: CAN state management
+</A></li>
+	<LI>Next message: <A HREF="000927.html">RFC: CAN state management
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#924">[ date ]</a>
+              <a href="thread.html#924">[ thread ]</a>
+              <a href="subject.html#924">[ subject ]</a>
+              <a href="author.html#924">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

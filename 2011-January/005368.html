@@ -1,0 +1,423 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v4 1/1] can: c_can: Added support for Bosch	C_CAN controller
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v4%201/1%5D%20can%3A%20c_can%3A%20Added%20support%20for%20Bosch%0A%09C_CAN%20controller&In-Reply-To=%3C4D2D7348.4020601%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005369.html">
+   <LINK REL="Next"  HREF="005342.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v4 1/1] can: c_can: Added support for Bosch	C_CAN controller</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v4%201/1%5D%20can%3A%20c_can%3A%20Added%20support%20for%20Bosch%0A%09C_CAN%20controller&In-Reply-To=%3C4D2D7348.4020601%40pengutronix.de%3E"
+       TITLE="[PATCH net-next-2.6 v4 1/1] can: c_can: Added support for Bosch	C_CAN controller">mkl at pengutronix.de
+       </A><BR>
+    <I>Wed Jan 12 10:24:24 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005369.html">[PATCH net-next-2.6 v4 1/1] can: c_can: Added support for Bosch	C_CAN controller
+</A></li>
+        <LI>Next message: <A HREF="005342.html">[PATCH net-next-2.6 v4 1/1] can: c_can: Added support for Bosch	C_CAN	controller
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5368">[ date ]</a>
+              <a href="thread.html#5368">[ thread ]</a>
+              <a href="subject.html#5368">[ subject ]</a>
+              <a href="author.html#5368">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 01/12/2011 09:51 AM, Bhupesh SHARMA wrote:
+
+[..]
+
+&gt;&gt;&gt;<i> b/drivers/net/can/c_can/c_can.c new file mode 100644 index
+</I>&gt;&gt;&gt;<i> 0000000..06e1553
+</I>&gt;&gt;&gt;<i> --- /dev/null
+</I>&gt;&gt;&gt;<i> +++ b/drivers/net/can/c_can/c_can.c
+</I>&gt;&gt;&gt;<i> @@ -0,0 +1,953 @@
+</I>&gt;&gt;&gt;<i> +/*
+</I>&gt;&gt;&gt;<i> + * CAN bus driver for Bosch C_CAN controller
+</I>&gt;&gt;&gt;<i> + *
+</I>&gt;&gt;&gt;<i> + * Copyright (C) 2010 ST Microelectronics
+</I>&gt;&gt;&gt;<i> + * Bhupesh Sharma &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">bhupesh.sharma at st.com</A>&gt;
+</I>&gt;&gt;&gt;<i> + *
+</I>&gt;&gt;&gt;<i> + * Borrowed heavily from the C_CAN driver originally written by:
+</I>&gt;&gt;&gt;<i> + * Copyright (C) 2007
+</I>&gt;&gt;&gt;<i> + * - Sascha Hauer, Marc Kleine-Budde, Pengutronix
+</I>&gt;&gt;&gt;<i> +&lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">s.hauer at pengutronix.de</A>&gt;
+</I>&gt;&gt;&gt;<i> + * - Simon Kallweit, intefo AG &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">simon.kallweit at intefo.ch</A>&gt;
+</I>&gt;&gt;&gt;<i> + *
+</I>&gt;&gt;&gt;<i> + * TX and RX NAPI implementation has been borrowed from at91 CAN
+</I>&gt;&gt;&gt;<i> +driver
+</I>&gt;&gt;&gt;<i> + * written by:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I've just cleaned up the RX implementation, have a look at [1] and [2].
+</I>&gt;<i> 
+</I>&gt;<i> I am not sure that C_CAN will be effected as per the at91 driver changes.
+</I>&gt;<i> In C_CAN, messages numbers are allowed only from 0x01 to 0x20. Message object
+</I>&gt;<i> number 0 is not allowed. Internally obj-put and obj-get routines increment the
+</I>&gt;<i> message number by 1.
+</I>
+Okay - I just wanted you to have a look at it.
+
+[...]
+
+&gt;&gt;&gt;<i> +/*
+</I>&gt;&gt;&gt;<i> + * theory of operation:
+</I>&gt;&gt;&gt;<i> + *
+</I>&gt;&gt;&gt;<i> + * c_can core saves a received CAN message into the first free
+</I>&gt;&gt;&gt;<i> +message
+</I>&gt;&gt;&gt;<i> + * object it finds free (starting with the lowest). Bits NEWDAT and
+</I>&gt;&gt;&gt;<i> + * INTPND are set for this message object indicating that a new
+</I>&gt;&gt;&gt;<i> +message
+</I>&gt;&gt;&gt;<i> + * has arrived. To work-around this issue, we keep two groups of
+</I>&gt;&gt;&gt;<i> +message
+</I>&gt;&gt;&gt;<i> + * objects whose partitioning is defined by C_CAN_MSG_OBJ_RX_SPLIT.
+</I>&gt;&gt;&gt;<i> + *
+</I>&gt;&gt;&gt;<i> + * To ensure in-order frame reception we use the following
+</I>&gt;&gt;&gt;<i> + * approach while re-activating a message object to receive further
+</I>&gt;&gt;&gt;<i> + * frames:
+</I>&gt;&gt;&gt;<i> + * - if the current message object number is lower than
+</I>&gt;&gt;&gt;<i> + *   C_CAN_MSG_RX_LOW_LAST, do not clear the NEWDAT bit while
+</I>&gt;&gt;<i> clearing
+</I>&gt;&gt;&gt;<i> + *   the INTPND bit.
+</I>&gt;&gt;&gt;<i> + * - if the current message object number is equal to
+</I>&gt;&gt;&gt;<i> + *   C_CAN_MSG_RX_LOW_LAST then clear the NEWDAT bit of all lower
+</I>&gt;&gt;&gt;<i> + *   receive message objects.
+</I>&gt;&gt;&gt;<i> + * - if the current message object number is greater than
+</I>&gt;&gt;&gt;<i> + *   C_CAN_MSG_RX_LOW_LAST then clear the NEWDAT bit of
+</I>&gt;&gt;&gt;<i> + *   only this message object.
+</I>&gt;&gt;&gt;<i> + */
+</I>&gt;&gt;&gt;<i> +static int c_can_do_rx_poll(struct net_device *dev, int quota) {
+</I>&gt;&gt;&gt;<i> +   u32 num_rx_pkts = 0;
+</I>&gt;&gt;&gt;<i> +   unsigned int msg_obj, msg_ctrl_save;
+</I>&gt;&gt;&gt;<i> +   struct c_can_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;&gt;<i> +   u32 val = c_can_read_reg32(priv, &amp;priv-&gt;regs-&gt;intpnd1);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   for (msg_obj = C_CAN_MSG_OBJ_RX_FIRST;
+</I>&gt;&gt;&gt;<i> +                   msg_obj &lt;= C_CAN_MSG_OBJ_RX_LAST &amp;&amp; quota &gt; 0;
+</I>&gt;&gt;&gt;<i> +                   msg_obj++) {
+</I>&gt;&gt;&gt;<i> +           if (val &amp; (1 &lt;&lt; msg_obj)) {
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> what about using find_next_bit here?
+</I>&gt;<i> 
+</I>&gt;<i> I will explore the possibility of using the same.
+</I>&gt;<i> But, IMHO this logic seems much easier to understand than a
+</I>&gt;<i> *for* loop with bulky *find_next_bit* call.
+</I>
+:<i>)
+</I>
+&gt;&gt;&gt;<i> +                   c_can_object_get(dev, 0, msg_obj, IF_COMM_ALL &amp;
+</I>&gt;&gt;&gt;<i> +                                   ~IF_COMM_TXRQST);
+</I>&gt;&gt;&gt;<i> +                   msg_ctrl_save = priv-&gt;read_reg(priv,
+</I>&gt;&gt;&gt;<i> +                                   &amp;priv-&gt;regs-&gt;intf[0].msg_cntrl);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +                   if (msg_ctrl_save &amp; IF_MCONT_EOB)
+</I>&gt;&gt;&gt;<i> +                           return num_rx_pkts;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +                   if (msg_ctrl_save &amp; IF_MCONT_MSGLST) {
+</I>&gt;&gt;&gt;<i> +                           c_can_handle_lost_msg_obj(dev, 0, msg_obj);
+</I>&gt;&gt;&gt;<i> +                           num_rx_pkts++;
+</I>&gt;&gt;&gt;<i> +                           quota--;
+</I>&gt;&gt;&gt;<i> +                           continue;
+</I>&gt;&gt;&gt;<i> +                   }
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +                   if (!(msg_ctrl_save &amp; IF_MCONT_NEWDAT))
+</I>&gt;&gt;&gt;<i> +                           continue;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +                   /* read the data from the message object */
+</I>&gt;&gt;&gt;<i> +                   c_can_read_msg_object(dev, 0, msg_ctrl_save,
+</I>&gt;&gt;<i> msg_obj);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +                   if (msg_obj &lt; C_CAN_MSG_RX_LOW_LAST)
+</I>&gt;&gt;&gt;<i> +                           c_can_mark_rx_msg_obj(dev, 0,
+</I>&gt;&gt;&gt;<i> +                                           msg_ctrl_save, msg_obj);
+</I>&gt;&gt;&gt;<i> +                   else if (msg_obj &gt; C_CAN_MSG_RX_LOW_LAST)
+</I>&gt;&gt;&gt;<i> +                           /* activate this msg obj */
+</I>&gt;&gt;&gt;<i> +                           c_can_activate_rx_msg_obj(dev, 0,
+</I>&gt;&gt;&gt;<i> +                                           msg_ctrl_save, msg_obj);
+</I>&gt;&gt;&gt;<i> +                   else if (msg_obj == C_CAN_MSG_RX_LOW_LAST)
+</I>&gt;&gt;&gt;<i> +                           /* activate all lower message objects */
+</I>&gt;&gt;&gt;<i> +                           c_can_activate_all_lower_rx_msg_obj(dev,
+</I>&gt;&gt;&gt;<i> +                                           0, msg_ctrl_save);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +                   num_rx_pkts++;
+</I>&gt;&gt;&gt;<i> +                   quota--;
+</I>&gt;&gt;&gt;<i> +           }
+</I>&gt;&gt;&gt;<i> +           val = c_can_read_reg32(priv, &amp;priv-&gt;regs-&gt;intpnd1);
+</I>&gt;&gt;&gt;<i> +   }
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   return num_rx_pkts;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static inline int c_can_has_and_handle_berr(struct c_can_priv *priv)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +   return (priv-&gt;can.ctrlmode &amp; CAN_CTRLMODE_BERR_REPORTING) &amp;&amp;
+</I>&gt;&gt;&gt;<i> +           (priv-&gt;current_status &amp; STATUS_LEC_MASK); }
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static int c_can_err(struct net_device *dev,
+</I>&gt;&gt;&gt;<i> +                           enum c_can_bus_error_types error_type,
+</I>&gt;&gt;&gt;<i> +                           enum c_can_lec_type lec_type)
+</I>&gt;&gt;&gt;<i> +{
+</I>&gt;&gt;&gt;<i> +   unsigned int reg_err_counter;
+</I>&gt;&gt;&gt;<i> +   unsigned int rx_err_passive;
+</I>&gt;&gt;&gt;<i> +   struct c_can_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;&gt;<i> +   struct net_device_stats *stats = &amp;dev-&gt;stats;
+</I>&gt;&gt;&gt;<i> +   struct can_frame *cf;
+</I>&gt;&gt;&gt;<i> +   struct sk_buff *skb;
+</I>&gt;&gt;&gt;<i> +   struct can_berr_counter bec;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   /* propogate the error condition to the CAN stack */
+</I>&gt;&gt;&gt;<i> +   skb = alloc_can_err_skb(dev, &amp;cf);
+</I>&gt;&gt;&gt;<i> +   if (unlikely(!skb))
+</I>&gt;&gt;&gt;<i> +           return 0;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   c_can_get_berr_counter(dev, &amp;bec);
+</I>&gt;&gt;&gt;<i> +   reg_err_counter = priv-&gt;read_reg(priv, &amp;priv-&gt;regs-&gt;err_cnt);
+</I>&gt;&gt;&gt;<i> +   rx_err_passive = (reg_err_counter &amp; ERR_COUNTER_RP_MASK) &gt;&gt;
+</I>&gt;&gt;&gt;<i> +                           ERR_COUNTER_RP_SHIFT;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   if (error_type &amp; C_CAN_ERROR_WARNING) {
+</I>&gt;&gt;&gt;<i> +           /* error warning state */
+</I>&gt;&gt;&gt;<i> +           priv-&gt;can.can_stats.error_warning++;
+</I>&gt;&gt;&gt;<i> +           priv-&gt;can.state = CAN_STATE_ERROR_WARNING;
+</I>&gt;&gt;&gt;<i> +           cf-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;&gt;&gt;<i> +           if (bec.rxerr &gt; 96)
+</I>&gt;&gt;&gt;<i> +                   cf-&gt;data[1] |= CAN_ERR_CRTL_RX_WARNING;
+</I>&gt;&gt;&gt;<i> +           if (bec.txerr &gt; 96)
+</I>&gt;&gt;&gt;<i> +                   cf-&gt;data[1] |= CAN_ERR_CRTL_TX_WARNING;
+</I>&gt;&gt;&gt;<i> +   }
+</I>&gt;&gt;&gt;<i> +   if (error_type &amp; C_CAN_ERROR_PASSIVE) {
+</I>&gt;&gt;&gt;<i> +           /* error passive state */
+</I>&gt;&gt;&gt;<i> +           priv-&gt;can.can_stats.error_passive++;
+</I>&gt;&gt;&gt;<i> +           priv-&gt;can.state = CAN_STATE_ERROR_PASSIVE;
+</I>&gt;&gt;&gt;<i> +           cf-&gt;can_id |= CAN_ERR_CRTL;
+</I>&gt;&gt;&gt;<i> +           if (rx_err_passive)
+</I>&gt;&gt;&gt;<i> +                   cf-&gt;data[1] |= CAN_ERR_CRTL_RX_PASSIVE;
+</I>&gt;&gt;&gt;<i> +           if (bec.txerr &gt; 127)
+</I>&gt;&gt;&gt;<i> +                   cf-&gt;data[1] |= CAN_ERR_CRTL_TX_PASSIVE;
+</I>&gt;&gt;&gt;<i> +   }
+</I>&gt;&gt;&gt;<i> +   if (error_type &amp; C_CAN_BUS_OFF) {
+</I>&gt;&gt;&gt;<i> +           /* bus-off state */
+</I>&gt;&gt;&gt;<i> +           priv-&gt;can.state = CAN_STATE_BUS_OFF;
+</I>&gt;&gt;&gt;<i> +           cf-&gt;can_id |= CAN_ERR_BUSOFF;
+</I>&gt;&gt;&gt;<i> +           /*
+</I>&gt;&gt;&gt;<i> +            * disable all interrupts in bus-off mode to ensure that
+</I>&gt;&gt;&gt;<i> +            * the CPU is not hogged down
+</I>&gt;&gt;&gt;<i> +            */
+</I>&gt;&gt;&gt;<i> +           c_can_enable_all_interrupts(priv, DISABLE_ALL_INTERRUPTS);
+</I>&gt;&gt;&gt;<i> +           can_bus_off(dev);
+</I>&gt;&gt;&gt;<i> +   }
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   /*
+</I>&gt;&gt;&gt;<i> +    * check for 'last error code' which tells us the
+</I>&gt;&gt;&gt;<i> +    * type of the last error to occur on the CAN bus
+</I>&gt;&gt;&gt;<i> +    */
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   /* common for all type of bus errors */
+</I>&gt;&gt;&gt;<i> +   priv-&gt;can.can_stats.bus_error++;
+</I>&gt;&gt;&gt;<i> +   stats-&gt;rx_errors++;
+</I>&gt;&gt;&gt;<i> +   cf-&gt;can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
+</I>&gt;&gt;&gt;<i> +   cf-&gt;data[2] |= CAN_ERR_PROT_UNSPEC;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   switch (lec_type) {
+</I>&gt;&gt;&gt;<i> +   case LEC_STUFF_ERROR:
+</I>&gt;&gt;&gt;<i> +           dev_dbg(dev-&gt;dev.parent, &quot;stuff error\n&quot;);
+</I>&gt;&gt;&gt;<i> +           cf-&gt;data[2] |= CAN_ERR_PROT_STUFF;
+</I>&gt;&gt;&gt;<i> +           break;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   case LEC_FORM_ERROR:
+</I>&gt;&gt;&gt;<i> +           dev_dbg(dev-&gt;dev.parent, &quot;form error\n&quot;);
+</I>&gt;&gt;&gt;<i> +           cf-&gt;data[2] |= CAN_ERR_PROT_FORM;
+</I>&gt;&gt;&gt;<i> +           break;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   case LEC_ACK_ERROR:
+</I>&gt;&gt;&gt;<i> +           dev_dbg(dev-&gt;dev.parent, &quot;ack error\n&quot;);
+</I>&gt;&gt;&gt;<i> +           cf-&gt;data[2] |= (CAN_ERR_PROT_LOC_ACK |
+</I>&gt;&gt;&gt;<i> +                           CAN_ERR_PROT_LOC_ACK_DEL);
+</I>&gt;&gt;&gt;<i> +           break;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   case LEC_BIT1_ERROR:
+</I>&gt;&gt;&gt;<i> +           dev_dbg(dev-&gt;dev.parent, &quot;bit1 error\n&quot;);
+</I>&gt;&gt;&gt;<i> +           cf-&gt;data[2] |= CAN_ERR_PROT_BIT1;
+</I>&gt;&gt;&gt;<i> +           break;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   case LEC_BIT0_ERROR:
+</I>&gt;&gt;&gt;<i> +           dev_dbg(dev-&gt;dev.parent, &quot;bit0 error\n&quot;);
+</I>&gt;&gt;&gt;<i> +           cf-&gt;data[2] |= CAN_ERR_PROT_BIT0;
+</I>&gt;&gt;&gt;<i> +           break;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   case LEC_CRC_ERROR:
+</I>&gt;&gt;&gt;<i> +           dev_dbg(dev-&gt;dev.parent, &quot;CRC error\n&quot;);
+</I>&gt;&gt;&gt;<i> +           cf-&gt;data[2] |= (CAN_ERR_PROT_LOC_CRC_SEQ |
+</I>&gt;&gt;&gt;<i> +                           CAN_ERR_PROT_LOC_CRC_DEL);
+</I>&gt;&gt;&gt;<i> +           break;
+</I>&gt;&gt;&gt;<i> +   }
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   netif_receive_skb(skb);
+</I>&gt;&gt;&gt;<i> +   stats-&gt;rx_packets++;
+</I>&gt;&gt;&gt;<i> +   stats-&gt;rx_bytes += cf-&gt;can_dlc;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   return 1;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static int c_can_poll(struct napi_struct *napi, int quota) {
+</I>&gt;&gt;&gt;<i> +   u16 irqstatus;
+</I>&gt;&gt;&gt;<i> +   int lec_type = 0;
+</I>&gt;&gt;&gt;<i> +   int work_done = 0;
+</I>&gt;&gt;&gt;<i> +   struct net_device *dev = napi-&gt;dev;
+</I>&gt;&gt;&gt;<i> +   struct c_can_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;&gt;<i> +   enum c_can_bus_error_types error_type = C_CAN_NO_ERROR;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   irqstatus = priv-&gt;read_reg(priv, &amp;priv-&gt;regs-&gt;interrupt);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   /* status events have the highest priority */
+</I>&gt;&gt;&gt;<i> +   if (irqstatus == STATUS_INTERRUPT) {
+</I>&gt;&gt;&gt;<i> +           priv-&gt;current_status = priv-&gt;read_reg(priv,
+</I>&gt;&gt;&gt;<i> +                                   &amp;priv-&gt;regs-&gt;status);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +           /* handle Tx/Rx events */
+</I>&gt;&gt;&gt;<i> +           if (priv-&gt;current_status &amp; STATUS_TXOK)
+</I>&gt;&gt;&gt;<i> +                   priv-&gt;write_reg(priv, &amp;priv-&gt;regs-&gt;status,
+</I>&gt;&gt;&gt;<i> +                                   priv-&gt;current_status &amp; ~STATUS_TXOK);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +           if (priv-&gt;current_status &amp; STATUS_RXOK)
+</I>&gt;&gt;&gt;<i> +                   priv-&gt;write_reg(priv, &amp;priv-&gt;regs-&gt;status,
+</I>&gt;&gt;&gt;<i> +                                   priv-&gt;current_status &amp; ~STATUS_RXOK);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +           /* handle bus error events */
+</I>&gt;&gt;&gt;<i> +           if (priv-&gt;current_status &amp; STATUS_EWARN) {
+</I>&gt;&gt;&gt;<i> +                   dev_dbg(dev-&gt;dev.parent,
+</I>&gt;&gt;&gt;<i> +                                   &quot;entered error warning state\n&quot;);
+</I>&gt;&gt;&gt;<i> +                   error_type = C_CAN_ERROR_WARNING;
+</I>&gt;&gt;&gt;<i> +           }
+</I>&gt;&gt;&gt;<i> +           if ((priv-&gt;current_status &amp; STATUS_EPASS) &amp;&amp;
+</I>&gt;&gt;&gt;<i> +                           (!(priv-&gt;last_status &amp; STATUS_EPASS))) {
+</I>&gt;&gt;&gt;<i> +                   dev_dbg(dev-&gt;dev.parent,
+</I>&gt;&gt;&gt;<i> +                                   &quot;entered error passive state\n&quot;);
+</I>&gt;&gt;&gt;<i> +                   error_type = C_CAN_ERROR_PASSIVE;
+</I>&gt;&gt;&gt;<i> +           }
+</I>&gt;&gt;&gt;<i> +           if ((priv-&gt;current_status &amp; STATUS_BOFF) &amp;&amp;
+</I>&gt;&gt;&gt;<i> +                           (!(priv-&gt;last_status &amp; STATUS_BOFF))) {
+</I>&gt;&gt;&gt;<i> +                   dev_dbg(dev-&gt;dev.parent,
+</I>&gt;&gt;&gt;<i> +                                   &quot;entered bus off state\n&quot;);
+</I>&gt;&gt;&gt;<i> +                   error_type = C_CAN_BUS_OFF;
+</I>&gt;&gt;&gt;<i> +           }
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +           /* handle bus recovery events */
+</I>&gt;&gt;&gt;<i> +           if ((!(priv-&gt;current_status &amp; STATUS_EPASS)) &amp;&amp;
+</I>&gt;&gt;&gt;<i> +                           (priv-&gt;last_status &amp; STATUS_EPASS)) {
+</I>&gt;&gt;&gt;<i> +                   dev_dbg(dev-&gt;dev.parent,
+</I>&gt;&gt;&gt;<i> +                                   &quot;left error passive state\n&quot;);
+</I>&gt;&gt;&gt;<i> +                   priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;&gt;&gt;<i> +           }
+</I>&gt;&gt;&gt;<i> +           if ((!(priv-&gt;current_status &amp; STATUS_BOFF)) &amp;&amp;
+</I>&gt;&gt;&gt;<i> +                           (priv-&gt;last_status &amp; STATUS_BOFF)) {
+</I>&gt;&gt;&gt;<i> +                   dev_dbg(dev-&gt;dev.parent,
+</I>&gt;&gt;&gt;<i> +                                   &quot;left bus off state\n&quot;);
+</I>&gt;&gt;&gt;<i> +                   priv-&gt;can.state = CAN_STATE_ERROR_ACTIVE;
+</I>&gt;&gt;&gt;<i> +           }
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +           priv-&gt;last_status = priv-&gt;current_status;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +           /* handle error on the bus */
+</I>&gt;&gt;&gt;<i> +           lec_type = c_can_has_and_handle_berr(priv);
+</I>&gt;&gt;&gt;<i> +           if (lec_type &amp;&amp; (error_type != C_CAN_NO_ERROR))
+</I>&gt;&gt;&gt;<i> +                   work_done += c_can_err(dev, error_type, lec_type);
+</I>&gt;&gt;&gt;<i> +   } else if ((irqstatus &gt; C_CAN_MSG_OBJ_RX_FIRST) &amp;&amp;
+</I>&gt;&gt;&gt;<i> +                   (irqstatus &lt;= C_CAN_MSG_OBJ_RX_LAST)) {
+</I>&gt;&gt;&gt;<i> +           /* handle events corresponding to receive message objects
+</I>&gt;&gt;<i> */
+</I>&gt;&gt;&gt;<i> +           work_done += c_can_do_rx_poll(dev, (quota - work_done));
+</I>&gt;&gt;&gt;<i> +   } else if ((irqstatus &gt; C_CAN_MSG_OBJ_TX_FIRST) &amp;&amp;
+</I>&gt;&gt;&gt;<i> +                   (irqstatus &lt;= C_CAN_MSG_OBJ_TX_LAST)) {
+</I>&gt;&gt;&gt;<i> +           /* handle events corresponding to transmit message objects
+</I>&gt;&gt;<i> */
+</I>&gt;&gt;&gt;<i> +           c_can_do_tx(dev);
+</I>&gt;&gt;&gt;<i> +   }
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   if (work_done &lt; quota) {
+</I>&gt;&gt;&gt;<i> +           napi_complete(napi);
+</I>&gt;&gt;&gt;<i> +           /* enable all IRQs */
+</I>&gt;&gt;&gt;<i> +           c_can_enable_all_interrupts(priv, ENABLE_ALL_INTERRUPTS);
+</I>&gt;&gt;&gt;<i> +   }
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   return work_done;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +static irqreturn_t c_can_isr(int irq, void *dev_id) {
+</I>&gt;&gt;&gt;<i> +   struct net_device *dev = (struct net_device *)dev_id;
+</I>&gt;&gt;&gt;<i> +   struct c_can_priv *priv = netdev_priv(dev);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   /* disable all interrupts and schedule the NAPI */
+</I>&gt;&gt;&gt;<i> +   c_can_enable_all_interrupts(priv, DISABLE_ALL_INTERRUPTS);
+</I>&gt;&gt;&gt;<i> +   napi_schedule(&amp;priv-&gt;napi);
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +   return IRQ_HANDLED;
+</I>&gt;&gt;&gt;<i> +}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Have a look at the pch_can interrupt handler, it supports shared irqs.
+</I>&gt;<i> 
+</I>&gt;<i> Could you please send me a reference URL for the same.
+</I>&gt;<i> As the pch_can driver code in David's net-next and net tree has almost
+</I>&gt;<i> similar implementation to the c_can driver.
+</I>&gt;<i> Or, am I missing something here?
+</I>
+Your interrupt handler unconditionally thinks it's a c_can interrupt...
+
+<A HREF="http://git.kernel.org/?p=linux/kernel/git/davem/net-next-2.6.git;a=blob;f=drivers/net/can/pch_can.c;h=c42e97268248889acdb007a16cb9bf8152413bd2;hb=0c21e3aaf6ae85bee804a325aa29c325209180fd#l581">http://git.kernel.org/?p=linux/kernel/git/davem/net-next-2.6.git;a=blob;f=drivers/net/can/pch_can.c;h=c42e97268248889acdb007a16cb9bf8152413bd2;hb=0c21e3aaf6ae85bee804a325aa29c325209180fd#l581</A>
+
+...but the pch_can checks if it's really a interrupt from the c_can core.
+
+If you implement your interrupt handler properly, you can register the
+interrupt handler as SHARED:
+
+<A HREF="http://git.kernel.org/?p=linux/kernel/git/davem/net-next-2.6.git;a=blob;f=drivers/net/can/pch_can.c;h=c42e97268248889acdb007a16cb9bf8152413bd2;hb=0c21e3aaf6ae85bee804a325aa29c325209180fd#l850">http://git.kernel.org/?p=linux/kernel/git/davem/net-next-2.6.git;a=blob;f=drivers/net/can/pch_can.c;h=c42e97268248889acdb007a16cb9bf8152413bd2;hb=0c21e3aaf6ae85bee804a325aa29c325209180fd#l850</A>
+
+regards, Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20110112/db47af1b/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20110112/db47af1b/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005369.html">[PATCH net-next-2.6 v4 1/1] can: c_can: Added support for Bosch	C_CAN controller
+</A></li>
+	<LI>Next message: <A HREF="005342.html">[PATCH net-next-2.6 v4 1/1] can: c_can: Added support for Bosch	C_CAN	controller
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5368">[ date ]</a>
+              <a href="thread.html#5368">[ thread ]</a>
+              <a href="subject.html#5368">[ subject ]</a>
+              <a href="author.html#5368">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

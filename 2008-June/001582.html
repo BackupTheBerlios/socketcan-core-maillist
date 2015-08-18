@@ -1,0 +1,643 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [3/3] softing CANcard
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5B3/3%5D%20softing%20CANcard&In-Reply-To=%3C485FA87C.9050502%40eia.be%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001597.html">
+   <LINK REL="Next"  HREF="001594.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[3/3] softing CANcard</H1>
+    <B>Kurt Van Dijck</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5B3/3%5D%20softing%20CANcard&In-Reply-To=%3C485FA87C.9050502%40eia.be%3E"
+       TITLE="[3/3] softing CANcard">kurt.van.dijck at eia.be
+       </A><BR>
+    <I>Mon Jun 23 15:43:24 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001597.html">[1/3] softing CANcard
+</A></li>
+        <LI>Next message: <A HREF="001594.html">[3/3] softing CANcard
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1582">[ date ]</a>
+              <a href="thread.html#1582">[ thread ]</a>
+              <a href="subject.html#1582">[ subject ]</a>
+              <a href="author.html#1582">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Index: kernel/2.6/drivers/net/can/softing/softing_cs.c
+===================================================================
+--- kernel/2.6/drivers/net/can/softing/softing_cs.c	(revision 0)
++++ kernel/2.6/drivers/net/can/softing/softing_cs.c	(revision 0)
+@@ -0,0 +1,576 @@
++/*
++ * softing_cs.c -  Softing Gmbh pcmcia driver module for socketCAN
++ *
++ * Copyright (c) 2008, Kurt Van Dijck, EIA Electronics, &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">kurt.van.dijck at eia.be</A>&gt;
++ *
++ * Based on original, non-'socketcan', driver from Softing Gmbh
++ * Based on other linux XXX_cs.c files.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *	   notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *	   notice, this list of conditions and the following disclaimer in the
++ *	   documentation and/or other materials provided with the distribution.
++ * 3. Neither the name of EIA ELectronics nor the names of its contributors
++ *	   may be used to endorse or promote products derived from this software
++ *	   without specific prior written permission.
++ *
++ * Alternatively, provided that this notice is retained in full, this
++ * software may be distributed under the terms of the GNU General
++ * Public License (&quot;GPL&quot;) version 2, in which case the provisions of the
++ * GPL apply INSTEAD OF those given above.
++ *
++ * The provided data structures and external interfaces from this code
++ * are not restricted to be used by modules with a GPL compatible license.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
++ * DAMAGE.
++ *
++ * Send feedback to &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-users at lists.berlios.de</A>&gt;
++ *
++ */
++
++#include &lt;linux/module.h&gt;
++#include &lt;linux/moduleparam.h&gt;
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/init.h&gt;
++#include &lt;linux/sched.h&gt;
++#include &lt;linux/ptrace.h&gt;
++#include &lt;linux/slab.h&gt;
++#include &lt;linux/string.h&gt;
++#include &lt;linux/timer.h&gt;
++#include &lt;linux/major.h&gt;
++#include &lt;asm/io.h&gt;
++#include &lt;asm/system.h&gt;
++
++#include &lt;pcmcia/cs_types.h&gt;
++#include &lt;pcmcia/cs.h&gt;
++#include &lt;pcmcia/cistpl.h&gt;
++#include &lt;pcmcia/ciscode.h&gt;
++#include &lt;pcmcia/ds.h&gt;
++#include &lt;pcmcia/cisreg.h&gt;
++
++#include &quot;softing.h&quot;
++
++
++#define HANDLE_VCC	1
++
++struct softing_cs {
++	struct io_req_t  io ;
++	struct irq_req_t irq;
++	window_handle_t  win;
++	config_req_t	  conf;
++	struct softing   softing;
++};
++#define softing2cs(x) container_of((x), struct softing_cs, softing)
++
++
++struct lookup {
++	int i;
++	const char *a;
++};
++
++static __attribute__((unused))
++	const char *lookup_i2a(const struct lookup *lp, int i)
++{
++	for (; lp-&gt;a; ++lp) {
++		if (lp-&gt;i == i)
++			return lp-&gt;a;
++	}
++	return 0;
++}
++
++static __attribute__((unused))
++	const char *lookup_mask(const struct lookup *lp, int *i)
++{
++	for (; lp-&gt;a; ++lp) {
++		if (lp-&gt;i &amp; *i) {
++			*i &amp;= ~lp-&gt;i;
++			return lp-&gt;a;
++		}
++	}
++	return 0;
++}
++
++
++static int is_16bit(struct softing *sdev)
++{
++	/* I think this filters the cancard-2 devices */
++	return 5 == (sdev-&gt;id.prod &amp; 0x7f);
++}
++
++
++static int card_reset_via_pcmcia(struct softing *sdev, int v)
++{
++	struct pcmcia_device *pcmcia = to_pcmcia_dev(sdev-&gt;dev);
++	conf_reg_t reg;
++	reg.Function = 0; /* socket */
++	reg.Action	 = CS_WRITE;
++	reg.Offset	 = 2;
++	reg.Value	 = v ? 0 : 0x20;
++	return pcmcia_access_configuration_register(pcmcia, &amp;reg);
++}
++
++static int card_reset_via_dpram(struct softing *sdev, int v)
++{
++	if (v) {
++		spin_lock_bh(&amp;sdev-&gt;spin);
++		sdev-&gt;dpram.virt[0xe00] &amp;= ~1;
++		spin_unlock_bh(&amp;sdev-&gt;spin);
++		card_reset_via_pcmcia(sdev, v);
++	} else {
++		card_reset_via_pcmcia(sdev, v);
++		spin_lock_bh(&amp;sdev-&gt;spin);
++		sdev-&gt;dpram.virt[0xe00] |=  1;
++		spin_unlock_bh(&amp;sdev-&gt;spin);
++	}
++	return 0;
++}
++
++
++static int card_enable_irq_via_pcmcia(struct softing *sdev, int v)
++{
++	int r;
++	struct pcmcia_device *pcmcia = to_pcmcia_dev(sdev-&gt;dev);
++	conf_reg_t reg;
++	memset(&amp;reg, 0, sizeof(reg));
++	reg.Function = 0; /* socket */
++	reg.Action	 = CS_WRITE;
++	reg.Offset	 = 0;
++	reg.Value	 = v ? 0x60 : 0;
++	r = pcmcia_access_configuration_register(pcmcia, &amp;reg);
++	if (0 != r)
++		mod_alert(&quot;failed %u&quot;, r);
++	return r;
++}
++
++
++static const struct lookup pcmcia_io_attr [] = {
++   { IO_DATA_PATH_WIDTH_AUTO, &quot;[auto]&quot;   , },
++   { IO_DATA_PATH_WIDTH_8   , &quot;8bit&quot;      , },
++   { IO_DATA_PATH_WIDTH_16  , &quot;16bit&quot;   , },
++   { 0, 0, },
++};
++
++static const struct lookup pcmcia_mem_attr [] = {
++   { WIN_ADDR_SPACE_IO      , &quot;IO&quot;      , },
++   { WIN_MEMORY_TYPE_AM     , &quot;typeAM&quot;   , },
++   { WIN_ENABLE             , &quot;enable&quot;   , },
++   { WIN_DATA_WIDTH_8       , &quot;8bit&quot;      , },
++   { WIN_DATA_WIDTH_16      , &quot;16bit&quot;   , },
++   { WIN_DATA_WIDTH_32      , &quot;32bit&quot;   , },
++   { WIN_PAGED              , &quot;paged&quot;   , },
++   { WIN_SHARED             , &quot;shared&quot;   , },
++   { WIN_FIRST_SHARED       , &quot;first_shared&quot;, },
++   { WIN_USE_WAIT           , &quot;wait&quot;      , },
++   { WIN_STRICT_ALIGN       , &quot;strict_align&quot;, },
++   { WIN_MAP_BELOW_1MB      , &quot;below_1MB&quot;   , },
++   { WIN_PREFETCH           , &quot;prefetch&quot;, },
++   { WIN_CACHEABLE          , &quot;cacheable&quot;, },
++	{ 0, 0, },
++};
++
++
++#define CS_CHECK(fn, ret) \
++	if (0 != ret) goto cs_failed;
++/*	do { \
++		last_fn = (fn); \
++		if ((last_ret = (ret)) != 0) \
++			goto cs_failed;
++	} while (0) */
++static int dev_config(struct pcmcia_device *pcmcia, struct softing_cs *csdev)
++{
++	struct softing *sdev = &amp;csdev-&gt;softing;
++	cistpl_cftable_entry_t *cf;
++	int r;
++	int last_ret = 0;
++	int last_fn  = 0;
++	struct {
++		tuple_t tuple;
++		unsigned char buff [64];
++		cisparse_t parse;
++	} cfg;
++	config_info_t config;
++	cistpl_cftable_entry_t def_cf = { 0, };
++	win_req_t req;
++	memreq_t map;
++
++	mod_info(&quot;%s&quot;, pcmcia-&gt;devname);
++
++	cfg.tuple.Attributes		= 0;
++	cfg.tuple.TupleData		= (cisdata_t *)cfg.buff;
++	cfg.tuple.TupleDataMax	= sizeof(cfg.buff);
++	cfg.tuple.TupleOffset	= 0;
++	/* Get configuration register information */
++	cfg.tuple.DesiredTuple	= CISTPL_CONFIG;
++	CS_CHECK(GetFirstTuple, pcmcia_get_first_tuple(pcmcia, &amp;cfg.tuple));
++	CS_CHECK(GetTupleData, pcmcia_get_tuple_data(pcmcia, &amp;cfg.tuple));
++	CS_CHECK(ParseTuple
++			, pcmcia_parse_tuple(pcmcia, &amp;cfg.tuple, &amp;cfg.parse));
++	csdev-&gt;conf.ConfigBase = cfg.parse.config.base;
++	csdev-&gt;conf.Present	  = cfg.parse.config.rmask[0];
++
++	/* get current Vcc */
++	r = pcmcia_get_configuration_info(pcmcia, &amp;config);
++	if (CS_SUCCESS != r)
++		return EINVAL;
++
++	cf = &amp;cfg.parse.cftable_entry;
++	cfg.tuple.DesiredTuple	= CISTPL_CFTABLE_ENTRY;
++
++	CS_CHECK(GetFirstTuple, pcmcia_get_first_tuple(pcmcia, &amp;cfg.tuple));
++	do {
++		if (pcmcia_get_tuple_data(pcmcia, &amp;cfg.tuple)
++			|| pcmcia_parse_tuple(pcmcia, &amp;cfg.tuple, &amp;cfg.parse))
++			goto do_next;
++		if (cf-&gt;flags &amp; CISTPL_CFTABLE_DEFAULT)
++			def_cf = *cf;
++		if (0 == cf-&gt;index)
++			goto do_next;
++		csdev-&gt;conf.ConfigIndex = cf-&gt;index;
++		/* power settings (Vcc &amp; Vpp) */
++		#if HANDLE_VCC
++		if (cf-&gt;vcc.present &amp; (1 &lt;&lt; CISTPL_POWER_VNOM)) {
++			if (config.Vcc !=
++				cf-&gt;vcc.param[CISTPL_POWER_VNOM]/10000) {
++				mod_alert(&quot;%s: cf-&gt;Vcc mismatch\n&quot;, __FILE__);
++				goto do_next;
++			}
++		} else if (def_cf.vcc.present &amp; (1 &lt;&lt; CISTPL_POWER_VNOM)) {
++			if (config.Vcc !=
++				def_cf.vcc.param[CISTPL_POWER_VNOM]/10000) {
++				mod_alert(&quot;%s: cf-&gt;Vcc mismatch\n&quot;, __FILE__);
++				goto do_next;
++			}
++		}
++		if (cf-&gt;vpp1.present &amp; (1 &lt;&lt; CISTPL_POWER_VNOM))
++			config.Vpp1
++				= config.Vpp2
++				= cf-&gt;vpp1.param[CISTPL_POWER_VNOM] / 10000;
++
++		else if (def_cf.vpp1.present &amp; (1 &lt;&lt; CISTPL_POWER_VNOM))
++			config.Vpp1
++				= config.Vpp2
++				= def_cf.vpp1.param[CISTPL_POWER_VNOM] / 10000;
++		#endif
++
++		/* interrupt ? */
++		if (cf-&gt;irq.IRQInfo1 || def_cf.irq.IRQInfo1)
++			csdev-&gt;conf.Attributes |= CONF_ENABLE_IRQ;
++		/* IO window */
++		csdev-&gt;io.NumPorts1
++			= csdev-&gt;io.NumPorts2
++			= 0;
++		if ((cf-&gt;io.nwin &gt; 0) || (def_cf.io.nwin &gt; 0)) {
++			cistpl_io_t *io = (cf-&gt;io.nwin) ? &amp;cf-&gt;io : &amp;def_cf.io;
++			csdev-&gt;io.Attributes1 = IO_DATA_PATH_WIDTH_AUTO;
++			if (!(io-&gt;flags &amp; CISTPL_IO_8BIT))
++				csdev-&gt;io.Attributes1 = IO_DATA_PATH_WIDTH_16;
++			if (!(io-&gt;flags &amp; CISTPL_IO_16BIT))
++				csdev-&gt;io.Attributes1 = IO_DATA_PATH_WIDTH_8;
++			csdev-&gt;io.IOAddrLines
++				= io-&gt;flags &amp; CISTPL_IO_LINES_MASK;
++			csdev-&gt;io.BasePort1 = io-&gt;win[0].base;
++			csdev-&gt;io.NumPorts1 = io-&gt;win[0].len ;
++			if (io-&gt;nwin &gt; 1) {
++				csdev-&gt;io.Attributes2 = csdev-&gt;io.Attributes1;
++				csdev-&gt;io.BasePort2	 = io-&gt;win[1].base;
++				csdev-&gt;io.NumPorts2	 = io-&gt;win[1].base;
++			}
++			/* reserve IO, but don't enable it. */
++			r = pcmcia_request_io(pcmcia, &amp;csdev-&gt;io);
++			if (CS_SUCCESS != r) {
++				mod_alert(&quot;pcmcia_request_io() mismatch\n&quot;);
++				goto do_next;
++			}
++		}
++		/* Memory window */
++		if ((cf-&gt;mem.nwin &gt; 0) || (def_cf.mem.nwin &gt; 0)) {
++			cistpl_mem_t *mem
++				= (cf-&gt;mem.nwin) ? &amp;cf-&gt;mem : &amp;def_cf.mem;
++			req.Attributes
++				= (is_16bit(sdev)
++					? WIN_DATA_WIDTH_16 : WIN_DATA_WIDTH_8)
++				| WIN_MEMORY_TYPE_CM
++				| WIN_ENABLE;
++			req.Base = mem-&gt;win[0].host_addr;
++			req.Size = mem-&gt;win[0].len;
++			if (req.Size &lt; 0x1000)
++				req.Size = 0x1000;
++			req.AccessSpeed = 0;
++			r = pcmcia_request_window(&amp;pcmcia, &amp;req, &amp;csdev-&gt;win);
++			if (CS_SUCCESS != r) {
++				mod_alert(&quot;pcmcia_request_window() mismatch\n&quot;);
++				goto do_next;
++			}
++			/*if (5 != (sdev-&gt;id.prod &amp; 0x7f)) {
++				csdev-&gt;win-&gt;ctl.flags
++					= MAP_ACTIVE | MAP_USE_WAIT;
++				csdev-&gt;win-&gt;ctl.speed = 3;
++			}*/
++			map.Page = 0;
++			map.CardOffset = mem-&gt;win[0].card_addr;
++			if (0 != pcmcia_map_mem_page(csdev-&gt;win, &amp;map)) {
++				mod_alert(&quot;pcmcia_map_mem_page() mismatch\n&quot;);
++				goto do_next_win;
++			}
++		} else {
++			mod_info(&quot;no memory window in tuple %u&quot;, cf-&gt;index);
++			goto do_next;
++		}
++		break;
++do_next_win:
++		pcmcia_release_window(csdev-&gt;win);
++do_next:
++		pcmcia_disable_device(pcmcia);
++		CS_CHECK(GetNextTuple,
++			pcmcia_get_next_tuple(pcmcia, &amp;cfg.tuple));
++	} while (1);
++
++	if (csdev-&gt;conf.Attributes &amp; CONF_ENABLE_IRQ) {
++		/*csdev-&gt;irq.Handler  = dev_interrupt_nshared;
++		csdev-&gt;irq.Instance = card;
++		csdev-&gt;irq.Attributes |= IRQ_HANDLE_PRESENT;
++		*/
++		CS_CHECK(RequestIRQ, pcmcia_request_irq(pcmcia, &amp;csdev-&gt;irq));
++	}
++
++	CS_CHECK(RequestConfiguration,
++			pcmcia_request_configuration(pcmcia, &amp;csdev-&gt;conf));
++
++	/* Finally, report what we've done */
++	printk(KERN_INFO &quot;[%s] %s: index 0x%02x&quot;,
++			THIS_MODULE-&gt;name,
++			pcmcia-&gt;devname,
++			csdev-&gt;conf.ConfigIndex);
++	#if HANDLE_VCC
++	printk(&quot;, Vcc %d.%01d&quot;, config.Vcc/10, config.Vcc%10);
++	if (config.Vpp1)
++		printk(&quot;, Vpp %d.%d&quot;, config.Vpp1/10, config.Vpp1%10);
++	#endif
++	if (csdev-&gt;conf.Attributes &amp; CONF_ENABLE_IRQ) {
++		printk(&quot;, irq %d&quot;, csdev-&gt;irq.AssignedIRQ);
++		sdev-&gt;irq.nr = csdev-&gt;irq.AssignedIRQ;
++	}
++	if (csdev-&gt;io.NumPorts1) {
++		int tmp;
++		const char *p;
++		printk(&quot;, io 0x%04x-0x%04x&quot;
++				, pcmcia-&gt;io.BasePort1
++				, csdev-&gt;io.BasePort1+csdev-&gt;io.NumPorts1-1);
++		tmp = csdev-&gt;io.Attributes1;
++		if (0 != tmp) {
++			do {
++				p = lookup_mask(pcmcia_io_attr, &amp;tmp);
++				if (p)
++					printk(&quot; %s&quot;, p);
++			} while (p);
++		}
++	}
++	if (csdev-&gt;io.NumPorts2) {
++		int tmp;
++		const char *p;
++		printk(&quot; &amp; 0x%04x-0x%04x&quot;
++			, csdev-&gt;io.BasePort2
++			, csdev-&gt;io.BasePort2+csdev-&gt;io.NumPorts2-1);
++		tmp = csdev-&gt;io.Attributes2;
++		if (0 != tmp)
++			do {
++				p = lookup_mask(pcmcia_io_attr, &amp;tmp);
++				if (p)
++					printk(&quot; %s&quot;, p);
++			} while (p);
++	}
++	if (csdev-&gt;win) {
++		int tmp;
++		const char *p;
++		sdev-&gt;dpram.phys = req.Base;
++		sdev-&gt;dpram.size = req.Size;
++		printk(&quot;, mem 0x%08lx-0x%08lx&quot;
++				, sdev-&gt;dpram.phys
++				, sdev-&gt;dpram.phys + sdev-&gt;dpram.size-1);
++		tmp = req.Attributes;
++		if (0 != tmp)
++			do {
++				p = lookup_mask(pcmcia_mem_attr, &amp;tmp);
++				if (p)
++					printk(&quot; %s&quot;, p);
++			} while (p);
++	}
++	printk(&quot;\n&quot;);
++	return 0;
++
++cs_failed:
++	cs_error(pcmcia, last_fn, last_ret);
++	pcmcia_release_window(csdev-&gt;win);
++	pcmcia_disable_device(pcmcia);
++	/*dev_release(sdev); */
++	return EINVAL;
++}
++
++
++#if softing_suspend
++static int driver_suspend(struct pcmcia_device *pcmcia)
++{
++	struct softing *card = (struct softing *)pcmcia-&gt;priv;
++	mod_trace(&quot;%s, device'%s'&quot;, card-&gt;id.name, pcmcia-&gt;devname);
++	softing_suspend(card);
++	return 0;
++}
++#endif
++
++#if softing_resume
++static int driver_resume(struct pcmcia_device *pcmcia)
++{
++	struct softing *card = (struct softing *)pcmcia-&gt;priv;
++	mod_trace(&quot;%s, device'%s'&quot;, card-&gt;id.name, pcmcia-&gt;devname);
++	softing_resume(card);
++	return 0;
++}
++#endif
++
++
++static void driver_remove(struct pcmcia_device *pcmcia)
++{
++	struct softing *card = (struct softing *)pcmcia-&gt;priv;
++	struct softing_cs *cs = softing2cs(card);
++	mod_trace(&quot;%s,device'%s'&quot;, card-&gt;id.name, pcmcia-&gt;devname);
++	/* Ensure any outstanding scheduled tasks are completed.
++	 * flush_scheduled_work();
++	 */
++	rm_softing(card);
++	/* release pcmcia stuff */
++	pcmcia_release_window(cs-&gt;win);
++	pcmcia_disable_device(pcmcia);
++	/* free bits */
++	kfree(cs);
++}
++
++static int driver_probe(struct pcmcia_device *pcmcia)
++{
++	struct softing_cs *cs;
++	struct softing		*card;
++	int r = 0;
++
++	mod_trace(&quot;on %s&quot;, pcmcia-&gt;devname);
++
++	/* Create new softing device */
++	cs = kzalloc(sizeof(*cs), GFP_KERNEL);
++	if (0 == cs) {
++		r = ENOMEM;
++		goto no_mem;
++	}
++	card = &amp;cs-&gt;softing;
++	pcmcia-&gt;priv = card;
++	card-&gt;id.manf = pcmcia-&gt;manf_id;
++	card-&gt;id.prod = pcmcia-&gt;card_id;
++	card-&gt;dev = &amp;pcmcia-&gt;dev;
++	card-&gt;fn.reset
++		= is_16bit(card)
++		? card_reset_via_dpram : card_reset_via_pcmcia;
++	card-&gt;fn.enable_irq
++		= is_16bit(card) ? 0 : card_enable_irq_via_pcmcia;
++	card-&gt;nbus = 2;
++	if ((card-&gt;id.prod &amp; 0xf) &gt;= 5)
++		card-&gt;irq.shared = 1;
++	/* presets */
++	cs-&gt;irq.Attributes
++		= card-&gt;irq.shared
++		? IRQ_TYPE_DYNAMIC_SHARING : IRQ_TYPE_EXCLUSIVE;
++	cs-&gt;irq.IRQInfo1	 = IRQ_LEVEL_ID;
++	cs-&gt;irq.Handler	 = 0;
++	cs-&gt;conf.Attributes = 0;
++	cs-&gt;conf.IntType	  = INT_MEMORY_AND_IO;
++
++	r = dev_config(pcmcia, cs);
++	if (0 != r)
++		goto config_failed;
++	if (0x1000 != card-&gt;dpram.size) {
++		mod_alert(&quot;dpram size 0x%lx mismatch\n&quot;, card-&gt;dpram.size);
++		goto wrong_dpram;
++	}
++
++	if (0 == mk_softing(card))
++		return 0;
++	/* else */
++wrong_dpram:
++	pcmcia_release_window(cs-&gt;win);
++config_failed:
++	kfree(cs);
++no_mem:
++	pcmcia_disable_device(pcmcia);
++	return r ? r : EINVAL;
++}
++
++
++static struct pcmcia_device_id driver_ids[] = {
++	/* softing */
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0001),
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0002),
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0004),
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0005),
++	/* vector , manufacturer? */
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0081),
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0084),
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0085),
++	/* EDIC */
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0102),
++	PCMCIA_DEVICE_MANF_CARD(0x0168, 0x0105),
++	PCMCIA_DEVICE_NULL,
++};
++
++MODULE_DEVICE_TABLE(pcmcia, driver_ids);
++
++static struct pcmcia_driver softing_cs_driver = {
++	.owner		= THIS_MODULE,
++	.drv			= {
++		.name		= &quot;softing_cs&quot;,
++	},
++	.probe		= driver_probe,
++	.remove		= driver_remove,
++	.id_table	= driver_ids,
++	#if softing_suspend &amp;&amp; softing_resume
++	.suspend		= driver_suspend,
++	.resume		= driver_resume,
++	#endif
++};
++
++
++static int __init mod_start(void)
++{
++	int r;
++	mod_trace(&quot;&quot;);
++	r = pcmcia_register_driver(&amp;softing_cs_driver);
++	return r;
++}
++
++static void __exit mod_stop(void)
++{
++	mod_trace(&quot;&quot;);
++	pcmcia_unregister_driver(&amp;softing_cs_driver);
++}
++
++
++module_init(mod_start);
++module_exit(mod_stop);
++
++MODULE_DESCRIPTION(&quot;softing CANcard driver&quot;
++		&quot;, links PCMCIA card to softing driver&quot;);
++MODULE_LICENSE(&quot;GPL&quot;);
++MODULE_SUPPORTED_DEVICE(&quot;softing CANcard2&quot;);
++
++
++
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001597.html">[1/3] softing CANcard
+</A></li>
+	<LI>Next message: <A HREF="001594.html">[3/3] softing CANcard
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1582">[ date ]</a>
+              <a href="thread.html#1582">[ thread ]</a>
+              <a href="subject.html#1582">[ subject ]</a>
+              <a href="author.html#1582">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

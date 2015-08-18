@@ -1,0 +1,172 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-October/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Fix%20build%0A%09warnings&In-Reply-To=%3C4CCAC4CD.7000503%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004900.html">
+   <LINK REL="Next"  HREF="004902.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%20net-next-2.6%20v2%5D%20can%3A%20Topcliff%3A%20PCH_CAN%20driver%3A%20Fix%20build%0A%09warnings&In-Reply-To=%3C4CCAC4CD.7000503%40pengutronix.de%3E"
+       TITLE="[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings">mkl at pengutronix.de
+       </A><BR>
+    <I>Fri Oct 29 14:57:49 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004900.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+        <LI>Next message: <A HREF="004902.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4901">[ date ]</a>
+              <a href="thread.html#4901">[ thread ]</a>
+              <a href="subject.html#4901">[ subject ]</a>
+              <a href="author.html#4901">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+On 10/29/2010 12:37 PM, Tomoya wrote:
+&gt;&gt;&gt;&gt;<i> what does this loop do? why is it nessecarry? I don't like delay loops
+</I>&gt;&gt;&gt;&gt;<i>   in the hot path of a driver.
+</I>&gt;&gt;&gt;<i> This loop is for waiting for all tx Message Object completion.
+</I>&gt;&gt;&gt;<i> This is Topcliff CAN HW specification.
+</I>&gt;&gt;<i> What do you mean with &quot;tx Message Object completion&quot;? Is TX done not
+</I>&gt;&gt;<i> signaled via interrupt?
+</I>&gt;<i> Yes Tx done is signaled via interrupt.
+</I>&gt;<i> On the other hand, register &quot;CANTREQx&quot; also shows the status of Message Object.
+</I>&gt;<i> Reading the register, CAN driver can know the Message Object is empty or not.
+</I>&gt;<i> In case of this processing, using this register is better, I think.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> Please explain why you need to wait multiples of
+</I>&gt;&gt;&gt;<i> 500us here in the hot TX path.
+</I>&gt;<i> You are right. The value &quot;500us&quot; was too big.
+</I>&gt;<i> According to Topcliff document, it takes 3~6 cycles for transferring between
+</I>&gt;<i> register and Message Object RAM.
+</I>&gt;<i> Since 50MHz is, 1cycle=0.02usec, 6cycle=0.12. May be true.
+</I>&gt;<i> I will modify 500usec to 1usec.
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;&gt;&gt;<i> All these check if busy in the code make me a bit nervous, can you
+</I>&gt;&gt;&gt;&gt;&gt;<i> please explain why they are needed. A pointer to the manual is okay, too.
+</I>&gt;&gt;&gt;&gt;<i> Me too. I already ask in my previous mail how long that functions
+</I>&gt;&gt;&gt;&gt;<i> usually blocks.
+</I>&gt;&gt;&gt;<i> When accessing read/write from/to Message RAM,
+</I>&gt;&gt;&gt;<i> Since it takes much time for transferring between Register and Message RAM,
+</I>&gt;&gt;<i> Much time means how many mirco-seconds?
+</I>&gt;<i> ditto
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> SW must check busy flag of CAN register.
+</I>&gt;&gt;&gt;<i> This is a Topcliff HW specification.
+</I>&gt;&gt;<i> Maybe the busy check could also be done *before* the Message RAM is
+</I>&gt;&gt;<i> accessed to avoid (or minimize) waiting.
+</I>&gt;<i> Yes, *before* is right.
+</I>&gt;<i> If there is *after* processing, this is a bug.
+</I>&gt;<i> Can you see anyway ?
+</I>
+Sorry I don't understand what you mean.
+
+&gt;&gt;<i> Can you give us a pointer into intel's documentation?
+</I>&gt;<i> You have already had Intel's data sheet(Topcliff/Atom E6xx series), right ?
+</I>&gt;<i> What's document for ?
+</I>
+You probably know the datasheet, but I don't, although I've printed
+chapter 13 from the Intel Controller Hub EG20T datasheet, but it's 50+
+pages. If the hardware needs the busy waiting in the hot tx path a
+pointer to the respective section in the manual is a good idea. Just
+something like:
+
+    According to the Datasheet $REFERENCE section $SECTION_NUMBER we
+    need to wait until the $FOO operation finished.
+
+&gt;&gt;&gt;<i> If you figured out how to use the endianess conversion functions from
+</I>&gt;&gt;&gt;<i> the cpu_to_{le,be}-{le,to}_to_cpup family use them here, too.
+</I>
+&gt;<i> Sorry, I misunderstood the spec of Topcliff CAN endianess.
+</I>&gt;<i> I have understood endianess conversion is not necessary.
+</I>&gt;<i> (CAN data is set as Big-Endian in Topcliff CAN register)
+</I>
+&gt;&gt;<i> You have to change the definition of the regs struct a bit:
+</I>&gt;&gt;&gt;<i> 	u32 if1_mcont;
+</I>&gt;&gt;&gt;<i> 	u32 if1_data[4];
+</I>&gt;&gt;&gt;<i> 	u32 reserve2;
+</I>&gt;<i> Uh, I can't find this. Where is this ?
+</I>
+Here's a patch to illustrate what I meant:
+
+diff --git a/drivers/net/can/pch_can.c b/drivers/net/can/pch_can.c
+index 55ec324..5ee7589 100644
+--- a/drivers/net/can/pch_can.c
++++ b/drivers/net/can/pch_can.c
+@@ -150,10 +150,7 @@ struct pch_can_regs {
+        u32 if1_id1;
+        u32 if1_id2;
+        u32 if1_mcont;
+-       u32 if1_dataa1;
+-       u32 if1_dataa2;
+-       u32 if1_datab1;
+-       u32 if1_datab2;
++       u32 if1_data[4];
+        u32 reserve2;
+        u32 reserve3[12];
+        u32 if2_creq;
+
+&gt;&gt;<i> BTW: Where can I get this Intel Hardware to improve and test the driver?
+</I>&gt;<i> We don't know, please contact to Intel,
+</I>&gt;<i> Topcliff is formally called &quot;Atom E6xx series&quot; <A HREF="http://edc.intel.com/Platforms/Atom-E6xx/">http://edc.intel.com/Platforms/Atom-E6xx/</A>
+</I>
+&gt;<i> I have completed modifying for your comments excepting above.
+</I>&gt;<i> Receiving many comments, your indication may be dropped. If you find, please indicate again?.
+</I>&gt;<i> For your confirming my modification, I show current whole of CAN driver.
+</I>
+The driver has already been merged. Please send incremental patches
+against david's net-2.6 branch.
+
+Cheers, Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20101029/ec985930/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20101029/ec985930/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004900.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+	<LI>Next message: <A HREF="004902.html">[PATCH net-next-2.6 v2] can: Topcliff: PCH_CAN driver: Fix build	warnings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4901">[ date ]</a>
+              <a href="thread.html#4901">[ thread ]</a>
+              <a href="subject.html#4901">[ subject ]</a>
+              <a href="author.html#4901">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

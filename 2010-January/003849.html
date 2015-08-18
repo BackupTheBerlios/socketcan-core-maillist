@@ -1,0 +1,122 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> SocketCAN under kernel 2.6.18
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SocketCAN%20under%20kernel%202.6.18&In-Reply-To=%3C201001131043.03637.matthias.fuchs%40esd.eu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003749.html">
+   <LINK REL="Next"  HREF="003850.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>SocketCAN under kernel 2.6.18</H1>
+    <B>Matthias Fuchs</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20SocketCAN%20under%20kernel%202.6.18&In-Reply-To=%3C201001131043.03637.matthias.fuchs%40esd.eu%3E"
+       TITLE="SocketCAN under kernel 2.6.18">matthias.fuchs at esd.eu
+       </A><BR>
+    <I>Wed Jan 13 10:43:03 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003749.html">SocketCAN under kernel 2.6.18
+</A></li>
+        <LI>Next message: <A HREF="003850.html">SocketCAN under kernel 2.6.18
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3849">[ date ]</a>
+              <a href="thread.html#3849">[ thread ]</a>
+              <a href="subject.html#3849">[ subject ]</a>
+              <a href="author.html#3849">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tuesday 05 January 2010 18:06, Oliver Hartkopp wrote:
+&gt;<i> Matthias Fuchs wrote:
+</I>&gt;<i> &gt; Hi Oliver,
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; On Tuesday 05 January 2010 13:48, Oliver Hartkopp wrote:
+</I>&gt;<i> &gt;&gt; Matthias Fuchs wrote:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; During testing I noticed a problem with loopback behavior. It's the same problem
+</I>&gt;<i> &gt;&gt;&gt; I ran into a while ago with 2.6.30: I always receive sent 
+</I>&gt;<i> &gt;&gt;&gt; frames on the same socket. The sockets behave as if CAN_RAW_RECV_OWN_MSGS is enabled.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Wolfgang, did you run into this issue when you did the sysfs 2.6.18 backport?
+</I>&gt;<i> &gt;&gt; Hi Matthias,
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; to make sure the CAN_RAW_RECV_OWN_MSGS is working properly, the pointer to the
+</I>&gt;<i> &gt;&gt; sock structure (sk) has to be set into the socketbuffer (skb) of the receiving
+</I>&gt;<i> &gt;&gt; skb.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; So there is code some that makes
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;    skb-&gt;sk = srcsk
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; to restore the sk in the receiving skbuff. skb-&gt;sk is usually killed by
+</I>&gt;<i> &gt;&gt; skb_orphan(), so skb-&gt;sk = srcsk is needed here.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Any ideas where to dig?
+</I>&gt;<i> &gt;&gt; Please check in can_send() and can_rcv() if there are the same pointer values
+</I>&gt;<i> &gt;&gt; in skb-&gt;sk .
+</I>&gt;<i> &gt; Good advice. I added some printks. On a 2.6.28 kernel skb-&gt;sk is identical in 
+</I>&gt;<i> &gt; can_send and can_rcv. Loopback is working fine.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; On 2.6.18 skb-&gt;sk is NULL in can_rcv.
+</I>&gt;<i> 
+</I>&gt;<i> grrr ...
+</I>&gt;<i> 
+</I>&gt;<i> &gt; can_get_echo_skb() still has the correct sock structure. I dare to say
+</I>&gt;<i> &gt; that this might be a kernel 2.6.18 issue.
+</I>&gt;<i> 
+</I>&gt;<i> This might be the case. I checked the code in
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://lxr.linux.no/#linux+v2.6.18/net/core/dev.c">http://lxr.linux.no/#linux+v2.6.18/net/core/dev.c</A>
+</I>&gt;<i> 
+</I>&gt;<i> but i did not find any problem on the first view.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; I expected socketcan to handle
+</I>&gt;<i> &gt; the loopback stuff correctly in 2.6.18 times. Or do I expect to much?
+</I>&gt;<i> 
+</I>&gt;<i> No. It should work like this.
+</I>&gt;<i> 
+</I>&gt;<i> As skb-&gt;sk is set to NULL somewhere between netif_rx(skb) invoked in
+</I>&gt;<i> can_get_echo_skb() and can_rcv() it looks like a 2.6.18 issue ...
+</I>&gt;<i> 
+</I>&gt;<i> Unfortunately, i don't have a 2.6.18 environment here (as it won't boot on my
+</I>&gt;<i> Dell Latitude 830 due to missing SATA), so i'm not able to track skb-&gt;sk.
+</I>
+I did some further testing. Doing the same tests on a Debian Etch system
+were successful (Debian kernel 2.6.18-6-486). The problem seems to be with
+the Centos/RHEL kernel 2.6.18-164.6.1.el5. This kernel contains a huge amount
+of Redhat patches. I will see if any of them touch net/core/dev.c. Grr :-(
+
+Matthias
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003749.html">SocketCAN under kernel 2.6.18
+</A></li>
+	<LI>Next message: <A HREF="003850.html">SocketCAN under kernel 2.6.18
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3849">[ date ]</a>
+              <a href="thread.html#3849">[ thread ]</a>
+              <a href="subject.html#3849">[ subject ]</a>
+              <a href="author.html#3849">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

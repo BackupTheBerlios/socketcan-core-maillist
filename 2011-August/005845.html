@@ -1,0 +1,174 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [RFC 4/4] [flexcan] Add support for FLEXCAN_DEBUG
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2011-August/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%204/4%5D%20%5Bflexcan%5D%20Add%20support%20for%20FLEXCAN_DEBUG&In-Reply-To=%3C4E3B98B6.4040003%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005843.html">
+   <LINK REL="Next"  HREF="005851.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[RFC 4/4] [flexcan] Add support for FLEXCAN_DEBUG</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BRFC%204/4%5D%20%5Bflexcan%5D%20Add%20support%20for%20FLEXCAN_DEBUG&In-Reply-To=%3C4E3B98B6.4040003%40pengutronix.de%3E"
+       TITLE="[RFC 4/4] [flexcan] Add support for FLEXCAN_DEBUG">mkl at pengutronix.de
+       </A><BR>
+    <I>Fri Aug  5 09:16:06 CEST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005843.html">[RFC 4/4] [flexcan] Add support for FLEXCAN_DEBUG
+</A></li>
+        <LI>Next message: <A HREF="005851.html">[RFC 4/4] [flexcan] Add support for FLEXCAN_DEBUG
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5845">[ date ]</a>
+              <a href="thread.html#5845">[ thread ]</a>
+              <a href="subject.html#5845">[ subject ]</a>
+              <a href="author.html#5845">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 08/05/2011 04:06 AM, Robin Holt wrote:
+&gt;<i> Add a wrapper function for a register dump when a developer defines
+</I>&gt;<i> FLEXCAN_DEBUG
+</I>
+Comments inline..however I'm not sure if we need this patch.
+
+&gt;<i> Signed-off-by: Robin Holt &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">holt at sgi.com</A>&gt;
+</I>&gt;<i> To: Marc Kleine-Budde &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">mkl at pengutronix.de</A>&gt;
+</I>&gt;<i> To: Wolfgang Grandegger &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">wg at grandegger.com</A>&gt;
+</I>&gt;<i> Cc: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> Cc: <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">netdev at vger.kernel.org</A>
+</I>&gt;<i> ---
+</I>&gt;<i>  drivers/net/can/flexcan.c |   40 ++++++++++++++++++++++++++++++++++++++++
+</I>&gt;<i>  1 files changed, 40 insertions(+), 0 deletions(-)
+</I>&gt;<i> 
+</I>&gt;<i> diff --git a/drivers/net/can/flexcan.c b/drivers/net/can/flexcan.c
+</I>&gt;<i> index fbb61c6..96684ca 100644
+</I>&gt;<i> --- a/drivers/net/can/flexcan.c
+</I>&gt;<i> +++ b/drivers/net/can/flexcan.c
+</I>&gt;<i> @@ -316,6 +316,38 @@ static inline unsigned long flexcan_clk_get_rate(struct clk *clk)
+</I>&gt;<i>  
+</I>&gt;<i>  #endif
+</I>&gt;<i>  
+</I>&gt;<i> +#if defined(FLEXCAN_DEBUG)
+</I>&gt;<i> +void _flexcan_reg_dump(struct net_device *dev, const char *file, int line,
+</I>&gt;<i> +		       const char *func)
+</I>&gt;<i> +{
+</I>&gt;<i> +	const struct flexcan_priv *priv = netdev_priv(dev);
+</I>&gt;<i> +	struct flexcan_regs __iomem *regs = priv-&gt;base;
+</I>&gt;<i> +
+</I>&gt;<i> +	printk(KERN_INFO &quot;flexcan_reg_dump:%s:%d:%s()\n&quot;, file, line, func);
+</I>
+Use netdev_$LEVEL, please.
+If you use dbg, you can remove the ifdef altogether.
+
+&gt;<i> +	printk(KERN_INFO
+</I>&gt;<i> +		&quot;\t  mcr 0x%08x  ctrl 0x%08x timer 0x%08x   rxg 0x%08x&quot;,
+</I>&gt;<i> +		flexcan_read(&amp;regs-&gt;mcr),
+</I>&gt;<i> +		flexcan_read(&amp;regs-&gt;ctrl),
+</I>&gt;<i> +		flexcan_read(&amp;regs-&gt;timer),
+</I>&gt;<i> +		flexcan_read(&amp;regs-&gt;rxgmask));
+</I>&gt;<i> +	printk(KERN_INFO
+</I>&gt;<i> +		&quot;\t rx14 0x%08x  rx15 0x%08x   ecr 0x%08x   esr 0x%08x&quot;,
+</I>&gt;<i> +		flexcan_read(&amp;regs-&gt;rx14mask),
+</I>&gt;<i> +		flexcan_read(&amp;regs-&gt;rx15mask),
+</I>&gt;<i> +		flexcan_read(&amp;regs-&gt;ecr),
+</I>&gt;<i> +		flexcan_read(&amp;regs-&gt;esr));
+</I>&gt;<i> +	printk(KERN_INFO
+</I>&gt;<i> +		&quot;\timsk2 0x%08x imsk1 0x%08x iflg2 0x%08x iflg1 0x%08x&quot;,
+</I>&gt;<i> +		flexcan_read(&amp;regs-&gt;imask2),
+</I>&gt;<i> +		flexcan_read(&amp;regs-&gt;imask1),
+</I>&gt;<i> +		flexcan_read(&amp;regs-&gt;iflag2),
+</I>&gt;<i> +		flexcan_read(&amp;regs-&gt;iflag1));
+</I>&gt;<i> +}
+</I>&gt;<i> +#define flexcan_reg_dump(_d) _flexcan_reg_dump(_d, __FILE__, __LINE__, __func__)
+</I>&gt;<i> +#else
+</I>&gt;<i> +#define flexcan_reg_dump(_d)
+</I>&gt;<i> +#endif
+</I>&gt;<i> +
+</I>&gt;<i>  /*
+</I>&gt;<i>   * Swtich transceiver on or off
+</I>&gt;<i>   */
+</I>&gt;<i> @@ -376,6 +408,8 @@ static int flexcan_start_xmit(struct sk_buff *skb, struct net_device *dev)
+</I>&gt;<i>  	u32 can_id;
+</I>&gt;<i>  	u32 ctrl = FLEXCAN_MB_CNT_CODE(0xc) | (cf-&gt;can_dlc &lt;&lt; 16);
+</I>&gt;<i>  
+</I>&gt;<i> +	flexcan_reg_dump(dev);
+</I>&gt;<i> +
+</I>&gt;<i>  	if (can_dropped_invalid_skb(dev, skb))
+</I>&gt;<i>  		return NETDEV_TX_OK;
+</I>&gt;<i>  
+</I>&gt;<i> @@ -408,6 +442,8 @@ static int flexcan_start_xmit(struct sk_buff *skb, struct net_device *dev)
+</I>&gt;<i>  	/* tx_packets is incremented in flexcan_irq */
+</I>&gt;<i>  	stats-&gt;tx_bytes += cf-&gt;can_dlc;
+</I>&gt;<i>  
+</I>&gt;<i> +	flexcan_reg_dump(dev);
+</I>&gt;<i> +
+</I>&gt;<i>  	return NETDEV_TX_OK;
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>&gt;<i> @@ -676,6 +712,8 @@ static irqreturn_t flexcan_irq(int irq, void *dev_id)
+</I>&gt;<i>  	struct flexcan_regs __iomem *regs = priv-&gt;base;
+</I>&gt;<i>  	u32 reg_iflag1, reg_esr;
+</I>&gt;<i>  
+</I>&gt;<i> +	flexcan_reg_dump(dev);
+</I>&gt;<i> +
+</I>&gt;<i>  	reg_iflag1 = flexcan_read(&amp;regs-&gt;iflag1);
+</I>&gt;<i>  	reg_esr = flexcan_read(&amp;regs-&gt;esr);
+</I>&gt;<i>  	flexcan_write(FLEXCAN_ESR_ERR_INT, &amp;regs-&gt;esr);	/* ACK err IRQ */
+</I>&gt;<i> @@ -716,6 +754,8 @@ static irqreturn_t flexcan_irq(int irq, void *dev_id)
+</I>&gt;<i>  		netif_wake_queue(dev);
+</I>&gt;<i>  	}
+</I>&gt;<i>  
+</I>&gt;<i> +	flexcan_reg_dump(dev);
+</I>&gt;<i> +
+</I>&gt;<i>  	return IRQ_HANDLED;
+</I>&gt;<i>  }
+</I>&gt;<i>  
+</I>
+cheers, Marc
+
+-- 
+Pengutronix e.K.                  | Marc Kleine-Budde           |
+Industrial Linux Solutions        | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund          | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686  | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 262 bytes
+Desc: OpenPGP digital signature
+URL: &lt;<A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20110805/06f9f05f/attachment.pgp">https://lists.berlios.de/pipermail/socketcan-core/attachments/20110805/06f9f05f/attachment.pgp</A>&gt;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005843.html">[RFC 4/4] [flexcan] Add support for FLEXCAN_DEBUG
+</A></li>
+	<LI>Next message: <A HREF="005851.html">[RFC 4/4] [flexcan] Add support for FLEXCAN_DEBUG
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5845">[ date ]</a>
+              <a href="thread.html#5845">[ thread ]</a>
+              <a href="subject.html#5845">[ subject ]</a>
+              <a href="author.html#5845">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

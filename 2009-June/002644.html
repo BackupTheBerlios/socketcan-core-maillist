@@ -1,0 +1,540 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] ems_104m: Add support for 4-channel EMS CPC-104M
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20ems_104m%3A%20Add%20support%20for%204-channel%20EMS%20CPC-104M&In-Reply-To=%3C4A3728C2.2070507%40ems-wuensche.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002641.html">
+   <LINK REL="Next"  HREF="002647.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] ems_104m: Add support for 4-channel EMS CPC-104M</H1>
+    <B>Sebastian Haas</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20ems_104m%3A%20Add%20support%20for%204-channel%20EMS%20CPC-104M&In-Reply-To=%3C4A3728C2.2070507%40ems-wuensche.com%3E"
+       TITLE="[PATCH] ems_104m: Add support for 4-channel EMS CPC-104M">haas at ems-wuensche.com
+       </A><BR>
+    <I>Tue Jun 16 07:08:18 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002641.html">[PATCH] ems_104m: Add support for 4-channel EMS CPC-104M
+</A></li>
+        <LI>Next message: <A HREF="002647.html">[PATCH] ems_104m: Add support for 4-channel EMS CPC-104M
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2644">[ date ]</a>
+              <a href="thread.html#2644">[ thread ]</a>
+              <a href="subject.html#2644">[ subject ]</a>
+              <a href="author.html#2644">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+Please find the fixed patch below. checkpatch complained about missing spaces
+between kernel version numbers. I didn't fix that as nobody ever complained
+about it.
+
+Regarding parameter documentation: I think they shouldn't be documented in
+Kconfig, as this is just a configuration file. If we want to document them
+we should add an extra file to Documentation/. A simple &quot;modinfo ems_104m&quot;
+outputs all usable parameters incl. the short description. Isn't it enough?
+
+- ------
+This patch for the SVN &quot;branches/netlink&quot; branch adds support for EMS
+CPC-104M. CPC-104M is a PC/ISA 104 CAN board with 1, 2 or 4 SJA1000 CAN
+controllers.
+
+Sebastian
+
+Signed-off-by: Sebastian Haas &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">haas at ems-wuensche.com</A>&gt;
+
+ Makefile                           |    1 
+ drivers/net/can/Kconfig            |    7 
+ drivers/net/can/sja1000/Makefile   |    1 
+ drivers/net/can/sja1000/ems_104m.c |  389 +++++++++++++++++++++++++++++++++++++
+ 4 files changed, 398 insertions(+)
+
+Index: kernel/2.6/Makefile
+===================================================================
+- --- kernel/2.6/Makefile	(Revision 1010)
++++ kernel/2.6/Makefile	(Arbeitskopie)
+@@ -20,6 +20,7 @@
+ export CONFIG_CAN_KVASER_PCI=m
+ export CONFIG_CAN_EMS_PCI=m
+ export CONFIG_CAN_EMS_PCMCIA=m
++export CONFIG_CAN_EMS_104M=m
+ export CONFIG_CAN_ESD_PCI=m
+ export CONFIG_CAN_ESD_331=m
+ export CONFIG_CAN_PIPCAN=m
+Index: kernel/2.6/drivers/net/can/Kconfig
+===================================================================
+- --- kernel/2.6/drivers/net/can/Kconfig	(Revision 1010)
++++ kernel/2.6/drivers/net/can/Kconfig	(Arbeitskopie)
+@@ -109,6 +109,13 @@
+ 	  This driver is for the one or two channel CPC-CARD cards from
+ 	  EMS Dr. Thomas Wuensche (<A HREF="http://www.ems-wuensche.de">http://www.ems-wuensche.de</A>).
+ 
++config CAN_EMS_104M
++	tristate &quot;EMS CPC-104M&quot;
++	depends on ISA &amp;&amp; CAN_SJA1000
++	---help---
++	  This driver is for the one, two or four channel CPC-104M cards
++	  from EMS Dr. Thomas Wuensche (<A HREF="http://www.ems-wuensche.de">http://www.ems-wuensche.de</A>).
++
+ config CAN_ESD_PCI
+ 	tristate &quot;ESD PCI Cards&quot;
+ 	depends on PCI &amp;&amp; CAN_SJA1000
+Index: kernel/2.6/drivers/net/can/sja1000/ems_104m.c
+===================================================================
+- --- kernel/2.6/drivers/net/can/sja1000/ems_104m.c	(Revision 0)
++++ kernel/2.6/drivers/net/can/sja1000/ems_104m.c	(Revision 0)
+@@ -0,0 +1,389 @@
++/*
++ * Copyright (C) 2009 Sebastian Haas &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">haas at ems-wuensche.com</A>&gt;
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the version 2 of the GNU General Public License
++ * as published by the Free Software Foundation
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software Foundation,
++ * Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
++ */
++
++#include &lt;linux/kernel.h&gt;
++#include &lt;linux/version.h&gt;
++#include &lt;linux/module.h&gt;
++#include &lt;linux/isa.h&gt;
++#include &lt;linux/interrupt.h&gt;
++#include &lt;linux/netdevice.h&gt;
++#include &lt;linux/delay.h&gt;
++#include &lt;socketcan/can.h&gt;
++#include &lt;socketcan/can/dev.h&gt;
++
++#if LINUX_VERSION_CODE &gt;= KERNEL_VERSION(2,6,16)
++#include &lt;linux/io.h&gt;
++#else
++#include &lt;asm/io.h&gt;
++#endif
++
++#include &quot;sja1000.h&quot;
++
++#define DRV_NAME  &quot;ems_104m&quot;
++
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,16)
++#error This driver does not support Kernel versions &lt; 2.6.16
++#endif
++
++MODULE_AUTHOR(&quot;Sebastian Haas &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">haas at ems-wuenche.com</A>&gt;&quot;);
++MODULE_DESCRIPTION(&quot;Socket-CAN driver for EMS CPC-104M cards&quot;);
++MODULE_SUPPORTED_DEVICE(&quot;EMS CPC-104M CAN card&quot;);
++MODULE_LICENSE(&quot;GPL v2&quot;);
++
++#define EMS_104M_MAX_DEV  4
++
++static unsigned long __devinitdata mem[EMS_104M_MAX_DEV];
++static int __devinitdata irq[EMS_104M_MAX_DEV];
++
++module_param_array(mem, ulong, NULL, S_IRUGO);
++MODULE_PARM_DESC(mem, &quot;I/O memory address&quot;);
++
++module_param_array(irq, int, NULL, S_IRUGO);
++MODULE_PARM_DESC(irq, &quot;IRQ number&quot;);
++
++#define EMS_104M_MAX_CHAN 4
++
++struct ems_104m_card {
++	int channels;
++
++	struct net_device *net_dev[EMS_104M_MAX_CHAN];
++
++	void __iomem *base;
++};
++
++#define EMS_104M_CAN_CLOCK (16000000 / 2)
++
++/*
++ * The board configuration is probably following:
++ * RX1 is connected to ground.
++ * TX1 is not connected.
++ * CLKO is not connected.
++ * Setting the OCR register to 0xDA is a good idea.
++ * This means  normal output mode , push-pull and the correct polarity.
++ */
++#define EMS_104M_OCR         (OCR_TX0_PUSHPULL | OCR_TX1_PUSHPULL)
++
++/*
++ * In the CDR register, you should set CBP to 1.
++ * You will probably also want to set the clock divider value to 7
++ * (meaning direct oscillator output) because the second SJA1000 chip
++ * is driven by the first one CLKOUT output.
++ */
++#define EMS_104M_CDR             (CDR_CBP | CDR_CLKOUT_MASK)
++#define EMS_104M_MEM_SIZE        0x2000 /* Size of the remapped io-memory */
++#define EMS_104M_CAN_BASE_OFFSET 0x100  /* Offset where controllers starts */
++#define EMS_104M_CAN_CTRL_SIZE   0x80   /* Memory size for each controller */
++
++#define EMS_104M_CARD_REG_IRQ_CTRL    7
++#define EMS_104M_CARD_REG_IRQ_STATUS  8
++#define EMS_104M_CARD_REG_VERSION     9
++
++#define EMS_104M_CARD_REG_CONTROL     4
++#define EMS_104M_CARD_REG_STATUS      6
++
++#define EMS_CMD_RESET 0x00  /* Perform a reset of the card */
++#define EMS_CMD_MAP   0x03  /* Map CAN controllers into card' memory */
++#define EMS_CMD_UMAP  0x02  /* Unmap CAN controllers from card' memory */
++
++static u8 ems_104m_read_reg(const struct sja1000_priv *priv, int port)
++{
++	return readb(priv-&gt;reg_base + port);
++}
++
++static void ems_104m_write_reg(const struct sja1000_priv *priv,
++				 int port, u8 val)
++{
++	writeb(val, priv-&gt;reg_base + port);
++}
++
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,19)
++static irqreturn_t ems_104m_interrupt(int irq, void *dev_id,
++					struct pt_regs *regs)
++#else
++static irqreturn_t ems_104m_interrupt(int irq, void *dev_id)
++#endif
++{
++	struct ems_104m_card *card = dev_id;
++	struct net_device *dev;
++	irqreturn_t retval = IRQ_NONE;
++	int i, again;
++
++	do {
++		again = 0;
++
++		/* Check interrupt for each channel */
++		for (i = 0; i &lt; EMS_104M_MAX_CHAN; i++) {
++			dev = card-&gt;net_dev[i];
++			if (!dev)
++				continue;
++
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,19)
++			if (sja1000_interrupt(irq, dev, regs) == IRQ_HANDLED)
++					again = 1;
++#else
++			if (sja1000_interrupt(irq, dev) == IRQ_HANDLED)
++					again = 1;
++#endif
++		}
++
++		/* At least one channel handled the interrupt */
++		if (again)
++			retval = IRQ_HANDLED;
++	} while (again);
++
++	return retval;
++}
++
++/*
++ * Check if a CAN controller is present at the specified location
++ * by trying to set 'em into the PeliCAN mode
++ */
++static inline int ems_104m_check_chan(struct sja1000_priv *priv)
++{
++	unsigned char res;
++
++	/* Make sure SJA1000 is in reset mode */
++	ems_104m_write_reg(priv, REG_MOD, 1);
++
++	ems_104m_write_reg(priv, REG_CDR, CDR_PELICAN);
++
++	/* read reset-values */
++	res = ems_104m_read_reg(priv, REG_CDR);
++
++	if (res == CDR_PELICAN)
++		return 1;
++
++	return 0;
++}
++
++/*
++ * Probe ISA device for EMS CAN signature and register each available
++ * CAN channel to SJA1000 Socket-CAN subsystem.
++ */
++static int __devinit ems_104m_probe(struct device *pdev, unsigned int idx)
++{
++	struct sja1000_priv *priv;
++	struct net_device *dev;
++	struct ems_104m_card *card;
++
++	int err, i;
++
++	/* Allocating card structures to hold addresses, ... */
++	card = kzalloc(sizeof(struct ems_104m_card), GFP_KERNEL);
++	if (card == NULL) {
++		dev_err(pdev, &quot;couldn't allocate memory\n&quot;);
++		return -ENOMEM;
++	}
++
++	dev_set_drvdata(pdev, card);
++
++	card-&gt;channels = 0;
++
++	card-&gt;base = ioremap_nocache(mem[idx], EMS_104M_MEM_SIZE);
++	if (card-&gt;base == NULL) {
++		dev_err(pdev, &quot;couldn't map memory\n&quot;);
++		err = -ENOMEM;
++		goto failure_cleanup;
++	}
++
++	/* Check for unique EMS CAN signature */
++	if (readw(card-&gt;base) != 0xAA55) {
++		dev_err(pdev, &quot;No EMS CPC Card hardware found.\n&quot;);
++
++		err = -ENODEV;
++		goto failure_cleanup;
++	}
++
++	writeb(EMS_CMD_RESET, card-&gt;base);
++
++	/* Wait for reset to finish */
++	i = 0;
++	while (readb(card-&gt;base + EMS_104M_CARD_REG_STATUS) == 0x01) {
++		/* Check for timeout (50ms.) */
++		if (i &gt;= 50) {
++			dev_err(pdev, &quot;couldn't reset card.\n&quot;);
++
++			err = -EBUSY;
++			goto failure_cleanup;
++		}
++
++		msleep(1);
++	}
++
++	/* Make sure CAN controllers are mapped into card's memory space */
++	writeb(EMS_CMD_MAP, card-&gt;base);
++	writeb(EMS_CMD_MAP, card-&gt;base); /* Second call to workaround bug */
++
++	/* Detect available channels */
++	for (i = 0; i &lt; EMS_104M_MAX_CHAN; i++) {
++		dev = alloc_sja1000dev(0);
++		if (dev == NULL) {
++			err = -ENOMEM;
++			goto failure_cleanup;
++		}
++
++		card-&gt;net_dev[i] = dev;
++		priv = netdev_priv(dev);
++		priv-&gt;priv = card;
++		SET_NETDEV_DEV(dev, pdev);
++
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,18)
++		priv-&gt;irq_flags = SA_SHIRQ;
++#else
++		priv-&gt;irq_flags = IRQF_SHARED;
++#endif
++		dev-&gt;irq = irq[idx];
++		priv-&gt;reg_base = card-&gt;base + EMS_104M_CAN_BASE_OFFSET
++					+ (i * EMS_104M_CAN_CTRL_SIZE);
++
++		/* Check if channel is present */
++		if (ems_104m_check_chan(priv)) {
++			priv-&gt;read_reg  = ems_104m_read_reg;
++			priv-&gt;write_reg = ems_104m_write_reg;
++			priv-&gt;can.clock.freq = EMS_104M_CAN_CLOCK;
++			priv-&gt;ocr = EMS_104M_OCR;
++			priv-&gt;cdr = EMS_104M_CDR;
++			priv-&gt;flags |= SJA1000_CUSTOM_IRQ_HANDLER;
++
++			/* Register SJA1000 device */
++			err = register_sja1000dev(dev);
++			if (err) {
++				dev_err(pdev, &quot;registering device failed&quot;
++				    &quot; (err=%d)\n&quot;, err);
++				free_sja1000dev(dev);
++				goto failure_cleanup;
++			}
++
++			/* Enable interrupts of this channel */
++			writeb(0x3 &lt;&lt; (i * 2),
++			    card-&gt;base + EMS_104M_CARD_REG_IRQ_CTRL);
++
++			card-&gt;channels++;
++
++			dev_info(pdev, &quot;registered %s on channel at 0x%p,&quot;
++			    &quot; irq %d\n&quot;, dev-&gt;name, priv-&gt;reg_base, dev-&gt;irq);
++		} else {
++			free_sja1000dev(dev);
++		}
++	}
++
++#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2,6,18)
++	err = request_irq(irq[idx], &amp;ems_104m_interrupt, SA_SHIRQ,
++		DRV_NAME, (void *)card);
++#else
++	err = request_irq(irq[idx], &amp;ems_104m_interrupt, IRQF_SHARED,
++		DRV_NAME, (void *)card);
++#endif
++
++	if (err) {
++		dev_err(pdev, &quot;registering device failed (err=%d)\n&quot;, err);
++		goto failure_cleanup;
++	}
++
++	return 0;
++
++failure_cleanup:
++	dev_err(pdev, &quot;error: %d. Cleaning Up.\n&quot;, err);
++
++	if (card-&gt;base)
++		iounmap(card-&gt;base);
++
++	kfree(card);
++
++	return err;
++}
++
++/*
++ * Release claimed resources
++ */
++static int __devexit ems_104m_remove(struct device *pdev, unsigned int idx)
++{
++	struct ems_104m_card *card = dev_get_drvdata(pdev);
++	struct net_device *dev;
++	int i = 0;
++
++	if (!card)
++		return 0;
++
++	free_irq(irq[idx], card);
++
++	for (i = 0; i &lt; card-&gt;channels; i++) {
++		dev = card-&gt;net_dev[i];
++
++		if (!dev)
++			continue;
++
++		dev_info(pdev, &quot;removing %s on channel #%d\n&quot;, dev-&gt;name, i);
++		unregister_sja1000dev(dev);
++		free_sja1000dev(dev);
++	}
++
++	writeb(EMS_CMD_UMAP, card-&gt;base);
++
++	if (card-&gt;base != NULL)
++		iounmap(card-&gt;base);
++
++	kfree(card);
++
++	dev_set_drvdata(pdev, NULL);
++
++	return 0;
++}
++
++static int __devinit ems_104m_match(struct device *pdev, unsigned int idx)
++{
++	if (!mem[idx])
++		return 0;
++
++	if (!irq[idx]) {
++		dev_err(pdev, &quot;insufficient parameters supplied\n&quot;);
++		return 0;
++	}
++
++	return 1;
++}
++
++static struct isa_driver ems_104m_driver = {
++	.match = ems_104m_match,
++	.probe = ems_104m_probe,
++	.remove = __devexit_p(ems_104m_remove),
++
++	.driver = {
++		.name = DRV_NAME,
++	},
++};
++
++static int __init ems_104m_init(void)
++{
++	int err = isa_register_driver(&amp;ems_104m_driver, EMS_104M_MAX_DEV);
++
++	if (!err)
++		printk(KERN_INFO
++		       &quot;Legacy %s driver for max. %d devices registered\n&quot;,
++		       DRV_NAME, EMS_104M_MAX_DEV);
++
++	return err;
++}
++
++static void __exit ems_104m_exit(void)
++{
++	isa_unregister_driver(&amp;ems_104m_driver);
++}
++
++module_init(ems_104m_init);
++module_exit(ems_104m_exit);
++
+Index: kernel/2.6/drivers/net/can/sja1000/Makefile
+===================================================================
+- --- kernel/2.6/drivers/net/can/sja1000/Makefile	(Revision 1010)
++++ kernel/2.6/drivers/net/can/sja1000/Makefile	(Arbeitskopie)
+@@ -20,6 +20,7 @@
+ obj-$(CONFIG_CAN_SJA1000_OF_PLATFORM) += sja1000_of_platform.o
+ obj-$(CONFIG_CAN_EMS_PCI) += ems_pci.o
+ obj-$(CONFIG_CAN_EMS_PCMCIA) += ems_pcmcia.o
++obj-$(CONFIG_CAN_EMS_104M) += ems_104m.o
+ obj-$(CONFIG_CAN_ESD_PCI) += esd_pci.o
+ obj-$(CONFIG_CAN_IXXAT_PCI) += ixxat_pci.o
+ obj-$(CONFIG_CAN_PEAK_PCI) += peak_pci.o
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.9 (GNU/Linux)
+Comment: Using GnuPG with Mozilla - <A HREF="http://enigmail.mozdev.org">http://enigmail.mozdev.org</A>
+
+iEYEARECAAYFAko3KLwACgkQpqRB8PJG7Xx+cwCeOxhoZktElKMih6UxM0nXKVfS
+8PQAoJXz1MtyRfIEwtCST9iivPHuhAAI
+=6qMi
+-----END PGP SIGNATURE-----
+-- 
+EMS Dr. Thomas Wuensche e.K.
+Sonnenhang 3
+85304 Ilmmuenster
+HRA Neuburg a.d. Donau, HR-Nr. 70.106
+Phone: +49-8441-490260
+Fax  : +49-8441-81860
+<A HREF="http://www.ems-wuensche.com">http://www.ems-wuensche.com</A>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002641.html">[PATCH] ems_104m: Add support for 4-channel EMS CPC-104M
+</A></li>
+	<LI>Next message: <A HREF="002647.html">[PATCH] ems_104m: Add support for 4-channel EMS CPC-104M
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2644">[ date ]</a>
+              <a href="thread.html#2644">[ thread ]</a>
+              <a href="subject.html#2644">[ subject ]</a>
+              <a href="author.html#2644">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

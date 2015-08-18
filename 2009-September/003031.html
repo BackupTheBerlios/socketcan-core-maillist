@@ -1,0 +1,119 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [PATCH] ems_usb: CAN/USB driver for EMS	CPC-USB/ARM7	CAN	interfaces
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20ems_usb%3A%20CAN/USB%20driver%20for%20EMS%0A%09CPC-USB/ARM7%09CAN%09interfaces&In-Reply-To=%3C4AA808F0.6090704%40pengutronix.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003030.html">
+   <LINK REL="Next"  HREF="003032.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[PATCH] ems_usb: CAN/USB driver for EMS	CPC-USB/ARM7	CAN	interfaces</H1>
+    <B>Marc Kleine-Budde</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20%5BPATCH%5D%20ems_usb%3A%20CAN/USB%20driver%20for%20EMS%0A%09CPC-USB/ARM7%09CAN%09interfaces&In-Reply-To=%3C4AA808F0.6090704%40pengutronix.de%3E"
+       TITLE="[PATCH] ems_usb: CAN/USB driver for EMS	CPC-USB/ARM7	CAN	interfaces">mkl at pengutronix.de
+       </A><BR>
+    <I>Wed Sep  9 21:58:40 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003030.html">[PATCH] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7	CAN	interfaces
+</A></li>
+        <LI>Next message: <A HREF="003032.html">[PATCH] ems_usb: CAN/USB driver for EMS	CPC-USB/ARM7	CAN	interfaces
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3031">[ date ]</a>
+              <a href="thread.html#3031">[ thread ]</a>
+              <a href="subject.html#3031">[ subject ]</a>
+              <a href="author.html#3031">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+Wolfgang Grandegger wrote:
+&gt;<i> Hi Oliver,
+</I>&gt;<i> 
+</I>&gt;<i> On 09/09/2009 09:25 AM, Oliver Hartkopp wrote:
+</I>&gt;&gt;<i> Sebastian Haas wrote:
+</I>&gt;<i> [snip]
+</I>&gt;&gt;&gt;<i> +	cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
+</I>&gt;&gt;&gt;<i> +	memset(cf, 0, sizeof(struct can_frame));
+</I>&gt;&gt;<i> Please remove the memset.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	cf-&gt;can_id  = msg-&gt;msg.canmsg.id;
+</I>&gt;&gt;&gt;<i> +	cf-&gt;can_dlc = msg-&gt;msg.canmsg.length&gt;  8 ? 8 : msg-&gt;msg.canmsg.length;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (msg-&gt;type == CPC_MSG_T_XCAN || msg-&gt;type == CPC_MSG_T_XRTR)
+</I>&gt;&gt;&gt;<i> +		cf-&gt;can_id |= CAN_EFF_FLAG;
+</I>&gt;&gt;&gt;<i> +
+</I>&gt;&gt;&gt;<i> +	if (msg-&gt;type == CPC_MSG_T_RTR || msg-&gt;type == CPC_MSG_T_XRTR) {
+</I>&gt;&gt;&gt;<i> +		cf-&gt;can_id |= CAN_RTR_FLAG;
+</I>&gt;&gt;&gt;<i> +	} else {
+</I>&gt;&gt;&gt;<i> +		*(u64 *)(&amp;cf-&gt;data) = 0; /* clear payload */
+</I>&gt;&gt;<i> And this also (which is also doubled regarding the memset() above).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> can_dlc gives the information about valid data[] and the rest may be
+</I>&gt;&gt;<i> uninitialized.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> @Wolfgang: Is the leakage of kernel memory a problem in this case?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Like here:
+</I>&gt;&gt;<i> <A HREF="http://git.kernel.org/?p=linux/kernel/git/torvalds/linux-2.6.git;a=commitdiff;h=e84b90ae5eb3c112d1f208964df1d8156a538289">http://git.kernel.org/?p=linux/kernel/git/torvalds/linux-2.6.git;a=commitdiff;h=e84b90ae5eb3c112d1f208964df1d8156a538289</A>
+</I>&gt;<i> 
+</I>&gt;<i> Well, I do not understand why a missing memset could cause a memory 
+</I>&gt;<i> leak. Do you have more information?
+</I>
+The whole canframe is copied into userspace, if we e.g. receive a RTR
+frame with dlc == 0 and don't memset the 8 data bytes we copy (&quot;leak&quot;) 8
+bytes of more or less random kernel memory to userspace.
+
+This might be the problem....
+
+cheers, Marc
+
+- --
+Pengutronix e.K.                         | Marc Kleine-Budde           |
+Linux Solutions for Science and Industry | Phone: +49-231-2826-924     |
+Vertretung West/Dortmund                 | Fax:   +49-5121-206917-5555 |
+Amtsgericht Hildesheim, HRA 2686         | <A HREF="http://www.pengutronix.de">http://www.pengutronix.de</A>   |
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.9 (GNU/Linux)
+Comment: Using GnuPG with Mozilla - <A HREF="http://enigmail.mozdev.org">http://enigmail.mozdev.org</A>
+
+iEYEARECAAYFAkqoCPAACgkQjTAFq1RaXHOH8QCbBdesyGI5y8OyOWI5Ss53p+ae
+4AkAmwdNPeGX/ldnHNejGFDXVaTdDKxK
+=oHOF
+-----END PGP SIGNATURE-----
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003030.html">[PATCH] ems_usb: CAN/USB driver for EMS CPC-USB/ARM7	CAN	interfaces
+</A></li>
+	<LI>Next message: <A HREF="003032.html">[PATCH] ems_usb: CAN/USB driver for EMS	CPC-USB/ARM7	CAN	interfaces
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3031">[ date ]</a>
+              <a href="thread.html#3031">[ thread ]</a>
+              <a href="subject.html#3031">[ subject ]</a>
+              <a href="author.html#3031">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>

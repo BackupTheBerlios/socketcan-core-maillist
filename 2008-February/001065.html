@@ -1,0 +1,460 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> mcp251x driver problems on xscale PXA255 based board
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/socketcan-core/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%20driver%20problems%20on%20xscale%20PXA255%20based%20board&In-Reply-To=%3C1202393315.29145.24.camel%40localhost.localdomain%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001061.html">
+   <LINK REL="Next"  HREF="001063.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>mcp251x driver problems on xscale PXA255 based board</H1>
+    <B>Alexander Didebulidze</B> 
+    <A HREF="mailto:socketcan-core%40lists.berlios.de?Subject=Re%3A%20mcp251x%20driver%20problems%20on%20xscale%20PXA255%20based%20board&In-Reply-To=%3C1202393315.29145.24.camel%40localhost.localdomain%3E"
+       TITLE="mcp251x driver problems on xscale PXA255 based board">sd-work at inet.ge
+       </A><BR>
+    <I>Thu Feb  7 15:08:35 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001061.html">mcp251x driver problems on xscale PXA255 based board
+</A></li>
+        <LI>Next message: <A HREF="001063.html">mscan.c CAN_FLAG_RTR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1065">[ date ]</a>
+              <a href="thread.html#1065">[ thread ]</a>
+              <a href="subject.html#1065">[ subject ]</a>
+              <a href="author.html#1065">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Chris,
+
+About reset...
+from datasheet:
+The Reset instruction can be used to re-initialize the
+internal registers of the MCP2515 and set Configuration
+mode. This command provides the same functionality,
+via the SPI interface, as the RESET pin.
+
+Hardware reset is done at PXA reset and when we load can driver it sends
+SPI reset instruction(1100 0000). we see it on this picture:
+<A HREF="http://stats.inet.ge/tmp/mcp2515-spi/spi-tx-modprobe.jpg">http://stats.inet.ge/tmp/mcp2515-spi/spi-tx-modprobe.jpg</A>
+
+I enabled SPI debug(CONFIG_SPI_DEBUG=y) and added some printk messages
+to functions... and here is some output:
+
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">root at AltairV2</A>:/var/tmp# insmod mcp251x.ko 
+Using mcp251x.ko
+[ 2230.120000] altairv2 myboard_mcp251x_initfunc called
+[ 2230.120000] altairv2 myboard_mcp251x_reset called
+[ 2230.170000] mcp251x spi1.0: 8 bits/word, 1843200 Hz, mode 0
+[ 2230.170000] mcp251x_hw_reset called
+[ 2230.200000] mcp251x_do_set_bin_time called
+[ 2230.200000] mcp251x spi1.0: mcp251x_do_set_bit_time: BRP = 2, PropSeg
+= 7, PS1 = 4, PS2 = 4, SJW = 3
+[ 2230.230000] mcp251x_write_bits called
+[ 2230.230000] mcp251x_write_reg called
+[ 2230.240000] mcp251x_write_reg called
+[ 2230.240000] mcp251x_write_bits called
+[ 2230.250000] mcp251x_write_bits called
+[ 2230.250000] mcp251x_write_bits called
+[ 2230.260000] mcp251x_hw_sleep called
+[ 2230.260000] mcp251x_write_reg called
+[ 2230.340000] mcp251x spi1.0: probed
+
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">root at AltairV2</A>:/var/tmp# ifconfig can0 up  
+[ 2383.630000] mcp251x_open called
+[ 2383.630000] mcp251x spi1.0: mcp251x_open
+[ 2383.640000] mcp251x_hw_wakeup called
+[ 2383.640000] mcp251x_write_bits called
+[ 2383.650000] mcp251x_write_bits called
+[ 2383.650000] mcp251x_can_isr called
+[ 2383.660000] mcp251x_irq_work_handler called
+[ 2383.660000] mcp251x spi1.0: interrupt: WAK
+[ 2383.670000] mcp251x_write_bits called
+[ 2383.670000] mcp251x spi1.0: interrupt ended
+[ 2383.680000] mcp251x_write_reg called
+[ 2383.680000] mcp251x_write_reg called
+
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">root at AltairV2</A>:/data/can# ./cansend can0 5AA# ;sleep 1;ifconfig can0 down
+[  121.350000] mcp251x_hard_start_xmit called
+[  121.360000] mcp251x spi1.0: mcp251x_hard_start_xmit
+[  121.360000] mcp251x_tx_work_handler called
+[  121.370000] mcp251x spi1.0: mcp251x_tx_work_handler
+[  121.380000] mcp251x_hw_tx called
+[  121.380000] mcp251x spi1.0: mcp251x_hw_tx
+[  121.390000] mcp251x_write_reg called
+[  121.390000] mcp251x_can_isr called
+[  121.400000] mcp251x_irq_work_handler called
+[  121.400000] mcp251x spi1.0: interrupt: MERR ERR
+[  121.410000] mcp251x spi1.0: EFLG = 0x20
+[  121.410000] mcp251x_write_bits called
+[  121.430000] mcp251x spi1.0: interrupt ended
+[  121.430000] mcp251x_can_isr called
+[  121.430000] mcp251x_irq_work_handler called
+[  121.440000] mcp251x spi1.0: interrupt: MERR ERR
+[  121.450000] mcp251x spi1.0: EFLG = 0x20
+[  121.450000] mcp251x_write_bits called
+[  121.460000] mcp251x spi1.0: interrupt ended
+[  121.460000] mcp251x_can_isr called
+[  121.470000] mcp251x_irq_work_handler called
+[  121.470000] mcp251x spi1.0: interrupt: MERR ERR
+.
+.
+. message in loop until ifconfig can0 down
+.
+[  xxx.xx0000] mcp251x spi1.0: interrupt: MERR ERR
+
+I did not see the SPI debug messages at beginning but after i triggered
+CAN IRQ on GPIO 19 by hand, kernel shows all debug output.
+
+
+
+At least i know that GPIO19 is right IRQ and driver listens on it:
+<A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">root at AltairV2</A>:/data/can# [   26.100000] mcp251x_can_isr called
+[   26.110000] mcp251x_irq_work_handler called
+[   26.120000] mcp251x_write_reg called
+[   26.120000] Unable to handle kernel NULL pointer dereference at
+virtual address 00000090
+[   26.130000] pgd = c0004000
+[   26.130000] [00000090] *pgd=00000000
+[   26.140000] Internal error: Oops: 17 [#1] PREEMPT
+[   26.140000] Modules linked in: mcp251x
+[   26.140000] CPU: 0    Not tainted  (2.6.23.1 #14)
+[   26.140000] PC is at mcp251x_irq_work_handler+0x3a8/0x4a0 [mcp251x]
+[   26.140000] LR is at 0x60000093
+[   26.140000] pc : [&lt;bf001724&gt;]    lr : [&lt;60000093&gt;]    psr: 20000013
+[   26.140000] sp : c39e9f20  ip : 00000000  fp : c39e9f88
+[   26.140000] r10: ffffffff  r9 : c397e800  r8 : bf001d20
+[   26.140000] r7 : c3e5be10  r6 : 000000ff  r5 : c3e5be00  r4 :
+c3f18080
+[   26.140000] r3 : 00000000  r2 : 00000000  r1 : c397eb80  r0 :
+00000000
+[   26.140000] Flags: nzCv  IRQs on  FIQs on  Mode SVC_32  ISA ARM
+Segment kernel
+[   26.140000] Control: 0000397f  Table: a3958000  DAC: 00000017
+[   26.140000] Process mcp251x_wq (pid: 547, stack limit = 0xc39e8258)
+[   26.140000] Stack: (0xc39e9f20 to 0xc39ea000)
+[   26.140000] 9f20: bf001d20 bf001d28 bf001d30 bf001d38 bf001d40
+bf001d48 bf001d50 c3e400a4 
+[   26.140000] 9f40: 00000040 00000020 00000002 00000001 c397eb80
+c3e40000 c0211f98 000000ff 
+[   26.140000] 9f60: c397ec20 c39e8000 c3e2ffe0 c397ec1c bf00137c
+00000000 00000000 c39e9fac 
+[   26.140000] 9f80: c39e9f8c c004e248 bf001388 c3e2ffe8 c3e2ffe0
+c004ed6c 00000000 00000000 
+[   26.140000] 9fa0: c39e9fd8 c39e9fb0 c004ee14 c004e17c 00000000
+c3e14ec0 c005287c c39e9fbc 
+[   26.140000] 9fc0: c39e9fbc c39e8000 c3e2ffe0 c39e9ff4 c39e9fdc
+c0052760 c004ed78 00000000 
+[   26.140000] 9fe0: 00000000 00000000 00000000 c39e9ff8 c00402e0
+c0052714 00000000 00000000 
+[   26.140000] Backtrace: 
+[   26.140000] [&lt;bf00137c&gt;] (mcp251x_irq_work_handler+0x0/0x4a0
+[mcp251x]) from [&lt;c004e248&gt;] (run_workqueue+0xd8/0x1a8)
+[   26.140000] [&lt;c004e170&gt;] (run_workqueue+0x0/0x1a8) from [&lt;c004ee14&gt;]
+(worker_thread+0xa8/0xbc)
+[   26.140000]  r8:00000000 r7:00000000 r6:c004ed6c r5:c3e2ffe0
+r4:c3e2ffe8
+[   26.140000] [&lt;c004ed6c&gt;] (worker_thread+0x0/0xbc) from [&lt;c0052760&gt;]
+(kthread+0x58/0x90)
+[   26.140000]  r5:c3e2ffe0 r4:c39e8000
+[   26.140000] [&lt;c0052708&gt;] (kthread+0x0/0x90) from [&lt;c00402e0&gt;]
+(do_exit+0x0/0x91c)
+[   26.140000]  r6:00000000 r5:00000000 r4:00000000
+[   26.140000] Code: e2833001 e5893054 e51b1038 e5913084 (e5933090) 
+
+
+I think i need digital analyzer to dump all SPI messages and not just
+the first frame...
+
+Thanks,
+Alexander
+
+
+On Tue, 2008-02-05 at 17:28 +0000, Chris Elston wrote:
+&gt;<i> Alexander,
+</I>&gt;<i> 
+</I>&gt;<i> It is expected that you provide a device reset function which toggles
+</I>&gt;<i> the pin connected to the MCP2515 reset line.  This function should be
+</I>&gt;<i> assigned to the device_reset pointer in your mcp251x_platform_data
+</I>&gt;<i> struct.  If this function (and reset line) is not provided, the MCP2515
+</I>&gt;<i> will not reset on a board soft reset.
+</I>&gt;<i> 
+</I>&gt;<i> You may also *optionally* provide a function and assign it to the
+</I>&gt;<i> board_specific_setup in the platform data struct.  On the platform I
+</I>&gt;<i> wrote the driver for, this configured a GPIO pin on the host board to be
+</I>&gt;<i> the interrupt in line.  Whether you need to do this depends on whether
+</I>&gt;<i> you have any additional setup to do.
+</I>&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> 
+</I>&gt;<i> Chris.
+</I>&gt;<i> 
+</I>&gt;<i> On Tue, 2008-02-05 at 16:42 +0100, Alexander Didebulidze wrote:
+</I>&gt;<i> &gt; Hi Chris,
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Sorry, but i have only basic version of the scope, without any interface
+</I>&gt;<i> &gt; card...
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; i made some fotos of MOSI/MISO :
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; MOSI is blue
+</I>&gt;<i> &gt; MISO yellow
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; <A HREF="http://stats.inet.ge/tmp/mcp2515-spi/2/">http://stats.inet.ge/tmp/mcp2515-spi/2/</A>
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; when I send first frame with cansend i see a lot (similar)frames on MOSI
+</I>&gt;<i> &gt; for at least 10 seconds, sometimes it stops only after I unload module
+</I>&gt;<i> &gt; <A HREF="http://stats.inet.ge/tmp/mcp2515-spi/2/cansend_123%23R.jpg">http://stats.inet.ge/tmp/mcp2515-spi/2/cansend_123%23R.jpg</A>
+</I>&gt;<i> &gt; 
+</I>&gt;<i> 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; what do you have in myboard_mcp251x_initfunc and myboard_mcp251x_reset ?
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I think as soon as i get good replies from mcp2515 chip the driver will
+</I>&gt;<i> &gt; work ok.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Thanks,
+</I>&gt;<i> &gt; Best regards,
+</I>&gt;<i> &gt; Alexander
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; On Tue, 2008-02-05 at 13:48 +0000, Chris Elston wrote: 
+</I>&gt;<i> &gt; &gt; Alexander,
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Could you include the MOSI (master out, slave in) in the trace too
+</I>&gt;<i> &gt; &gt; please.  Since your scope is only 2 channel, for now, don't include the
+</I>&gt;<i> &gt; &gt; clock.  Also, that model of scope includes the ability to save traces to
+</I>&gt;<i> &gt; &gt; an image file on a USB flash drive - please do that if you can, it will
+</I>&gt;<i> &gt; &gt; be much easier to read.
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Note that I haven't actively been maintaining the 251x driver, and there
+</I>&gt;<i> &gt; &gt; have been changes to socket-can since I posted it.  I'm starting to take
+</I>&gt;<i> &gt; &gt; a look at it again, so bear with me.
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Thanks,
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Chris.
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; On Tue, 2008-02-05 at 13:56 +0100, Alexander Didebulidze wrote:
+</I>&gt;<i> &gt; &gt; &gt; correction:
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; I found out that I was using SPI_MODE_3 -&gt; SSPCLK was HIGH when idle
+</I>&gt;<i> &gt; &gt; &gt; now i switched to SPI_MODE_0 and SSPCLK is LOW when idle.
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; but i still have same problems as before...
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; new image of mcp2515 reply (blue SSPCLK, yellow SSPRXD) :
+</I>&gt;<i> &gt; &gt; &gt; <A HREF="http://stats.inet.ge/tmp/mcp2515-spi/spi-rx-mode0.jpg">http://stats.inet.ge/tmp/mcp2515-spi/spi-rx-mode0.jpg</A>
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; Alexander
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; On Mon, 2008-02-04 at 17:40 +0100, Alexander Didebulidze wrote:
+</I>&gt;<i> &gt; &gt; &gt; &gt; Hi,
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Socket-can kernel part and example tools work fine for me ...
+</I>&gt;<i> &gt; &gt; &gt; &gt; I tested it with vcan.ko and cansend/candump 
+</I>&gt;<i> &gt; &gt; &gt; &gt; but i can't get mcp2515 driver working with a board(Altair) which is
+</I>&gt;<i> &gt; &gt; &gt; &gt; based on Xscale PXA255. PXA part is similar to LUBBOCK.
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; when i load mcp251x.ko i get:
+</I>&gt;<i> &gt; &gt; &gt; &gt; Using mcp251x.ko
+</I>&gt;<i> &gt; &gt; &gt; &gt; [   19.090000] altairv2 myboard_mcp251x_initfunc called (empty function)
+</I>&gt;<i> &gt; &gt; &gt; &gt; [   19.090000] altairv2 myboard_mcp251x_reset called (empty function)
+</I>&gt;<i> &gt; &gt; &gt; &gt; [   19.150000] mcp251x spi1.0: probed
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; after changing SSP_MODE to 0 i can bring interface UP by
+</I>&gt;<i> &gt; &gt; &gt; &gt; ifconfig can0 up
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; I have a scope connected to on SPI pins and i can see 
+</I>&gt;<i> &gt; &gt; &gt; &gt; SPISCK(1,8MHz. why not 3,6?? )
+</I>&gt;<i> &gt; &gt; &gt; &gt; CS goes down... i also see signals on SPI_SI and SPI_SO 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; ./cansend can0 5A1#11.2233.44556677.88
+</I>&gt;<i> &gt; &gt; &gt; &gt; ./cansend can0 5A1#11.2233.44556677.88
+</I>&gt;<i> &gt; &gt; &gt; &gt; . 
+</I>&gt;<i> &gt; &gt; &gt; &gt; . after ~10 times i get
+</I>&gt;<i> &gt; &gt; &gt; &gt; ./cansend can0 5A1#11.2233.44556677.88
+</I>&gt;<i> &gt; &gt; &gt; &gt; write: No buffer space available
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; I'm not sure if SPI Bus is working right, but since MCP2515 is the only
+</I>&gt;<i> &gt; &gt; &gt; &gt; device on SPI i can't test it right.
+</I>&gt;<i> &gt; &gt; &gt; &gt; I have feeling that mcp2515 is not replying right.
+</I>&gt;<i> &gt; &gt; &gt; &gt; on the scope i see different TX Frames/Signals 
+</I>&gt;<i> &gt; &gt; &gt; &gt; but mcp2515 reply on SSPRXD is always similar signal (one or two peaks)
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Images taken from scope screen are here :
+</I>&gt;<i> &gt; &gt; &gt; &gt; <A HREF="http://stats.inet.ge/tmp/mcp2515-spi/">http://stats.inet.ge/tmp/mcp2515-spi/</A>
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; for my tests i was using hardware setup 1.
+</I>&gt;<i> &gt; &gt; &gt; &gt; i want to use setup 2. but for this i need to use SSPEXTCLK in MCP251x
+</I>&gt;<i> &gt; &gt; &gt; &gt; driver and i don't know where to set this.
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; if somebody has experience with SPI on PXA255 please write me if my code
+</I>&gt;<i> &gt; &gt; &gt; &gt; in arch/arm/mach-pxa/altairv2.c is OK.
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; I'm also don't know what to do with #INT connected to GPIO19. 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Before trying Socket-Can there was linux 2.6.7 on the board with
+</I>&gt;<i> &gt; &gt; &gt; &gt; can4linux driver for MCP2515 which worked &quot;fine&quot; with hardware setup 2.
+</I>&gt;<i> &gt; &gt; &gt; &gt; PXA and SSP hardware is OK and CAN hardware works too .
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; It would be great if someone can tell me how and in which order to debug
+</I>&gt;<i> &gt; &gt; &gt; &gt; it. how to test SPI etc...
+</I>&gt;<i> &gt; &gt; &gt; &gt; maybe there is some ready driver to test SPI bus. (loopback ?)
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Thank you in advance,
+</I>&gt;<i> &gt; &gt; &gt; &gt; Alexander
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; P.S I'm newbie in embedded... so, sorry in advance if I asked stupid
+</I>&gt;<i> &gt; &gt; &gt; &gt; questions :)
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; ------------------------------ MY SETUP ------------------------------
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Hardware setup:
+</I>&gt;<i> &gt; &gt; &gt; &gt; 1 -&gt; 	mcp2515 is connected to pxa255 SSP on GPIO (23-26) 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	#INT is connected to GPIO 19
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	#CS is SSPSFRM etc...
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	OSC1 is connected to GPIO11 (GPIO can generate 3,6 Mhz on it)
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	in this case OSC1 and SPI Clock are 3,6MHz
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 2 -&gt;	in second case OSC1 and SPI Clocl are 16 Mhz :
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	GPIO7 generates 48Mhz
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	Onboard FPGA divides is by 3 and 16MHz goes to 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	GPIO11 and GPIO27(SSPEXTCLK)
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	in this case GPIO11 is in high impedance mode and SPI uses 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	SSPEXTCLK 16Mhz. 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; I'm using SSP1 port of PXA255 not the NSSP port!
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Software setup:
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	Patched Linux kernel 2.6.23.1
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	Socket-Can trunk Rev: 658
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	linux-2.6.24-rc1-can-driver-mcp2515.patch from
+</I>&gt;<i> &gt; &gt; &gt; &gt; <A HREF="https://lists.berlios.de/pipermail/socketcan-core/attachments/20071108/6c440448/attachment-0001.bin">https://lists.berlios.de/pipermail/socketcan-core/attachments/20071108/6c440448/attachment-0001.bin</A>
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	modifications from 
+</I>&gt;<i> &gt; &gt; &gt; &gt; <A HREF="https://lists.berlios.de/pipermail/socketcan-core/2007-December/000940.html">https://lists.berlios.de/pipermail/socketcan-core/2007-December/000940.html</A>
+</I>&gt;<i> &gt; &gt; &gt; &gt; 	and SPI_MODE_0
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; ----------------------------------------------
+</I>&gt;<i> &gt; &gt; &gt; &gt; in arch/arm/mach-pxa/altairv2.c i have :
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; /* Altair SSP */
+</I>&gt;<i> &gt; &gt; &gt; &gt; static struct resource pxa_ssp_resources[] = {
+</I>&gt;<i> &gt; &gt; &gt; &gt;         [0] = {
+</I>&gt;<i> &gt; &gt; &gt; &gt;                 .start  = __PREG(SSCR0_P(1)),
+</I>&gt;<i> &gt; &gt; &gt; &gt;                 .end    = __PREG(SSCR0_P(1)) + 0x14,
+</I>&gt;<i> &gt; &gt; &gt; &gt;                 .flags  = IORESOURCE_MEM,
+</I>&gt;<i> &gt; &gt; &gt; &gt;         },
+</I>&gt;<i> &gt; &gt; &gt; &gt;         [1] = {
+</I>&gt;<i> &gt; &gt; &gt; &gt;                 .start  = IRQ_SSP, // FIXME - What is right value ?
+</I>&gt;<i> &gt; &gt; &gt; &gt; GPIO19 CAN Interrupt
+</I>&gt;<i> &gt; &gt; &gt; &gt;                 .end    = IRQ_SSP,
+</I>&gt;<i> &gt; &gt; &gt; &gt;                 .flags  = IORESOURCE_IRQ,
+</I>&gt;<i> &gt; &gt; &gt; &gt;         },
+</I>&gt;<i> &gt; &gt; &gt; &gt; };
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; static struct pxa2xx_spi_master pxa_ssp_master_info = {
+</I>&gt;<i> &gt; &gt; &gt; &gt;         .ssp_type       = PXA25x_SSP,
+</I>&gt;<i> &gt; &gt; &gt; &gt;         .clock_enable   = CKEN_SSP,
+</I>&gt;<i> &gt; &gt; &gt; &gt;         .num_chipselect = 1,
+</I>&gt;<i> &gt; &gt; &gt; &gt; };
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; static struct platform_device pxa_ssp = {
+</I>&gt;<i> &gt; &gt; &gt; &gt;         .name           = &quot;pxa2xx-spi&quot;,
+</I>&gt;<i> &gt; &gt; &gt; &gt;         .id             = 1,
+</I>&gt;<i> &gt; &gt; &gt; &gt;         .resource       = pxa_ssp_resources,
+</I>&gt;<i> &gt; &gt; &gt; &gt;         .num_resources  = ARRAY_SIZE(pxa_ssp_resources),
+</I>&gt;<i> &gt; &gt; &gt; &gt;         .dev = {
+</I>&gt;<i> &gt; &gt; &gt; &gt;                 .platform_data  = &amp;pxa_ssp_master_info,
+</I>&gt;<i> &gt; &gt; &gt; &gt;         },
+</I>&gt;<i> &gt; &gt; &gt; &gt; };
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; void myboard_mcp251x_initfunc()
+</I>&gt;<i> &gt; &gt; &gt; &gt; {
+</I>&gt;<i> &gt; &gt; &gt; &gt;         printk(KERN_ERR &quot;altairv2 myboard_mcp251x_initfunc called\n&quot;);
+</I>&gt;<i> &gt; &gt; &gt; &gt; }
+</I>&gt;<i> &gt; &gt; &gt; &gt;          
+</I>&gt;<i> &gt; &gt; &gt; &gt; void myboard_mcp251x_reset()
+</I>&gt;<i> &gt; &gt; &gt; &gt; {
+</I>&gt;<i> &gt; &gt; &gt; &gt;         printk(KERN_ERR &quot;altairv2 myboard_mcp251x_reset called\n&quot;);
+</I>&gt;<i> &gt; &gt; &gt; &gt; }
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; /* Altair MCP2515 CAN	*/
+</I>&gt;<i> &gt; &gt; &gt; &gt; static struct mcp251x_platform_data mcp251x_info = {
+</I>&gt;<i> &gt; &gt; &gt; &gt;         .oscillator_frequency = 16000000,
+</I>&gt;<i> &gt; &gt; &gt; &gt;         .board_specific_setup = myboard_mcp251x_initfunc,
+</I>&gt;<i> &gt; &gt; &gt; &gt;         .device_reset = myboard_mcp251x_reset,
+</I>&gt;<i> &gt; &gt; &gt; &gt;         .transceiver_enable = NULL,
+</I>&gt;<i> &gt; &gt; &gt; &gt; };
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; static struct spi_board_info spi_board_info[] __initdata = { {
+</I>&gt;<i> &gt; &gt; &gt; &gt;                 .modalias = &quot;mcp251x&quot;,
+</I>&gt;<i> &gt; &gt; &gt; &gt;                 .platform_data = &amp;mcp251x_info,
+</I>&gt;<i> &gt; &gt; &gt; &gt;                 .irq = IRQ_GPIO(19),
+</I>&gt;<i> &gt; &gt; &gt; &gt;                 .max_speed_hz = 8000000,
+</I>&gt;<i> &gt; &gt; &gt; &gt;                 .bus_num = 1,
+</I>&gt;<i> &gt; &gt; &gt; &gt;                 .chip_select = 0
+</I>&gt;<i> &gt; &gt; &gt; &gt; },
+</I>&gt;<i> &gt; &gt; &gt; &gt; };
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; --------------------------------------------------
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; _______________________________________________
+</I>&gt;<i> &gt; &gt; &gt; &gt; Socketcan-core mailing list
+</I>&gt;<i> &gt; &gt; &gt; &gt; <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> &gt; &gt; &gt; &gt; <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; _______________________________________________
+</I>&gt;<i> &gt; &gt; &gt; Socketcan-core mailing list
+</I>&gt;<i> &gt; &gt; &gt; <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">Socketcan-core at lists.berlios.de</A>
+</I>&gt;<i> &gt; &gt; &gt; <A HREF="https://lists.berlios.de/mailman/listinfo/socketcan-core">https://lists.berlios.de/mailman/listinfo/socketcan-core</A>
+</I>&gt;<i> &gt; 
+</I>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001061.html">mcp251x driver problems on xscale PXA255 based board
+</A></li>
+	<LI>Next message: <A HREF="001063.html">mscan.c CAN_FLAG_RTR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1065">[ date ]</a>
+              <a href="thread.html#1065">[ thread ]</a>
+              <a href="subject.html#1065">[ subject ]</a>
+              <a href="author.html#1065">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/socketcan-core">More information about the Socketcan-core
+mailing list</a><br>
+</body></html>
